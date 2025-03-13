@@ -2,7 +2,6 @@
  * Utilities for managing cache configuration for videos
  */
 import { videoConfig } from '../config/videoConfig';
-import { debug } from './loggerUtils';
 
 /**
  * Cache configuration interface

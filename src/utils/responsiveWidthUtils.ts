@@ -1,9 +1,7 @@
 /**
  * Utilities for responsive video sizing
  */
-import { debug } from './loggerUtils';
 import { videoConfig } from '../config/videoConfig';
-import { getDeviceTypeFromUserAgent } from './userAgentUtils';
 import { hasClientHints, getVideoSizeFromClientHints } from './clientHints';
 import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from './deviceUtils';
 
@@ -59,9 +57,7 @@ export function getResponsiveVideoSize(
   }
   
   // Check for ?quality=auto param which explicitly requests adaptive quality
-  const url = new URL(request.url);
-  const qualityParam = url.searchParams.get('quality');
-  const autoQuality = qualityParam === 'auto';
+  // This functionality is actually handled in videoOptionsService.ts
   
   // Otherwise, use adaptive sizing based on client capabilities
   // Try to get size info from various sources, in order of accuracy

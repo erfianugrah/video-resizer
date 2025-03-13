@@ -5,9 +5,7 @@
 import { videoConfig } from '../config/videoConfig';
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/transformationUtils';
-import { hasClientHints, getVideoSizeFromClientHints, getNetworkQuality } from '../utils/clientHints';
-import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from '../utils/deviceUtils';
-import { getResponsiveVideoSize, getVideoQualityPreset } from '../utils/responsiveWidthUtils';
+import { getResponsiveVideoSize } from '../utils/responsiveWidthUtils';
 
 /**
  * Type for video derivatives

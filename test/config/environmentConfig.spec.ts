@@ -2,7 +2,7 @@
  * Tests for environment configuration
  */
 import { describe, it, expect } from 'vitest';
-import { getEnvironmentConfig, EnvVariables, EnvironmentConfig } from '../../src/config/environmentConfig';
+import { getEnvironmentConfig, EnvVariables } from '../../src/config/environmentConfig';
 
 describe('Environment Configuration', () => {
   describe('getEnvironmentConfig', () => {

@@ -329,6 +329,9 @@ export function createDebugReport(diagnosticsInfo: DiagnosticsInfo, _env?: unkno
             <h3 class="${diagnosticsInfo.cacheability ? 'text-success' : 'text-warning'}">
               ${diagnosticsInfo.cacheability ? 'Enabled' : 'Disabled'}
             </h3>
+            ${diagnosticsInfo.originalUrl && new URL(diagnosticsInfo.originalUrl).searchParams.has('debug') 
+              ? '<p class="text-info small mt-2"><i class="bi bi-info-circle"></i> Debug mode bypasses cache</p>' 
+              : ''}
           </div>
         </div>
       </div>
@@ -487,8 +490,22 @@ export function createDebugReport(diagnosticsInfo: DiagnosticsInfo, _env?: unkno
                 ${diagnosticsInfo.cacheability 
                   ? '<span class="badge badge-green badge-value"><i class="bi bi-check-circle"></i> Enabled</span>' 
                   : '<span class="badge badge-yellow badge-value"><i class="bi bi-x-circle"></i> Disabled</span>'}
+                
+                ${diagnosticsInfo.originalUrl && new URL(diagnosticsInfo.originalUrl).searchParams.has('debug') 
+                  ? '<span class="ms-2 badge badge-blue badge-value"><i class="bi bi-info-circle"></i> Debug mode disables caching</span>' 
+                  : ''}
               </div>
             </div>
+            ${diagnosticsInfo.originalUrl && new URL(diagnosticsInfo.originalUrl).searchParams.has('debug') ? `
+            <div class="info-row">
+              <div class="info-label">Cache Details:</div>
+              <div class="info-value">
+                <div><span class="badge badge-yellow badge-value"><i class="bi bi-exclamation-triangle"></i> Current request (with debug): Not cached</span></div>
+                <div class="mt-1"><span class="badge ${diagnosticsInfo.cacheability ? 'badge-green' : 'badge-yellow'} badge-value">
+                <i class="bi bi-${diagnosticsInfo.cacheability ? 'check' : 'x'}-circle"></i>
+                Same URL without debug: ${diagnosticsInfo.cacheability ? 'Would be cached' : 'Not cached'}</span></div>
+              </div>
+            </div>` : ''}
             ${diagnosticsInfo.cacheTtl !== undefined ? `
             <div class="info-row">
               <div class="info-label">TTL:</div>

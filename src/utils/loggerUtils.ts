@@ -12,7 +12,7 @@ let logConfig = {
  * Initialize logger configuration
  * @param config Logger configuration
  */
-export function initializeLogger(config: any) {
+export function initializeLogger(config: Record<string, unknown>) {
   logConfig = {
     debugEnabled: config.debug?.enabled || false,
     verboseEnabled: config.debug?.verbose || false,
@@ -25,7 +25,7 @@ export function initializeLogger(config: any) {
  * @param message Message to log
  * @param data Optional data to include in log
  */
-export function info(component: string, message: string, data?: any) {
+export function info(component: string, message: string, data?: Record<string, unknown>) {
   log('INFO', component, message, data);
 }
 
@@ -35,7 +35,7 @@ export function info(component: string, message: string, data?: any) {
  * @param message Message to log
  * @param data Optional data to include in log
  */
-export function debug(component: string, message: string, data?: any) {
+export function debug(component: string, message: string, data?: Record<string, unknown>) {
   if (logConfig.debugEnabled) {
     log('DEBUG', component, message, data);
   }
@@ -47,7 +47,7 @@ export function debug(component: string, message: string, data?: any) {
  * @param message Message to log
  * @param data Optional data to include in log
  */
-export function error(component: string, message: string, data?: any) {
+export function error(component: string, message: string, data?: Record<string, unknown>) {
   log('ERROR', component, message, data);
 }
 
@@ -57,7 +57,7 @@ export function error(component: string, message: string, data?: any) {
  * @param message Message to log
  * @param data Optional data to include in log
  */
-export function warn(component: string, message: string, data?: any) {
+export function warn(component: string, message: string, data?: Record<string, unknown>) {
   log('WARN', component, message, data);
 }
 
@@ -107,7 +107,7 @@ export function logResponse(component: string, response: Response) {
  * @param message Message to log
  * @param data Optional data to include in log
  */
-function log(level: string, component: string, message: string, data?: any) {
+function log(level: string, component: string, message: string, data?: Record<string, unknown>) {
   const timestamp = new Date().toISOString();
   const logEntry = {
     timestamp,
@@ -118,5 +118,6 @@ function log(level: string, component: string, message: string, data?: any) {
   };
 
   // For now we use console.log, but this could be adapted to send logs to a service
+  // eslint-disable-next-line no-console
   console.log(JSON.stringify(logEntry));
 }

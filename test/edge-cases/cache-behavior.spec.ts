@@ -9,7 +9,6 @@ import {
   setupMockCf
 } from '../utils/test-utils';
 import { handleVideoRequest } from '../../src/handlers/videoHandler';
-import { determineCacheConfig } from '../../src/utils/cacheUtils';
 
 // Mocks
 vi.mock('../../src/utils/loggerUtils', () => ({
@@ -39,12 +38,12 @@ vi.mock('../../src/services/videoTransformationService', () => {
 });
 
 describe('Cache Behavior and Edge Cases', () => {
-  let mockCf: ReturnType<typeof setupMockCf>;
+  // Setup for Cloudflare cache mock helpers
   
   beforeEach(() => {
     vi.clearAllMocks();
     // Setup mock Cloudflare cache
-    mockCf = setupMockCf();
+    setupMockCf();
     // Default mock response
     mockFetch('Video content');
   });

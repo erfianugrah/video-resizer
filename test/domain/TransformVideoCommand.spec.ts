@@ -4,7 +4,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createMockRequest,
-  createMockConfig,
   createMockPathPatterns,
   getLastFetchedUrl,
 } from '../utils/test-utils';

@@ -1,7 +1,7 @@
 /**
  * Tests for videoTransformationService
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { getBestVideoFormat, estimateOptimalBitrate } from '../../src/services/videoTransformationService';
 
 // Mock TransformVideoCommand for transformVideo tests

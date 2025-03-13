@@ -5,14 +5,6 @@
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 
 /**
- * Time format interface
- */
-interface TimeFormat {
-  value: number;
-  unit: 's' | 'm';
-}
-
-/**
  * Valid time units
  */
 type TimeUnit = 's' | 'm';

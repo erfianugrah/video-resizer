@@ -7,7 +7,6 @@ import {
   findMatchingPathPattern, 
   matchPathWithCaptures, 
   PathPattern, 
-  normalizeVideoPath,
   extractVideoId
 } from '../../utils/pathUtils';
 import { debug, error } from '../../utils/loggerUtils';
@@ -83,11 +82,8 @@ export class TransformVideoCommand {
    * @returns Promise<Response> - Response with debug HTML
    */
   private async getDebugPageResponse(diagnosticsInfo: DiagnosticsInfo, isError = false): Promise<Response> {
-    console.log('Generating debug page with diagnostics info:', diagnosticsInfo);
-    
     // Check if we have access to the ASSETS binding
     if (!this.context.env?.ASSETS) {
-      console.log('ASSETS binding not available, using fallback HTML');
       // Import createDebugReport for the fallback option
       const { createDebugReport } = await import('../../utils/debugHeadersUtils');
       
@@ -122,16 +118,9 @@ export class TransformVideoCommand {
     
     // Fetch the debug.html page from the ASSETS binding
     try {
-      // Log the debug request URL for troubleshooting
-      console.log('Debug Request URL:', debugUrl.toString());
-      
       const response = await this.context.env.ASSETS.fetch(debugRequest);
       
-      // Log response status for troubleshooting
-      console.log('Debug page response status:', response.status);
-      
       if (!response.ok) {
-        console.log('Error fetching debug page, falling back to direct HTML injection');
         // Fall back to the createDebugReport if we can't fetch the debug page
         const { createDebugReport } = await import('../../utils/debugHeadersUtils');
         return new Response(
@@ -183,7 +172,6 @@ export class TransformVideoCommand {
         }
       });
     } catch (err) {
-      console.error('Exception in debug page generation:', err);
       // If there's an error fetching the debug page, fallback to a simple response
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       return new Response(
@@ -393,8 +381,8 @@ export class TransformVideoCommand {
       const networkInfo = getNetworkQuality(request);
       diagnosticsInfo.networkQuality = networkInfo.quality;
       
-      // Extract video ID for cache tagging if possible
-      const videoId = extractVideoId(path, pathPattern) || '';
+      // Extract video ID for cache tagging if possible (used in applyCacheHeaders later)
+      extractVideoId(path, pathPattern);
       
       // Apply cache headers to the response based on configuration
       const source = pathPattern.name;
@@ -505,8 +493,7 @@ export class TransformVideoCommand {
       throw new Error('Failed to match path with pattern');
     }
     
-    // Normalize the path first
-    const normalizedPath = normalizeVideoPath(path);
+    // This path has already been normalized earlier
     
     // Create a new URL with the pattern's origin
     const videoUrl = new URL(pattern.originUrl);

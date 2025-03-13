@@ -3,7 +3,6 @@
  */
 import { TransformParams } from '../domain/commands/TransformVideoCommand';
 import { VideoSize } from './clientHints';
-import { NetworkQualityInfo } from './clientHints';
 
 /**
  * Interface for debug information

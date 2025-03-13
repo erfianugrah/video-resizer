@@ -3,7 +3,6 @@
  */
 import { videoConfig } from '../config/videoConfig';
 import { TransformParams, TransformParamValue } from '../domain/commands/TransformVideoCommand';
-import { debug } from './loggerUtils';
 
 /**
  * Path pattern interface with extended configuration
@@ -17,7 +16,7 @@ export interface PathPattern {
   quality?: string; // Optional quality preset for this path pattern
   cacheTtl?: number; // Optional custom cache TTL for this path pattern
   priority?: number; // Optional priority for pattern matching (higher values checked first)
-  transformationOverrides?: Record<string, any>; // Optional parameter overrides for this path
+  transformationOverrides?: Record<string, unknown>; // Optional parameter overrides for this path
   captureGroups?: string[]; // Names for regex capture groups
 }
 

@@ -72,7 +72,7 @@ export function getVideoSizeFromUserAgent(request: Request): VideoSize {
  * @param request - The incoming request
  * @returns Object with device capabilities
  */
-export function detectDeviceCapabilities(request: Request): Record<string, any> {
+export function detectDeviceCapabilities(request: Request): Record<string, unknown> {
   const userAgent = request.headers.get('User-Agent') || '';
   const deviceType = getDeviceTypeFromUserAgent(userAgent);
   

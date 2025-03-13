@@ -5,12 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { 
   createMockRequest, 
   createMockConfig, 
-  createMockResponse,
   mockFetch,
   generateRandomVideoId
 } from '../utils/test-utils';
 import { handleVideoRequest } from '../../src/handlers/videoHandler';
-import { videoConfig } from '../../src/config/videoConfig';
 import { transformVideo } from '../../src/services/videoTransformationService';
 
 // Mock the videoTransformationService instead of TransformVideoCommand
@@ -101,10 +99,7 @@ describe('Video Transformation Integration', () => {
       const request = createMockRequest(originalUrl);
       const config = createMockConfig();
       
-      // Get expected dimensions from the 'low' derivative
-      const lowDerivative = videoConfig.derivatives.low;
-      const expectedWidth = lowDerivative.width;
-      const expectedHeight = lowDerivative.height;
+      // This is testing the 'low' derivative preset
       
       // Create a custom mock response for this test
       const mockResponse = new Response('Transformed video content with derivative', {
@@ -138,8 +133,8 @@ describe('Video Transformation Integration', () => {
       const request = createMockRequest(cdnUrl);
       const config = createMockConfig();
       
-      // Mock fetch
-      const mockFetchSpy = mockFetch('Already transformed video');
+      // Mock fetch response
+      mockFetch('Already transformed video');
       
       // Act
       const response = await handleVideoRequest(request, config);

@@ -33,7 +33,7 @@ vi.mock('../../src/utils/deviceUtils', () => ({
 
 // Mock imported functions from utils
 import { hasClientHints, getVideoSizeFromClientHints } from '../../src/utils/clientHints';
-import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from '../../src/utils/deviceUtils';
+import { hasCfDeviceType, getVideoSizeFromCfDeviceType } from '../../src/utils/deviceUtils';
 
 describe('responsiveWidthUtils', () => {
   describe('getResponsiveVideoSize', () => {

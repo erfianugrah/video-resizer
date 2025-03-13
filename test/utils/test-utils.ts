@@ -206,7 +206,7 @@ export function mockFetch(
   status = 200,
   headers: Record<string, string> = { 'Content-Type': 'text/plain' }
 ): ReturnType<typeof vi.fn> {
-  const mockResponse = createMockResponse(responseBody, status, headers);
+  // Create a mock response with the given parameters
   return vi.spyOn(global, 'fetch').mockImplementation((input) => {
     // Store the input URL for assertions in tests
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
@@ -252,9 +252,9 @@ export function generateRandomVideoId(length = 11): string {
  * @param variations Variations of specific fields
  * @returns Array of test cases
  */
-export function generateTestCases<T extends Record<string, any>>(
+export function generateTestCases<T extends Record<string, unknown>>(
   baseOptions: T,
-  variations: Record<string, any[]>
+  variations: Record<string, unknown[]>
 ): Array<T & { name: string }> {
   const result: Array<T & { name: string }> = [];
   
@@ -262,7 +262,7 @@ export function generateTestCases<T extends Record<string, any>>(
   const fields = Object.keys(variations);
   
   // Helper function to generate combinations recursively
-  function generateCombinations(current: Record<string, any>, depth: number, name: string[]): void {
+  function generateCombinations(current: Record<string, unknown>, depth: number, name: string[]): void {
     if (depth === fields.length) {
       // We've assigned values to all fields with variations
       result.push({
