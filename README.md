@@ -39,29 +39,88 @@ The worker sits between clients and your video files, transparently applying tra
 
 ## Configuration
 
-The worker is completely configurable via environment variables or wrangler.jsonc:
+### Step-by-Step Setup Guide
+
+Follow these steps to configure the video-resizer for your environment:
+
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Configure Your Wrangler Settings**
+   Create or edit your `wrangler.toml` file with your Cloudflare account details:
+   ```toml
+   name = "video-resizer"
+   main = "src/index.ts"
+   compatibility_date = "2023-09-04"
+   
+   account_id = "your-account-id"
+   workers_dev = true
+   
+   [vars]
+   DEBUG_ENABLED = "false"
+   ```
+
+3. **Define Path Patterns**
+   Configure which URL patterns should be processed by adding the `PATH_PATTERNS` variable to your `wrangler.toml` file:
+   ```toml
+   [vars]
+   PATH_PATTERNS = '''
+   [
+     {
+       "name": "videos",
+       "matcher": "^/videos/", 
+       "processPath": true,
+       "originUrl": null,
+       "cacheTtl": 3600
+     }
+   ]
+   '''
+   ```
+
+4. **Verify Media Transformations Are Enabled**
+   Make sure Cloudflare Media Transformations are enabled on your zone:
+   - Log in to the [Cloudflare dashboard](https://dash.cloudflare.com/login)
+   - Go to **Stream** > **Transformations**
+   - Verify that transformations are enabled for your zone
+
+5. **Deploy Your Worker**
+   ```bash
+   npm run deploy
+   ```
+
+6. **Test Your Configuration**
+   After deployment, test your worker with a video URL:
+   ```
+   https://your-domain.com/videos/sample.mp4?width=640&height=360
+   ```
+
+### Detailed Configuration Options
+
+The worker configuration is stored in `PATH_PATTERNS`, which is an array of objects defining which URL paths should be processed and how:
 
 ```jsonc
 // Example PATH_PATTERNS configuration
 [vars]
 PATH_PATTERNS = [
   {
-    "name": "videos",
-    "matcher": "^/videos/", 
-    "processPath": true,
-    "baseUrl": null,
-    "originUrl": null,
-    "cacheTtl": 3600,
-    "captureGroups": ["videoId"],
-    "quality": "high"
+    "name": "videos",           // Give this pattern a name for logging/debugging
+    "matcher": "^/videos/",     // Regex pattern to match against URLs
+    "processPath": true,        // Set to true to enable processing matching paths
+    "baseUrl": null,            // Optional base URL to prepend to video paths
+    "originUrl": null,          // Optional origin URL for rewriting requests
+    "cacheTtl": 3600,           // Cache time in seconds (1 hour)
+    "captureGroups": ["videoId"], // Names for regex capture groups (optional)
+    "quality": "high"           // Default quality for all videos matching this pattern
   },
   {
     "name": "popular",
-    "matcher": "^/popular/(.*\\.mp4)",
+    "matcher": "^/popular/(.*\\.mp4)",  // Match URLs like /popular/video.mp4
     "processPath": true,
     "baseUrl": null,
-    "originUrl": "https://videos.example.com",
-    "cacheTtl": 86400,
+    "originUrl": "https://videos.example.com",  // Rewrites to this origin
+    "cacheTtl": 86400,          // 24 hour cache time
     "captureGroups": ["videoId"]
   },
   {
@@ -70,24 +129,73 @@ PATH_PATTERNS = [
     "processPath": true,
     "baseUrl": null,
     "originUrl": "https://videos.example.com",
-    "cacheTtl": 43200,
+    "cacheTtl": 43200,          // 12 hour cache time
     "captureGroups": ["videoId"],
-    "quality": "medium"
+    "quality": "medium"         // Force medium quality for /shorts/ paths
   }
 ]
 ```
 
-### Configuration Options:
+### Configuration Options Explained:
 
-- **`name`**: Identifier for the pattern (for debugging)
-- **`matcher`**: Regular expression to match URL paths
-- **`processPath`**: Whether to process matching paths (set to false to disable)
-- **`baseUrl`**: Optional base URL for the video source
-- **`originUrl`**: Optional origin URL for rewriting requests
-- **`cacheTtl`**: Time to live in seconds for the cache (overrides default)
-- **`captureGroups`**: Names for regex capture groups in the matcher (helps with path extraction)
-- **`quality`**: Optional quality preset to apply to all videos matching this pattern
-- **`transformationOverrides`**: Optional parameters to override default transformations
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| **`name`** | Yes | - | Identifier for the pattern (for logging and debugging) |
+| **`matcher`** | Yes | - | Regular expression to match URL paths. Example: `^/videos/` will match all URLs starting with "/videos/" |
+| **`processPath`** | No | `true` | Whether to process matching paths. Set to `false` to temporarily disable a pattern without removing it |
+| **`baseUrl`** | No | `null` | Optional base URL for the video source. Set this when your videos have a specific base URL |
+| **`originUrl`** | No | `null` | Optional origin URL for rewriting requests. Use this to fetch videos from a different origin than the request |
+| **`cacheTtl`** | No | `86400` | Time to live in seconds for the cache (overrides default). Common values: 3600 (1 hour), 86400 (24 hours) |
+| **`captureGroups`** | No | `[]` | Names for regex capture groups in the matcher. This helps with path extraction in complex URLs |
+| **`quality`** | No | - | Optional quality preset to apply to all videos matching this pattern (`low`, `medium`, `high`, `auto`) |
+| **`transformationOverrides`** | No | `{}` | Optional parameters to override default transformations for all videos matching this pattern |
+
+### Common Configuration Examples
+
+1. **Basic Video Path Processing**
+   ```json
+   {
+     "name": "videos",
+     "matcher": "^/videos/",
+     "processPath": true
+   }
+   ```
+
+2. **Process Videos from External Origin**
+   ```json
+   {
+     "name": "external",
+     "matcher": "^/external/",
+     "originUrl": "https://external-videos.example.com"
+   }
+   ```
+
+3. **Specific File Type Processing**
+   ```json
+   {
+     "name": "mp4-files",
+     "matcher": ".*\\.mp4$",
+     "quality": "high"
+   }
+   ```
+
+4. **Path with Variable Extraction**
+   ```json
+   {
+     "name": "user-videos",
+     "matcher": "^/users/([^/]+)/videos/([^/]+)",
+     "captureGroups": ["userId", "videoId"]
+   }
+   ```
+
+5. **Temporary Disable Processing**
+   ```json
+   {
+     "name": "disabled-section",
+     "matcher": "^/temp/",
+     "processPath": false
+   }
+   ```
 
 ## Usage Examples
 
@@ -236,6 +344,8 @@ Derivatives are preset configurations for common use cases:
 
 Some features implemented in the code may have limited support in the Cloudflare Media Transformation API:
 
+> **⚠️ Important Note on Parameter Support:** While our README documents many parameters, only those listed in the official Cloudflare documentation (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented in our worker's custom logic and applied during request transformation.
+
 - **`quality` parameter**: While implemented in our code, this is currently in beta in the Cloudflare API. You may see inconsistent behavior.
 - **`compression` parameter**: This is implemented as a custom parameter but not officially supported by the Cloudflare API.
 - **Derivatives**: These are implemented as convenience presets but are handled by the worker, not natively by Cloudflare.
@@ -339,10 +449,189 @@ npm run deploy
 
 ## Development
 
-Start local development server:
+### Local Development Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/erfianugrah/video-resizer.git
+   cd video-resizer
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Create a local development configuration:**
+   Create a `wrangler.toml` file with your local development settings:
+   ```toml
+   name = "video-resizer"
+   main = "src/index.ts"
+   compatibility_date = "2023-09-04"
+   
+   [vars]
+   DEBUG_ENABLED = "true"
+   PATH_PATTERNS = '''[{"name":"videos","matcher":"^/videos/","processPath":true}]'''
+   
+   [dev]
+   port = 8787
+   ```
+
+4. **Start local development server:**
+   ```bash
+   npm run dev
+   ```
+   
+   This starts a local server at `http://localhost:8787`.
+
+5. **Testing locally:**
+   You can test your worker locally using curl or your browser:
+   ```bash
+   curl "http://localhost:8787/videos/sample.mp4?width=640&height=360"
+   ```
+
+### Running Tests
+
+Run the test suite:
 
 ```bash
-npm run dev
+npm test
+```
+
+Run specific tests:
+
+```bash
+npm test -- -t "test name"
+```
+
+### Requirements
+
+- **Node.js**: v16 or higher
+- **Cloudflare Account**: With access to Media Transformations feature
+- **Wrangler CLI**: Latest version (`npm install -g wrangler`)
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Possible Cause | Solution |
+|-------|---------------|----------|
+| **Videos not transforming** | Media Transformations not enabled | Verify that Transformations are enabled in Cloudflare dashboard under Stream > Transformations |
+| **"Invalid Parameter" error** | Parameter value out of bounds | Check that width/height are between 10-2000px and time is between 0-30s |
+| **Origin URL errors** | Incorrect configuration | Verify that your origin URL is accessible and that the video exists |
+| **Empty or corrupt video** | Source format issues | Ensure source video is H.264 MP4 with AAC/MP3 audio and under 40MB |
+| **Black video output** | DRM protected content | Media Transformations cannot process DRM protected content |
+| **Autoplay not working** | Browser restrictions | Set both `autoplay=true` and `muted=true` for most reliable autoplay behavior |
+| **High latency on first transform** | Cold cache | First transformation may take longer; subsequent requests will be faster from cache |
+
+### Debugging
+
+1. **Enable debug mode:**
+   Add `debug=true` to your URL query string or set `DEBUG_ENABLED=true` in your Wrangler config.
+
+2. **View detailed debug information:**
+   Add `debug=view` to see an HTML report with all transformation details.
+
+3. **Check request/response headers:**
+   Look for `cf-media-transformations-*` headers which indicate if transformations were applied.
+
+4. **Verify path patterns:**
+   Ensure your URL path is matching one of your configured path patterns.
+
+## Performance Optimization
+
+### Best Practices
+
+1. **Set Appropriate Dimensions:**
+   Always specify width and height to avoid serving unnecessarily large videos.
+
+2. **Use Derivatives for Common Cases:**
+   Utilize the built-in derivatives (`high`, `medium`, `low`, `mobile`) for consistent quality settings.
+
+3. **Cache TTL Optimization:**
+   Set longer cache TTLs for static content and shorter TTLs for frequently updated content.
+
+4. **Client Hints:**
+   Enable client hints in your HTML:
+   ```html
+   <meta http-equiv="Accept-CH" content="DPR, Viewport-Width, Width">
+   ```
+
+5. **Mobile Optimization:**
+   For mobile-first sites, use the `mobile` derivative or set up specific path patterns for mobile clients.
+
+6. **Video Preloading:**
+   For critical videos, use `preload=auto`. For less important videos, use `preload=metadata`.
+
+7. **Advanced Caching Strategies:**
+   Implement surrogate-key based cache purging using the Cache Tags provided by the service.
+
+## Integration Examples
+
+### HTML Video Element
+
+```html
+<!-- Basic video with transformation -->
+<video 
+  src="https://example.com/videos/sample.mp4?width=640&height=360&quality=medium" 
+  controls>
+</video>
+
+<!-- Advanced video with playback controls -->
+<video 
+  src="https://example.com/videos/sample.mp4?width=854&height=480&quality=high&compression=low" 
+  controls
+  preload="metadata"
+  poster="https://example.com/videos/sample.mp4?mode=frame&time=0s&width=854&height=480">
+</video>
+
+<!-- Mobile-optimized video with autoplay -->
+<video 
+  src="https://example.com/videos/sample.mp4?derivative=mobile" 
+  autoplay
+  muted
+  loop
+  playsinline>
+</video>
+```
+
+### React Component Example
+
+```jsx
+function ResponsiveVideo({ src, aspectRatio = "16:9" }) {
+  // Determine best quality based on screen size
+  const getQuality = () => {
+    if (window.innerWidth <= 640) return "low";
+    if (window.innerWidth <= 1280) return "medium";
+    return "high";
+  };
+
+  // Calculate dimensions based on aspect ratio
+  const dimensions = () => {
+    if (aspectRatio === "16:9") {
+      return { width: 640, height: 360 };
+    } else if (aspectRatio === "4:3") {
+      return { width: 640, height: 480 };
+    }
+    return { width: 640, height: 360 };
+  };
+
+  // Build video URL with parameters
+  const videoUrl = () => {
+    const { width, height } = dimensions();
+    return `${src}?width=${width}&height=${height}&quality=${getQuality()}&fit=contain`;
+  };
+
+  return (
+    <video
+      src={videoUrl()}
+      controls
+      preload="metadata"
+      className="responsive-video"
+      poster={`${src}?mode=frame&time=0s&width=${dimensions().width}&height=${dimensions().height}`}
+    />
+  );
+}
 ```
 
 ## Architecture
