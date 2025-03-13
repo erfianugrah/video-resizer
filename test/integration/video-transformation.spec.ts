@@ -85,7 +85,8 @@ describe('Video Transformation Integration', () => {
           height: 480
         }),
         expect.any(Array),
-        expect.any(Object)
+        expect.any(Object),
+        undefined  // The env parameter can be undefined in tests
       );
       
       // 3. The response should have our mock content

@@ -29,6 +29,9 @@ export interface EnvVariables {
   DEBUG_INCLUDE_HEADERS?: string;
   PATH_PATTERNS?: PathPattern[] | string;
   VERSION?: string;
+  ASSETS?: {
+    fetch: (request: Request) => Promise<Response>;
+  } | undefined;
 }
 
 /**

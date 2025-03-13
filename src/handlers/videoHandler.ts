@@ -7,7 +7,7 @@ import { transformVideo } from '../services/videoTransformationService';
 import { debug, error, info } from '../utils/loggerUtils';
 import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import { videoConfig } from '../config/videoConfig';
-import { EnvironmentConfig } from '../config/environmentConfig';
+import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
 
 /**
  * Main handler for video requests
@@ -15,7 +15,11 @@ import { EnvironmentConfig } from '../config/environmentConfig';
  * @param config Environment configuration
  * @returns A response with the processed video
  */
-export async function handleVideoRequest(request: Request, config: EnvironmentConfig): Promise<Response> {
+export async function handleVideoRequest(
+  request: Request, 
+  config: EnvironmentConfig, 
+  env?: EnvVariables
+): Promise<Response> {
   try {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -63,7 +67,7 @@ export async function handleVideoRequest(request: Request, config: EnvironmentCo
     };
 
     // Use the video transformation service
-    const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo);
+    const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo, env);
     
     // Store the response in cache if it's cacheable
     if (response.headers.get('Cache-Control')?.includes('max-age=')) {

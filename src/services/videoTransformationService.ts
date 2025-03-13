@@ -20,7 +20,12 @@ export async function transformVideo(
   request: Request,
   options: VideoTransformOptions,
   pathPatterns: PathPattern[],
-  debugInfo?: DebugInfo
+  debugInfo?: DebugInfo,
+  env?: { 
+    ASSETS?: { 
+      fetch: (request: Request) => Promise<Response> 
+    } 
+  }
 ): Promise<Response> {
   try {
     debug('VideoTransformationService', 'Transforming video', {
@@ -37,6 +42,7 @@ export async function transformVideo(
       options,
       pathPatterns,
       debugInfo,
+      env,
     });
 
     return await command.execute();

@@ -56,6 +56,11 @@ export interface VideoTransformContext {
   options: VideoTransformOptions;
   pathPatterns: PathPattern[];
   debugInfo?: DebugInfo;
+  env?: { 
+    ASSETS?: { 
+      fetch: (request: Request) => Promise<Response> 
+    } 
+  }; // Environment variables including ASSETS binding
 }
 
 export type TransformParamValue = string | number | boolean | null;
@@ -76,55 +81,69 @@ export class TransformVideoCommand {
    * @returns A response with the transformed video
    */
   /**
-   * Helper function to generate debug HTML with diagnostic information
+   * Helper function to generate a debug page using static assets
    * @param diagnosticsInfo - The diagnostic information to display
    * @param isError - Whether this is an error debug report
-   * @returns HTML string with debug report
+   * @returns Promise<Response> - Response with debug HTML
    */
-  private generateDebugHtml(diagnosticsInfo: DiagnosticsInfo, isError = false): string {
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Resizer Debug Report</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-  <link rel="stylesheet" href="debug.css">
-  <script>
-    // Store diagnostics data directly in a global variable
-    window.DIAGNOSTICS_DATA = ${JSON.stringify(diagnosticsInfo)};
-    window.IS_ERROR = ${isError};
-  </script>
-</head>
-<body>
-  <div class="header">
-    <div class="container">
-      <div class="d-flex justify-content-between align-items-center">
-        <h1 class="m-0">
-          <i class="bi bi-film me-2"></i>Video Resizer Debug
-        </h1>
-        <div class="text-white-50">
-          <i class="bi bi-clock me-1"></i><span id="current-time">${new Date().toLocaleString()}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="container">
-    <div id="debug-content"></div>
-    <div class="footer">
-      <p>
-        Video Resizer Debug Report
-      </p>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="debug-renderer.js"></script>
-</body>
-</html>`;
+  private async getDebugPageResponse(diagnosticsInfo: DiagnosticsInfo, isError = false): Promise<Response> {
+    // Check if we have access to the ASSETS binding
+    if (!this.context.env?.ASSETS) {
+      // Fallback to a simple HTML page if ASSETS binding is not available
+      return new Response(
+        `<html><body><h1>Debug Data</h1><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
+        {
+          status: isError ? 500 : 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        }
+      );
+    }
+    
+    // Encode the diagnostics data as URL parameters to pass to the static debug.html page
+    const encodedData = encodeURIComponent(JSON.stringify(diagnosticsInfo));
+    
+    // Create a new URL for the debug.html page
+    const debugUrl = new URL(this.context.request.url);
+    debugUrl.pathname = '/debug.html';
+    debugUrl.search = `?data=${encodedData}&error=${isError}`;
+    
+    // Create a new request for the debug.html page
+    const debugRequest = new Request(debugUrl.toString(), {
+      method: 'GET',
+      headers: new Headers({
+        'Accept': 'text/html'
+      })
+    });
+    
+    // Fetch the debug.html page from the ASSETS binding
+    try {
+      const response = await this.context.env.ASSETS.fetch(debugRequest);
+      
+      // Return the response with appropriate headers
+      return new Response(response.body, {
+        status: isError ? 500 : 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store'
+        }
+      });
+    } catch (err) {
+      // If there's an error fetching the debug page, fallback to a simple response
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      return new Response(
+        `<html><body><h1>Error loading debug page</h1><p>${errorMessage}</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
+        {
+          status: isError ? 500 : 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        }
+      );
+    }
   }
 
   async execute(): Promise<Response> {
@@ -358,14 +377,7 @@ export class TransformVideoCommand {
         
         // Return debug report HTML if requested and debug is enabled
         if (debugView) {
-          const debugHtml = this.generateDebugHtml(diagnosticsInfo, false);
-          return new Response(debugHtml, {
-            status: 200,
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store'
-            }
-          });
+          return await this.getDebugPageResponse(diagnosticsInfo, false);
         }
       }
       
@@ -416,14 +428,7 @@ export class TransformVideoCommand {
         
         // Return debug report HTML if requested
         if (debugView) {
-          const debugHtml = this.generateDebugHtml(diagnosticsInfo, true);
-          return new Response(debugHtml, {
-            status: 500,
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store'
-            }
-          });
+          return await this.getDebugPageResponse(diagnosticsInfo, true);
         }
       }
       

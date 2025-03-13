@@ -44,7 +44,7 @@ export default {
       const shouldSkip = skipPatterns.some((pattern) => pattern(request.headers));
 
       if (!shouldSkip && runtimeConfig) {
-        return handleVideoRequest(request, runtimeConfig);
+        return handleVideoRequest(request, runtimeConfig, env);
       }
 
       info('Worker', 'Skipping video processing, passing through request');
