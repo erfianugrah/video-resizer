@@ -306,7 +306,9 @@ export class TransformVideoCommand {
         
         // Return debug report HTML if requested and debug is enabled
         if (debugView) {
-          const debugHtml = createDebugReport(diagnosticsInfo);
+          // Get env from the request if available (for Cloudflare Workers)
+          const env = request.cf ? request.cf.__env : undefined;
+          const debugHtml = createDebugReport(diagnosticsInfo, env);
           return new Response(debugHtml, {
             status: 200,
             headers: {
@@ -364,7 +366,9 @@ export class TransformVideoCommand {
         
         // Return debug report HTML if requested
         if (debugView) {
-          const debugHtml = createDebugReport(diagnosticsInfo);
+          // Get env from the request if available (for Cloudflare Workers)
+          const env = this.context.request.cf ? this.context.request.cf.__env : undefined;
+          const debugHtml = createDebugReport(diagnosticsInfo, env);
           return new Response(debugHtml, {
             status: 500,
             headers: {

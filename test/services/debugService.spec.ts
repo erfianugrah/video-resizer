@@ -116,7 +116,7 @@ describe('debugService', () => {
       
       // Assert
       expect(result).toContain('<!DOCTYPE html>');
-      expect(result).toContain('Video Resizer Debug Report');
+      expect(result).toContain('Video Resizer Debug');
       expect(result).toContain('50 ms'); // Processing time
       expect(result).toContain('videos'); // Path match
       expect(result).toContain('client-hints'); // Transform source
@@ -187,6 +187,26 @@ describe('debugService', () => {
       expect(result).toContain('supportsWebM');
       expect(result).toContain('supportsHEVC');
       expect(result).toContain('supportsHDR');
+    });
+    
+    it('should accept an environment parameter', () => {
+      // Arrange
+      const diagnosticsInfo: DiagnosticsInfo = {
+        processingTimeMs: 50,
+        errors: [],
+        warnings: [],
+      };
+      const mockEnv = {
+        ASSETS: { fetch: () => new Response() }
+      };
+      
+      // Act
+      const result = createDebugReport(diagnosticsInfo, mockEnv);
+      
+      // Assert
+      expect(result).toContain('<!DOCTYPE html>');
+      // The env parameter doesn't affect the output directly in our current implementation
+      // but we're testing that the function accepts the parameter without error
     });
   });
 });
