@@ -20,7 +20,9 @@
 				"baseUrl": null,
 				"originUrl": null,
 				"cacheTtl": 3600,
-				"captureGroups": ["videoId"],
+				"captureGroups": [
+					"videoId"
+				],
 				"quality": "high"
 			},
 			{
@@ -30,7 +32,9 @@
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
 				"cacheTtl": 86400,
-				"captureGroups": ["videoId"]
+				"captureGroups": [
+					"videoId"
+				]
 			},
 			{
 				"name": "shorts",
@@ -39,7 +43,9 @@
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
 				"cacheTtl": 43200,
-				"captureGroups": ["videoId"],
+				"captureGroups": [
+					"videoId"
+				],
 				"quality": "medium"
 			},
 			{
@@ -65,9 +71,9 @@
 		"production": {
 			"vars": {
 				"ENVIRONMENT": "production",
-				"DEBUG_ENABLED": "false",
-				"DEBUG_VERBOSE": "false",
-				"DEBUG_INCLUDE_HEADERS": "false",
+				"DEBUG_ENABLED": "true",
+				"DEBUG_VERBOSE": "true",
+				"DEBUG_INCLUDE_HEADERS": "true",
 				"PATH_PATTERNS": [
 					{
 						"name": "videos",
@@ -76,7 +82,9 @@
 						"baseUrl": null,
 						"originUrl": null,
 						"cacheTtl": 86400,
-						"captureGroups": ["videoId"],
+						"captureGroups": [
+							"videoId"
+						],
 						"quality": "high"
 					},
 					{
@@ -86,7 +94,9 @@
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
 						"cacheTtl": 604800,
-						"captureGroups": ["videoId"]
+						"captureGroups": [
+							"videoId"
+						]
 					},
 					{
 						"name": "shorts",
@@ -95,7 +105,9 @@
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
 						"cacheTtl": 172800,
-						"captureGroups": ["videoId"],
+						"captureGroups": [
+							"videoId"
+						],
 						"quality": "medium"
 					},
 					{
@@ -129,7 +141,9 @@
 						"baseUrl": null,
 						"originUrl": null,
 						"cacheTtl": 3600,
-						"captureGroups": ["videoId"],
+						"captureGroups": [
+							"videoId"
+						],
 						"quality": "high"
 					},
 					{
@@ -139,7 +153,9 @@
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
 						"cacheTtl": 86400,
-						"captureGroups": ["videoId"]
+						"captureGroups": [
+							"videoId"
+						]
 					},
 					{
 						"name": "shorts",
@@ -148,7 +164,9 @@
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
 						"cacheTtl": 43200,
-						"captureGroups": ["videoId"],
+						"captureGroups": [
+							"videoId"
+						],
 						"quality": "medium"
 					},
 					{
