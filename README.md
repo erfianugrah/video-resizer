@@ -335,6 +335,8 @@ Derivatives are preset configurations for common use cases:
 
 - **Width/Height**: Must be between 10-2000 pixels. Larger dimensions will be rejected.
 - **Time**: Limited to 0-30s range for frame extraction. Outside this range may not work.
+- **Duration**: While any positive duration can be specified, videos longer than ~30 seconds may be truncated due to Cloudflare Media Transformation API limitations.
+- **Video Length**: Due to Cloudflare Media Transformation limitations, videos longer than approximately 30 seconds may be truncated when streamed. This is a platform limitation, not a configuration issue.
 - **Format**: Only applies when `mode=frame`. Using with video mode has no effect.
 - **Loop/Autoplay/Muted**: Only apply to `mode=video`. Using with frame mode has no effect.
 - **Autoplay**: Most browsers require `muted=true` for autoplay to work properly.
@@ -439,11 +441,45 @@ A sprite sheet generated from the first 10 seconds:
 
 ## Deployment
 
+### Quick Deployment
+
 Deploy with Wrangler:
 
 ```bash
 npm run deploy
 ```
+
+### Deploying with Static Assets
+
+The project uses Cloudflare's Assets functionality to serve the debug interface and other static assets. Make sure your `wrangler.jsonc` file includes the proper assets configuration:
+
+```json
+{
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  }
+}
+```
+
+For production deployments:
+
+```bash
+npm run deploy:prod
+```
+
+For staging deployments:
+
+```bash
+npm run deploy:staging
+```
+
+### Deployment Notes
+
+1. Make sure your compatibility date is set correctly
+2. Verify that the assets directory exists and contains all necessary files
+3. The ASSETS binding is required for the debug interface to function correctly
+4. You can customize environmental variables in your deployment configuration
 
 ## Development
 
@@ -510,7 +546,7 @@ npm test -- -t "test name"
 
 ## Static Assets Support
 
-The video-resizer now includes integrated static asset hosting through Cloudflare Workers Sites:
+The video-resizer includes integrated static asset hosting through Cloudflare Workers Assets:
 
 1. **Static Web Interface**:
    - Landing page for service documentation
@@ -518,16 +554,55 @@ The video-resizer now includes integrated static asset hosting through Cloudflar
    - Visual formatting for easier usage
 
 2. **Enhanced Debug UI**:
-   - Client-side debug visualization
-   - Responsive debug reports
-   - Performance metrics display
-   - Parameter testing tools
+   - Pretty-printed JSON viewer with copy and expand/collapse functionality
+   - Media preview section showing the actual transformed video or image
+   - Syntax highlighting with Prism.js for JSON data
+   - Responsive design that works on all device sizes
+   - Controls to view and copy the full diagnostic information
+   - Improved display of video transformation parameters
+   - Browser capabilities section showing supported formats and features
+   - Enhanced CSS styling for the media preview and JSON viewer
 
 3. **Implementation Details**:
-   - Configured via `site` section in wrangler.jsonc
+   - Configured via `assets` property in wrangler.jsonc
    - Assets served from ./public directory
    - Includes HTML, CSS, and JavaScript files
    - Seamlessly integrated with the API functionality
+   - Proper binding setup for worker code to access static assets
+
+### Debug Interface Features
+
+When you add `?debug=view` to any video URL, the worker will display an enhanced debug interface that includes:
+
+1. **Performance Metrics**:
+   - Processing time in milliseconds
+   - Cache status indication
+   - Device detection information
+
+2. **Video Transformation Details**:
+   - All applied parameters and their values
+   - Source video information
+   - Path pattern matching details
+   - Transformation mode and settings
+
+3. **Client Information**:
+   - Device type detection (mobile, tablet, desktop)
+   - Client hints support status
+   - Network quality estimation
+   - Browser video capabilities
+
+4. **Interactive Features**:
+   - Live preview of the transformed video
+   - Expandable/collapsible JSON data
+   - Copyable diagnostic information
+   - Visual indicators for important settings
+
+5. **Error Reporting**:
+   - Detailed error messages
+   - Warning indicators for potential issues
+   - Troubleshooting suggestions
+
+The debug interface is served through Cloudflare's Assets functionality, ensuring fast loading times and reliable delivery.
 
 ## Troubleshooting
 

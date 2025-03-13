@@ -57,62 +57,96 @@
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
   <script>
-    // Update current time
-    function updateCurrentTime() {
-      document.getElementById('current-time').textContent = new Date().toLocaleString();
-    }
+    // Prevent interference from browser extensions
+    (function() { 
+      "use strict";
+      
+      // Update current time
+      function updateCurrentTime() {
+        document.getElementById('current-time').textContent = new Date().toLocaleString();
+      }
     
     // Extract current URL without debug params for preview
     function getOriginalUrl() {
-      const url = new URL(window.location.href);
-      
-      // Remove debug-specific parameters
-      url.searchParams.delete('data');
-      url.searchParams.delete('error');
-      
-      // Convert debug=view to an actual URL
-      const pathParts = url.pathname.split('/');
-      if (pathParts[pathParts.length - 1] === 'debug.html') {
-        // Extract original path from referrer if available
-        if (document.referrer) {
-          const referrerUrl = new URL(document.referrer);
-          // Remove the debug=view parameter
-          referrerUrl.searchParams.delete('debug');
-          return referrerUrl.href;
+      // Try direct access to originalUrl in diagnostics data (most reliable)
+      if (window.DIAGNOSTICS_DATA && window.DIAGNOSTICS_DATA.originalUrl) {
+        try {
+          // Create a clean version of the original URL without debug parameter
+          const originalUrl = new URL(window.DIAGNOSTICS_DATA.originalUrl);
+          originalUrl.searchParams.delete('debug');
+          console.log('Using originalUrl from diagnostics:', originalUrl.href);
+          return originalUrl.href;
+        } catch (e) {
+          console.error('Error using originalUrl from diagnostics:', e);
         }
       }
       
-      // Return at least the domain if we can't determine the original URL
-      return url.origin;
+      // Try to reconstruct from referrer
+      if (document.referrer && document.referrer.length > 0) {
+        try {
+          const referrerUrl = new URL(document.referrer);
+          // Remove debug parameter
+          referrerUrl.searchParams.delete('debug');
+          console.log('Using referrer URL:', referrerUrl.href);
+          return referrerUrl.href;
+        } catch (e) {
+          console.error('Error using referrer URL:', e);
+        }
+      }
+      
+      // Last resort: try to reconstruct from current URL and diagnostics
+      try {
+        const currentUrl = new URL(window.location.href);
+        
+        // If we have a videoId in the diagnostics, use it to construct the URL
+        if (window.DIAGNOSTICS_DATA && window.DIAGNOSTICS_DATA.videoId) {
+          // Copy all query parameters except debug-related ones
+          const params = new URLSearchParams(window.location.search);
+          params.delete('data');
+          params.delete('error');
+          params.delete('debug');
+          
+          // Construct URL with the video ID
+          const videoPath = window.DIAGNOSTICS_DATA.videoId;
+          const reconstructedUrl = `${currentUrl.origin}/${videoPath}${params.toString() ? '?' + params.toString() : ''}`;
+          console.log('Reconstructed URL from videoId:', reconstructedUrl);
+          return reconstructedUrl;
+        }
+        
+        // If we have a path match but no video ID, try to extract from path match
+        if (window.DIAGNOSTICS_DATA && window.DIAGNOSTICS_DATA.pathMatch) {
+          // Path match might have useful information for constructing the URL
+          console.log('Using pathMatch:', window.DIAGNOSTICS_DATA.pathMatch);
+          return `${currentUrl.origin}/${window.DIAGNOSTICS_DATA.pathMatch}`;
+        }
+        
+        // Fallback to origin + some default path
+        console.log('Using fallback URL construction');
+        return `${currentUrl.origin}/videos/sample.mp4`;
+      } catch (e) {
+        console.error('Error reconstructing URL:', e);
+        return window.location.origin + '/videos/sample.mp4';
+      }
     }
     
-    // Parse debug data from URL parameters
+    // Parse debug data from URL parameters or window object
     function parseDebugData() {
       const urlParams = new URLSearchParams(window.location.search);
       const dataParam = urlParams.get('data');
       const isError = urlParams.get('error') === 'true';
       
+      // Check if we already have diagnostics data in the window object (set via inline script)
+      if (window.DIAGNOSTICS_DATA) {
+        processDebugData(window.DIAGNOSTICS_DATA, isError);
+        return;
+      }
+      
+      // Otherwise, try to parse from URL parameter
       if (dataParam) {
         try {
           // Parse the JSON data
           const diagnosticsInfo = JSON.parse(decodeURIComponent(dataParam));
-          
-          // Make diagnostic data available globally for debugging
-          window.DIAGNOSTICS_DATA = diagnosticsInfo;
-          
-          // Hide placeholder
-          document.getElementById('placeholder-message').classList.add('d-none');
-          
-          // Show debug content
-          const debugContentElement = document.getElementById('debug-content');
-          debugContentElement.classList.remove('d-none');
-          
-          // Build debug report HTML
-          let html = buildDebugReport(diagnosticsInfo, isError);
-          debugContentElement.innerHTML = html;
-          
-          // Initialize syntax highlighting
-          Prism.highlightAll();
+          processDebugData(diagnosticsInfo, isError);
         } catch (e) {
           console.error('Error parsing debug data:', e);
           document.getElementById('placeholder-message').innerHTML = `
@@ -125,11 +159,53 @@
       }
     }
     
+    // Process the debug data and display it
+    function processDebugData(diagnosticsInfo, isError) {
+      // Make diagnostic data available globally for debugging (if not already set)
+      window.DIAGNOSTICS_DATA = diagnosticsInfo;
+      
+      console.log('Processing debug data:', diagnosticsInfo);
+      
+      // Hide placeholder
+      document.getElementById('placeholder-message').classList.add('d-none');
+      
+      // Show debug content
+      const debugContentElement = document.getElementById('debug-content');
+      debugContentElement.classList.remove('d-none');
+      
+      // Build debug report HTML
+      let html = buildDebugReport(diagnosticsInfo, isError);
+      debugContentElement.innerHTML = html;
+      
+      // Initialize syntax highlighting
+      Prism.highlightAll();
+    }
+    
     // Build debug report HTML from diagnostics info
     function buildDebugReport(diagnosticsInfo, isError) {
-      // Determine if we should show the media preview
-      const hasPreviewableContent = diagnosticsInfo.videoId && !isError;
+      // Handle null or undefined diagnosticsInfo
+      if (!diagnosticsInfo) {
+        console.error('No diagnostics info provided to buildDebugReport');
+        return `
+          <div class="alert alert-danger">
+            <h4><i class="bi bi-exclamation-triangle me-2"></i>Error</h4>
+            <p>No diagnostic information available. Debug data was not properly passed to the template.</p>
+          </div>
+        `;
+      }
+      
+      console.log('Building debug report with data:', diagnosticsInfo);
+      
+      // Make sure originalUrl exists
+      if (!diagnosticsInfo.originalUrl && window.location.href) {
+        console.log('Adding missing originalUrl to diagnostics data');
+        diagnosticsInfo.originalUrl = window.location.href;
+      }
+      
+      // Determine if we should show the media preview (show if we have videoId or originalUrl)
+      const hasPreviewableContent = (diagnosticsInfo.videoId || diagnosticsInfo.originalUrl) && !isError;
       const originalUrl = getOriginalUrl();
+      console.log('Preview URL:', originalUrl, 'Can preview:', hasPreviewableContent);
       
       // Create stats cards at the top
       let html = `
@@ -440,19 +516,34 @@
                            diagnosticsInfo.transformParams.mode === 'video';
         
         if (isVideoMode) {
-          // Show video player
-          const videoAttributes = 'controls class="img-fluid rounded shadow"';
+          // Log the video URL for troubleshooting
+          console.log('Video URL for preview:', originalUrl);
+          
+          // Show video player - directly use the video URL as the src attribute, without specifying type to let browser autodetect
           html += `
-            <video ${videoAttributes} style="max-width: 100%; max-height: 400px;">
-              <source src="${originalUrl}" type="video/mp4">
-              Your browser does not support the video tag.
+            <video 
+              src="${originalUrl}" 
+              controls
+              class="img-fluid rounded shadow" 
+              preload="metadata"
+              style="max-width: 100%; max-height: 400px;">
+              Your browser does not support the video tag or the file format.
             </video>
+            <div class="mt-2 small text-muted">
+              Video URL: ${originalUrl}
+            </div>
           `;
         } else {
+          // Log the image URL for troubleshooting
+          console.log('Image URL for preview:', originalUrl);
+          
           // Show image
           html += `
             <img src="${originalUrl}" class="img-fluid rounded shadow" 
                  style="max-width: 100%; max-height: 400px;" alt="Transformed media">
+            <div class="mt-2 small text-muted">
+              Image URL: ${originalUrl}
+            </div>
           `;
         }
         
@@ -575,6 +666,9 @@
         }
       }, 500);
     });
+    
+    // Close the IIFE to protect from external interference
+    })();
   </script>
 </body>
 </html>

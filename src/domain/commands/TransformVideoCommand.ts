@@ -15,15 +15,11 @@ import {
   isValidTime, 
   isValidDuration, 
   isValidFormatForMode,
-  isValidQuality,
-  isValidCompression,
-  isValidPreload,
-  isValidPlaybackOptions,
-  parseTimeString 
+  isValidPlaybackOptions
 } from '../../utils/transformationUtils';
 import { determineCacheConfig } from '../../utils/cacheUtils';
-import { hasClientHints, getVideoSizeFromClientHints, getNetworkQuality } from '../../utils/clientHints';
-import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from '../../utils/deviceUtils';
+import { hasClientHints, getNetworkQuality } from '../../utils/clientHints';
+import { hasCfDeviceType } from '../../utils/deviceUtils';
 import { detectBrowserVideoCapabilities, getDeviceTypeFromUserAgent } from '../../utils/userAgentUtils';
 import { 
   DebugInfo, 
@@ -87,11 +83,17 @@ export class TransformVideoCommand {
    * @returns Promise<Response> - Response with debug HTML
    */
   private async getDebugPageResponse(diagnosticsInfo: DiagnosticsInfo, isError = false): Promise<Response> {
+    console.log('Generating debug page with diagnostics info:', diagnosticsInfo);
+    
     // Check if we have access to the ASSETS binding
     if (!this.context.env?.ASSETS) {
+      console.log('ASSETS binding not available, using fallback HTML');
+      // Import createDebugReport for the fallback option
+      const { createDebugReport } = await import('../../utils/debugHeadersUtils');
+      
       // Fallback to a simple HTML page if ASSETS binding is not available
       return new Response(
-        `<html><body><h1>Debug Data</h1><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
+        createDebugReport(diagnosticsInfo),
         {
           status: isError ? 500 : 200,
           headers: {
@@ -120,10 +122,60 @@ export class TransformVideoCommand {
     
     // Fetch the debug.html page from the ASSETS binding
     try {
+      // Log the debug request URL for troubleshooting
+      console.log('Debug Request URL:', debugUrl.toString());
+      
       const response = await this.context.env.ASSETS.fetch(debugRequest);
       
-      // Return the response with appropriate headers
-      return new Response(response.body, {
+      // Log response status for troubleshooting
+      console.log('Debug page response status:', response.status);
+      
+      if (!response.ok) {
+        console.log('Error fetching debug page, falling back to direct HTML injection');
+        // Fall back to the createDebugReport if we can't fetch the debug page
+        const { createDebugReport } = await import('../../utils/debugHeadersUtils');
+        return new Response(
+          createDebugReport(diagnosticsInfo),
+          {
+            status: isError ? 500 : 200,
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-store'
+            }
+          }
+        );
+      }
+      
+      // Return the response with appropriate headers and ensure data is passed
+      const html = await response.text();
+      
+      // Make sure originalUrl is set in the diagnostics info
+      if (!diagnosticsInfo.originalUrl) {
+        diagnosticsInfo.originalUrl = this.context.request.url;
+      }
+      
+      // Add a warning about video length limitations if we have a video ID
+      if (diagnosticsInfo.videoId && !diagnosticsInfo.warnings) {
+        diagnosticsInfo.warnings = [];
+      }
+      
+      if (diagnosticsInfo.videoId && Array.isArray(diagnosticsInfo.warnings)) {
+        diagnosticsInfo.warnings.push(
+          "Note: Due to Cloudflare Media Transformation limitations, videos longer than ~30 seconds may be truncated when previewed."
+        );
+      }
+      
+      const htmlWithData = html.replace(
+        '<body>',
+        `<body>
+        <script>
+          // Pre-load diagnostic data
+          window.DIAGNOSTICS_DATA = ${JSON.stringify(diagnosticsInfo)};
+          console.log('Debug data loaded:', window.DIAGNOSTICS_DATA);
+        </script>`
+      );
+      
+      return new Response(htmlWithData, {
         status: isError ? 500 : 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
@@ -131,6 +183,7 @@ export class TransformVideoCommand {
         }
       });
     } catch (err) {
+      console.error('Exception in debug page generation:', err);
       // If there's an error fetching the debug page, fallback to a simple response
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       return new Response(
@@ -154,6 +207,7 @@ export class TransformVideoCommand {
     const diagnosticsInfo: DiagnosticsInfo = {
       errors: [],
       warnings: [],
+      originalUrl: this.context.request.url // Store the original URL for debug view
     };
     
     try {
@@ -363,7 +417,7 @@ export class TransformVideoCommand {
       // Add debug headers if debug is enabled
       if (this.context.debugInfo?.isEnabled) {
         // Import debug service functions dynamically to avoid circular dependencies
-        const { addDebugHeaders, createDebugReport } = await import('../../services/debugService');
+        const { addDebugHeaders } = await import('../../services/debugService');
         enhancedResponse = addDebugHeaders(
           enhancedResponse, 
           this.context.debugInfo, 
@@ -413,7 +467,7 @@ export class TransformVideoCommand {
       // Add debug headers if debug is enabled
       if (this.context.debugInfo?.isEnabled) {
         // Import debug services dynamically
-        const { addDebugHeaders, createDebugReport } = await import('../../services/debugService');
+        const { addDebugHeaders } = await import('../../services/debugService');
         errorResponse = addDebugHeaders(
           errorResponse, 
           this.context.debugInfo, 

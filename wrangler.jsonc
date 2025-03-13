@@ -7,10 +7,9 @@
 		"nodejs_compat"
 	],
 	"account_id": "25f21f141824546aa72c74451a11b419",
-	"site": {
-		"bucket": "./public",
-		"include": ["**/*.html", "**/*.css", "**/*.js", "**/*.svg", "**/*.png", "**/*.jpg"],
-		"exclude": []
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
 	},
 	"vars": {
 		"ENVIRONMENT": "development",
@@ -74,6 +73,10 @@
 	],
 	"env": {
 		"production": {
+			"assets": {
+				"directory": "./public",
+				"binding": "ASSETS"
+			},
 			"vars": {
 				"ENVIRONMENT": "production",
 				"DEBUG_ENABLED": "true",
@@ -133,6 +136,10 @@
 			]
 		},
 		"staging": {
+			"assets": {
+				"directory": "./public",
+				"binding": "ASSETS"
+			},
 			"vars": {
 				"ENVIRONMENT": "staging",
 				"DEBUG_ENABLED": "true",

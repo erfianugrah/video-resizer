@@ -37,6 +37,8 @@ export interface DiagnosticsInfo {
   // New fields for content negotiation and service architecture
   videoFormat?: string;
   estimatedBitrate?: number;
+  // Original URL for debug view
+  originalUrl?: string;
 }
 
 /**
