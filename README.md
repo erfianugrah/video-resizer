@@ -4,6 +4,10 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 > **⚠️ Important Note on Parameter Support:** While this documentation lists many parameters, only those officially supported by Cloudflare (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented as convenience features through our worker but may not be fully supported by the underlying Cloudflare API.
 
+> **⚠️ Video Transformation Limitations:** 
+> 1. The `time` parameter in Cloudflare's Media Transformation API is restricted to 0-30 seconds, limiting where you can start video playback or frame extraction.
+> 2. Some users have reported that videos longer than approximately 30 seconds may be truncated when processed through the transformation service. This appears to be a platform behavior rather than a configuration issue.
+
 ## Features
 
 ### Core Functionality
@@ -28,6 +32,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - **Service-Oriented Design** - Modular services with separation of concerns
 - **Command Pattern** - Simplified business logic flow
 - **Comprehensive Testing** - Unit, parametrized, and integration tests
+- **Circular Dependency Prevention** - Dynamic imports to avoid circular dependencies
 
 ## How It Works
 
@@ -51,34 +56,44 @@ Follow these steps to configure the video-resizer for your environment:
    ```
 
 2. **Configure Your Wrangler Settings**
-   Create or edit your `wrangler.toml` file with your Cloudflare account details:
-   ```toml
-   name = "video-resizer"
-   main = "src/index.ts"
-   compatibility_date = "2023-09-04"
-   
-   account_id = "your-account-id"
-   workers_dev = true
-   
-   [vars]
-   DEBUG_ENABLED = "false"
+   Create or edit your `wrangler.jsonc` file with your Cloudflare account details:
+   ```jsonc
+   {
+     "$schema": "https://json.schemastore.org/wrangler.json",
+     "name": "video-resizer",
+     "main": "src/index.ts",
+     "compatibility_date": "2023-09-04",
+     "compatibility_flags": ["nodejs_compat"],
+     "account_id": "your-account-id",
+     
+     "assets": {
+       "directory": "./public",
+       "binding": "ASSETS"
+     },
+     
+     "vars": {
+       "ENVIRONMENT": "development",
+       "DEBUG_ENABLED": "true",
+       "DEBUG_VERBOSE": "true",
+       "DEBUG_INCLUDE_HEADERS": "true",
+       "PATH_PATTERNS": []
+     }
+   }
    ```
 
 3. **Define Path Patterns**
-   Configure which URL patterns should be processed by adding the `PATH_PATTERNS` variable to your `wrangler.toml` file:
-   ```toml
-   [vars]
-   PATH_PATTERNS = '''
-   [
+   Configure which URL patterns should be processed by adding the `PATH_PATTERNS` array to your `wrangler.jsonc` file:
+   ```jsonc
+   "PATH_PATTERNS": [
      {
        "name": "videos",
        "matcher": "^/videos/", 
        "processPath": true,
        "originUrl": null,
-       "cacheTtl": 3600
+       "cacheTtl": 3600,
+       "captureGroups": ["videoId"]
      }
    ]
-   '''
    ```
 
 4. **Verify Media Transformations Are Enabled**
@@ -97,6 +112,51 @@ Follow these steps to configure the video-resizer for your environment:
    ```
    https://your-domain.com/videos/sample.mp4?width=640&height=360
    ```
+
+### Multi-Environment Configuration
+
+Video-resizer supports multiple environment configurations (development, staging, production) using Wrangler's environment feature:
+
+```jsonc
+"env": {
+  "production": {
+    "assets": {
+      "directory": "./public",
+      "binding": "ASSETS"
+    },
+    "vars": {
+      "ENVIRONMENT": "production",
+      "DEBUG_ENABLED": "false",
+      "DEBUG_VERBOSE": "false",
+      "DEBUG_INCLUDE_HEADERS": "false",
+      "PATH_PATTERNS": [
+        {
+          "name": "videos",
+          "matcher": "^/videos/",
+          "processPath": true,
+          "cacheTtl": 86400
+        }
+      ]
+    }
+  },
+  "staging": {
+    "assets": {
+      "directory": "./public",
+      "binding": "ASSETS" 
+    },
+    "vars": {
+      "ENVIRONMENT": "staging",
+      "DEBUG_ENABLED": "true"
+    }
+  }
+}
+```
+
+To deploy to specific environments:
+```bash
+npm run deploy:prod   # Deploy to production
+npm run deploy:staging  # Deploy to staging
+```
 
 ### Detailed Configuration Options
 
@@ -199,6 +259,18 @@ PATH_PATTERNS = [
    }
    ```
 
+### Debug Configuration
+
+The service includes comprehensive debugging capabilities that can be enabled through environment variables:
+
+```jsonc
+"vars": {
+  "DEBUG_ENABLED": "true",  // Enable debug mode
+  "DEBUG_VERBOSE": "true",  // Include verbose debug information
+  "DEBUG_INCLUDE_HEADERS": "true"  // Include request/response headers in debug output
+}
+```
+
 ## Usage Examples
 
 ### Basic Usage
@@ -239,6 +311,64 @@ To:
 ```
 /cdn-cgi/media/width=640/https://videos.example.com/custom/path/videos/sample.mp4
 ```
+
+## Enhanced Debug Interface
+
+Video-resizer includes a comprehensive HTML debug interface for easier troubleshooting and visualization of transformations.
+
+### Accessing the Debug Interface
+
+Add `?debug=view` to any video URL to access the debug interface:
+```
+https://your-domain.com/videos/sample.mp4?width=720&height=480&debug=view
+```
+
+### Debug Interface Features
+
+1. **Performance Metrics**:
+   - Processing time in milliseconds
+   - Cache status indication
+   - Device detection information
+
+2. **Video Transformation Details**:
+   - All applied parameters and their values
+   - Source video information
+   - Path pattern matching details
+   - Transformation mode and settings
+
+3. **Client Information**:
+   - Device type detection (mobile, tablet, desktop)
+   - Client hints support status
+   - Network quality estimation
+   - Browser video capabilities
+
+4. **Interactive Features**:
+   - Live preview of the transformed video
+   - Expandable/collapsible JSON data
+   - Copyable diagnostic information
+   - Visual indicators for important settings
+
+5. **Error Reporting**:
+   - Detailed error messages
+   - Warning indicators for potential issues
+   - Troubleshooting suggestions
+
+### Debugging via Headers
+
+You can also enable debugging information in response headers without the visual interface:
+
+```
+https://your-domain.com/videos/sample.mp4?width=720&debug=true
+```
+
+This will add detailed debug headers to the response:
+- `X-Video-Resizer-Debug`: Indicates debug mode is enabled
+- `X-Processing-Time-Ms`: Time taken to process the request
+- `X-Transform-Source`: Source of the transformation
+- `X-Device-Type`: Detected device type
+- `X-Network-Quality`: Estimated network quality
+- `X-Cache-Enabled`: Cache status
+- `X-Cache-TTL`: Cache time-to-live
 
 ## Caching Strategy
 
@@ -335,8 +465,8 @@ Derivatives are preset configurations for common use cases:
 
 - **Width/Height**: Must be between 10-2000 pixels. Larger dimensions will be rejected.
 - **Time**: Limited to 0-30s range for frame extraction. Outside this range may not work.
-- **Duration**: While any positive duration can be specified, videos longer than ~30 seconds may be truncated due to Cloudflare Media Transformation API limitations.
-- **Video Length**: Due to Cloudflare Media Transformation limitations, videos longer than approximately 30 seconds may be truncated when streamed. This is a platform limitation, not a configuration issue.
+- **Time Parameter**: The `time` parameter (starting point) must be between 0-30 seconds. This is a documented limitation of the Cloudflare Media Transformation API.
+- **Duration & Video Length**: Some users have reported that videos longer than approximately 30 seconds may be truncated when processed, although this is not explicitly documented as a hard limit in Cloudflare's API.
 - **Format**: Only applies when `mode=frame`. Using with video mode has no effect.
 - **Loop/Autoplay/Muted**: Only apply to `mode=video`. Using with frame mode has no effect.
 - **Autoplay**: Most browsers require `muted=true` for autoplay to work properly.
@@ -416,29 +546,6 @@ These features leverage our worker's custom logic and may have varying levels of
 - **Short-Form Videos (Medium Cache TTL)**: [cdn.erfi.dev/shorts/rocky.mp4](https://cdn.erfi.dev/shorts/rocky.mp4)
 - **Standard Videos (Regular Cache TTL)**: [cdn.erfi.dev/rocky.mp4](https://cdn.erfi.dev/rocky.mp4)
 
-## Visual Examples
-
-Here are some visual examples of the transformations:
-
-### Original vs. Thumbnail
-The original video and a thumbnail extracted at 5 seconds:
-
-| Original Video | Thumbnail at 5s |
-|----------------|-----------------|
-| <video src="https://cdn.erfi.dev/rocky.mp4" width="320" controls></video> | <img src="https://cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=320&height=180" alt="Thumbnail at 5s"> |
-
-### Different Fit Modes
-Comparison of different fit modes at 640x360:
-
-| Contain | Cover | Scale-Down |
-|---------|-------|------------|
-| <img src="https://cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=640&height=360&fit=contain" alt="Contain mode"> | <img src="https://cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=640&height=360&fit=cover" alt="Cover mode"> | <img src="https://cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=640&height=360&fit=scale-down" alt="Scale-down mode"> |
-
-### Sprite Sheet
-A sprite sheet generated from the first 10 seconds:
-
-<img src="https://cdn.erfi.dev/rocky.mp4?mode=spritesheet&time=0s&duration=10s&width=160&height=90" alt="Sprite sheet" width="800">
-
 ## Deployment
 
 ### Quick Deployment
@@ -497,18 +604,29 @@ npm run deploy:staging
    ```
 
 3. **Create a local development configuration:**
-   Create a `wrangler.toml` file with your local development settings:
-   ```toml
-   name = "video-resizer"
-   main = "src/index.ts"
-   compatibility_date = "2023-09-04"
-   
-   [vars]
-   DEBUG_ENABLED = "true"
-   PATH_PATTERNS = '''[{"name":"videos","matcher":"^/videos/","processPath":true}]'''
-   
-   [dev]
-   port = 8787
+   Create a `wrangler.jsonc` file with your local development settings:
+   ```jsonc
+   {
+     "name": "video-resizer",
+     "main": "src/index.ts",
+     "compatibility_date": "2023-09-04",
+     "compatibility_flags": ["nodejs_compat"],
+     
+     "assets": {
+       "directory": "./public",
+       "binding": "ASSETS"
+     },
+     
+     "vars": {
+       "ENVIRONMENT": "development",
+       "DEBUG_ENABLED": "true",
+       "PATH_PATTERNS": [{"name":"videos","matcher":"^/videos/","processPath":true}]
+     },
+     
+     "dev": {
+       "port": 8787
+     }
+   }
    ```
 
 4. **Start local development server:**
@@ -618,6 +736,18 @@ The debug interface is served through Cloudflare's Assets functionality, ensurin
 | **Autoplay not working** | Browser restrictions | Set both `autoplay=true` and `muted=true` for most reliable autoplay behavior |
 | **High latency on first transform** | Cold cache | First transformation may take longer; subsequent requests will be faster from cache |
 | **Parameters not working** | Unsupported parameter | Remember that only `mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, and `duration` are officially supported by Cloudflare |
+| **Videos being truncated** | Cloudflare 30s limitation | Videos longer than ~30s may be truncated due to Cloudflare Media Transformation limitations |
+| **Debug interface not working** | ASSETS binding missing | Ensure the `assets` configuration is properly set in wrangler.jsonc |
+
+### Error Responses
+
+The service returns different HTTP status codes for different errors:
+
+- **400**: Invalid parameters or invalid request format
+- **404**: Video not found at origin URL
+- **413**: Video file too large (over 40MB)
+- **415**: Unsupported video format
+- **500**: Internal server error or Cloudflare service error
 
 ### Debugging
 
@@ -632,6 +762,9 @@ The debug interface is served through Cloudflare's Assets functionality, ensurin
 
 4. **Verify path patterns:**
    Ensure your URL path is matching one of your configured path patterns.
+
+5. **Check service logs:**
+   If errors persist, check Cloudflare Workers logs in the dashboard.
 
 ## Performance Optimization
 
@@ -660,6 +793,74 @@ The debug interface is served through Cloudflare's Assets functionality, ensurin
 
 7. **Advanced Caching Strategies:**
    Implement surrogate-key based cache purging using the Cache Tags provided by the service.
+
+## Advanced Configuration
+
+### Extended Path Pattern Options
+
+Path patterns support advanced options:
+
+```jsonc
+{
+  "name": "videos",
+  "matcher": "^/videos/([a-z0-9-]+)",  // Regex with capture group
+  "processPath": true,
+  "baseUrl": null,
+  "originUrl": "https://media.example.com",
+  "cacheTtl": 3600,  // 1 hour TTL
+  "captureGroups": ["videoId"],  // Names the regex capture group
+  "quality": "high",  // Force high quality for all videos
+  "transformationOverrides": {  // Override specific parameters
+    "fit": "cover",
+    "compression": "low"
+  }
+}
+```
+
+### Path-Specific Transformations
+
+You can apply different transformations based on path patterns:
+
+- **High-traffic videos**: Set longer cache TTLs
+- **Preview videos**: Force lower quality/resolution
+- **Premium content**: Apply higher quality settings
+- **Mobile paths**: Apply mobile-optimized settings
+
+### Dynamic Quality Selection
+
+The service can dynamically select quality settings based on:
+
+1. **Client Hints**: If the browser provides Client Hints headers
+2. **Device Type**: Based on User-Agent (mobile, tablet, desktop)
+3. **Network Quality**: Estimated from Client Hints or User-Agent
+4. **Screen Size**: Determined from Client Hints or default sizes
+
+To enable Client Hints on your site, add:
+
+```html
+<meta http-equiv="Accept-CH" content="Sec-CH-DPR, Sec-CH-Width, Sec-CH-Viewport-Width, ECT, Downlink">
+```
+
+### Custom Error Responses
+
+You can configure custom error responses for different error cases:
+
+```jsonc
+"ERROR_RESPONSES": {
+  "400": {
+    "message": "Invalid video request parameters",
+    "cacheTtl": 60
+  },
+  "404": {
+    "message": "Video not found",
+    "cacheTtl": 30
+  },
+  "500": {
+    "message": "Server error processing video",
+    "cacheTtl": 10
+  }
+}
+```
 
 ## Integration Examples
 
@@ -781,49 +982,35 @@ The system uses a layered architecture with the following components:
    - Responsive sizing
    - Cache control
 
-## Advanced Configuration
+## Recent Enhancements
 
-### Debug Configuration
+### 1. Enhanced Debug Interface
+- Added a pretty-printed JSON viewer with copy and expand/collapse functionality
+- Added media preview section showing the actual transformed video or image
+- Integrated Prism.js for syntax highlighting of JSON data
+- Improved layout with proper responsive design
+- Added controls to view and copy the full diagnostic information
+- Improved display of video transformation parameters
+- Added browser capabilities section showing supported formats and features
+- Enhanced CSS styling for the media preview and JSON viewer
 
-The service includes a comprehensive debug system that can be enabled through environment variables:
+### 2. Client Adaptivity Improvements
+- Enhanced device detection with more accurate device categorization
+- Improved network quality estimation for better adaptive streaming
+- Added content negotiation based on Accept headers
+- Enhanced responsive dimension adjustments based on device characteristics
 
-```jsonc
-"vars": {
-  "DEBUG_ENABLED": "true",  // Enable debug mode
-  "DEBUG_VERBOSE": "true",  // Include verbose debug information
-  "DEBUG_INCLUDE_HEADERS": "true"  // Include request/response headers in debug output
-}
-```
+### 3. Service Architecture Restructuring
+- Implemented proper service-oriented architecture
+- Resolved circular dependency issues through dynamic imports
+- Improved type safety throughout the codebase
+- Enhanced error handling with proper propagation
 
-### Extended Path Pattern Options
-
-Path patterns support advanced options:
-
-```jsonc
-{
-  "name": "videos",
-  "matcher": "^/videos/([a-z0-9-]+)",  // Regex with capture group
-  "processPath": true,
-  "baseUrl": null,
-  "originUrl": "https://media.example.com",
-  "cacheTtl": 3600,  // 1 hour TTL
-  "captureGroups": ["videoId"],  // Names the regex capture group
-  "quality": "high",  // Force high quality for all videos
-  "transformationOverrides": {  // Override specific parameters
-    "fit": "cover",
-    "compression": "low"
-  }
-}
-```
-
-### Path-Specific Transformations
-
-You can apply different transformations based on path patterns:
-
-- **High-traffic videos**: Set longer cache TTLs
-- **Preview videos**: Force lower quality/resolution
-- **Premium content**: Apply higher quality settings
-- **Mobile paths**: Apply mobile-optimized settings
+### 4. Cache Management Upgrades
+- Improved cache tag structure for more granular purging
+- Enhanced TTL controls based on response type
+- Added automatic cache invalidation for debug requests
+- Implemented cache bypass mechanisms for development
 
 ## Limitations & Compatibility Notes
 
@@ -831,9 +1018,10 @@ You can apply different transformations based on path patterns:
 
 - **Input Size**: Videos must be less than 40MB (Cloudflare limit)
 - **Dimensions**: Maximum width/height is 2000px
+- **Time Parameter**: Limited to 0-30s range (documented Cloudflare API limitation)
+- **Video Processing**: Some users report videos longer than ~30 seconds may be truncated, though this is not explicitly documented
 - **Processing Time**: First-time transformations may take longer
-- **Frame Extraction**: Time parameter limited to 0-30s range
-- **Browsers**: Some parameters (autoplay, preload) have browser-specific behavior
+- **Browser Compatibility**: Some parameters (autoplay, preload) have browser-specific behavior
 
 ### Compatibility Notes
 

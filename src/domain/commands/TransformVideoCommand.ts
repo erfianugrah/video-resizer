@@ -161,7 +161,7 @@ export class TransformVideoCommand {
       
       if (diagnosticsInfo.videoId && Array.isArray(diagnosticsInfo.warnings)) {
         diagnosticsInfo.warnings.push(
-          "Note: Due to Cloudflare Media Transformation limitations, videos longer than ~30 seconds may be truncated when previewed."
+          "Note: The 'time' parameter in Cloudflare Media Transformation API is limited to 0-30 seconds. Additionally, some users report videos may be truncated around 30 seconds when previewed."
         );
       }
       
