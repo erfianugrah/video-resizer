@@ -10,9 +10,9 @@ let logConfig = {
 
 /**
  * Initialize logger configuration
- * @param config Logger configuration
+ * @param config Logger configuration with debug settings
  */
-export function initializeLogger(config: Record<string, unknown>) {
+export function initializeLogger(config: { debug?: { enabled?: boolean; verbose?: boolean } }) {
   logConfig = {
     debugEnabled: config.debug?.enabled || false,
     verboseEnabled: config.debug?.verbose || false,
