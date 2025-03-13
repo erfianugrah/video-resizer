@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"deploy": "wrangler deploy",
 		"deploy:prod": "wrangler deploy --env production",
 		"deploy:staging": "wrangler deploy --env staging",
 		"dev": "wrangler dev",
@@ -11,10 +12,17 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"test:integration": "vitest run test/integration",
+		"test:services": "vitest run test/services",
+		"test:utils": "vitest run test/utils",
+		"test:domain": "vitest run test/domain",
+		"test:edge-cases": "vitest run test/edge-cases",
+		"typecheck": "tsc --noEmit",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"build": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.7.5",

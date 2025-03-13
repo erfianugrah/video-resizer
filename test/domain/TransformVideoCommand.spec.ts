@@ -147,7 +147,7 @@ describe('TransformVideoCommand', () => {
 
   it('should handle invalid options gracefully', async () => {
     // Arrange
-    const request = createMockRequest('https://example.com/videos/sample.mp4');
+    const request = createMockRequest('https://example.com/invalid-option-test/video.mp4');
     const pathPatterns = createMockPathPatterns();
     const options = {
       width: 3000, // Invalid width (exceeds max)

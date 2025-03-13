@@ -12,6 +12,8 @@ export const videoConfig = {
       mode: 'video',
       fit: 'contain',
       audio: true,
+      quality: 'high',
+      compression: 'low',
     },
 
     // Medium-quality derivative
@@ -21,6 +23,8 @@ export const videoConfig = {
       mode: 'video',
       fit: 'contain',
       audio: true,
+      quality: 'medium',
+      compression: 'medium',
     },
 
     // Low-quality derivative
@@ -30,6 +34,8 @@ export const videoConfig = {
       mode: 'video',
       fit: 'contain',
       audio: true,
+      quality: 'low',
+      compression: 'high',
     },
 
     // Mobile-optimized derivative
@@ -39,6 +45,9 @@ export const videoConfig = {
       mode: 'video',
       fit: 'contain',
       audio: true,
+      quality: 'low',
+      compression: 'high',
+      preload: 'metadata',
     },
 
     // Thumbnail derivative
@@ -48,6 +57,30 @@ export const videoConfig = {
       mode: 'frame',
       fit: 'contain',
       format: 'jpg',
+    },
+    
+    // Animation derivative - for GIF-like video clips
+    animation: {
+      width: 480,
+      height: 270,
+      mode: 'video',
+      fit: 'contain',
+      audio: false,
+      loop: true,
+      preload: 'auto',
+    },
+    
+    // Preview derivative - short, low-res preview with no audio
+    preview: {
+      width: 480,
+      height: 270,
+      mode: 'video',
+      fit: 'contain',
+      audio: false,
+      duration: '5s',
+      quality: 'low',
+      compression: 'high',
+      preload: 'auto',
     },
   },
 
@@ -61,6 +94,12 @@ export const videoConfig = {
     format: null,
     time: null,
     duration: null,
+    quality: null,
+    compression: null,
+    loop: null,
+    preload: null,
+    autoplay: null,
+    muted: null,
   },
 
   // Valid options
@@ -69,6 +108,12 @@ export const videoConfig = {
     fit: ['contain', 'scale-down', 'cover'],
     format: ['jpg', 'png'],
     audio: [true, false],
+    quality: ['low', 'medium', 'high', 'auto'],
+    compression: ['low', 'medium', 'high', 'auto'],
+    preload: ['none', 'metadata', 'auto'],
+    loop: [true, false],
+    autoplay: [true, false],
+    muted: [true, false],
   },
 
   // Responsive sizing breakpoints
@@ -79,6 +124,37 @@ export const videoConfig = {
       md: 1024,
       lg: 1280,
       xl: 1920,
+    },
+    // Available video quality settings
+    availableQualities: [360, 480, 720, 1080, 1440, 2160],
+    // Device-specific width mapping
+    deviceWidths: {
+      mobile: 480,
+      tablet: 720,
+      desktop: 1080,
+    },
+    // Network condition-based quality adjustments
+    networkQuality: {
+      slow: {
+        maxWidth: 480,
+        maxHeight: 360,
+        maxBitrate: 800,
+      },
+      medium: {
+        maxWidth: 854, 
+        maxHeight: 480,
+        maxBitrate: 1500,
+      },
+      fast: {
+        maxWidth: 1280,
+        maxHeight: 720,
+        maxBitrate: 3000,
+      },
+      ultrafast: {
+        maxWidth: 1920,
+        maxHeight: 1080,
+        maxBitrate: 6000,
+      },
     },
   },
 
@@ -92,6 +168,12 @@ export const videoConfig = {
     format: 'format',
     time: 'time',
     duration: 'duration',
+    quality: 'quality',
+    compression: 'compression',
+    loop: 'loop',
+    preload: 'preload',
+    autoplay: 'autoplay',
+    muted: 'muted',
   },
 
   // CDN-CGI path configuration
@@ -102,4 +184,56 @@ export const videoConfig = {
   // Default empty path patterns
   // These will be populated from environment configuration
   pathPatterns: [],
+  
+  // Cache configuration for different video types
+  cache: {
+    // Default cache configuration for all videos
+    default: {
+      regex: '.*',
+      cacheability: true,
+      videoCompression: 'auto',
+      ttl: {
+        ok: 86400, // 24 hours for successful responses
+        redirects: 3600, // 1 hour for redirects
+        clientError: 60, // 1 minute for client errors
+        serverError: 10, // 10 seconds for server errors
+      },
+    },
+    // High-traffic videos with longer cache time
+    highTraffic: {
+      regex: '.*\/popular\/.*\\.mp4',
+      cacheability: true,
+      videoCompression: 'auto',
+      ttl: {
+        ok: 604800, // 7 days for successful responses
+        redirects: 3600, // 1 hour for redirects
+        clientError: 60, // 1 minute for client errors
+        serverError: 10, // 10 seconds for server errors
+      },
+    },
+    // Short-form videos with medium cache time
+    shortForm: {
+      regex: '.*\/shorts\/.*\\.mp4',
+      cacheability: true,
+      videoCompression: 'auto',
+      ttl: {
+        ok: 172800, // 2 days for successful responses
+        redirects: 3600, // 1 hour for redirects
+        clientError: 60, // 1 minute for client errors
+        serverError: 10, // 10 seconds for server errors
+      },
+    },
+    // Live content or frequently updated videos with shorter cache time
+    dynamic: {
+      regex: '.*\/live\/.*\\.mp4',
+      cacheability: true,
+      videoCompression: 'auto',
+      ttl: {
+        ok: 300, // 5 minutes for successful responses
+        redirects: 60, // 1 minute for redirects
+        clientError: 30, // 30 seconds for client errors
+        serverError: 10, // 10 seconds for server errors
+      },
+    },
+  },
 };

@@ -1,9 +1,13 @@
 /**
  * Service for determining video processing options from request parameters
+ * Part of the service architecture improvements to use a service-oriented approach
  */
 import { videoConfig } from '../config/videoConfig';
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/transformationUtils';
+import { hasClientHints, getVideoSizeFromClientHints, getNetworkQuality } from '../utils/clientHints';
+import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from '../utils/deviceUtils';
+import { getResponsiveVideoSize, getVideoQualityPreset } from '../utils/responsiveWidthUtils';
 
 /**
  * Type for video derivatives
@@ -37,9 +41,11 @@ export function determineVideoOptions(
     options.derivative = derivative;
   }
 
-  // Apply individual parameters that override the derivative
-  
   // Process both standard Cloudflare params and Akamai format params
+  let explicitWidth: number | null = null;
+  let explicitHeight: number | null = null;
+  let autoQuality = false;
+  
   params.forEach((value, key) => {
     // Check if this is an Akamai format parameter
     const translatedKey = translateAkamaiParamName(key);
@@ -54,11 +60,13 @@ export function determineVideoOptions(
         break;
         
       case 'width':
-        options.width = parseIntOrNull(value);
+        explicitWidth = parseIntOrNull(value);
+        options.width = explicitWidth;
         break;
         
       case 'height':
-        options.height = parseIntOrNull(value);
+        explicitHeight = parseIntOrNull(value);
+        options.height = explicitHeight;
         break;
         
       case 'fit':
@@ -99,14 +107,71 @@ export function determineVideoOptions(
         options.duration = value;
         break;
         
+      case 'quality':
+        // Check for auto-quality flag
+        if (value === 'auto') {
+          autoQuality = true;
+        } else if (videoConfig.validOptions.quality.includes(value)) {
+          options.quality = value;
+        }
+        break;
+        
+      case 'compression':
+        if (videoConfig.validOptions.compression.includes(value)) {
+          options.compression = value;
+        }
+        break;
+        
+      case 'loop':
+        if (value === 'true' || value === 'false') {
+          options.loop = value === 'true';
+        }
+        break;
+        
+      case 'preload':
+        if (videoConfig.validOptions.preload.includes(value)) {
+          options.preload = value;
+        }
+        break;
+        
+      case 'autoplay':
+        if (value === 'true' || value === 'false') {
+          options.autoplay = value === 'true';
+        }
+        break;
+        
+      case 'muted':
+        if (value === 'true' || value === 'false') {
+          options.muted = value === 'true';
+        }
+        break;
+        
       default:
         // Ignore parameters that don't match our known ones
         break;
     }
   });
 
-  // Metadata about how the options were generated
-  options.source = derivative ? 'derivative' : 'params';
+  // Apply responsive sizing if width/height aren't explicitly set or auto quality is requested
+  if (autoQuality || (!explicitWidth && !explicitHeight)) {
+    const responsiveSize = getResponsiveVideoSize(request, explicitWidth, explicitHeight);
+    
+    // Only override values that weren't explicitly set
+    if (!explicitWidth) {
+      options.width = responsiveSize.width;
+    }
+    
+    if (!explicitHeight) {
+      options.height = responsiveSize.height;
+    }
+    
+    // Add responsive source information to options
+    options.source = options.source || responsiveSize.method;
+  }
+  // Otherwise set the source based on how options were generated
+  else {
+    options.source = derivative ? 'derivative' : 'params';
+  }
 
   return options;
 }

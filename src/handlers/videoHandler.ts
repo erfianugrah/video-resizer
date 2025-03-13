@@ -1,8 +1,9 @@
 /**
  * Main video handling entry point
+ * Using service-oriented architecture for better separation of concerns
  */
 import { determineVideoOptions } from './videoOptionsService';
-import { TransformVideoCommand } from '../domain/commands/TransformVideoCommand';
+import { transformVideo } from '../services/videoTransformationService';
 import { debug, error, info } from '../utils/loggerUtils';
 import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import { videoConfig } from '../config/videoConfig';
@@ -24,6 +25,19 @@ export async function handleVideoRequest(request: Request, config: EnvironmentCo
       info('VideoHandler', 'Request is already a CDN-CGI media request, passing through');
       return fetch(request);
     }
+    
+    // Import the cache management service
+    const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
+
+    // Try to get the response from cache first
+    const cachedResponse = await getCachedResponse(request);
+    if (cachedResponse) {
+      info('VideoHandler', 'Serving from cache', {
+        url: url.toString(),
+        cacheControl: cachedResponse.headers.get('Cache-Control'),
+      });
+      return cachedResponse;
+    }
 
     // Get path patterns from config or use defaults
     const pathPatterns = config.pathPatterns || videoConfig.pathPatterns;
@@ -40,18 +54,28 @@ export async function handleVideoRequest(request: Request, config: EnvironmentCo
       options: videoOptions,
     });
 
-    // Create and execute the transform video command
-    const command = new TransformVideoCommand({
-      request,
-      options: videoOptions,
-      pathPatterns,
-      debugInfo: {
-        isDebugEnabled: config.debug?.enabled,
-        isVerboseEnabled: config.debug?.verbose,
-      },
-    });
+    // Prepare debug information
+    const debugInfo = {
+      isEnabled: config.debug?.enabled,
+      isVerbose: config.debug?.verbose,
+      includeHeaders: config.debug?.includeHeaders,
+      includePerformance: true,
+    };
 
-    return await command.execute();
+    // Use the video transformation service
+    const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo);
+    
+    // Store the response in cache if it's cacheable
+    if (response.headers.get('Cache-Control')?.includes('max-age=')) {
+      // Use a non-blocking cache write to avoid delaying the response
+      cacheResponse(request, response.clone()).catch(err => {
+        error('VideoHandler', 'Error caching response', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      });
+    }
+
+    return response;
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     const errorStack = err instanceof Error ? err.stack : undefined;

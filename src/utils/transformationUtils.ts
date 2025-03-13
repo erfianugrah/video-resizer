@@ -41,6 +41,14 @@ const AKAMAI_TO_CLOUDFLARE_MAPPING = {
     'fill': 'contain',
     'scale-down': 'scale-down'
   },
+  
+  // Advanced video options
+  'quality': 'quality',
+  'compression': 'compression',
+  'loop': 'loop',
+  'preload': 'preload',
+  'autoplay': 'autoplay',
+  'muted': 'muted'
 };
 
 /**
@@ -148,6 +156,70 @@ export function isValidFormatForMode(options: VideoTransformOptions): boolean {
   if (options.format && options.mode !== 'frame') {
     return false;
   }
+  return true;
+}
+
+/**
+ * Validate quality parameter
+ * @param qualityValue Quality value
+ * @param validValues Valid quality values
+ * @returns If the quality is valid
+ */
+export function isValidQuality(
+  qualityValue: string | null, 
+  validValues: string[]
+): boolean {
+  if (!qualityValue) return true;
+  return validValues.includes(qualityValue);
+}
+
+/**
+ * Validate compression parameter
+ * @param compressionValue Compression value
+ * @param validValues Valid compression values
+ * @returns If the compression is valid
+ */
+export function isValidCompression(
+  compressionValue: string | null, 
+  validValues: string[]
+): boolean {
+  if (!compressionValue) return true;
+  return validValues.includes(compressionValue);
+}
+
+/**
+ * Validate preload parameter
+ * @param preloadValue Preload value
+ * @param validValues Valid preload values
+ * @returns If the preload is valid
+ */
+export function isValidPreload(
+  preloadValue: string | null, 
+  validValues: string[]
+): boolean {
+  if (!preloadValue) return true;
+  return validValues.includes(preloadValue);
+}
+
+/**
+ * Validate that loop and autoplay parameters are used appropriately
+ * @param options Video transform options
+ * @returns If the loop and autoplay parameters are valid for the specified mode
+ */
+export function isValidPlaybackOptions(options: VideoTransformOptions): boolean {
+  // Loop and autoplay should only be used with video mode
+  if ((options.loop || options.autoplay) && options.mode !== 'video') {
+    return false;
+  }
+  
+  // If autoplay is true, audio must be disabled or muted
+  if (options.autoplay === true) {
+    // For autoplay to work properly, either audio must be off or muted must be true
+    if (options.audio === true && options.muted !== true) {
+      return false;
+    }
+  }
+  
   return true;
 }
 

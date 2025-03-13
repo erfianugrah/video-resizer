@@ -7,7 +7,11 @@ import {
   formatTimeString,
   isValidTime,
   isValidDuration,
-  isValidFormatForMode
+  isValidFormatForMode,
+  isValidQuality,
+  isValidCompression,
+  isValidPreload,
+  isValidPlaybackOptions
 } from '../../src/utils/transformationUtils';
 import { VideoTransformOptions } from '../../src/domain/commands/TransformVideoCommand';
 
@@ -138,6 +142,84 @@ describe('Transformation Utils', () => {
         format: 'jpg'
       };
       expect(isValidFormatForMode(invalidOptions)).toBe(false);
+    });
+  });
+  
+  describe('Advanced video options validation', () => {
+    it('should validate quality values', () => {
+      const validQualities = ['low', 'medium', 'high', 'auto'];
+      
+      // Valid quality values
+      expect(isValidQuality('low', validQualities)).toBe(true);
+      expect(isValidQuality('medium', validQualities)).toBe(true);
+      expect(isValidQuality('high', validQualities)).toBe(true);
+      expect(isValidQuality('auto', validQualities)).toBe(true);
+      expect(isValidQuality(null, validQualities)).toBe(true); // Null is valid (default)
+      
+      // Invalid quality values
+      expect(isValidQuality('ultra', validQualities)).toBe(false);
+      expect(isValidQuality('invalid', validQualities)).toBe(false);
+    });
+    
+    it('should validate compression values', () => {
+      const validCompression = ['low', 'medium', 'high', 'auto'];
+      
+      // Valid compression values
+      expect(isValidCompression('low', validCompression)).toBe(true);
+      expect(isValidCompression('medium', validCompression)).toBe(true);
+      expect(isValidCompression('high', validCompression)).toBe(true);
+      expect(isValidCompression('auto', validCompression)).toBe(true);
+      expect(isValidCompression(null, validCompression)).toBe(true); // Null is valid (default)
+      
+      // Invalid compression values
+      expect(isValidCompression('super', validCompression)).toBe(false);
+      expect(isValidCompression('invalid', validCompression)).toBe(false);
+    });
+    
+    it('should validate preload values', () => {
+      const validPreload = ['none', 'metadata', 'auto'];
+      
+      // Valid preload values
+      expect(isValidPreload('none', validPreload)).toBe(true);
+      expect(isValidPreload('metadata', validPreload)).toBe(true);
+      expect(isValidPreload('auto', validPreload)).toBe(true);
+      expect(isValidPreload(null, validPreload)).toBe(true); // Null is valid (default)
+      
+      // Invalid preload values
+      expect(isValidPreload('lazy', validPreload)).toBe(false);
+      expect(isValidPreload('eager', validPreload)).toBe(false);
+    });
+    
+    it('should validate playback options', () => {
+      // Valid combinations
+      const validOptions1: VideoTransformOptions = {
+        mode: 'video',
+        loop: true
+      };
+      expect(isValidPlaybackOptions(validOptions1)).toBe(true);
+      
+      const validOptions2: VideoTransformOptions = {
+        mode: 'video',
+        autoplay: true,
+        muted: true
+      };
+      expect(isValidPlaybackOptions(validOptions2)).toBe(true);
+      
+      // Invalid combinations - loop with non-video mode
+      const invalidOptions1: VideoTransformOptions = {
+        mode: 'frame',
+        loop: true
+      };
+      expect(isValidPlaybackOptions(invalidOptions1)).toBe(false);
+      
+      // Invalid combinations - autoplay with unmuted audio
+      const invalidOptions2: VideoTransformOptions = {
+        mode: 'video',
+        autoplay: true,
+        muted: false,
+        audio: true
+      };
+      expect(isValidPlaybackOptions(invalidOptions2)).toBe(false);
     });
   });
 });

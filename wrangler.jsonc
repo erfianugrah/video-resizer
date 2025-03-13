@@ -1,89 +1,172 @@
 {
-  "$schema": "https://json.schemastore.org/wrangler.json",
-  "name": "video-resizer",
-  "main": "src/index.ts",
-  "compatibility_date": "2025-03-13",
-  "compatibility_flags": ["nodejs_compat"],
-  "account_id": "25f21f141824546aa72c74451a11b419",
-  "vars": {
-    "ENVIRONMENT": "development",
-    "PATH_PATTERNS": [
-      {
-        "name": "videos",
-        "matcher": "^/videos/",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": null
-      },
-      {
-        "name": "example",
-        "matcher": "^/(.*\\.mp4)",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": "https://videos.erfi.dev"
-      }
-    ]
-  },
-  "routes": [
-    {
-      "pattern": "dev.videos.erfi.dev/*",
-      "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
-    }
-  ],
-  "env": {
-    "production": {
-      "vars": {
-        "ENVIRONMENT": "production",
-        "PATH_PATTERNS": [
-          {
-            "name": "videos",
-            "matcher": "^/videos/",
-            "processPath": true,
-            "baseUrl": null,
-            "originUrl": null
-          },
-          {
-            "name": "example",
-            "matcher": "^/(.*\\.mp4)",
-            "processPath": true,
-            "baseUrl": null,
-            "originUrl": "https://videos.erfi.dev"
-          }
-        ]
-      },
-      "routes": [
-        {
-          "pattern": "videos.erfi.dev/*",
-          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
-        }
-      ]
-    },
-    "staging": {
-      "vars": {
-        "ENVIRONMENT": "staging",
-        "PATH_PATTERNS": [
-          {
-            "name": "videos",
-            "matcher": "^/videos/",
-            "processPath": true,
-            "baseUrl": null,
-            "originUrl": null
-          },
-          {
-            "name": "example",
-            "matcher": "^/(.*\\.mp4)",
-            "processPath": true,
-            "baseUrl": null,
-            "originUrl": "https://videos.erfi.dev"
-          }
-        ]
-      },
-      "routes": [
-        {
-          "pattern": "staging.videos.erfi.dev/*",
-          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
-        }
-      ]
-    }
-  }
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "video-resizer",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-03-13",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"account_id": "25f21f141824546aa72c74451a11b419",
+	"vars": {
+		"ENVIRONMENT": "development",
+		"DEBUG_ENABLED": "true",
+		"DEBUG_VERBOSE": "true",
+		"DEBUG_INCLUDE_HEADERS": "true",
+		"PATH_PATTERNS": [
+			{
+				"name": "videos",
+				"matcher": "^/videos/",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": null,
+				"cacheTtl": 3600,
+				"captureGroups": ["videoId"],
+				"quality": "high"
+			},
+			{
+				"name": "popular",
+				"matcher": "^/popular/(.*\\.mp4)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"cacheTtl": 86400,
+				"captureGroups": ["videoId"]
+			},
+			{
+				"name": "shorts",
+				"matcher": "^/shorts/(.*\\.mp4)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"cacheTtl": 43200,
+				"captureGroups": ["videoId"],
+				"quality": "medium"
+			},
+			{
+				"name": "standard",
+				"matcher": "^/(.*\\.mp4)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"cacheTtl": 7200
+			}
+		]
+	},
+	"build": {
+		"command": "npm run build"
+	},
+	"routes": [
+		{
+			"pattern": "dev.cdn.erfi.dev/*",
+			"zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+		}
+	],
+	"env": {
+		"production": {
+			"vars": {
+				"ENVIRONMENT": "production",
+				"DEBUG_ENABLED": "false",
+				"DEBUG_VERBOSE": "false",
+				"DEBUG_INCLUDE_HEADERS": "false",
+				"PATH_PATTERNS": [
+					{
+						"name": "videos",
+						"matcher": "^/videos/",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": null,
+						"cacheTtl": 86400,
+						"captureGroups": ["videoId"],
+						"quality": "high"
+					},
+					{
+						"name": "popular",
+						"matcher": "^/popular/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 604800,
+						"captureGroups": ["videoId"]
+					},
+					{
+						"name": "shorts",
+						"matcher": "^/shorts/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 172800,
+						"captureGroups": ["videoId"],
+						"quality": "medium"
+					},
+					{
+						"name": "standard",
+						"matcher": "^/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 86400
+					}
+				]
+			},
+			"routes": [
+				{
+					"pattern": "cdn.erfi.dev/*",
+					"zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+				}
+			]
+		},
+		"staging": {
+			"vars": {
+				"ENVIRONMENT": "staging",
+				"DEBUG_ENABLED": "true",
+				"DEBUG_VERBOSE": "true",
+				"DEBUG_INCLUDE_HEADERS": "true",
+				"PATH_PATTERNS": [
+					{
+						"name": "videos",
+						"matcher": "^/videos/",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": null,
+						"cacheTtl": 3600,
+						"captureGroups": ["videoId"],
+						"quality": "high"
+					},
+					{
+						"name": "popular",
+						"matcher": "^/popular/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 86400,
+						"captureGroups": ["videoId"]
+					},
+					{
+						"name": "shorts",
+						"matcher": "^/shorts/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 43200,
+						"captureGroups": ["videoId"],
+						"quality": "medium"
+					},
+					{
+						"name": "standard",
+						"matcher": "^/(.*\\.mp4)",
+						"processPath": true,
+						"baseUrl": null,
+						"originUrl": "https://videos.erfi.dev",
+						"cacheTtl": 7200
+					}
+				]
+			},
+			"routes": [
+				{
+					"pattern": "staging.cdn.erfi.dev/*",
+					"zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+				}
+			]
+		}
+	}
 }
