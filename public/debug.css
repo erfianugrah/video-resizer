@@ -118,6 +118,44 @@ pre {
   max-height: 300px;
 }
 
+/* JSON viewer styles */
+.json-viewer {
+  transition: max-height 0.3s ease;
+}
+
+.json-viewer pre {
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.json-viewer.expanded pre {
+  max-height: 1000px;
+}
+
+/* Media preview styles */
+.preview-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 200px;
+  max-height: 400px;
+}
+
+.preview-container video,
+.preview-container img {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+}
+
+.media-params {
+  margin-top: 1.5rem;
+}
+
 .feature-card {
   height: 100%;
 }
@@ -186,3 +224,44 @@ pre {
 .delay-3 { animation-delay: 0.3s; }
 .delay-4 { animation-delay: 0.4s; }
 .delay-5 { animation-delay: 0.5s; }
+
+/* Button styles in cards */
+.card .btn-group {
+  margin-left: auto;
+}
+
+.card .btn-outline-secondary {
+  color: #4b5563;
+  border-color: #e5e7eb;
+  background-color: #fff;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.card .btn-outline-secondary:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .info-label {
+    width: 150px;
+  }
+  
+  .json-viewer pre {
+    font-size: 0.75rem;
+  }
+  
+  .preview-container {
+    min-height: 150px;
+  }
+}
+
+/* Syntax highlighting overrides */
+code[class*="language-"],
+pre[class*="language-"] {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
