@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Resizer Debug Report</title>
+  <!-- External CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="debug.css">
+</head>
+<body>
+  <div class="header">
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center">
+        <h1 class="m-0">
+          <i class="bi bi-film me-2"></i>Video Resizer Debug
+        </h1>
+        <div class="text-white-50">
+          <i class="bi bi-clock me-1"></i><span id="current-time"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Main content - will be replaced with actual debug data -->
+    <div class="alert alert-info my-5" id="placeholder-message">
+      <h4><i class="bi bi-info-circle me-2"></i>Debug Report Template</h4>
+      <p>This is a placeholder page for the debug report. Actual debug data will be displayed when accessing a video URL with the <code>?debug=view</code> parameter.</p>
+      <div class="mt-3">
+        <h5>Example Debug URLs:</h5>
+        <ul>
+          <li><a href="/videos/example.mp4?debug=view" class="link-primary">/videos/example.mp4?debug=view</a></li>
+          <li><a href="/popular/sample.mp4?width=720&debug=view" class="link-primary">/popular/sample.mp4?width=720&debug=view</a></li>
+          <li><a href="/shorts/clip.mp4?template=mobile&debug=view" class="link-primary">/shorts/clip.mp4?template=mobile&debug=view</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Dynamic debug content container -->
+    <div id="debug-content" class="d-none">
+      <!-- This content will be replaced with actual debug data -->
+    </div>
+
+    <!-- Footer with Cloudflare branding -->
+    <div class="footer">
+      <p>
+        Video Resizer Debug Report
+      </p>
+    </div>
+  </div>
+
+  <!-- External JS from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Update current time
+    function updateCurrentTime() {
+      document.getElementById('current-time').textContent = new Date().toLocaleString();
+    }
+    
+    // Parse debug data from URL parameters
+    function parseDebugData() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const dataParam = urlParams.get('data');
+      const isError = urlParams.get('error') === 'true';
+      
+      if (dataParam) {
+        try {
+          // Parse the JSON data
+          const diagnosticsInfo = JSON.parse(decodeURIComponent(dataParam));
+          
+          // Hide placeholder
+          document.getElementById('placeholder-message').classList.add('d-none');
+          
+          // Show debug content
+          const debugContentElement = document.getElementById('debug-content');
+          debugContentElement.classList.remove('d-none');
+          
+          // Build debug report HTML
+          let html = buildDebugReport(diagnosticsInfo, isError);
+          debugContentElement.innerHTML = html;
+        } catch (e) {
+          console.error('Error parsing debug data:', e);
+          document.getElementById('placeholder-message').innerHTML = `
+            <div class="alert alert-danger">
+              <h4><i class="bi bi-exclamation-triangle me-2"></i>Error</h4>
+              <p>Failed to parse debug data: ${e.message}</p>
+            </div>
+          `;
+        }
+      }
+    }
+    
+    // Build debug report HTML from diagnostics info
+    function buildDebugReport(diagnosticsInfo, isError) {
+      let html = `
+        <div class="row mb-4">
+          <div class="col-md-4 fade-in">
+            <div class="card feature-card">
+              <div class="card-body">
+                <div class="feature-icon">
+                  <i class="bi bi-speedometer2"></i>
+                </div>
+                <h5>Processing Time</h5>
+                <p class="text-muted mb-2">Video processing completed in:</p>
+                <h3 class="text-primary">${diagnosticsInfo.processingTimeMs || 0} ms</h3>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-4 fade-in delay-1">
+            <div class="card feature-card">
+              <div class="card-body">
+                <div class="feature-icon">
+                  <i class="bi bi-device-hdd"></i>
+                </div>
+                <h5>Device Detection</h5>
+                <p class="text-muted mb-2">Client device detected as:</p>
+                <h3 class="text-primary">${diagnosticsInfo.deviceType || 'Unknown'}</h3>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-4 fade-in delay-2">
+            <div class="card feature-card">
+              <div class="card-body">
+                <div class="feature-icon">
+                  <i class="bi bi-hdd-stack"></i>
+                </div>
+                <h5>Cache Status</h5>
+                <p class="text-muted mb-2">Content caching:</p>
+                <h3 class="${diagnosticsInfo.cacheability ? 'text-success' : 'text-warning'}">
+                  ${diagnosticsInfo.cacheability ? 'Enabled' : 'Disabled'}
+                </h3>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      html += `
+        <div class="row">
+          <div class="col-lg-8">
+            <!-- Request Processing Card -->
+            <div class="card fade-in delay-1">
+              <div class="card-header">
+                <i class="bi bi-arrow-repeat"></i> Request Processing
+              </div>
+              <div class="card-body p-0">
+                <div class="info-row">
+                  <div class="info-label">Processing Time:</div>
+                  <div class="info-value">
+                    <span class="badge badge-blue badge-value">
+                      <i class="bi bi-hourglass-split"></i> ${diagnosticsInfo.processingTimeMs || 0} ms
+                    </span>
+                  </div>
+                </div>
+      `;
+      
+      if (diagnosticsInfo.transformSource) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">Transform Source:</div>
+            <div class="info-value">
+              <span class="badge badge-purple badge-value">
+                <i class="bi bi-shuffle"></i> ${diagnosticsInfo.transformSource}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+      
+      if (diagnosticsInfo.pathMatch) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">Path Pattern Match:</div>
+            <div class="info-value">
+              <code>${diagnosticsInfo.pathMatch}</code>
+            </div>
+          </div>
+        `;
+      }
+      
+      if (diagnosticsInfo.videoId) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">Video ID:</div>
+            <div class="info-value">
+              <span class="badge badge-blue badge-value">
+                <i class="bi bi-camera-video"></i> ${diagnosticsInfo.videoId}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+              </div>
+            </div>
+      `;
+      
+      // Client Detection
+      html += `
+        <div class="card fade-in delay-2">
+          <div class="card-header">
+            <i class="bi bi-device-hdd"></i> Client Detection
+          </div>
+          <div class="card-body p-0">
+            <div class="info-row">
+              <div class="info-label">Client Hints:</div>
+              <div class="info-value">
+                ${diagnosticsInfo.clientHints 
+                  ? '<span class="badge badge-green badge-value"><i class="bi bi-check-circle"></i> Supported</span>' 
+                  : '<span class="badge badge-yellow badge-value"><i class="bi bi-exclamation-triangle"></i> Not supported</span>'}
+              </div>
+            </div>
+      `;
+      
+      if (diagnosticsInfo.deviceType) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">Device Type:</div>
+            <div class="info-value">
+              <span class="badge badge-blue badge-value">
+                <i class="bi bi-${diagnosticsInfo.deviceType === 'mobile' ? 'phone' : diagnosticsInfo.deviceType === 'tablet' ? 'tablet' : 'laptop'}"></i> 
+                ${diagnosticsInfo.deviceType}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+      
+      if (diagnosticsInfo.networkQuality) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">Network Quality:</div>
+            <div class="info-value">
+              <span class="badge ${
+                diagnosticsInfo.networkQuality === 'high' ? 'badge-green' : 
+                diagnosticsInfo.networkQuality === 'medium' ? 'badge-yellow' : 
+                'badge-red'
+              } badge-value">
+                <i class="bi bi-wifi"></i> ${diagnosticsInfo.networkQuality}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+            </div>
+          </div>
+      `;
+      
+      if (diagnosticsInfo.transformParams) {
+        html += `
+          <div class="card fade-in delay-4">
+            <div class="card-header">
+              <i class="bi bi-sliders"></i> Transform Parameters
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+        `;
+        
+        for (const [key, value] of Object.entries(diagnosticsInfo.transformParams)) {
+          if (value !== null && value !== undefined) {
+            html += `
+              <tr>
+                <td><strong>${key}</strong></td>
+                <td><code>${value}</code></td>
+              </tr>
+            `;
+          }
+        }
+        
+        html += `
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+        </div>
+        <div class="col-lg-4">
+      `;
+      
+      // Caching Card
+      html += `
+        <div class="card fade-in delay-2">
+          <div class="card-header">
+            <i class="bi bi-hdd-stack"></i> Caching
+          </div>
+          <div class="card-body p-0">
+            <div class="info-row">
+              <div class="info-label">Status:</div>
+              <div class="info-value">
+                ${diagnosticsInfo.cacheability 
+                  ? '<span class="badge badge-green badge-value"><i class="bi bi-check-circle"></i> Enabled</span>' 
+                  : '<span class="badge badge-yellow badge-value"><i class="bi bi-x-circle"></i> Disabled</span>'}
+              </div>
+            </div>
+      `;
+      
+      if (diagnosticsInfo.cacheTtl !== undefined) {
+        html += `
+          <div class="info-row">
+            <div class="info-label">TTL:</div>
+            <div class="info-value">
+              <span class="badge badge-blue badge-value">
+                <i class="bi bi-clock-history"></i> ${diagnosticsInfo.cacheTtl} seconds
+              </span>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+            </div>
+          </div>
+      `;
+      
+      // Errors & Warnings
+      if ((diagnosticsInfo.errors && diagnosticsInfo.errors.length > 0) || 
+          (diagnosticsInfo.warnings && diagnosticsInfo.warnings.length > 0)) {
+            
+        html += `
+          <div class="card fade-in delay-3">
+            <div class="card-header">
+              <i class="bi bi-exclamation-diamond"></i> Errors & Warnings
+            </div>
+            <div class="card-body">
+        `;
+        
+        if (diagnosticsInfo.errors && diagnosticsInfo.errors.length > 0) {
+          html += `
+            <h6 class="mb-2">Errors (${diagnosticsInfo.errors.length})</h6>
+            <ul class="errors-list list-unstyled">
+          `;
+          
+          for (const error of diagnosticsInfo.errors) {
+            html += `
+              <li>
+                <i class="bi bi-exclamation-circle-fill me-2"></i> ${error}
+              </li>
+            `;
+          }
+          
+          html += `</ul>`;
+        }
+        
+        if (diagnosticsInfo.warnings && diagnosticsInfo.warnings.length > 0) {
+          html += `
+            <h6 class="mb-2 mt-3">Warnings (${diagnosticsInfo.warnings.length})</h6>
+            <ul class="warnings-list list-unstyled">
+          `;
+          
+          for (const warning of diagnosticsInfo.warnings) {
+            html += `
+              <li>
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> ${warning}
+              </li>
+            `;
+          }
+          
+          html += `</ul>`;
+        }
+        
+        html += `
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+        </div>
+      </div>
+      `;
+      
+      return html;
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      updateCurrentTime();
+      setInterval(updateCurrentTime, 1000);
+      parseDebugData();
+    });
+  </script>
+</body>
+</html>

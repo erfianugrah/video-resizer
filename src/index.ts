@@ -17,7 +17,7 @@ import { error, info, logRequest } from './utils/loggerUtils';
 let runtimeConfig: EnvironmentConfig | null = null;
 
 export default {
-  async fetch(request: Request, env: EnvVariables, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: EnvVariables, _ctx: ExecutionContext): Promise<Response> {
     try {
       // Initialize the runtime config if not already done
       if (!runtimeConfig) {

@@ -24,7 +24,7 @@ type VideoDerivativeKey = keyof typeof videoConfig.derivatives;
 export function determineVideoOptions(
   request: Request,
   params: URLSearchParams,
-  path: string
+  _path: string
 ): VideoTransformOptions {
   // Start with default options
   const options: VideoTransformOptions = { 

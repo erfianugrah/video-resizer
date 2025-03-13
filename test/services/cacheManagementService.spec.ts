@@ -209,7 +209,7 @@ describe('cacheManagementService', () => {
     
     // Setup global caches mock
     beforeEach(() => {
-      // @ts-ignore - Mocking global object
+      // @ts-expect-error - Mocking global object
       global.caches = {
         default: mockDefaultCache,
         open: vi.fn().mockReturnValue(Promise.resolve(mockDefaultCache)),

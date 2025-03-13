@@ -99,9 +99,9 @@ export function addDebugHeaders(
  * @param env - Environment with ASSETS binding (optional)
  * @returns HTML string with debug information
  */
-export function createDebugReport(diagnosticsInfo: DiagnosticsInfo, env?: any): string {
+export function createDebugReport(diagnosticsInfo: DiagnosticsInfo, _env?: unknown): string {
   // Enhanced HTML template with CDN assets
-  let html = `
+  const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>

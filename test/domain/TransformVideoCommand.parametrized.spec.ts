@@ -40,7 +40,7 @@ describe('TransformVideoCommand Parameterized Tests', () => {
     testCases.forEach(testCase => {
       it(`should handle ${testCase.name}`, async () => {
         // Arrange
-        const request = createMockRequest(`https://example.com/videos/test.mp4`);
+        const request = createMockRequest('https://example.com/videos/test.mp4');
         
         // Create command with the test case options
         const command = new TransformVideoCommand({
@@ -146,7 +146,7 @@ describe('TransformVideoCommand Parameterized Tests', () => {
     Object.entries(videoConfig.derivatives).forEach(([name, settings]) => {
       it(`should apply the ${name} derivative correctly`, async () => {
         // Arrange
-        const request = createMockRequest(`https://example.com/videos/test.mp4`);
+        const request = createMockRequest('https://example.com/videos/test.mp4');
         
         const command = new TransformVideoCommand({
           request,

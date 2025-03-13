@@ -7,6 +7,11 @@
 		"nodejs_compat"
 	],
 	"account_id": "25f21f141824546aa72c74451a11b419",
+	"site": {
+		"bucket": "./public",
+		"include": ["**/*.html", "**/*.css", "**/*.js", "**/*.svg", "**/*.png", "**/*.jpg"],
+		"exclude": []
+	},
 	"vars": {
 		"ENVIRONMENT": "development",
 		"DEBUG_ENABLED": "true",

@@ -1,0 +1,5 @@
+# Ignore generated files
+.wrangler
+node_modules
+coverage
+dist

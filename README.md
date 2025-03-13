@@ -2,6 +2,8 @@
 
 A Cloudflare Worker for performing on-the-fly video transformations by transparently rewriting requests to use Cloudflare's Media Transformation API.
 
+> **⚠️ Important Note on Parameter Support:** While this documentation lists many parameters, only those officially supported by Cloudflare (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented as convenience features through our worker but may not be fully supported by the underlying Cloudflare API.
+
 ## Features
 
 ### Core Functionality
@@ -344,8 +346,6 @@ Derivatives are preset configurations for common use cases:
 
 Some features implemented in the code may have limited support in the Cloudflare Media Transformation API:
 
-> **⚠️ Important Note on Parameter Support:** While our README documents many parameters, only those listed in the official Cloudflare documentation (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented in our worker's custom logic and applied during request transformation.
-
 - **`quality` parameter**: While implemented in our code, this is currently in beta in the Cloudflare API. You may see inconsistent behavior.
 - **`compression` parameter**: This is implemented as a custom parameter but not officially supported by the Cloudflare API.
 - **Derivatives**: These are implemented as convenience presets but are handled by the worker, not natively by Cloudflare.
@@ -378,7 +378,7 @@ Supported Akamai parameter translations:
 
 Here are some live demonstrations of the video transformation capabilities using a sample video:
 
-### Basic Transformations
+### Officially Supported Transformations
 
 - **Original Video**: [cdn.erfi.dev/rocky.mp4](https://cdn.erfi.dev/rocky.mp4)
 - **Resized Video (480p)**: [cdn.erfi.dev/rocky.mp4?width=854&height=480&fit=contain](https://cdn.erfi.dev/rocky.mp4?width=854&height=480&fit=contain)
@@ -387,27 +387,25 @@ Here are some live demonstrations of the video transformation capabilities using
 - **Video Thumbnail**: [cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=640&height=360](https://cdn.erfi.dev/rocky.mp4?mode=frame&time=5s&width=640&height=360)
 - **Video with Cropping**: [cdn.erfi.dev/rocky.mp4?width=640&height=360&fit=cover](https://cdn.erfi.dev/rocky.mp4?width=640&height=360&fit=cover)
 - **Muted Video**: [cdn.erfi.dev/rocky.mp4?audio=false](https://cdn.erfi.dev/rocky.mp4?audio=false)
+- **Generating a Sprite Sheet**: [cdn.erfi.dev/rocky.mp4?mode=spritesheet&time=0s&duration=10s&width=160&height=90](https://cdn.erfi.dev/rocky.mp4?mode=spritesheet&time=0s&duration=10s&width=160&height=90)
 
-### Advanced Transformations
+### Extended Features (Worker-Enhanced)
+
+These features leverage our worker's custom logic and may have varying levels of support:
 
 - **With Akamai-Style Parameters**: [cdn.erfi.dev/rocky.mp4?w=640&h=360&obj-fit=crop&mute=true](https://cdn.erfi.dev/rocky.mp4?w=640&h=360&obj-fit=crop&mute=true)
 - **Using a Derivative (mobile)**: [cdn.erfi.dev/rocky.mp4?derivative=mobile](https://cdn.erfi.dev/rocky.mp4?derivative=mobile)
-- **Generating a Sprite Sheet**: [cdn.erfi.dev/rocky.mp4?mode=spritesheet&time=0s&duration=10s&width=160&height=90](https://cdn.erfi.dev/rocky.mp4?mode=spritesheet&time=0s&duration=10s&width=160&height=90)
 - **High Quality with Low Compression**: [cdn.erfi.dev/rocky.mp4?quality=high&compression=low](https://cdn.erfi.dev/rocky.mp4?quality=high&compression=low)
 - **Low Quality with High Compression**: [cdn.erfi.dev/rocky.mp4?quality=low&compression=high](https://cdn.erfi.dev/rocky.mp4?quality=low&compression=high)
-- **Looping Video Animation**: [cdn.erfi.dev/rocky.mp4?derivative=animation](https://cdn.erfi.dev/rocky.mp4?derivative=animation)
+- **Looping Video Animation**: [cdn.erfi.dev/rocky.mp4?loop=true&width=640&height=360](https://cdn.erfi.dev/rocky.mp4?loop=true&width=640&height=360)
 - **Quick Preview (5s, Low Quality)**: [cdn.erfi.dev/rocky.mp4?derivative=preview](https://cdn.erfi.dev/rocky.mp4?derivative=preview)
-
-### Video Playback Controls
-
 - **Autoplay Video (Muted)**: [cdn.erfi.dev/rocky.mp4?autoplay=true&muted=true&width=640&height=360](https://cdn.erfi.dev/rocky.mp4?autoplay=true&muted=true&width=640&height=360)
-- **Looping Video**: [cdn.erfi.dev/rocky.mp4?loop=true&width=640&height=360](https://cdn.erfi.dev/rocky.mp4?loop=true&width=640&height=360)
 - **Pre-loaded Video**: [cdn.erfi.dev/rocky.mp4?preload=auto&width=640&height=360](https://cdn.erfi.dev/rocky.mp4?preload=auto&width=640&height=360)
 
 ### Debugging & Optimization
 
 - **Debug View**: [cdn.erfi.dev/rocky.mp4?width=720&height=480&debug=view](https://cdn.erfi.dev/rocky.mp4?width=720&height=480&debug=view)
-- **Auto Quality Based on Client**: [cdn.erfi.dev/rocky.mp4?quality=auto](https://cdn.erfi.dev/rocky.mp4?quality=auto)
+- **Auto Quality Based on Client**: [cdn.erfi.dev/rocky.mp4?quality=auto](https://cdn.erfi.dev/rocky.mp4?quality=auto) 
 - **Client Detection Test**: [cdn.erfi.dev/rocky.mp4?debug=view](https://cdn.erfi.dev/rocky.mp4?debug=view)
 
 ### Special Path Patterns
@@ -510,6 +508,27 @@ npm test -- -t "test name"
 - **Cloudflare Account**: With access to Media Transformations feature
 - **Wrangler CLI**: Latest version (`npm install -g wrangler`)
 
+## Static Assets Support
+
+The video-resizer now includes integrated static asset hosting through Cloudflare Workers Sites:
+
+1. **Static Web Interface**:
+   - Landing page for service documentation
+   - Interactive examples and demos
+   - Visual formatting for easier usage
+
+2. **Enhanced Debug UI**:
+   - Client-side debug visualization
+   - Responsive debug reports
+   - Performance metrics display
+   - Parameter testing tools
+
+3. **Implementation Details**:
+   - Configured via `site` section in wrangler.jsonc
+   - Assets served from ./public directory
+   - Includes HTML, CSS, and JavaScript files
+   - Seamlessly integrated with the API functionality
+
 ## Troubleshooting
 
 ### Common Issues
@@ -523,6 +542,7 @@ npm test -- -t "test name"
 | **Black video output** | DRM protected content | Media Transformations cannot process DRM protected content |
 | **Autoplay not working** | Browser restrictions | Set both `autoplay=true` and `muted=true` for most reliable autoplay behavior |
 | **High latency on first transform** | Cold cache | First transformation may take longer; subsequent requests will be faster from cache |
+| **Parameters not working** | Unsupported parameter | Remember that only `mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, and `duration` are officially supported by Cloudflare |
 
 ### Debugging
 
