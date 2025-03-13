@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-03-13",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "25f21f141824546aa72c74451a11b419",
   "vars": {
     "ENVIRONMENT": "development",
     "PATH_PATTERNS": [
@@ -23,6 +24,12 @@
       }
     ]
   },
+  "routes": [
+    {
+      "pattern": "dev.videos.erfi.dev/*",
+      "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+    }
+  ],
   "env": {
     "production": {
       "vars": {
@@ -43,7 +50,13 @@
             "originUrl": "https://videos.erfi.dev"
           }
         ]
-      }
+      },
+      "routes": [
+        {
+          "pattern": "videos.erfi.dev/*",
+          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+        }
+      ]
     },
     "staging": {
       "vars": {
@@ -64,7 +77,13 @@
             "originUrl": "https://videos.erfi.dev"
           }
         ]
-      }
+      },
+      "routes": [
+        {
+          "pattern": "staging.videos.erfi.dev/*",
+          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
+        }
+      ]
     }
   }
 }
