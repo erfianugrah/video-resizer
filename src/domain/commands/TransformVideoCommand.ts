@@ -91,7 +91,7 @@ export class TransformVideoCommand {
   <title>Video Resizer Debug Report</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-  <link rel="stylesheet" href="/debug.css">
+  <link rel="stylesheet" href="debug.css">
   <script>
     // Store diagnostics data directly in a global variable
     window.DIAGNOSTICS_DATA = ${JSON.stringify(diagnosticsInfo)};
@@ -122,7 +122,7 @@ export class TransformVideoCommand {
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="/debug-renderer.js"></script>
+  <script src="debug-renderer.js"></script>
 </body>
 </html>`;
   }
