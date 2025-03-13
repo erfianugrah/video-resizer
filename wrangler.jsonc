@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "video-resizer",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "PATH_PATTERNS": [
+      {
+        "name": "videos",
+        "matcher": "^/videos/",
+        "processPath": true,
+        "baseUrl": null,
+        "originUrl": null
+      },
+      {
+        "name": "example",
+        "matcher": "^/(.*\\.mp4)",
+        "processPath": true,
+        "baseUrl": null,
+        "originUrl": "https://videos.erfi.dev"
+      }
+    ]
+  },
+  "env": {
+    "production": {
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PATH_PATTERNS": [
+          {
+            "name": "videos",
+            "matcher": "^/videos/",
+            "processPath": true,
+            "baseUrl": null,
+            "originUrl": null
+          },
+          {
+            "name": "example",
+            "matcher": "^/(.*\\.mp4)",
+            "processPath": true,
+            "baseUrl": null,
+            "originUrl": "https://videos.erfi.dev"
+          }
+        ]
+      }
+    },
+    "staging": {
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PATH_PATTERNS": [
+          {
+            "name": "videos",
+            "matcher": "^/videos/",
+            "processPath": true,
+            "baseUrl": null,
+            "originUrl": null
+          },
+          {
+            "name": "example",
+            "matcher": "^/(.*\\.mp4)",
+            "processPath": true,
+            "baseUrl": null,
+            "originUrl": "https://videos.erfi.dev"
+          }
+        ]
+      }
+    }
+  }
+}
