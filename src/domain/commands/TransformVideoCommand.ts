@@ -371,11 +371,15 @@ export class TransformVideoCommand {
         bitrate: optimalBitrate,
       });
       
-      // Create a fetch request to the CDN-CGI URL
-      const response = await fetch(cdnCgiUrl, {
+      // Set up fetch options
+      const fetchOptions: {
+        method: string;
+        headers: Headers;
+        cf?: Record<string, unknown>;
+      } = {
         method: request.method,
         headers: request.headers,
-      });
+      };
       
       // Record network quality
       const networkInfo = getNetworkQuality(request);
@@ -384,11 +388,38 @@ export class TransformVideoCommand {
       // Extract video ID for cache tagging if possible (used in applyCacheHeaders later)
       extractVideoId(path, pathPattern);
       
-      // Apply cache headers to the response based on configuration
+      // Setup source and derivative for cache tagging
       const source = pathPattern.name;
       const derivative = options.derivative || '';
       
-      // Apply cache headers to response
+      // If using cf object caching method, add cf object to fetch options
+      if (videoConfig.caching.method === 'cf' && cacheConfig?.cacheability) {
+        // Import createCfObjectParams dynamically to avoid circular dependencies
+        const { createCfObjectParams } = await import('../../services/cacheManagementService');
+        
+        // Create cf object params for fetch
+        fetchOptions.cf = createCfObjectParams(
+          200, // Assuming OK status for initial fetch parameters
+          cacheConfig,
+          source,
+          derivative
+        );
+        
+        debug('TransformVideoCommand', 'Using cf object for caching', {
+          cfObject: fetchOptions.cf
+        });
+        
+        // Add to diagnostics info
+        diagnosticsInfo.cachingMethod = 'cf-object';
+      } else {
+        // Add to diagnostics info
+        diagnosticsInfo.cachingMethod = 'cache-api';
+      }
+      
+      // Create a fetch request to the CDN-CGI URL
+      const response = await fetch(cdnCgiUrl, fetchOptions);
+      
+      // Apply cache headers to the response based on configuration
       // Import applyCacheHeaders dynamically to avoid circular dependencies
       const { applyCacheHeaders } = await import('../../services/cacheManagementService');
       let enhancedResponse = applyCacheHeaders(

@@ -24,7 +24,8 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - **Responsive Video** - Automatically adjusts dimensions based on client device
 - **Network Awareness** - Optimizes bitrate based on connection quality
 - **Content Negotiation** - Selects best video format based on browser support
-- **Advanced Cache Control** - Uses Cloudflare Cache API with path-specific TTLs and cache tags
+- **Flexible Caching** - Configurable caching using either Cloudflare Cache API or cf fetch() object
+- **Advanced Cache Control** - Path-specific TTLs and cache tags for granular control
 - **Debug Tooling** - Provides detailed debug headers and HTML reports
 - **Video Derivatives** - Pre-configured transformation presets for common use cases
 
@@ -200,6 +201,8 @@ PATH_PATTERNS = [
 
 ### Configuration Options Explained:
 
+#### Path Pattern Options
+
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | **`name`** | Yes | - | Identifier for the pattern (for logging and debugging) |
@@ -211,6 +214,18 @@ PATH_PATTERNS = [
 | **`captureGroups`** | No | `[]` | Names for regex capture groups in the matcher. This helps with path extraction in complex URLs |
 | **`quality`** | No | - | Optional quality preset to apply to all videos matching this pattern (`low`, `medium`, `high`, `auto`) |
 | **`transformationOverrides`** | No | `{}` | Optional parameters to override default transformations for all videos matching this pattern |
+
+#### Environment Configuration Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| **`ENVIRONMENT`** | No | `development` | Environment mode (`development`, `staging`, `production`) |
+| **`DEBUG_ENABLED`** | No | `true` | Enable debug features |
+| **`DEBUG_VERBOSE`** | No | `false` | Enable verbose debug output |
+| **`DEBUG_INCLUDE_HEADERS`** | No | `false` | Include headers in debug output |
+| **`CACHE_METHOD`** | No | `cacheApi` | Caching method to use (`cacheApi` or `cf`) |
+| **`CACHE_DEBUG`** | No | `false` | Enable cache operation debugging |
+| **`PATH_PATTERNS`** | No | `[]` | Array of path patterns to process |
 
 ### Common Configuration Examples
 
@@ -265,9 +280,11 @@ The service includes comprehensive debugging capabilities that can be enabled th
 
 ```jsonc
 "vars": {
-  "DEBUG_ENABLED": "true",  // Enable debug mode
-  "DEBUG_VERBOSE": "true",  // Include verbose debug information
-  "DEBUG_INCLUDE_HEADERS": "true"  // Include request/response headers in debug output
+  "DEBUG_ENABLED": "true",      // Enable debug mode
+  "DEBUG_VERBOSE": "true",      // Include verbose debug information  
+  "DEBUG_INCLUDE_HEADERS": "true", // Include request/response headers in debug output
+  "CACHE_METHOD": "cacheApi",   // Use "cf" or "cacheApi" caching method
+  "CACHE_DEBUG": "true"         // Enable cache operation debugging
 }
 ```
 
@@ -395,13 +412,33 @@ Default cache times are configured by response type:
 
 ### Cache Implementation
 
-The service uses the Cloudflare Cache API for optimal performance:
+The service supports two caching methods that can be configured through environment variables:
 
+1. **Cache API method** (default):
+   - Uses direct access to Cloudflare's Cache API via `caches.default`
+   - Implements explicit `cache.match()` and `cache.put()` operations
+   - Provides maximum control over caching behavior
+   - Ideal for complex caching scenarios with custom logic
+
+2. **CF Object method**:
+   - Uses Cloudflare's `fetch()` with the `cf` object
+   - Simplifies caching by delegating to Cloudflare's built-in mechanisms
+   - Sets `cacheEverything`, `cacheTtl`, and `cacheTags` properties
+   - Reduces code complexity and relies on Cloudflare's optimizations
+   - Ideal for straightforward caching scenarios
+
+Both methods implement:
 1. **Cache Headers**: Sets appropriate `Cache-Control` headers based on configuration
 2. **Cache Tags**: Adds `Cache-Tag` headers with video source and derivative information for granular purging
-3. **Direct Cache Access**: Uses `caches.default.match()` to check for cached responses
-4. **Proactive Caching**: Stores responses with `caches.default.put()` for guaranteed caching
-5. **Cache Bypass**: Respects client cache control headers and debug parameters
+3. **Cache Bypass**: Respects client cache control headers and debug parameters
+
+The caching method can be configured in `wrangler.jsonc` using the `CACHE_METHOD` environment variable:
+```jsonc
+"vars": {
+  "CACHE_METHOD": "cf", // Use "cf" for CF object method or "cacheApi" for Cache API method
+  "CACHE_DEBUG": "true" // Enable debug logging for cache operations
+}
+```
 
 ### Cache Purging
 

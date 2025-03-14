@@ -16,6 +16,10 @@ export interface EnvironmentConfig {
     verbose: boolean;
     includeHeaders: boolean;
   };
+  cache: {
+    method: 'cf' | 'cacheApi';
+    debug: boolean;
+  };
   pathPatterns?: PathPattern[];
 }
 
@@ -27,6 +31,8 @@ export interface EnvVariables {
   DEBUG_ENABLED?: string;
   DEBUG_VERBOSE?: string;
   DEBUG_INCLUDE_HEADERS?: string;
+  CACHE_METHOD?: string;
+  CACHE_DEBUG?: string;
   PATH_PATTERNS?: PathPattern[] | string;
   VERSION?: string;
   ASSETS?: {
@@ -60,6 +66,12 @@ export function getEnvironmentConfig(env: EnvVariables): EnvironmentConfig {
       verbose: env.DEBUG_VERBOSE === 'true',
       includeHeaders: env.DEBUG_INCLUDE_HEADERS === 'true',
     },
+    
+    // Cache settings
+    cache: {
+      method: (env.CACHE_METHOD?.toLowerCase() === 'cf') ? 'cf' : 'cacheApi',
+      debug: env.CACHE_DEBUG === 'true',
+    }
   };
   
   // Handle path patterns - can be either object or JSON string

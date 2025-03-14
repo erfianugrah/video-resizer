@@ -38,6 +38,8 @@ export interface DiagnosticsInfo {
   estimatedBitrate?: number;
   // Original URL for debug view
   originalUrl?: string;
+  // Caching method (cf-object or cache-api)
+  cachingMethod?: string;
 }
 
 /**
@@ -100,6 +102,11 @@ export function addDebugHeaders(
   
   if (diagnosticsInfo.cacheTtl !== undefined) {
     headers.set('X-Cache-TTL', diagnosticsInfo.cacheTtl.toString());
+  }
+  
+  // Add caching method info
+  if (diagnosticsInfo.cachingMethod) {
+    headers.set('X-Cache-Method', diagnosticsInfo.cachingMethod);
   }
   
   // Add client capability detection results
@@ -275,6 +282,10 @@ export function createDebugReport(diagnosticsInfo: DiagnosticsInfo): string {
     <div class="info-row">
       <div class="info-label">Cache TTL:</div>
       <div class="info-value">${diagnosticsInfo.cacheTtl !== undefined ? `${diagnosticsInfo.cacheTtl} seconds` : 'N/A'}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">Caching Method:</div>
+      <div class="info-value">${diagnosticsInfo.cachingMethod || 'N/A'}</div>
     </div>
   </div>
   

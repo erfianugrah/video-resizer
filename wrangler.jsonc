@@ -16,6 +16,8 @@
 		"DEBUG_ENABLED": "true",
 		"DEBUG_VERBOSE": "true",
 		"DEBUG_INCLUDE_HEADERS": "true",
+		"CACHE_METHOD": "cacheApi",
+		"CACHE_DEBUG": "true",
 		"PATH_PATTERNS": [
 			{
 				"name": "videos",
@@ -82,6 +84,8 @@
 				"DEBUG_ENABLED": "true",
 				"DEBUG_VERBOSE": "true",
 				"DEBUG_INCLUDE_HEADERS": "true",
+				"CACHE_METHOD": "cf",
+				"CACHE_DEBUG": "true",
 				"PATH_PATTERNS": [
 					{
 						"name": "videos",
@@ -145,6 +149,8 @@
 				"DEBUG_ENABLED": "true",
 				"DEBUG_VERBOSE": "true",
 				"DEBUG_INCLUDE_HEADERS": "true",
+				"CACHE_METHOD": "cacheApi",
+				"CACHE_DEBUG": "true",
 				"PATH_PATTERNS": [
 					{
 						"name": "videos",

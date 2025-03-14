@@ -17,10 +17,20 @@ vi.mock('../src/utils/loggingManager', () => ({
   initializeLogging: vi.fn(),
 }));
 
+vi.mock('../src/config/videoConfig', () => ({
+  videoConfig: {
+    caching: {
+      method: 'cacheApi',
+      debug: false,
+    }
+  }
+}));
+
 vi.mock('../src/config/environmentConfig', () => ({
   getEnvironmentConfig: vi.fn().mockReturnValue({
     mode: 'development',
     debug: { enabled: true },
+    cache: { method: 'cacheApi', debug: false },
   }),
 }));
 

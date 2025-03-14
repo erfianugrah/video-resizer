@@ -185,6 +185,15 @@ export const videoConfig = {
   // These will be populated from environment configuration
   pathPatterns: [],
   
+  // Caching configuration
+  // These values will be updated from environment configuration at runtime
+  caching: {
+    // Which caching method to use: 'cf' or 'cacheApi'
+    method: 'cacheApi', 
+    // Whether to enable debug logging for cache operations
+    debug: false,
+  },
+  
   // Cache configuration for different video types
   cache: {
     // Default cache configuration for all videos

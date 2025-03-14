@@ -26,11 +26,16 @@ export default {
         // Initialize logging using our centralized manager
         initializeLogging(env);
 
+        // Apply environment caching configuration to videoConfig
+        const { videoConfig } = await import('./config/videoConfig');
+        videoConfig.caching.method = runtimeConfig.cache.method;
+        videoConfig.caching.debug = runtimeConfig.cache.debug;
+        
         info(
           'Worker',
           `Initialized video-resizer v${
             env.VERSION || '1.0.0'
-          } in ${runtimeConfig.mode} mode`
+          } in ${runtimeConfig.mode} mode with ${runtimeConfig.cache.method} caching`
         );
       }
 
