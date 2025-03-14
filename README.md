@@ -4,7 +4,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 > **⚠️ Important Note on Parameter Support:** While this documentation lists many parameters, only those officially supported by Cloudflare (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented as convenience features through our worker but may not be fully supported by the underlying Cloudflare API.
 
-> **⚠️ Video Transformation Limitations:** 
+> **⚠️ Video Transformation Limitations:**
 > 1. The `time` parameter in Cloudflare's Media Transformation API is restricted to 0-30 seconds, limiting where you can start video playback or frame extraction.
 > 2. Some users have reported that videos longer than approximately 30 seconds may be truncated when processed through the transformation service. This appears to be a platform behavior rather than a configuration issue.
 
@@ -66,12 +66,12 @@ Follow these steps to configure the video-resizer for your environment:
      "compatibility_date": "2023-09-04",
      "compatibility_flags": ["nodejs_compat"],
      "account_id": "your-account-id",
-     
+
      "assets": {
        "directory": "./public",
        "binding": "ASSETS"
      },
-     
+
      "vars": {
        "ENVIRONMENT": "development",
        "DEBUG_ENABLED": "true",
@@ -88,7 +88,7 @@ Follow these steps to configure the video-resizer for your environment:
    "PATH_PATTERNS": [
      {
        "name": "videos",
-       "matcher": "^/videos/", 
+       "matcher": "^/videos/",
        "processPath": true,
        "originUrl": null,
        "cacheTtl": 3600,
@@ -97,18 +97,12 @@ Follow these steps to configure the video-resizer for your environment:
    ]
    ```
 
-4. **Verify Media Transformations Are Enabled**
-   Make sure Cloudflare Media Transformations are enabled on your zone:
-   - Log in to the [Cloudflare dashboard](https://dash.cloudflare.com/login)
-   - Go to **Stream** > **Transformations**
-   - Verify that transformations are enabled for your zone
-
-5. **Deploy Your Worker**
+4. **Deploy Your Worker**
    ```bash
    npm run deploy
    ```
 
-6. **Test Your Configuration**
+5. **Test Your Configuration**
    After deployment, test your worker with a video URL:
    ```
    https://your-domain.com/videos/sample.mp4?width=640&height=360
@@ -143,7 +137,7 @@ Video-resizer supports multiple environment configurations (development, staging
   "staging": {
     "assets": {
       "directory": "./public",
-      "binding": "ASSETS" 
+      "binding": "ASSETS"
     },
     "vars": {
       "ENVIRONMENT": "staging",
@@ -281,7 +275,7 @@ The service includes comprehensive debugging capabilities that can be enabled th
 ```jsonc
 "vars": {
   "DEBUG_ENABLED": "true",      // Enable debug mode
-  "DEBUG_VERBOSE": "true",      // Include verbose debug information  
+  "DEBUG_VERBOSE": "true",      // Include verbose debug information
   "DEBUG_INCLUDE_HEADERS": "true", // Include request/response headers in debug output
   "CACHE_METHOD": "cacheApi",   // Use "cf" or "cacheApi" caching method
   "CACHE_DEBUG": "true"         // Enable cache operation debugging
@@ -574,7 +568,7 @@ These features leverage our worker's custom logic and may have varying levels of
 ### Debugging & Optimization
 
 - **Debug View**: [cdn.erfi.dev/rocky.mp4?width=720&height=480&debug=view](https://cdn.erfi.dev/rocky.mp4?width=720&height=480&debug=view)
-- **Auto Quality Based on Client**: [cdn.erfi.dev/rocky.mp4?quality=auto](https://cdn.erfi.dev/rocky.mp4?quality=auto) 
+- **Auto Quality Based on Client**: [cdn.erfi.dev/rocky.mp4?quality=auto](https://cdn.erfi.dev/rocky.mp4?quality=auto)
 - **Client Detection Test**: [cdn.erfi.dev/rocky.mp4?debug=view](https://cdn.erfi.dev/rocky.mp4?debug=view)
 
 ### Special Path Patterns
@@ -648,18 +642,18 @@ npm run deploy:staging
      "main": "src/index.ts",
      "compatibility_date": "2023-09-04",
      "compatibility_flags": ["nodejs_compat"],
-     
+
      "assets": {
        "directory": "./public",
        "binding": "ASSETS"
      },
-     
+
      "vars": {
        "ENVIRONMENT": "development",
        "DEBUG_ENABLED": "true",
        "PATH_PATTERNS": [{"name":"videos","matcher":"^/videos/","processPath":true}]
      },
-     
+
      "dev": {
        "port": 8787
      }
@@ -670,7 +664,7 @@ npm run deploy:staging
    ```bash
    npm run dev
    ```
-   
+
    This starts a local server at `http://localhost:8787`.
 
 5. **Testing locally:**
@@ -905,22 +899,22 @@ You can configure custom error responses for different error cases:
 
 ```html
 <!-- Basic video with transformation -->
-<video 
-  src="https://example.com/videos/sample.mp4?width=640&height=360&quality=medium" 
+<video
+  src="https://example.com/videos/sample.mp4?width=640&height=360&quality=medium"
   controls>
 </video>
 
 <!-- Advanced video with playback controls -->
-<video 
-  src="https://example.com/videos/sample.mp4?width=854&height=480&quality=high&compression=low" 
+<video
+  src="https://example.com/videos/sample.mp4?width=854&height=480&quality=high&compression=low"
   controls
   preload="metadata"
   poster="https://example.com/videos/sample.mp4?mode=frame&time=0s&width=854&height=480">
 </video>
 
 <!-- Mobile-optimized video with autoplay -->
-<video 
-  src="https://example.com/videos/sample.mp4?derivative=mobile" 
+<video
+  src="https://example.com/videos/sample.mp4?derivative=mobile"
   autoplay
   muted
   loop
