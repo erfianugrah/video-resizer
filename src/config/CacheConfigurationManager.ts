@@ -71,7 +71,7 @@ export type CacheProfileConfiguration = z.infer<typeof CacheProfileSchema>;
 
 // Default configuration
 const defaultCacheConfig: CacheConfiguration = {
-  method: 'cacheApi',
+  method: 'cf',
   debug: false,
   defaultMaxAge: 86400,
   respectOriginHeaders: true,

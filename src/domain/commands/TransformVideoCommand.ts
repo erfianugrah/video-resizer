@@ -165,7 +165,7 @@ export class TransformVideoCommand {
         status: isError ? 500 : 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store'
+          'Cache-Control': 'public, max-age=0'
         }
       });
     } catch (err) {
