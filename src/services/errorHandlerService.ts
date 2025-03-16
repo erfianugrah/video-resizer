@@ -3,7 +3,7 @@
  */
 import { error as logError } from '../utils/loggerUtils';
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
-import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
+import type { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 
 /**
  * Convert any error to a VideoTransformError
@@ -75,16 +75,12 @@ export async function createErrorResponse(
       diagInfo.errors.push(normalizedError.message);
     }
     
-    // Import debug service functions dynamically to avoid circular dependencies
-    const { createDebugReport } = await import('../utils/debugHeadersUtils');
-    
-    // Use the ASSETS binding if available for a better debug view
+    // Use the ASSETS binding for the Astro-based debug UI
     if (env?.ASSETS) {
       try {
         // Create a new URL for the debug.html page
         const debugUrl = new URL(request.url);
         debugUrl.pathname = '/debug.html';
-        debugUrl.search = `?data=${encodeURIComponent(JSON.stringify(diagInfo))}&error=true`;
         
         // Fetch the debug HTML page
         const debugResponse = await env.ASSETS.fetch(
@@ -97,16 +93,36 @@ export async function createErrorResponse(
         if (debugResponse.ok) {
           const html = await debugResponse.text();
           
+          // Safely serialize the diagnostics info
+          const safeJsonString = JSON.stringify(diagInfo)
+            .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
+            .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
+            .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
+          
           // Insert diagnostic data into the HTML
-          const htmlWithData = html.replace(
-            '<body>',
-            `<body>
-            <script>
-              // Pre-load diagnostic data
-              window.DIAGNOSTICS_DATA = ${JSON.stringify(diagInfo)};
-              console.log('Debug data loaded:', window.DIAGNOSTICS_DATA);
-            </script>`
-          );
+          let htmlWithData;
+          
+          // Try to insert in head (preferred) with fallback to body tag
+          if (html.includes('<head>')) {
+            htmlWithData = html.replace(
+              '<head>',
+              `<head>
+              <script type="text/javascript">
+                // Pre-load diagnostic data
+                window.DIAGNOSTICS_DATA = ${safeJsonString};
+                console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
+              </script>`
+            );
+          } else {
+            htmlWithData = html.replace(
+              '<body',
+              `<body data-debug="true" data-error="true"><script type="text/javascript">
+                // Pre-load diagnostic data
+                window.DIAGNOSTICS_DATA = ${safeJsonString};
+                console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
+              </script>`
+            );
+          }
           
           return new Response(htmlWithData, {
             status: normalizedError.statusCode,
@@ -125,9 +141,9 @@ export async function createErrorResponse(
       }
     }
     
-    // Fallback to simple debug report
+    // Fallback to a simple error response with the diagnostics info as JSON
     return new Response(
-      createDebugReport(diagInfo),
+      `<html><body><h1>Error</h1><p>${normalizedError.message}</p><h2>Debug Data</h2><pre>${JSON.stringify(diagInfo, null, 2)}</pre></body></html>`,
       {
         status: normalizedError.statusCode,
         headers: {

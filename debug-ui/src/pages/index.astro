@@ -1,0 +1,77 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+---
+
+<script>
+  import { renderThemeToggle } from '../components/shared/ThemeToggleClient';
+  // Render theme toggle once DOM is loaded
+  document.addEventListener('DOMContentLoaded', () => {
+    renderThemeToggle('#theme-toggle-container');
+  });
+</script>
+
+<MainLayout title="Video Resizer Debug">
+  <div class="flex flex-col items-center justify-center py-12">
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold mb-4">Video Resizer Debug UI</h1>
+      <p class="text-muted-foreground max-w-2xl">
+        This is a diagnostic interface for the Video Resizer service. Add <code class="bg-slate-100 p-1 rounded">?debug=view</code> to any video URL to access the debug interface.
+      </p>
+    </div>
+    
+    <div class="w-full max-w-2xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>Example Debug URLs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul class="space-y-2">
+            <li>
+              <a href="/videos/example.mp4?debug=view" class="text-primary hover:underline">/videos/example.mp4?debug=view</a>
+            </li>
+            <li>
+              <a href="/popular/sample.mp4?width=720&debug=view" class="text-primary hover:underline">/popular/sample.mp4?width=720&debug=view</a>
+            </li>
+            <li>
+              <a href="/shorts/clip.mp4?derivative=mobile&debug=view" class="text-primary hover:underline">/shorts/clip.mp4?derivative=mobile&debug=view</a>
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
+      
+      <div class="mt-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Debug Parameters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="py-2 text-left font-medium">Parameter</th>
+                  <th class="py-2 text-left font-medium">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b">
+                  <td class="py-2 font-mono">debug=view</td>
+                  <td class="py-2">Show the debug UI with full diagnostic information</td>
+                </tr>
+                <tr class="border-b">
+                  <td class="py-2 font-mono">debug=true</td>
+                  <td class="py-2">Add debug headers to the response without showing the UI</td>
+                </tr>
+                <tr class="border-b">
+                  <td class="py-2 font-mono">debug=headers</td>
+                  <td class="py-2">Include full request/response headers in the debug output</td>
+                </tr>
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  </div>
+</MainLayout>

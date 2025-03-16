@@ -56,20 +56,17 @@ export class TransformVideoCommand {
   }
 
   /**
-   * Generate a debug page using static assets
+   * Generate a debug page using Astro-based debug UI
    * @param diagnosticsInfo - The diagnostic information to display
    * @param isError - Whether this is an error debug report
    * @returns Promise<Response> - Response with debug HTML
    */
   private async getDebugPageResponse(diagnosticsInfo: DiagnosticsInfo, isError = false): Promise<Response> {
-    // Check if we have access to the ASSETS binding
+    // Verify that the ASSETS binding is available
     if (!this.context.env?.ASSETS) {
-      // Import createDebugReport for the fallback option
-      const { createDebugReport } = await import('../../utils/debugHeadersUtils');
-      
-      // Fallback to a simple HTML page if ASSETS binding is not available
+      // Create a minimal error response if ASSETS binding isn't available
       return new Response(
-        createDebugReport(diagnosticsInfo),
+        `<html><body><h1>Debug UI Error</h1><p>ASSETS binding not available. Please check your wrangler.toml configuration.</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
         {
           status: isError ? 500 : 200,
           headers: {
@@ -80,15 +77,11 @@ export class TransformVideoCommand {
       );
     }
     
-    // Encode the diagnostics data as URL parameters to pass to the static debug.html page
-    const encodedData = encodeURIComponent(JSON.stringify(diagnosticsInfo));
-    
     // Create a new URL for the debug.html page
     const debugUrl = new URL(this.context.request.url);
     debugUrl.pathname = '/debug.html';
-    debugUrl.search = `?data=${encodedData}&error=${isError}`;
     
-    // Create a new request for the debug.html page
+    // Create a request for the debug.html page
     const debugRequest = new Request(debugUrl.toString(), {
       method: 'GET',
       headers: new Headers({
@@ -96,15 +89,14 @@ export class TransformVideoCommand {
       })
     });
     
-    // Fetch the debug.html page from the ASSETS binding
     try {
+      // Fetch the debug.html page from the ASSETS binding
       const response = await this.context.env.ASSETS.fetch(debugRequest);
       
       if (!response.ok) {
-        // Fall back to the createDebugReport if we can't fetch the debug page
-        const { createDebugReport } = await import('../../utils/debugHeadersUtils');
+        // Create a minimal error response if debug.html can't be loaded
         return new Response(
-          createDebugReport(diagnosticsInfo),
+          `<html><body><h1>Debug UI Error</h1><p>Could not load debug.html (${response.status}). Please check that debug UI is built and copied to the public directory.</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
           {
             status: isError ? 500 : 200,
             headers: {
@@ -115,35 +107,60 @@ export class TransformVideoCommand {
         );
       }
       
-      // Return the response with appropriate headers and ensure data is passed
+      // Get the HTML content
       const html = await response.text();
       
-      // Make sure originalUrl is set in the diagnostics info
+      // Ensure originalUrl is set
       if (!diagnosticsInfo.originalUrl) {
         diagnosticsInfo.originalUrl = this.context.request.url;
       }
       
-      // Add a warning about video length limitations if we have a video ID
-      if (diagnosticsInfo.videoId && !diagnosticsInfo.warnings) {
-        diagnosticsInfo.warnings = [];
+      // Add standard warning about video length limitations
+      if (diagnosticsInfo.videoId) {
+        if (!diagnosticsInfo.warnings) {
+          diagnosticsInfo.warnings = [];
+        }
+        
+        if (Array.isArray(diagnosticsInfo.warnings)) {
+          diagnosticsInfo.warnings.push(
+            "Note: The 'time' parameter in Cloudflare Media Transformation API is limited to 0-30 seconds. Additionally, some videos may be truncated around 30 seconds when previewed."
+          );
+        }
       }
       
-      if (diagnosticsInfo.videoId && Array.isArray(diagnosticsInfo.warnings)) {
-        diagnosticsInfo.warnings.push(
-          "Note: The 'time' parameter in Cloudflare Media Transformation API is limited to 0-30 seconds. Additionally, some users report videos may be truncated around 30 seconds when previewed."
+      // Safely serialize the diagnostics info to avoid script injection issues
+      const safeJsonString = JSON.stringify(diagnosticsInfo)
+        .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
+        .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
+        .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
+      
+      // Inject the diagnostics data into the HTML
+      let htmlWithData;
+      
+      // Try to insert in head (preferred for earlier loading)
+      if (html.includes('<head>')) {
+        htmlWithData = html.replace(
+          '<head>',
+          `<head>
+          <script type="text/javascript">
+            // Pre-load diagnostic data
+            window.DIAGNOSTICS_DATA = ${safeJsonString};
+            console.log('Debug data loaded from worker:', typeof window.DIAGNOSTICS_DATA);
+          </script>`
+        );
+      } else {
+        // Fall back to body if no head tag found
+        htmlWithData = html.replace(
+          '<body',
+          `<body data-debug="true"><script type="text/javascript">
+            // Pre-load diagnostic data
+            window.DIAGNOSTICS_DATA = ${safeJsonString};
+            console.log('Debug data loaded from worker:', typeof window.DIAGNOSTICS_DATA);
+          </script>`
         );
       }
       
-      const htmlWithData = html.replace(
-        '<body>',
-        `<body>
-        <script>
-          // Pre-load diagnostic data
-          window.DIAGNOSTICS_DATA = ${JSON.stringify(diagnosticsInfo)};
-          console.log('Debug data loaded:', window.DIAGNOSTICS_DATA);
-        </script>`
-      );
-      
+      // Return the modified HTML
       return new Response(htmlWithData, {
         status: isError ? 500 : 200,
         headers: {
@@ -152,10 +169,10 @@ export class TransformVideoCommand {
         }
       });
     } catch (err) {
-      // If there's an error fetching the debug page, fallback to a simple response
+      // Handle any errors during fetch or HTML processing
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       return new Response(
-        `<html><body><h1>Error loading debug page</h1><p>${errorMessage}</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
+        `<html><body><h1>Debug UI Error</h1><p>${errorMessage}</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
         {
           status: isError ? 500 : 200,
           headers: {

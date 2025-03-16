@@ -657,7 +657,24 @@ For staging deployments:
 npm run deploy:staging
 ```
 
-### Deployment Notes
+### Deployment Options
+
+For full deployment documentation, see [DEPLOY.md](DEPLOY.md).
+
+#### Quick Deployment Commands
+
+```bash
+# Deploy to production with debug UI
+npm run deploy:prod
+
+# Deploy to staging with debug UI
+npm run deploy:staging
+
+# Full deployment with type checking and linting
+npm run deploy:full:prod
+```
+
+#### Deployment Notes
 
 1. Make sure your compatibility date is set correctly
 2. Verify that the assets directory exists and contains all necessary files

@@ -172,10 +172,7 @@ dist
 .wrangler/
 
 # misc docs
-REFACTORING.md
-CONFIGURATION_SYSTEM.md
-NEXT_STEPS.md
-cache.mdx
-index.mdx
-request.mdx
-static-assets.mdx
+Docs/
+
+# build time
+public/

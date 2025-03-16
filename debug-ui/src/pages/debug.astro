@@ -1,0 +1,570 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+import { StatCard } from '@/components/dashboard/StatCard';
+import { DiagnosticJSON } from '@/components/dashboard/DiagnosticJSON';
+import { MediaPreview } from '@/components/dashboard/MediaPreview';
+import { InfoRow, Badge } from '@/components/dashboard/InfoRow';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+---
+
+<script>
+  import { renderThemeToggle } from '../components/shared/ThemeToggleClient';
+  // Render theme toggle once DOM is loaded
+  document.addEventListener('DOMContentLoaded', () => {
+    renderThemeToggle('#theme-toggle-container');
+  });
+</script>
+
+<MainLayout title="Video Resizer Debug">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="col-span-1 lg:col-span-2 space-y-6">
+      <div id="placeholder-message" class="flex items-center justify-center h-60 rounded-lg border border-dashed p-8">
+        <div class="text-center">
+          <h3 class="text-lg font-medium">Loading diagnostic data...</h3>
+          <p class="text-sm text-muted-foreground mt-2">
+            If this message doesn't disappear, try adding <code class="bg-slate-100 p-1 rounded">?debug=view</code> to a video URL.
+          </p>
+        </div>
+      </div>
+      
+      <div id="debug-content" class="hidden space-y-6">
+        <!-- Stat cards row - will be populated by JS -->
+        <div id="stats-row" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Stats will be inserted here -->
+        </div>
+        
+        <!-- Request info card -->
+        <Card id="request-info-card">
+          <CardHeader class="pb-3">
+            <CardTitle class="flex items-center gap-2 text-base font-medium leading-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+                <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+              </svg>
+              <span class="leading-tight">Request Processing</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="p-0">
+            <div id="request-info-content">
+              <!-- Request info rows will be inserted here -->
+            </div>
+          </CardContent>
+        </Card>
+        
+        <!-- Client info card -->
+        <Card id="client-info-card">
+          <CardHeader class="pb-3">
+            <CardTitle class="flex items-center gap-2 text-base font-medium leading-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              <span class="leading-tight">Client Detection</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="p-0">
+            <div id="client-info-content">
+              <!-- Client info rows will be inserted here -->
+            </div>
+          </CardContent>
+        </Card>
+        
+        <!-- Cache info card -->
+        <Card id="cache-info-card">
+          <CardHeader class="pb-3">
+            <CardTitle class="flex items-center gap-2 text-base font-medium leading-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                <path d="M20 5v14H4V5h16z"></path>
+                <path d="M18 9H6"></path>
+                <path d="M18 13H6"></path>
+                <path d="M18 17H6"></path>
+              </svg>
+              <span class="leading-tight">Caching</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="p-0">
+            <div id="cache-info-content">
+              <!-- Cache info rows will be inserted here -->
+            </div>
+          </CardContent>
+        </Card>
+        
+        <!-- Error Display (only shown if errors exist) -->
+        <div id="error-container" class="hidden">
+          <Card id="error-card">
+            <CardHeader class="pb-3">
+              <CardTitle class="flex items-center gap-2 text-base font-medium leading-none text-destructive">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                  <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span class="leading-tight">Errors & Warnings</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div id="errors-list" class="mb-4 hidden">
+                <h6 class="text-sm font-medium mb-2">Errors</h6>
+                <ul class="space-y-2">
+                  <!-- Errors will be inserted here -->
+                </ul>
+              </div>
+              <div id="warnings-list" class="hidden">
+                <h6 class="text-sm font-medium mb-2">Warnings</h6>
+                <ul class="space-y-2">
+                  <!-- Warnings will be inserted here -->
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <!-- JSON Viewer -->
+        <div id="json-viewer-container">
+          <!-- DiagnosticJSON component will be client-rendered -->
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-span-1 space-y-6">
+      <!-- Media Preview - will be client-rendered -->
+      <div id="media-preview-container" class="hidden">
+        <!-- MediaPreview component will be client-rendered -->
+      </div>
+      
+      <!-- Configuration Viewer -->
+      <div id="configuration-container" class="hidden">
+        <!-- ConfigurationViewer component will be client-rendered -->
+      </div>
+      
+      <!-- Browser Capabilities Card -->
+      <div id="browser-capabilities-container" class="hidden">
+        <Card id="browser-capabilities-card">
+          <CardHeader class="pb-3">
+            <CardTitle class="flex items-center gap-2 text-base font-medium leading-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="4"></circle>
+                <line x1="21.17" y1="8" x2="12" y2="8"></line>
+                <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+                <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+              </svg>
+              <span class="leading-tight">Browser Capabilities</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="p-0">
+            <div id="browser-capabilities-content">
+              <!-- Browser capabilities rows will be inserted here -->
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  </div>
+</MainLayout>
+
+<script>
+  import { parseDiagnosticsFromUrl } from '../utils/diagnostics';
+  import { MediaPreview } from '../components/dashboard/MediaPreview';
+  import { InfoRow, Badge } from '../components/dashboard/InfoRow';
+  import { StatCard } from '../components/dashboard/StatCard';
+  import React from 'react';
+  
+  // Icons for stat cards
+  import { Timer, Smartphone, HardDrive } from 'lucide-react';
+  
+  // No longer using these helper functions as we're now using React components properly
+  
+  // Parse diagnostic data
+  const diagnosticsData = parseDiagnosticsFromUrl();
+  
+  if (diagnosticsData) {
+    // Hide placeholder and show debug content
+    document.getElementById('placeholder-message')?.classList.add('hidden');
+    document.getElementById('debug-content')?.classList.remove('hidden');
+    
+    // Show media preview if applicable
+    const hasPreviewableContent = (diagnosticsData.videoId || diagnosticsData.originalUrl);
+    if (hasPreviewableContent) {
+      document.getElementById('media-preview-container')?.classList.remove('hidden');
+      // Render media preview
+      const mediaPreviewContainer = document.getElementById('media-preview-container');
+      if (mediaPreviewContainer) {
+        mediaPreviewContainer.innerHTML = '';
+        const mediaPreviewRoot = document.createElement('div');
+        mediaPreviewContainer.appendChild(mediaPreviewRoot);
+        
+        // Import and render the MediaPreview component properly with React
+        import('../components/dashboard/MediaPreview').then(({ MediaPreview }) => {
+          import('react-dom/client').then(({ createRoot }) => {
+            const root = createRoot(mediaPreviewRoot);
+            root.render(React.createElement(MediaPreview, { diagnostics: diagnosticsData }));
+          }).catch(error => {
+            console.error('Error loading React DOM client for MediaPreview:', error);
+          });
+        }).catch(error => {
+          console.error('Error loading MediaPreview component:', error);
+        });
+      }
+    }
+    
+    // Populate stat cards
+    const statsRow = document.getElementById('stats-row');
+    if (statsRow) {
+      // Import and render the StatCard components properly with React
+      import('../components/dashboard/StatCard').then(({ StatCard }) => {
+        import('react-dom/client').then(({ createRoot }) => {
+          // Processing Time
+          const processingTimeRoot = document.createElement('div');
+          statsRow.appendChild(processingTimeRoot);
+          const processingTimeRootInstance = createRoot(processingTimeRoot);
+          processingTimeRootInstance.render(React.createElement(StatCard, {
+            title: 'Processing Time',
+            value: `${diagnosticsData.processingTimeMs || 0} ms`,
+            icon: Timer,
+            variant: 'default',
+          }));
+          
+          // Device Type
+          const deviceTypeRoot = document.createElement('div');
+          statsRow.appendChild(deviceTypeRoot);
+          const deviceTypeRootInstance = createRoot(deviceTypeRoot);
+          deviceTypeRootInstance.render(React.createElement(StatCard, {
+            title: 'Device Type',
+            value: diagnosticsData.deviceType || 'Unknown',
+            icon: Smartphone,
+            variant: 'info',
+          }));
+          
+          // Cache Status
+          const cacheStatusRoot = document.createElement('div');
+          statsRow.appendChild(cacheStatusRoot);
+          const cacheStatusRootInstance = createRoot(cacheStatusRoot);
+          cacheStatusRootInstance.render(React.createElement(StatCard, {
+            title: 'Cache Status',
+            value: (diagnosticsData.cacheability && diagnosticsData.cacheTtl > 0) ? 'Enabled' : 'Disabled',
+            icon: HardDrive,
+            variant: (diagnosticsData.cacheability && diagnosticsData.cacheTtl > 0) ? 'success' : 'warning',
+          }));
+        }).catch(error => {
+          console.error('Error loading React DOM client for StatCards:', error);
+        });
+      }).catch(error => {
+        console.error('Error loading StatCard component:', error);
+      });
+    }
+    
+    // Populate request info
+    const requestInfoContent = document.getElementById('request-info-content');
+    if (requestInfoContent) {
+      // Import and render InfoRow components properly with React
+      import('../components/dashboard/InfoRow').then(({ InfoRow, Badge }) => {
+        import('react-dom/client').then(({ createRoot }) => {
+          // Processing Time
+          const processingTimeRow = document.createElement('div');
+          requestInfoContent.appendChild(processingTimeRow);
+          const processingTimeInstance = createRoot(processingTimeRow);
+          processingTimeInstance.render(
+            React.createElement(InfoRow, { 
+              label: 'Processing Time:', 
+              value: React.createElement(Badge, { variant: 'default' }, `${diagnosticsData.processingTimeMs || 0} ms`)
+            })
+          );
+          
+          // Transform Source
+          if (diagnosticsData.transformSource) {
+            const transformSourceRow = document.createElement('div');
+            requestInfoContent.appendChild(transformSourceRow);
+            const transformSourceInstance = createRoot(transformSourceRow);
+            transformSourceInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Transform Source:', 
+                value: React.createElement(Badge, { variant: 'info' }, diagnosticsData.transformSource)
+              })
+            );
+          }
+          
+          // Path Pattern Match
+          if (diagnosticsData.pathMatch) {
+            const pathMatchRow = document.createElement('div');
+            requestInfoContent.appendChild(pathMatchRow);
+            const pathMatchInstance = createRoot(pathMatchRow);
+            
+            // Create code element
+            pathMatchInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Path Pattern Match:', 
+                value: React.createElement('code', {}, diagnosticsData.pathMatch)
+              })
+            );
+          }
+          
+          // Video ID
+          if (diagnosticsData.videoId) {
+            const videoIdRow = document.createElement('div');
+            requestInfoContent.appendChild(videoIdRow);
+            const videoIdInstance = createRoot(videoIdRow);
+            videoIdInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Video ID:', 
+                value: React.createElement(Badge, { variant: 'default' }, diagnosticsData.videoId)
+              })
+            );
+          }
+          
+          // Video Format
+          if (diagnosticsData.videoFormat) {
+            const videoFormatRow = document.createElement('div');
+            requestInfoContent.appendChild(videoFormatRow);
+            const videoFormatInstance = createRoot(videoFormatRow);
+            videoFormatInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Video Format:', 
+                value: React.createElement(Badge, { variant: 'success' }, diagnosticsData.videoFormat)
+              })
+            );
+          }
+        }).catch(error => {
+          console.error('Error loading React DOM client for request info:', error);
+        });
+      }).catch(error => {
+        console.error('Error loading InfoRow component:', error);
+      });
+    }
+    
+    // Populate client info
+    const clientInfoContent = document.getElementById('client-info-content');
+    if (clientInfoContent) {
+      // Import and render InfoRow components properly with React
+      import('../components/dashboard/InfoRow').then(({ InfoRow, Badge }) => {
+        import('react-dom/client').then(({ createRoot }) => {
+          // Client Hints
+          const clientHintsRow = document.createElement('div');
+          clientInfoContent.appendChild(clientHintsRow);
+          const clientHintsInstance = createRoot(clientHintsRow);
+          clientHintsInstance.render(
+            React.createElement(InfoRow, { 
+              label: 'Client Hints:', 
+              value: React.createElement(Badge, { 
+                variant: diagnosticsData.clientHints ? "success" : "warning" 
+              }, diagnosticsData.clientHints ? "Supported" : "Not supported")
+            })
+          );
+          
+          // Device Type
+          if (diagnosticsData.deviceType) {
+            const deviceTypeRow = document.createElement('div');
+            clientInfoContent.appendChild(deviceTypeRow);
+            const deviceTypeInstance = createRoot(deviceTypeRow);
+            deviceTypeInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Device Type:', 
+                value: React.createElement(Badge, { variant: "default" }, diagnosticsData.deviceType)
+              })
+            );
+          }
+          
+          // Network Quality
+          if (diagnosticsData.networkQuality) {
+            const networkQualityRow = document.createElement('div');
+            clientInfoContent.appendChild(networkQualityRow);
+            const networkQualityVariant = 
+              diagnosticsData.networkQuality === 'high' ? 'success' : 
+              diagnosticsData.networkQuality === 'medium' ? 'warning' : 'error';
+            
+            const networkQualityInstance = createRoot(networkQualityRow);
+            networkQualityInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Network Quality:', 
+                value: React.createElement(Badge, { variant: networkQualityVariant }, diagnosticsData.networkQuality)
+              })
+            );
+          }
+        }).catch(error => {
+          console.error('Error loading React DOM client for client info:', error);
+        });
+      }).catch(error => {
+        console.error('Error loading InfoRow component for client info:', error);
+      });
+    }
+    
+    // Populate cache info
+    const cacheInfoContent = document.getElementById('cache-info-content');
+    if (cacheInfoContent) {
+      // Import and render InfoRow components properly with React
+      import('../components/dashboard/InfoRow').then(({ InfoRow, Badge }) => {
+        import('react-dom/client').then(({ createRoot }) => {
+          // Cache Status
+          const cacheStatusRow = document.createElement('div');
+          cacheInfoContent.appendChild(cacheStatusRow);
+          const cacheStatusInstance = createRoot(cacheStatusRow);
+          
+          // Create a div to group badges
+          const badgeDivProps = { className: "flex flex-wrap gap-2" };
+          const statusBadges = [
+            // First badge for cache status
+            React.createElement(Badge, { 
+              variant: (diagnosticsData.cacheability && diagnosticsData.cacheTtl > 0) ? "success" : "warning",
+              key: "status"
+            }, (diagnosticsData.cacheability && diagnosticsData.cacheTtl > 0) ? "Enabled" : "Disabled")
+          ];
+          
+          // Second badge for debug mode if applicable
+          if (diagnosticsData.originalUrl && new URL(diagnosticsData.originalUrl).searchParams.has('debug')) {
+            statusBadges.push(
+              React.createElement(Badge, { variant: "info", key: "debug" }, 
+                "Debug mode disables caching"
+              )
+            );
+          }
+          
+          cacheStatusInstance.render(
+            React.createElement(InfoRow, { 
+              label: 'Status:', 
+              value: React.createElement('div', badgeDivProps, statusBadges)
+            })
+          );
+          
+          // Cache TTL
+          if (diagnosticsData.cacheTtl !== undefined) {
+            const cacheTtlRow = document.createElement('div');
+            cacheInfoContent.appendChild(cacheTtlRow);
+            const cacheTtlInstance = createRoot(cacheTtlRow);
+            cacheTtlInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'TTL:', 
+                value: React.createElement(Badge, { variant: "default" }, `${diagnosticsData.cacheTtl} seconds`)
+              })
+            );
+          }
+          
+          // Cache Tags
+          if (diagnosticsData.cacheTags && diagnosticsData.cacheTags.length > 0) {
+            const cacheTagsRow = document.createElement('div');
+            cacheInfoContent.appendChild(cacheTagsRow);
+            const cacheTagsInstance = createRoot(cacheTagsRow);
+            
+            // Create badges for each tag
+            const tagBadges = diagnosticsData.cacheTags.map((tag, index) => 
+              React.createElement(Badge, { variant: "default", key: index }, tag)
+            );
+            
+            cacheTagsInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Cache Tags:', 
+                value: React.createElement('div', badgeDivProps, tagBadges)
+              })
+            );
+          }
+        }).catch(error => {
+          console.error('Error loading React DOM client for cache info:', error);
+        });
+      }).catch(error => {
+        console.error('Error loading InfoRow component for cache info:', error);
+      });
+    }
+    
+    // Show browser capabilities if available
+    if (diagnosticsData.browserCapabilities) {
+      document.getElementById('browser-capabilities-container')?.classList.remove('hidden');
+      
+      // Populate browser capabilities
+      const browserCapabilitiesContent = document.getElementById('browser-capabilities-content');
+      if (browserCapabilitiesContent) {
+        // Import and render InfoRow components properly with React
+        import('../components/dashboard/InfoRow').then(({ InfoRow, Badge }) => {
+          import('react-dom/client').then(({ createRoot }) => {
+            Object.entries(diagnosticsData.browserCapabilities).forEach(([key, value]) => {
+              const capabilityRow = document.createElement('div');
+              browserCapabilitiesContent.appendChild(capabilityRow);
+              const capabilityInstance = createRoot(capabilityRow);
+              
+              capabilityInstance.render(
+                React.createElement(InfoRow, { 
+                  label: `${key}:`, 
+                  value: React.createElement(Badge, { 
+                    variant: value ? "success" : "error" 
+                  }, value ? "Yes" : "No")
+                })
+              );
+            });
+          }).catch(error => {
+            console.error('Error loading React DOM client for browser capabilities:', error);
+          });
+        }).catch(error => {
+          console.error('Error loading InfoRow component for browser capabilities:', error);
+        });
+      }
+    }
+    
+    // Show configuration if available
+    if (diagnosticsData.configuration) {
+      document.getElementById('configuration-container')?.classList.remove('hidden');
+      
+      // Import and render configuration viewer
+      import('../components/dashboard/ConfigurationViewerClient').then(({ renderConfigurationViewer }) => {
+        renderConfigurationViewer('#configuration-container', diagnosticsData.configuration);
+      }).catch(error => {
+        console.error('Error loading ConfigurationViewer:', error);
+      });
+    }
+    
+    // Show errors and warnings if any
+    const hasErrors = diagnosticsData.errors && diagnosticsData.errors.length > 0;
+    const hasWarnings = diagnosticsData.warnings && diagnosticsData.warnings.length > 0;
+    
+    if (hasErrors || hasWarnings) {
+      document.getElementById('error-container')?.classList.remove('hidden');
+      
+      // Populate errors
+      if (hasErrors) {
+        document.getElementById('errors-list')?.classList.remove('hidden');
+        const errorsList = document.querySelector('#errors-list ul');
+        if (errorsList) {
+          diagnosticsData.errors.forEach(error => {
+            const li = document.createElement('li');
+            li.className = 'p-3 bg-destructive/10 text-destructive rounded';
+            li.textContent = error;
+            errorsList.appendChild(li);
+          });
+        }
+      }
+      
+      // Populate warnings
+      if (hasWarnings) {
+        document.getElementById('warnings-list')?.classList.remove('hidden');
+        const warningsList = document.querySelector('#warnings-list ul');
+        if (warningsList) {
+          diagnosticsData.warnings.forEach(warning => {
+            const li = document.createElement('li');
+            li.className = 'p-3 bg-amber-500/10 text-amber-600 rounded';
+            li.textContent = warning;
+            warningsList.appendChild(li);
+          });
+        }
+      }
+    }
+    
+    // Render JSON viewer
+    const jsonViewerContainer = document.getElementById('json-viewer-container');
+    if (jsonViewerContainer) {
+      // Import and render the JSON viewer properly with React
+      import('../components/dashboard/DiagnosticJSON').then(({ DiagnosticJSON }) => {
+        // Create a container for React to render into
+        const jsonViewerRoot = document.createElement('div');
+        jsonViewerContainer.appendChild(jsonViewerRoot);
+        
+        // Use React's createRoot to render the component
+        import('react-dom/client').then(({ createRoot }) => {
+          const root = createRoot(jsonViewerRoot);
+          root.render(React.createElement(DiagnosticJSON, { data: diagnosticsData }));
+        }).catch(error => {
+          console.error('Error loading React DOM client:', error);
+        });
+      }).catch(error => {
+        console.error('Error loading DiagnosticJSON component:', error);
+      });
+    }
+  }
+</script>
