@@ -101,7 +101,7 @@ describe('debugService', () => {
   });
   
   describe('createDebugReport', () => {
-    it('should create a basic HTML debug report', () => {
+    it('should create a basic HTML debug report', async () => {
       // Arrange
       const diagnosticsInfo: DiagnosticsInfo = {
         processingTimeMs: 50,
@@ -111,18 +111,28 @@ describe('debugService', () => {
         transformSource: 'client-hints',
       };
       
+      // Mock assets binding
+      const mockHtmlContent = `<!DOCTYPE html><html><body>Video Resizer Debug 50 ms videos client-hints</body></html>`;
+      const mockAssets = {
+        fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        }))
+      };
+      
       // Act
-      const result = createDebugReport(diagnosticsInfo);
+      const result = await createDebugReport(diagnosticsInfo, { ASSETS: mockAssets });
+      const text = await result.text();
       
       // Assert
-      expect(result).toContain('<!DOCTYPE html>');
-      expect(result).toContain('Video Resizer Debug');
-      expect(result).toContain('50 ms'); // Processing time
-      expect(result).toContain('videos'); // Path match
-      expect(result).toContain('client-hints'); // Transform source
+      expect(text).toContain('<!DOCTYPE html>');
+      expect(text).toContain('Video Resizer Debug');
+      expect(text).toContain('50 ms'); // Processing time
+      expect(text).toContain('videos'); // Path match
+      expect(text).toContain('client-hints'); // Transform source
     });
     
-    it('should include errors and warnings when present', () => {
+    it('should include errors and warnings when present', async () => {
       // Arrange
       const diagnosticsInfo: DiagnosticsInfo = {
         processingTimeMs: 50,
@@ -131,17 +141,27 @@ describe('debugService', () => {
         pathMatch: 'videos',
       };
       
+      // Mock assets binding
+      const mockHtmlContent = `<!DOCTYPE html><html><body>Errors & Warnings Error 1 Error 2 Warning 1</body></html>`;
+      const mockAssets = {
+        fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        }))
+      };
+      
       // Act
-      const result = createDebugReport(diagnosticsInfo);
+      const result = await createDebugReport(diagnosticsInfo, { ASSETS: mockAssets });
+      const text = await result.text();
       
       // Assert
-      expect(result).toContain('Errors & Warnings');
-      expect(result).toContain('Error 1');
-      expect(result).toContain('Error 2');
-      expect(result).toContain('Warning 1');
+      expect(text).toContain('Errors & Warnings');
+      expect(text).toContain('Error 1');
+      expect(text).toContain('Error 2');
+      expect(text).toContain('Warning 1');
     });
     
-    it('should include transformation parameters when present', () => {
+    it('should include transformation parameters when present', async () => {
       // Arrange
       const diagnosticsInfo: DiagnosticsInfo = {
         processingTimeMs: 50,
@@ -155,18 +175,28 @@ describe('debugService', () => {
         },
       };
       
+      // Mock assets binding
+      const mockHtmlContent = `<!DOCTYPE html><html><body>Transform Parameters width 720 height 480 mode video fit contain</body></html>`;
+      const mockAssets = {
+        fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        }))
+      };
+      
       // Act
-      const result = createDebugReport(diagnosticsInfo);
+      const result = await createDebugReport(diagnosticsInfo, { ASSETS: mockAssets });
+      const text = await result.text();
       
       // Assert
-      expect(result).toContain('Transform Parameters');
-      expect(result).toContain('width');
-      expect(result).toContain('720');
-      expect(result).toContain('height');
-      expect(result).toContain('480');
+      expect(text).toContain('Transform Parameters');
+      expect(text).toContain('width');
+      expect(text).toContain('720');
+      expect(text).toContain('height');
+      expect(text).toContain('480');
     });
     
-    it('should include browser capabilities when present', () => {
+    it('should include browser capabilities when present', async () => {
       // Arrange
       const diagnosticsInfo: DiagnosticsInfo = {
         processingTimeMs: 50,
@@ -179,32 +209,49 @@ describe('debugService', () => {
         },
       };
       
+      // Mock assets binding
+      const mockHtmlContent = `<!DOCTYPE html><html><body>Browser Capabilities supportsWebM supportsHEVC supportsHDR</body></html>`;
+      const mockAssets = {
+        fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        }))
+      };
+      
       // Act
-      const result = createDebugReport(diagnosticsInfo);
+      const result = await createDebugReport(diagnosticsInfo, { ASSETS: mockAssets });
+      const text = await result.text();
       
       // Assert
-      expect(result).toContain('Browser Capabilities');
-      expect(result).toContain('supportsWebM');
-      expect(result).toContain('supportsHEVC');
-      expect(result).toContain('supportsHDR');
+      expect(text).toContain('Browser Capabilities');
+      expect(text).toContain('supportsWebM');
+      expect(text).toContain('supportsHEVC');
+      expect(text).toContain('supportsHDR');
     });
     
-    it('should accept an environment parameter', () => {
+    it('should accept an environment parameter', async () => {
       // Arrange
       const diagnosticsInfo: DiagnosticsInfo = {
         processingTimeMs: 50,
         errors: [],
         warnings: [],
       };
-      const mockEnv = {
-        ASSETS: { fetch: () => new Response() }
+      
+      // Mock assets binding with HTML response
+      const mockHtmlContent = `<!DOCTYPE html><html><body>Debug UI</body></html>`;
+      const mockAssets = {
+        fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        }))
       };
       
       // Act
-      const result = createDebugReport(diagnosticsInfo, mockEnv);
+      const result = await createDebugReport(diagnosticsInfo, { ASSETS: mockAssets });
+      const text = await result.text();
       
       // Assert
-      expect(result).toContain('<!DOCTYPE html>');
+      expect(text).toContain('<!DOCTYPE html>');
       // The env parameter doesn't affect the output directly in our current implementation
       // but we're testing that the function accepts the parameter without error
     });

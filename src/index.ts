@@ -34,7 +34,7 @@ export default {
           'Worker',
           `Initialized video-resizer v${
             env.VERSION || '1.0.0'
-          } in ${runtimeConfig.mode} mode with ${runtimeConfig.cache.method} caching`
+          } in ${runtimeConfig.mode} mode with ${runtimeConfig.cache.method} caching method`
         );
       }
 

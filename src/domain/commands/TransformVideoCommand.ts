@@ -318,7 +318,10 @@ export class TransformVideoCommand {
       const configManager = VideoConfigurationManager.getInstance();
       
       // Determine caching method based only on configuration, independent of cacheability
-      if (configManager.getCachingConfig().method === 'cf') {
+      const cacheMethod = configManager.getCachingConfig().method;
+      
+      // Always use the configured method regardless of debug mode
+      if (cacheMethod === 'cf') {
         // Import createCfObjectParams dynamically to avoid circular dependencies
         const { createCfObjectParams } = await import('../../services/cacheManagementService');
         
@@ -381,12 +384,12 @@ export class TransformVideoCommand {
                          (url.searchParams.get('debug') === 'view' || 
                           url.searchParams.get('debug') === 'true');
         
-        // Debug mode always disables caching - add to diagnostics for clarity
+        // Debug mode disables cache storage but keeps the method for debugging purposes
         if (url.searchParams.has('debug')) {
-          debug('TransformVideoCommand', 'Debug mode active - caching disabled', {
+          debug('TransformVideoCommand', 'Debug mode active - cache storage disabled', {
             url: url.toString(),
             cacheMethod: diagnosticsInfo.cachingMethod,
-            cacheability: cacheConfig?.cacheability
+            cacheability: false // Debug forces no caching, but keeps the method
           });
           
           // Add to warnings if not already present
@@ -414,8 +417,8 @@ export class TransformVideoCommand {
           // Get environment config without requiring environment variables
           try {
             diagnosticsInfo.environment = getEnvironmentConfig();
-          } catch (e) {
-            diagnosticsInfo.environment = { note: "Environment config not available" };
+          } catch (error) {
+            diagnosticsInfo.environment = { note: 'Environment config not available' };
           }
 
           return await this.getDebugPageResponse(diagnosticsInfo, false);
@@ -467,11 +470,16 @@ export class TransformVideoCommand {
                         (url.searchParams.get('debug') === 'view' || 
                           url.searchParams.get('debug') === 'true');
         
-        // Debug mode always disables caching - add to diagnostics for clarity
+        // Debug mode disables cache storage but keeps the method for debugging purposes
         if (url.searchParams.has('debug')) {
-          debug('TransformVideoCommand', 'Debug mode active - caching disabled (error case)', {
+          // Get the video configuration manager
+          const videoConfigManager = VideoConfigurationManager.getInstance();
+          
+          debug('TransformVideoCommand', 'Debug mode active - cache storage disabled (error case)', {
             url: url.toString(),
-            status: 500
+            status: 500,
+            // Keep the configured cache method but with storage disabled
+            cacheMethod: videoConfigManager.getCachingConfig().method
           });
           
           // Add to warnings if not already present
@@ -499,8 +507,8 @@ export class TransformVideoCommand {
           // Get environment config without requiring environment variables
           try {
             diagnosticsInfo.environment = getEnvironmentConfig();
-          } catch (e) {
-            diagnosticsInfo.environment = { note: "Environment config not available" };
+          } catch (error) {
+            diagnosticsInfo.environment = { note: 'Environment config not available' };
           }
           
           return await this.getDebugPageResponse(diagnosticsInfo, true);

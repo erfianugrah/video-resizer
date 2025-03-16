@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyCacheHeaders, shouldBypassCache, cacheResponse, getCachedResponse } from '../../src/services/cacheManagementService';
 import { CacheConfig } from '../../src/utils/cacheUtils';
+import { CacheConfigurationManager } from '../../src/config/CacheConfigurationManager';
 
 // Mock logging functions
 vi.mock('../../src/utils/loggerUtils', () => ({
@@ -11,6 +12,28 @@ vi.mock('../../src/utils/loggerUtils', () => ({
   error: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
+}));
+
+// Mock configuration
+vi.mock('../../src/config/CacheConfigurationManager', () => ({
+  CacheConfigurationManager: {
+    getInstance: vi.fn().mockReturnValue({
+      getConfig: vi.fn().mockReturnValue({
+        method: 'cacheApi',
+        debug: false,
+        bypassQueryParameters: ['nocache', 'bypass', 'debug']
+      }),
+      shouldBypassCache: vi.fn().mockImplementation((url) => {
+        // Simple implementation for the shouldBypassCache method
+        if (url.searchParams.has('debug') || 
+            url.searchParams.has('nocache') || 
+            url.searchParams.has('bypass')) {
+          return true;
+        }
+        return false;
+      })
+    })
+  }
 }));
 
 describe('cacheManagementService', () => {

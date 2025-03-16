@@ -1,11 +1,10 @@
 /**
  * Tests for debugHeadersUtils
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { 
   addDebugHeaders,
   extractRequestHeaders,
-  createDebugReport,
   DebugInfo,
   DiagnosticsInfo 
 } from '../../src/utils/debugHeadersUtils';
@@ -117,57 +116,6 @@ describe('debugHeadersUtils', () => {
       // Assert
       expect(result['user-agent']).toBe('Test Agent');
       expect(result['accept']).toBe('video/mp4');
-    });
-  });
-  
-  describe('createDebugReport', () => {
-    it('should generate an HTML debug report', () => {
-      // Arrange
-      const diagnosticsInfo: DiagnosticsInfo = {
-        processingTimeMs: 42,
-        transformSource: 'client-hints',
-        pathMatch: 'videos',
-        videoId: 'abc123',
-        deviceType: 'desktop',
-        networkQuality: 'fast',
-        clientHints: true,
-        responsiveSize: { width: 1280, height: 720, source: 'client-hints' },
-        cacheability: true,
-        cacheTtl: 3600,
-        transformParams: { width: 1280, height: 720, mode: 'video' },
-        browserCapabilities: { supportsHEVC: true, supportsAV1: false },
-        errors: [],
-        warnings: ['Low bandwidth detected'],
-      };
-      
-      // Act
-      const html = createDebugReport(diagnosticsInfo);
-      
-      // Assert
-      expect(html).toContain('Video Resizer Debug');
-      expect(html).toContain('42 ms'); // Processing time
-      expect(html).toContain('client-hints'); // Transform source
-      expect(html).toContain('1280'); // Width
-      expect(html).toContain('720'); // Height
-      expect(html).toContain('3600'); // Cache TTL
-      expect(html).toContain('Low bandwidth detected'); // Warning
-    });
-    
-    it('should accept an environment parameter', () => {
-      // Arrange
-      const diagnosticsInfo: DiagnosticsInfo = {
-        processingTimeMs: 42,
-        transformSource: 'client-hints',
-      };
-      const mockEnv = { ASSETS: { fetch: () => new Response() } };
-      
-      // Act
-      const html = createDebugReport(diagnosticsInfo, mockEnv);
-      
-      // Assert
-      expect(html).toContain('Video Resizer Debug');
-      // The env parameter doesn't affect the output directly in our current implementation
-      // but we're testing that the function accepts the parameter without error
     });
   });
 });

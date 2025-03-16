@@ -30,7 +30,7 @@ describe('CacheConfigurationManager', () => {
       const config = manager.getConfig();
       
       // Test key properties to ensure the default config was loaded
-      expect(config.method).toBe('cacheApi');
+      expect(config.method).toBe('cf');
       expect(config.debug).toBe(false);
       expect(config.profiles.default).toBeDefined();
       expect(config.profiles.highTraffic).toBeDefined();
@@ -62,7 +62,7 @@ describe('CacheConfigurationManager', () => {
       const config = manager.getConfig();
       
       // Just check for the key properties as the full config is quite large
-      expect(config.method).toBe('cacheApi');
+      expect(config.method).toBe('cf');
       expect(config.debug).toBe(false);
       expect(config.defaultMaxAge).toBe(86400);
       expect(config.profiles.default).toBeDefined();
@@ -72,7 +72,7 @@ describe('CacheConfigurationManager', () => {
       const manager = CacheConfigurationManager.getInstance();
       const method = manager.getCacheMethod();
       
-      expect(method).toBe('cacheApi');
+      expect(method).toBe('cf');
     });
 
     it('should check if debug is enabled', () => {
