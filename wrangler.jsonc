@@ -2,7 +2,7 @@
 	"$schema": "https://json.schemastore.org/wrangler.json",
 	"name": "video-resizer",
 	"main": "src/index.ts",
-	"compatibility_date": "2025-03-13",
+	"compatibility_date": "2025-03-10",
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
@@ -11,6 +11,7 @@
 		"directory": "./public",
 		"binding": "ASSETS"
 	},
+	// Configuration is now handled by the ConfigurationSystem in src/config/index.ts
 	"vars": {
 		"ENVIRONMENT": "development",
 		"DEBUG_ENABLED": "true",

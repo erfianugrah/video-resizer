@@ -4,7 +4,7 @@
  */
 import { CacheConfig } from '../utils/cacheUtils';
 import { debug } from '../utils/loggerUtils';
-import { videoConfig } from '../config/videoConfig';
+import { CacheConfigurationManager } from '../config';
 import { determineCacheControl } from '../utils/cacheControlUtils';
 
 /**
@@ -88,10 +88,13 @@ export async function cacheResponse(request: Request, response: Response): Promi
       return;
     }
     
+    // Get the cache configuration manager
+    const cacheConfig = CacheConfigurationManager.getInstance();
+    
     // When using cf object caching, we don't need to do anything here
     // as caching is handled by the cf object in fetch
-    if (videoConfig.caching.method === 'cf') {
-      if (videoConfig.caching.debug) {
+    if (cacheConfig.getConfig().method === 'cf') {
+      if (cacheConfig.getConfig().debug) {
         debug('CacheManagementService', 'Using cf object for caching, no explicit cache.put needed', {
           url: request.url,
           status: response.status,
@@ -151,10 +154,13 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     return null;
   }
   
+  // Get the cache configuration manager
+  const cacheConfig = CacheConfigurationManager.getInstance();
+  
   // When using cf object caching, we don't use explicit cache.match
   // Instead, we rely on Cloudflare's built-in caching with the cf object in fetch
-  if (videoConfig.caching.method === 'cf') {
-    if (videoConfig.caching.debug) {
+  if (cacheConfig.getConfig().method === 'cf') {
+    if (cacheConfig.getConfig().debug) {
       debug('CacheManagementService', 'Using cf object for caching, skipping explicit cache check', {
         url: request.url
       });

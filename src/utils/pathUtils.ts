@@ -2,7 +2,7 @@
  * Utility functions for working with URL paths
  */
 import { videoConfig } from '../config/videoConfig';
-import { TransformParams, TransformParamValue } from '../domain/commands/TransformVideoCommand';
+import { TransformParams, TransformParamValue } from '../domain/strategies/TransformationStrategy';
 
 /**
  * Path pattern interface with extended configuration

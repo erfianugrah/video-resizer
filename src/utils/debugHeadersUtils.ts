@@ -1,7 +1,7 @@
 /**
  * Utilities for adding debug information to response headers
  */
-import { TransformParams } from '../domain/commands/TransformVideoCommand';
+import { TransformParams } from '../domain/strategies/TransformationStrategy';
 import { VideoSize } from './clientHints';
 
 /**
@@ -40,6 +40,15 @@ export interface DiagnosticsInfo {
   originalUrl?: string;
   // Caching method (cf-object or cache-api)
   cachingMethod?: string;
+  // Strategy-specific fields
+  transformationType?: string;
+  videoQuality?: string;
+  videoCompression?: string;
+  playbackSettings?: Record<string, boolean | string>;
+  imageFormat?: string;
+  frameTimestamp?: string;
+  startTime?: string;
+  duration?: string;
 }
 
 /**

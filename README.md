@@ -47,16 +47,43 @@ The worker sits between clients and your video files, transparently applying tra
 
 ## Configuration
 
-### Step-by-Step Setup Guide
+Video Resizer now uses a centralized configuration management system that simplifies configuration and improves type safety. The system validates all configuration at runtime and provides a consistent interface for accessing configuration values.
 
-Follow these steps to configure the video-resizer for your environment:
+### Environment Configuration
 
-1. **Install Dependencies**
+The easiest way to configure Video Resizer is through environment variables. You can set these in your `.env` file for local development or in your `wrangler.jsonc` file for deployment.
+
+1. **Create a Local Configuration**
+   
+   Copy the template file to create your local configuration:
    ```bash
-   npm install
+   cp .env.template .env
    ```
 
-2. **Configure Your Wrangler Settings**
+2. **Configure Your Environment**
+   
+   Edit the `.env` file to customize your settings:
+   ```
+   # Application Settings
+   ENVIRONMENT=development
+   VERSION=1.0.0
+
+   # Debug Configuration
+   DEBUG_ENABLED=true
+   DEBUG_VERBOSE=true
+   DEBUG_INCLUDE_HEADERS=true
+
+   # Cache Configuration
+   CACHE_METHOD=cacheApi
+   CACHE_DEBUG=true
+
+   # Video Configuration
+   VIDEO_DEFAULT_QUALITY=auto
+   VIDEO_DEFAULT_COMPRESSION=auto
+   ```
+
+3. **Configure Wrangler Settings**
+   
    Create or edit your `wrangler.jsonc` file with your Cloudflare account details:
    ```jsonc
    {
@@ -82,7 +109,8 @@ Follow these steps to configure the video-resizer for your environment:
    }
    ```
 
-3. **Define Path Patterns**
+4. **Define Path Patterns**
+   
    Configure which URL patterns should be processed by adding the `PATH_PATTERNS` array to your `wrangler.jsonc` file:
    ```jsonc
    "PATH_PATTERNS": [
@@ -97,16 +125,33 @@ Follow these steps to configure the video-resizer for your environment:
    ]
    ```
 
-4. **Deploy Your Worker**
+5. **Deploy Your Worker**
    ```bash
    npm run deploy
    ```
 
-5. **Test Your Configuration**
+6. **Test Your Configuration**
    After deployment, test your worker with a video URL:
    ```
    https://your-domain.com/videos/sample.mp4?width=640&height=360
    ```
+
+### Configuration Managers
+
+The configuration system is built around configuration managers that handle different aspects of the application:
+
+1. **VideoConfigurationManager**: Handles video transformation settings
+2. **CacheConfigurationManager**: Manages caching behavior
+3. **LoggingConfigurationManager**: Controls logging settings
+4. **DebugConfigurationManager**: Manages debug functionality
+
+These managers provide methods for accessing and updating configuration values, ensuring type safety and validation.
+
+For detailed documentation of all configuration options, see [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md).
+
+### Environment Variables Reference
+
+For a complete list of supported environment variables, see the `.env.template` file or [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md).
 
 ### Multi-Environment Configuration
 

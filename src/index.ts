@@ -10,6 +10,7 @@
 
 import { handleVideoRequest } from './handlers/videoHandler';
 import { getEnvironmentConfig, EnvironmentConfig, EnvVariables } from './config/environmentConfig';
+import { initializeConfiguration } from './config';
 import { initializeLogging } from './utils/loggingManager';
 import { error, info, logRequest } from './utils/loggerUtils';
 
@@ -26,10 +27,8 @@ export default {
         // Initialize logging using our centralized manager
         initializeLogging(env);
 
-        // Apply environment caching configuration to videoConfig
-        const { videoConfig } = await import('./config/videoConfig');
-        videoConfig.caching.method = runtimeConfig.cache.method;
-        videoConfig.caching.debug = runtimeConfig.cache.debug;
+        // Initialize the configuration system with environment variables
+        initializeConfiguration(env);
         
         info(
           'Worker',

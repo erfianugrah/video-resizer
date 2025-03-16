@@ -1,0 +1,262 @@
+# Video Resizer Configuration Reference
+
+This document provides a comprehensive reference for all configuration options available in the video-resizer project. The configuration system is divided into several managers, each responsible for a specific area of functionality.
+
+## Table of Contents
+
+- [Configuration System Overview](#configuration-system-overview)
+- [Video Configuration](#video-configuration)
+- [Cache Configuration](#cache-configuration)
+- [Logging Configuration](#logging-configuration)
+- [Debug Configuration](#debug-configuration)
+- [Environment Variables](#environment-variables)
+
+## Configuration System Overview
+
+The video-resizer uses a centralized configuration management system based on Zod schema validation. Each configuration manager is implemented as a singleton and provides type-safe access to configuration values.
+
+### Key Features
+
+- **Runtime Validation**: All configuration is validated at runtime using Zod schemas
+- **Type Safety**: Full TypeScript type support with inferred types from Zod schemas
+- **Centralized Management**: Configuration accessed through manager classes
+- **Environment Variable Support**: Configuration can be overridden with environment variables
+- **Default Values**: Sensible defaults for all configuration options
+
+### Usage Example
+
+```typescript
+import { VideoConfigurationManager } from './config';
+
+// Get an instance of the configuration manager
+const configManager = VideoConfigurationManager.getInstance();
+
+// Access configuration
+const paramMapping = configManager.getParamMapping();
+const isValidOption = configManager.isValidOption('fit', 'contain');
+```
+
+## Video Configuration
+
+The `VideoConfigurationManager` handles all video transformation settings and options.
+
+### Video Derivatives
+
+Preset configurations for different use cases:
+
+| Derivative | Description | Example Use Case |
+|------------|-------------|------------------|
+| `high`     | High quality video | Desktop viewing, high-bandwidth connections |
+| `medium`   | Medium quality video | Default for most devices |
+| `low`      | Low quality video | Mobile devices, low-bandwidth connections |
+| `mobile`   | Mobile-optimized | Small screens, potentially low bandwidth |
+| `thumbnail`| Static thumbnail | Video preview/thumbnail images |
+| `preview`  | Short preview clip | Hover previews, loading animations |
+| `animation`| GIF-like animation | Short animated preview |
+
+### Video Default Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `width` | number | null | Width in pixels |
+| `height` | number | null | Height in pixels |
+| `mode` | string | 'video' | Transformation mode: 'video', 'frame', or 'spritesheet' |
+| `fit` | string | 'contain' | Resize behavior: 'contain', 'scale-down', or 'cover' |
+| `audio` | boolean | true | Whether to include audio |
+| `format` | string | null | Output format, e.g., 'mp4', 'webm' |
+| `time` | string | null | Timestamp for frame extraction, e.g., '5s' |
+| `duration` | string | null | Duration for clips, e.g., '10s' |
+| `quality` | string | null | Quality level: 'low', 'medium', 'high', 'auto' |
+| `compression` | string | null | Compression level: 'low', 'medium', 'high', 'auto' |
+| `loop` | boolean | null | Whether video should loop |
+| `preload` | string | null | Preload behavior: 'none', 'metadata', 'auto' |
+| `autoplay` | boolean | null | Whether video should autoplay |
+| `muted` | boolean | null | Whether video should be muted |
+
+### Path Patterns
+
+Configuration for URL path matching and processing:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `name` | string | Identifier for the pattern |
+| `matcher` | string | Regular expression pattern for matching URLs |
+| `processPath` | boolean | Whether to process matched paths |
+| `baseUrl` | string | Base URL for transformations |
+| `originUrl` | string | Origin URL for fetching content |
+| `quality` | string | Quality preset for this pattern |
+| `cacheTtl` | number | Cache TTL in seconds |
+| `priority` | number | Processing priority |
+| `captureGroups` | string[] | Named capture groups in the matcher |
+
+### Methods
+
+- `getConfig()`: Get the entire configuration
+- `getDerivative(name)`: Get a derivative configuration
+- `getPathPatterns()`: Get all path patterns
+- `getValidOptions(param)`: Get valid options for a parameter
+- `isValidOption(param, value)`: Check if a value is valid for a parameter
+- `getDefaultOption(option)`: Get a default option value
+- `getDefaults()`: Get all default options
+- `getCdnCgiConfig()`: Get CDN-CGI configuration
+- `getCacheConfig()`: Get cache configuration
+- `getResponsiveConfig()`: Get responsive design configuration
+- `addPathPattern(pattern)`: Add a new path pattern
+
+## Cache Configuration
+
+The `CacheConfigurationManager` handles caching behavior and cache profiles.
+
+### Cache Method Options
+
+| Option | Description |
+|--------|-------------|
+| `cf` | Use Cloudflare's built-in caching with CF object |
+| `cacheApi` | Use the Cache API directly |
+
+### Cache Profiles
+
+Each profile configures caching behavior for a specific content pattern:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `regex` | string | Pattern to match content |
+| `cacheability` | boolean | Whether content should be cached |
+| `videoCompression` | string | Compression for this profile |
+| `ttl` | object | TTL settings (see below) |
+
+### TTL Configuration
+
+TTL (Time To Live) settings based on response status:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ok` | number | 86400 | TTL for successful responses (200-299) |
+| `redirects` | number | 3600 | TTL for redirects (300-399) |
+| `clientError` | number | 60 | TTL for client errors (400-499) |
+| `serverError` | number | 10 | TTL for server errors (500-599) |
+
+### Default Profiles
+
+| Profile | Description | TTL (OK) |
+|---------|-------------|----------|
+| `default` | Default pattern for all content | 24 hours |
+| `highTraffic` | Popular content pattern | 7 days |
+| `shortForm` | Short-form video content | 2 days |
+| `dynamic` | Dynamic or live content | 5 minutes |
+
+### Methods
+
+- `getConfig()`: Get the entire cache configuration
+- `getCacheMethod()`: Get the current cache method
+- `isDebugEnabled()`: Check if cache debugging is enabled
+- `shouldBypassCache(url)`: Check if cache should be bypassed
+- `getProfileForPath(path)`: Get cache profile for a URL path
+- `addProfile(name, profile)`: Add a new cache profile
+
+## Logging Configuration
+
+The `LoggingConfigurationManager` handles logging levels, formats, and behavior.
+
+### Logging Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `level` | string | 'info' | Log level: 'debug', 'info', 'warn', 'error' |
+| `format` | string | 'text' | Log format: 'json' or 'text' |
+| `includeTimestamps` | boolean | true | Include timestamps in logs |
+| `includeComponentName` | boolean | true | Include component names in logs |
+| `colorize` | boolean | true | Use colors in console output |
+| `enabledComponents` | string[] | [] | Components to enable (empty = all) |
+| `disabledComponents` | string[] | [] | Components to disable |
+| `sampleRate` | number | 1 | Sampling rate for logs (0-1) |
+| `enablePerformanceLogging` | boolean | false | Enable performance metrics |
+| `performanceThresholdMs` | number | 1000 | Threshold for performance warnings |
+
+### Methods
+
+- `getConfig()`: Get the entire logging configuration
+- `getLogLevel()`: Get the current log level
+- `shouldLogComponent(componentName)`: Check if a component should be logged
+- `shouldSampleLog()`: Check if a log should be sampled
+- `shouldLogPerformance()`: Check if performance should be logged
+- `getPerformanceThreshold()`: Get the performance threshold
+
+## Debug Configuration
+
+The `DebugConfigurationManager` handles debugging capabilities and settings.
+
+### Debug Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | false | Enable debug mode globally |
+| `verbose` | boolean | false | Enable verbose debug output |
+| `includeHeaders` | boolean | false | Include headers in debug info |
+| `includePerformance` | boolean | false | Include performance metrics |
+| `dashboardMode` | boolean | true | Enable debug dashboard |
+| `viewMode` | boolean | true | Enable debug view |
+| `headerMode` | boolean | true | Enable debug headers |
+| `debugQueryParam` | string | 'debug' | Query parameter to enable debug |
+| `debugViewParam` | string | 'view' | Value for debug view parameter |
+| `debugHeaders` | string[] | [...] | Headers that enable debugging |
+| `renderStaticHtml` | boolean | true | Render static HTML for debug views |
+| `includeStackTrace` | boolean | false | Include stack traces in debug info |
+| `maxContentLength` | number | 50000 | Maximum debug content length |
+| `allowedIps` | string[] | [] | IPs allowed to see debug info |
+| `excludedPaths` | string[] | [] | Paths excluded from debugging |
+
+### Methods
+
+- `getConfig()`: Get the entire debug configuration
+- `isEnabled()`: Check if debugging is enabled
+- `isVerbose()`: Check if verbose debugging is enabled
+- `shouldIncludeHeaders()`: Check if headers should be included
+- `shouldIncludePerformance()`: Check if performance metrics should be included
+- `shouldEnableForRequest(request)`: Check if debug should be enabled for a request
+- `isDebugViewRequested(request)`: Check if debug view is requested
+- `addAllowedIp(ip)`: Add an allowed IP address
+- `addExcludedPath(path)`: Add an excluded path
+
+## Environment Variables
+
+Environment variables can be used to override configuration values at runtime. The following variables are supported:
+
+### Debug Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `DEBUG_ENABLED` | boolean | Enable debug mode |
+| `DEBUG_VERBOSE` | boolean | Enable verbose debug output |
+| `DEBUG_INCLUDE_HEADERS` | boolean | Include headers in debug info |
+| `DEBUG_PERFORMANCE` | boolean | Include performance metrics |
+
+### Cache Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' |
+| `CACHE_DEBUG` | boolean | Enable cache debugging |
+
+### Logging Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `LOG_LEVEL` | string | Log level: 'debug', 'info', 'warn', 'error' |
+| `LOG_FORMAT` | string | Log format: 'json' or 'text' |
+| `LOG_INCLUDE_TIMESTAMPS` | boolean | Include timestamps in logs |
+| `LOG_PERFORMANCE` | boolean | Enable performance logging |
+
+### Video Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `PATH_PATTERNS` | JSON | JSON array of path patterns |
+| `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
+
+### General Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `ENVIRONMENT` | string | Environment: 'production', 'staging', 'development' |
+| `VERSION` | string | Application version |
