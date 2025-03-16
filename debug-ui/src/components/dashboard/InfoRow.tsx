@@ -9,7 +9,7 @@ interface InfoRowProps {
 
 export function InfoRow({ label, value, className }: InfoRowProps) {
   return (
-    <div className={cn("border-b py-3 px-4 last:border-0 flex flex-wrap", className)}>
+    <div className={cn("border-b py-3 px-4 last:border-0 flex flex-wrap items-center", className)}>
       <div className="w-40 font-medium text-muted-foreground">{label}</div>
       <div className="flex-1 font-mono text-sm">{value}</div>
     </div>

@@ -35,7 +35,7 @@ export function DiagnosticJSON({ data, className }: DiagnosticJSONProps) {
   return (
     <Card className={className}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-medium leading-none">
+        <CardTitle className="gap-2">
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
             width="18" 
@@ -46,12 +46,12 @@ export function DiagnosticJSON({ data, className }: DiagnosticJSONProps) {
             strokeWidth="2" 
             strokeLinecap="round" 
             strokeLinejoin="round"
-            className="flex-shrink-0"
+            className="mr-2"
           >
             <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1" />
             <path d="M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1" />
           </svg>
-          <span className="leading-tight">Complete Diagnostic Data</span>
+          Complete Diagnostic Data
         </CardTitle>
         <div className="flex gap-2">
           <Button 

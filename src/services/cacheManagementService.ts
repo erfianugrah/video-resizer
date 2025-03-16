@@ -90,10 +90,11 @@ export async function cacheResponse(request: Request, response: Response): Promi
     
     // Get the cache configuration manager
     const cacheConfig = CacheConfigurationManager.getInstance();
+    const cacheMethod = cacheConfig.getConfig().method;
     
     // When using cf object caching, we don't need to do anything here
     // as caching is handled by the cf object in fetch
-    if (cacheConfig.getConfig().method === 'cf') {
+    if (cacheMethod === 'cf') {
       if (cacheConfig.getConfig().debug) {
         debug('CacheManagementService', 'Using cf object for caching, no explicit cache.put needed', {
           url: request.url,
@@ -104,7 +105,16 @@ export async function cacheResponse(request: Request, response: Response): Promi
       return;
     }
     
-    // Below is the original Cache API implementation
+    // Get the response Cache-Control header to check if we should cache
+    const cacheControl = response.headers.get('Cache-Control');
+    if (cacheControl && cacheControl.includes('no-store')) {
+      debug('CacheManagementService', 'Skipping cache.put for no-store response', {
+        url: request.url,
+        cacheControl
+      });
+      return;
+    }
+    
     // Clone the response to avoid consuming it
     const responseClone = response.clone();
     
@@ -119,6 +129,7 @@ export async function cacheResponse(request: Request, response: Response): Promi
     
     debug('CacheManagementService', 'Stored response in Cloudflare Cache API', {
       url: request.url,
+      method: 'cache-api',
       status: responseClone.status,
       cacheControl: responseClone.headers.get('Cache-Control'),
       cacheTag: responseClone.headers.get('Cache-Tag')
@@ -156,19 +167,21 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
   
   // Get the cache configuration manager
   const cacheConfig = CacheConfigurationManager.getInstance();
+  const cacheMethod = cacheConfig.getConfig().method;
   
   // When using cf object caching, we don't use explicit cache.match
   // Instead, we rely on Cloudflare's built-in caching with the cf object in fetch
-  if (cacheConfig.getConfig().method === 'cf') {
+  if (cacheMethod === 'cf') {
     if (cacheConfig.getConfig().debug) {
       debug('CacheManagementService', 'Using cf object for caching, skipping explicit cache check', {
-        url: request.url
+        url: request.url,
+        method: 'cf-object'
       });
     }
     return null;
   }
   
-  // Below is the original Cache API implementation
+  // Cache API implementation when it's the selected method
   try {
     // Get the default cache
     const cache = caches.default;
@@ -177,15 +190,17 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     const cachedResponse = await cache.match(request);
     
     if (cachedResponse) {
-      debug('CacheManagementService', 'Cache hit', {
+      debug('CacheManagementService', 'Cache hit using Cache API', {
         url: request.url,
+        method: 'cache-api',
         status: cachedResponse.status
       });
       return cachedResponse;
     }
     
-    debug('CacheManagementService', 'Cache miss', {
-      url: request.url
+    debug('CacheManagementService', 'Cache miss using Cache API', {
+      url: request.url,
+      method: 'cache-api'
     });
     return null;
   } catch (err) {
@@ -213,13 +228,43 @@ export function shouldBypassCache(request: Request): boolean {
     cacheControl.includes('no-store') || 
     cacheControl.includes('max-age=0')
   )) {
+    debug('CacheManagementService', 'Bypassing cache due to Cache-Control header', {
+      cacheControl
+    });
     return true;
   }
   
-  // Check for debug flag in URL parameters
-  const url = new URL(request.url);
-  if (url.searchParams.has('debug') || url.searchParams.has('nocache')) {
-    return true;
+  // Check if the request URL has bypass parameters
+  try {
+    const url = new URL(request.url);
+    
+    // Get the cache configuration manager for bypass parameters
+    const cacheConfig = CacheConfigurationManager.getInstance();
+    
+    // Check for any configured bypass parameters
+    for (const param of cacheConfig.getConfig().bypassQueryParameters) {
+      if (url.searchParams.has(param)) {
+        debug('CacheManagementService', `Bypassing cache due to '${param}' parameter`, {
+          url: request.url
+        });
+        return true;
+      }
+    }
+    
+    // Check specifically for debug parameter - always bypass for debug requests
+    // This ensures consistent behavior across the application
+    if (url.searchParams.has('debug')) {
+      debug('CacheManagementService', 'Bypassing cache due to debug parameter', {
+        url: request.url
+      });
+      return true;
+    }
+  } catch (error) {
+    // If we can't parse the URL, default to not bypassing cache
+    debug('CacheManagementService', 'Error checking URL for bypass parameters', {
+      url: request.url,
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
   
   // Default is to use cache
@@ -241,15 +286,25 @@ export function createCfObjectParams(
   source?: string,
   derivative?: string
 ): Record<string, unknown> {
-  // Default cf object
+  // Default cf object - always include baseline parameters
   const cfObject: Record<string, unknown> = {};
   
-  // If no cache config or should not cache, return empty cf object
-  if (!cacheConfig || !cacheConfig.cacheability) {
+  // Handle case with no config
+  if (!cacheConfig) {
+    // Always set cacheEverything to false when no config
+    cfObject.cacheEverything = false;
+    cfObject.cacheTtl = 0; // Don't cache
+    
+    debug('CacheManagementService', 'Created cf object with no caching (no config)', {
+      cacheEverything: false,
+      cacheTtl: 0
+    });
+    
     return cfObject;
   }
   
-  // Use existing imported cache control utilities for consistency
+  // Always add cacheEverything parameter
+  cfObject.cacheEverything = cacheConfig.cacheability || false;
   
   // Determine appropriate TTL based on status code using the shared utility
   const statusGroup = Math.floor(status / 100);
@@ -260,27 +315,44 @@ export function createCfObjectParams(
     5: 'serverError', // 500-599 status codes
   };
   
+  // Set TTL based on status and cacheability
   const ttlProperty = ttlMap[statusGroup];
-  const ttl = ttlProperty ? cacheConfig.ttl[ttlProperty] : 0;
+  let ttl = 0; // Default to 0 (no caching)
   
-  // Add caching parameters
-  cfObject.cacheEverything = cacheConfig.cacheability;
+  if (cacheConfig.cacheability && ttlProperty) {
+    ttl = cacheConfig.ttl[ttlProperty];
+  }
+  
+  // Always add cacheTtl parameter
   cfObject.cacheTtl = ttl;
   
-  // Add cache tags if source is provided - use video-resizer prefix for consistency with tests
-  if (source) {
+  // Add cache tags if source is provided and cacheability is true
+  if (source && cacheConfig.cacheability) {
     const tags = ['video-resizer'];
-    tags.push(`source:${source}`);
+    
+    // Ensure source doesn't have spaces (replace with hyphens) as per Cloudflare requirements
+    const sanitizedSource = source.replace(/\s+/g, '-');
+    tags.push(`source:${sanitizedSource}`);
+    
     if (derivative) {
-      tags.push(`derivative:${derivative}`);
+      // Ensure derivative doesn't have spaces (replace with hyphens) as per Cloudflare requirements
+      const sanitizedDerivative = derivative.replace(/\s+/g, '-');
+      tags.push(`derivative:${sanitizedDerivative}`);
     }
-    cfObject.cacheTags = tags;
+    
+    // Ensure no tag exceeds 1,024 characters (Cloudflare's limit for API purge compatibility)
+    const validTags = tags.map(tag => 
+      tag.length > 1024 ? tag.substring(0, 1024) : tag
+    );
+    
+    cfObject.cacheTags = validTags;
   }
   
   debug('CacheManagementService', 'Created cf object params for caching', {
     cacheEverything: cfObject.cacheEverything,
     cacheTtl: cfObject.cacheTtl,
-    cacheTags: cfObject.cacheTags
+    cacheTags: cfObject.cacheTags,
+    cacheability: cacheConfig.cacheability
   });
   
   return cfObject;

@@ -109,10 +109,10 @@ The `CacheConfigurationManager` handles caching behavior and cache profiles.
 
 ### Cache Method Options
 
-| Option | Description |
-|--------|-------------|
-| `cf` | Use Cloudflare's built-in caching with CF object |
-| `cacheApi` | Use the Cache API directly |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `cf` | Use Cloudflare's built-in caching with CF object (recommended) | ✓ |
+| `cacheApi` | Use the Cache API directly (alternative) | |
 
 ### Cache Profiles
 
@@ -233,10 +233,10 @@ Environment variables can be used to override configuration values at runtime. T
 
 ### Cache Configuration
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' |
-| `CACHE_DEBUG` | boolean | Enable cache debugging |
+| Variable | Type | Description | Default |
+|----------|------|-------------|---------|
+| `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' | 'cf' |
+| `CACHE_DEBUG` | boolean | Enable cache debugging | false |
 
 ### Logging Configuration
 

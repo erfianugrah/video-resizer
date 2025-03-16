@@ -2,11 +2,17 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Edit, Copy, CheckCheck } from 'lucide-react';
+import { Copy, CheckCheck, Minimize, Expand } from 'lucide-react';
 
 // Simplified JSON viewer component with syntax highlighting
-function JsonView({ data, title }: { data: any; title: string }) {
+function JsonView({ data, title, globalExpanded }: { data: any; title: string; globalExpanded: boolean }) {
   const [copied, setCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Update local expansion state when global state changes
+  React.useEffect(() => {
+    setIsExpanded(globalExpanded);
+  }, [globalExpanded]);
   
   // Format data for display
   const formattedData = JSON.stringify(data, null, 2);
@@ -23,25 +29,57 @@ function JsonView({ data, title }: { data: any; title: string }) {
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center justify-between bg-muted px-4 py-2">
         <h3 className="font-medium">{title}</h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={copyToClipboard}
-          className="h-8 px-2"
-        >
-          {copied ? <CheckCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          <span className="ml-1">{copied ? 'Copied!' : 'Copy'}</span>
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 px-2"
+          >
+            {isExpanded ? (
+              <>
+                <Minimize className="h-4 w-4 mr-1" />
+                Collapse
+              </>
+            ) : (
+              <>
+                <Expand className="h-4 w-4 mr-1" />
+                Expand
+              </>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={copyToClipboard}
+            className="h-8 px-2"
+          >
+            {copied ? <CheckCheck className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
+            <span>{copied ? 'Copied!' : 'Copy'}</span>
+          </Button>
+        </div>
       </div>
-      <pre className="overflow-auto bg-muted/50 p-4 text-xs">
-        <code>{formattedData}</code>
-      </pre>
+      <div className={`${isExpanded ? "max-h-[80vh]" : "max-h-60"} overflow-auto transition-all duration-200`}>
+        <pre className="bg-muted/50 p-4 m-0 text-xs overflow-auto">
+          <code>{formattedData}</code>
+        </pre>
+      </div>
     </div>
   );
 }
 
 // Main component for configuration viewing
-export function ConfigurationViewer({ configuration }: { configuration: Record<string, any> }) {
+export function ConfigurationViewer({ configuration }: { 
+  configuration: {
+    videoConfig?: Record<string, any>;
+    cacheConfig?: Record<string, any>;
+    debugConfig?: Record<string, any>;
+    loggingConfig?: Record<string, any>;
+    environment?: Record<string, any>;
+  } 
+}) {
+  const [allExpanded, setAllExpanded] = useState(false);
+  
   const hasVideoConfig = configuration?.videoConfig && Object.keys(configuration.videoConfig).length > 0;
   const hasCacheConfig = configuration?.cacheConfig && Object.keys(configuration.cacheConfig).length > 0;
   const hasDebugConfig = configuration?.debugConfig && Object.keys(configuration.debugConfig).length > 0;
@@ -53,7 +91,7 @@ export function ConfigurationViewer({ configuration }: { configuration: Record<s
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-medium leading-none">
+          <CardTitle className="gap-2">
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               width="18" 
@@ -64,11 +102,11 @@ export function ConfigurationViewer({ configuration }: { configuration: Record<s
               strokeWidth="2" 
               strokeLinecap="round" 
               strokeLinejoin="round"
-              className="flex-shrink-0"
+              className="mr-2"
             >
               <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path>
             </svg>
-            <span className="leading-tight">Configuration</span>
+            Configuration
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -84,8 +122,8 @@ export function ConfigurationViewer({ configuration }: { configuration: Record<s
   
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-medium leading-none">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="gap-2">
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
             width="18" 
@@ -96,12 +134,29 @@ export function ConfigurationViewer({ configuration }: { configuration: Record<s
             strokeWidth="2" 
             strokeLinecap="round" 
             strokeLinejoin="round"
-            className="flex-shrink-0"
+            className="mr-2"
           >
             <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path>
           </svg>
-          <span className="leading-tight">Configuration</span>
+          Configuration
         </CardTitle>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => setAllExpanded(!allExpanded)}
+        >
+          {allExpanded ? (
+            <>
+              <Minimize className="h-4 w-4 mr-1" />
+              Collapse All
+            </>
+          ) : (
+            <>
+              <Expand className="h-4 w-4 mr-1" />
+              Expand All
+            </>
+          )}
+        </Button>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue={hasVideoConfig ? "video" : hasDebugConfig ? "debug" : "cache"}>
@@ -115,31 +170,31 @@ export function ConfigurationViewer({ configuration }: { configuration: Record<s
           
           {hasVideoConfig && (
             <TabsContent value="video" className="space-y-4">
-              <JsonView data={configuration.videoConfig} title="Video Configuration" />
+              <JsonView data={configuration.videoConfig} title="Video Configuration" globalExpanded={allExpanded} />
             </TabsContent>
           )}
           
           {hasCacheConfig && (
             <TabsContent value="cache" className="space-y-4">
-              <JsonView data={configuration.cacheConfig} title="Cache Configuration" />
+              <JsonView data={configuration.cacheConfig} title="Cache Configuration" globalExpanded={allExpanded} />
             </TabsContent>
           )}
           
           {hasDebugConfig && (
             <TabsContent value="debug" className="space-y-4">
-              <JsonView data={configuration.debugConfig} title="Debug Configuration" />
+              <JsonView data={configuration.debugConfig} title="Debug Configuration" globalExpanded={allExpanded} />
             </TabsContent>
           )}
           
           {hasLoggingConfig && (
             <TabsContent value="logging" className="space-y-4">
-              <JsonView data={configuration.loggingConfig} title="Logging Configuration" />
+              <JsonView data={configuration.loggingConfig} title="Logging Configuration" globalExpanded={allExpanded} />
             </TabsContent>
           )}
           
           {hasEnvironment && (
             <TabsContent value="environment" className="space-y-4">
-              <JsonView data={configuration.environment} title="Environment" />
+              <JsonView data={configuration.environment} title="Environment" globalExpanded={allExpanded} />
             </TabsContent>
           )}
         </Tabs>

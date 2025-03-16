@@ -74,7 +74,7 @@ The easiest way to configure Video Resizer is through environment variables. You
    DEBUG_INCLUDE_HEADERS=true
 
    # Cache Configuration
-   CACHE_METHOD=cacheApi
+   CACHE_METHOD=cf
    CACHE_DEBUG=true
 
    # Video Configuration
@@ -453,18 +453,18 @@ Default cache times are configured by response type:
 
 The service supports two caching methods that can be configured through environment variables:
 
-1. **Cache API method** (default):
-   - Uses direct access to Cloudflare's Cache API via `caches.default`
-   - Implements explicit `cache.match()` and `cache.put()` operations
-   - Provides maximum control over caching behavior
-   - Ideal for complex caching scenarios with custom logic
-
-2. **CF Object method**:
+1. **CF Object method** (default, recommended):
    - Uses Cloudflare's `fetch()` with the `cf` object
    - Simplifies caching by delegating to Cloudflare's built-in mechanisms
    - Sets `cacheEverything`, `cacheTtl`, and `cacheTags` properties
    - Reduces code complexity and relies on Cloudflare's optimizations
-   - Ideal for straightforward caching scenarios
+   - Ideal for most caching scenarios and provides better performance
+
+2. **Cache API method** (alternative):
+   - Uses direct access to Cloudflare's Cache API via `caches.default`
+   - Implements explicit `cache.match()` and `cache.put()` operations
+   - Provides maximum control over caching behavior
+   - Ideal for complex caching scenarios with custom logic that requires granular control
 
 Both methods implement:
 1. **Cache Headers**: Sets appropriate `Cache-Control` headers based on configuration

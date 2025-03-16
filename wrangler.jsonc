@@ -17,7 +17,7 @@
 		"DEBUG_ENABLED": "true",
 		"DEBUG_VERBOSE": "true",
 		"DEBUG_INCLUDE_HEADERS": "true",
-		"CACHE_METHOD": "cacheApi",
+		"CACHE_METHOD": "cf",
 		"CACHE_DEBUG": "true",
 		"PATH_PATTERNS": [
 			{
@@ -150,7 +150,7 @@
 				"DEBUG_ENABLED": "true",
 				"DEBUG_VERBOSE": "true",
 				"DEBUG_INCLUDE_HEADERS": "true",
-				"CACHE_METHOD": "cacheApi",
+				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
 				"PATH_PATTERNS": [
 					{

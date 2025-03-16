@@ -49,6 +49,12 @@ export interface DiagnosticsInfo {
   frameTimestamp?: string;
   startTime?: string;
   duration?: string;
+  // Configuration data for debug UI
+  videoConfig?: Record<string, any>;
+  cacheConfig?: Record<string, any>;
+  debugConfig?: Record<string, any>;
+  loggingConfig?: Record<string, any>;
+  environment?: Record<string, any>;
 }
 
 /**

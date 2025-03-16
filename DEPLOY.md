@@ -103,5 +103,5 @@ If the debug UI shows a "Loading diagnostic data..." message:
 ## Production Considerations
 
 - The Debug UI is only accessible when the `debug=view` parameter is included in the URL
-- Debug mode impacts caching (responses with debug enabled are not cached)
+- Debug mode affects cache behavior (while CF caching is still enabled, debug responses use max-age=0)
 - For security, consider restricting debug access in production using the DebugConfigurationManager settings

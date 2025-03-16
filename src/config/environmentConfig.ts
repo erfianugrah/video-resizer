@@ -162,7 +162,7 @@ function parseStringArray(value?: string, defaultValue: string[] = []): string[]
  * @param {EnvVariables} env - Environment variables
  * @returns {EnvironmentConfig} - Configuration object
  */
-export function getEnvironmentConfig(env: EnvVariables): EnvironmentConfig {
+export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig {
   // Determine if we're in production, staging, or development
   const mode = (env.ENVIRONMENT || 'development').toLowerCase();
   const isProduction = mode === 'production';

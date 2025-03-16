@@ -19,7 +19,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-medium leading-none">
+        <CardTitle className="gap-2">
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
             width="18" 
@@ -30,7 +30,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
             strokeWidth="2" 
             strokeLinecap="round" 
             strokeLinejoin="round"
-            className="flex-shrink-0"
+            className="mr-2"
           >
             {isVideo ? (
               <path d="m22 8-6 4 6 4V8Z M2 8v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
@@ -38,7 +38,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
               <path d="M5 3a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Z M12 8v8 M8 12h8" />
             )}
           </svg>
-          <span className="leading-tight">Media Preview</span>
+          Media Preview
         </CardTitle>
       </CardHeader>
       <CardContent>

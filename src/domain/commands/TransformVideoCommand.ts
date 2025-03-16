@@ -196,7 +196,7 @@ export class TransformVideoCommand {
     const diagnosticsInfo: DiagnosticsInfo = {
       errors: [],
       warnings: [],
-      originalUrl: this.context.request.url // Store the original URL for debug view
+      originalUrl: this.context.request.url, // Store the original URL for debug view
     };
     
     try {
@@ -317,12 +317,13 @@ export class TransformVideoCommand {
       // Get the configuration manager
       const configManager = VideoConfigurationManager.getInstance();
       
-      // If using cf object caching method, add cf object to fetch options
-      if (configManager.getCachingConfig().method === 'cf' && cacheConfig?.cacheability) {
+      // Determine caching method based only on configuration, independent of cacheability
+      if (configManager.getCachingConfig().method === 'cf') {
         // Import createCfObjectParams dynamically to avoid circular dependencies
         const { createCfObjectParams } = await import('../../services/cacheManagementService');
         
-        // Create cf object params for fetch
+        // Always use cf object when configured, even if cacheability is false
+        // createCfObjectParams will handle cacheability internally
         fetchOptions.cf = createCfObjectParams(
           200, // Assuming OK status for initial fetch parameters
           cacheConfig,
@@ -331,12 +332,19 @@ export class TransformVideoCommand {
         );
         
         debug('TransformVideoCommand', 'Using cf object for caching', {
-          cfObject: fetchOptions.cf
+          cfObject: fetchOptions.cf,
+          cacheability: cacheConfig?.cacheability
         });
         
-        // Add to diagnostics info
+        // Add to diagnostics info - always use cf-object when method is cf
         diagnosticsInfo.cachingMethod = 'cf-object';
       } else {
+        // When method is cacheApi, use Cache API for caching mechanism
+        // cacheability will be handled by cache service logic
+        debug('TransformVideoCommand', 'Using Cache API for caching', {
+          cacheability: cacheConfig?.cacheability
+        });
+        
         // Add to diagnostics info
         diagnosticsInfo.cachingMethod = 'cache-api';
       }
@@ -373,8 +381,43 @@ export class TransformVideoCommand {
                          (url.searchParams.get('debug') === 'view' || 
                           url.searchParams.get('debug') === 'true');
         
+        // Debug mode always disables caching - add to diagnostics for clarity
+        if (url.searchParams.has('debug')) {
+          debug('TransformVideoCommand', 'Debug mode active - caching disabled', {
+            url: url.toString(),
+            cacheMethod: diagnosticsInfo.cachingMethod,
+            cacheability: cacheConfig?.cacheability
+          });
+          
+          // Add to warnings if not already present
+          if (!diagnosticsInfo.warnings?.includes('Debug mode disables caching')) {
+            diagnosticsInfo.warnings = diagnosticsInfo.warnings || [];
+            diagnosticsInfo.warnings.push('Debug mode disables caching');
+          }
+        }
+        
         // Return debug report HTML if requested and debug is enabled
         if (debugView) {
+          // Add configuration data to diagnostics for the debug UI
+          const videoConfig = VideoConfigurationManager.getInstance();
+          const { CacheConfigurationManager } = await import('../../config/CacheConfigurationManager');
+          const { DebugConfigurationManager } = await import('../../config/DebugConfigurationManager');
+          const { LoggingConfigurationManager } = await import('../../config/LoggingConfigurationManager');
+          const { getEnvironmentConfig } = await import('../../config/environmentConfig');
+
+          // Add configuration objects to diagnostics
+          diagnosticsInfo.videoConfig = videoConfig.getConfig();
+          diagnosticsInfo.cacheConfig = CacheConfigurationManager.getInstance().getConfig();
+          diagnosticsInfo.debugConfig = DebugConfigurationManager.getInstance().getConfig();
+          diagnosticsInfo.loggingConfig = LoggingConfigurationManager.getInstance().getConfig();
+          
+          // Get environment config without requiring environment variables
+          try {
+            diagnosticsInfo.environment = getEnvironmentConfig();
+          } catch (e) {
+            diagnosticsInfo.environment = { note: "Environment config not available" };
+          }
+
           return await this.getDebugPageResponse(diagnosticsInfo, false);
         }
       }
@@ -424,8 +467,42 @@ export class TransformVideoCommand {
                         (url.searchParams.get('debug') === 'view' || 
                           url.searchParams.get('debug') === 'true');
         
+        // Debug mode always disables caching - add to diagnostics for clarity
+        if (url.searchParams.has('debug')) {
+          debug('TransformVideoCommand', 'Debug mode active - caching disabled (error case)', {
+            url: url.toString(),
+            status: 500
+          });
+          
+          // Add to warnings if not already present
+          if (!diagnosticsInfo.warnings?.includes('Debug mode disables caching')) {
+            diagnosticsInfo.warnings = diagnosticsInfo.warnings || [];
+            diagnosticsInfo.warnings.push('Debug mode disables caching');
+          }
+        }
+        
         // Return debug report HTML if requested
         if (debugView) {
+          // Add configuration data to diagnostics for the debug UI
+          const videoConfig = VideoConfigurationManager.getInstance();
+          const { CacheConfigurationManager } = await import('../../config/CacheConfigurationManager');
+          const { DebugConfigurationManager } = await import('../../config/DebugConfigurationManager');
+          const { LoggingConfigurationManager } = await import('../../config/LoggingConfigurationManager');
+          const { getEnvironmentConfig } = await import('../../config/environmentConfig');
+
+          // Add configuration objects to diagnostics
+          diagnosticsInfo.videoConfig = videoConfig.getConfig();
+          diagnosticsInfo.cacheConfig = CacheConfigurationManager.getInstance().getConfig();
+          diagnosticsInfo.debugConfig = DebugConfigurationManager.getInstance().getConfig();
+          diagnosticsInfo.loggingConfig = LoggingConfigurationManager.getInstance().getConfig();
+          
+          // Get environment config without requiring environment variables
+          try {
+            diagnosticsInfo.environment = getEnvironmentConfig();
+          } catch (e) {
+            diagnosticsInfo.environment = { note: "Environment config not available" };
+          }
+          
           return await this.getDebugPageResponse(diagnosticsInfo, true);
         }
       }

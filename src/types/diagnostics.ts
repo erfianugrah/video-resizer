@@ -63,14 +63,12 @@ export interface DiagnosticsInfo {
   derivative?: string;
   source?: string;
   
-  // Configuration information (for new debug UI)
-  configuration?: {
-    videoConfig?: Record<string, any>;
-    cacheConfig?: Record<string, any>;
-    debugConfig?: Record<string, any>;
-    loggingConfig?: Record<string, any>;
-    environment?: Record<string, any>;
-  };
+  // Configuration information (for debug UI)
+  videoConfig?: Record<string, any>;
+  cacheConfig?: Record<string, any>;
+  debugConfig?: Record<string, any>;
+  loggingConfig?: Record<string, any>;
+  environment?: Record<string, any>;
   
   // Additional data
   [key: string]: any;
