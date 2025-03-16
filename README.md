@@ -45,6 +45,35 @@ The worker sits between clients and your video files, transparently applying tra
 4. Worker forwards the transformed request to Cloudflare's Media Transformation service
 5. The transformed video is returned to the user, with the original URL preserved
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+sequenceDiagram
+    autonumber
+    participant Client
+    participant VR as Video Resizer Worker
+    participant CT as Cloudflare Transformation
+    participant Cache as Cloudflare Cache
+    participant Origin as Origin Server
+    
+    Client->>VR: GET /videos/sample.mp4?width=640&height=360
+    VR->>VR: Match path against patterns
+    VR->>Cache: Check cache (if cacheApi method)
+    alt Cache hit
+        Cache-->>VR: Return cached response
+        VR-->>Client: Return transformed video
+    else Cache miss
+        VR->>VR: Build CDN-CGI transformation URL
+        VR->>CT: Request with CDN-CGI parameters
+        CT->>Origin: Fetch original video
+        Origin-->>CT: Return original video
+        CT->>CT: Apply transformations
+        CT-->>VR: Return transformed video
+        VR->>VR: Apply cache headers & ttl
+        VR->>Cache: Store in cache (if enabled)
+        VR-->>Client: Return transformed video
+    end
+```
+
 ## Configuration
 
 Video Resizer now uses a centralized configuration management system that simplifies configuration and improves type safety. The system validates all configuration at runtime and provides a consistent interface for accessing configuration values.
@@ -453,6 +482,43 @@ Default cache times are configured by response type:
 
 The service supports two caching methods that can be configured through environment variables:
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+flowchart TD
+    A[Cache Configuration] -->|method=cf| B[CF Object Method]
+    A -->|method=cacheApi| C[Cache API Method]
+    
+    B -->|fetch with cf object| D{Cacheability Check}
+    C -->|explicit cache operations| E{Cacheability Check}
+    
+    D -->|true| F[cf.cacheEverything=true]
+    D -->|false| G[cf.cacheEverything=false]
+    
+    E -->|true| H[cache.put operations]
+    E -->|false| I[skip cache.put]
+    
+    F --> J[Set cf.cacheTtl & cf.cacheTags]
+    G --> K[Set cf.cacheTtl=0]
+    
+    J --> L[Fetch with cf object]
+    K --> L
+    
+    H --> M[Apply Cache-Control headers]
+    I --> M
+    
+    L --> N[Apply Cache-Control headers]
+    M --> O[Add Cache-Tag headers]
+    N --> O
+    
+    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style B fill:#006400,stroke:#333,stroke-width:2px
+    style C fill:#7B68EE,stroke:#333,stroke-width:2px
+    style D fill:#F8B229,stroke:#333,stroke-width:2px
+    style E fill:#F8B229,stroke:#333,stroke-width:2px
+    style L fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style M fill:#5D8AA8,stroke:#333,stroke-width:2px
+```
+
 1. **CF Object method** (default, recommended):
    - Uses Cloudflare's `fetch()` with the `cf` object
    - Simplifies caching by delegating to Cloudflare's built-in mechanisms
@@ -785,6 +851,53 @@ The video-resizer includes integrated static asset hosting through Cloudflare Wo
 
 When you add `?debug=view` to any video URL, the worker will display an enhanced debug interface that includes:
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+flowchart TD
+    A[Client Request with ?debug=view] --> B[Video Resizer Worker]
+    B --> C{Debug Enabled?}
+    
+    C -->|Yes| D[Collect Diagnostic Data]
+    C -->|No| E[Normal Processing]
+    
+    D --> F[Collect Request Headers]
+    D --> G[Record Device Info]
+    D --> H[Track Processing Time]
+    D --> I[Gather Transformation Details]
+    D --> J[Add Configuration Data]
+    
+    F --> K[Generate Debug HTML]
+    G --> K
+    H --> K
+    I --> K
+    J --> K
+    
+    K --> L[Inject Diagnostic Data as JSON]
+    L --> M[Return Debug UI HTML]
+    
+    M --> N{Client Browser}
+    
+    N --> O[Video Preview]
+    N --> P[Diagnostic JSON Viewer]
+    N --> Q[Configuration Tabs]
+    N --> R[Error & Warning Display]
+    
+    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style B fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style C fill:#F8B229,stroke:#333,stroke-width:2px
+    style D fill:#7B68EE,stroke:#333,stroke-width:2px
+    style E fill:#006400,stroke:#333,stroke-width:2px
+    style K fill:#7B68EE,stroke:#333,stroke-width:2px
+    style M fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style N fill:#F8B229,stroke:#333,stroke-width:2px
+    style O fill:#006400,stroke:#333,stroke-width:2px
+    style P fill:#006400,stroke:#333,stroke-width:2px
+    style Q fill:#006400,stroke:#333,stroke-width:2px
+    style R fill:#006400,stroke:#333,stroke-width:2px
+```
+
+The debug interface includes:
+
 1. **Performance Metrics**:
    - Processing time in milliseconds
    - Cache status indication
@@ -1031,26 +1144,36 @@ The project follows domain-driven design with command pattern and service-orient
 
 The system uses a layered architecture with the following components:
 
-```
-┌───────────────────┐
-│   VideoHandler    │
-└─────────┬─────────┘
-          │
-          ▼
-┌───────────────────┐     ┌───────────────────┐
-│ VideoOptionsService│────►│VideoTransformation│
-└─────────┬─────────┘     │      Service      │
-          │               └──────────┬────────┘
-          ▼                          │
-┌───────────────────┐                │
-│TransformVideoCommand◄──────────────┘
-└─────────┬─────────┘
-          │
-          ▼
-┌───────────────────┐     ┌───────────────────┐
-│CacheManagement    │     │     Debug         │
-│     Service       │     │     Service       │
-└───────────────────┘     └───────────────────┘
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+flowchart TD
+    A[VideoHandler] --> B[VideoOptionsService]
+    B --> C[TransformVideoCommand]
+    D[VideoTransformationService] --> C
+    C --> E[CacheManagementService]
+    C --> F[DebugService]
+    
+    subgraph Configuration Layer
+        G[VideoConfiguration]
+        H[CacheConfiguration]
+        I[DebugConfiguration]
+        J[LoggingConfiguration]
+        K[EnvironmentConfig]
+    end
+    
+    C -.-> G
+    C -.-> H
+    C -.-> I
+    E -.-> H
+    F -.-> I
+    
+    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style B fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style C fill:#006400,stroke:#333,stroke-width:2px
+    style D fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style E fill:#7B68EE,stroke:#333,stroke-width:2px
+    style F fill:#7B68EE,stroke:#333,stroke-width:2px
+    style Configuration fill:#3E3E3E,stroke:#333,stroke-width:1px
 ```
 
 ### Components

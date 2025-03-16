@@ -15,6 +15,40 @@ This document provides a comprehensive reference for all configuration options a
 
 The video-resizer uses a centralized configuration management system based on Zod schema validation. Each configuration manager is implemented as a singleton and provides type-safe access to configuration values.
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+flowchart TD
+    A[Environment Variables] -->|Override| B[Default Configuration]
+    C[wrangler.jsonc] -->|Override| B
+    
+    B --> D[Zod Schema Validation]
+    D --> E[Configuration Manager Singletons]
+    
+    E --> F[VideoConfigurationManager]
+    E --> G[CacheConfigurationManager]
+    E --> H[DebugConfigurationManager]
+    E --> I[LoggingConfigurationManager]
+    
+    F --> J{Application Services}
+    G --> J
+    H --> J
+    I --> J
+    
+    J --> K[Worker Behavior]
+    
+    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style B fill:#006400,stroke:#333,stroke-width:2px
+    style C fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style D fill:#7B68EE,stroke:#333,stroke-width:2px
+    style E fill:#7B68EE,stroke:#333,stroke-width:2px
+    style F fill:#F8B229,stroke:#333,stroke-width:2px
+    style G fill:#F8B229,stroke:#333,stroke-width:2px
+    style H fill:#F8B229,stroke:#333,stroke-width:2px
+    style I fill:#F8B229,stroke:#333,stroke-width:2px
+    style J fill:#006400,stroke:#333,stroke-width:2px
+    style K fill:#5D8AA8,stroke:#333,stroke-width:2px
+```
+
 ### Key Features
 
 - **Runtime Validation**: All configuration is validated at runtime using Zod schemas

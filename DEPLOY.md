@@ -2,6 +2,45 @@
 
 This guide explains how to deploy the Video Resizer application along with its Debug UI.
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
+flowchart TD
+    A[Video Resizer Project] --> B[Build Debug UI]
+    A --> C[Prepare Worker]
+    
+    B --> D[build-and-copy.js]
+    D --> E[Copy to /public directory]
+    
+    C --> F[Type checking with TypeScript]
+    C --> G[Linting with ESLint]
+    
+    E --> H[Deploy with Wrangler]
+    F --> H
+    G --> H
+    
+    H --> I[Cloudflare Workers]
+    
+    subgraph Environments
+        J[Development]
+        K[Staging]
+        L[Production]
+    end
+    
+    I --> J
+    I --> K
+    I --> L
+    
+    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style B fill:#006400,stroke:#333,stroke-width:2px
+    style C fill:#006400,stroke:#333,stroke-width:2px
+    style D fill:#7B68EE,stroke:#333,stroke-width:2px
+    style H fill:#F8B229,stroke:#333,stroke-width:2px
+    style I fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style J fill:#006400,stroke:#333,stroke-width:2px
+    style K fill:#7B68EE,stroke:#333,stroke-width:2px
+    style L fill:#F8B229,stroke:#333,stroke-width:2px
+```
+
 ## Prerequisites
 
 - Node.js 18+ and npm 9+
