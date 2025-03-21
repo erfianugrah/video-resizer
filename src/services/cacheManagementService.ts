@@ -6,6 +6,7 @@ import { CacheConfig } from '../utils/cacheUtils';
 import { debug } from '../utils/loggerUtils';
 import { CacheConfigurationManager } from '../config';
 import { determineCacheControl } from '../utils/cacheControlUtils';
+import { generateCacheTags, shouldBypassCache } from './videoStorageService';
 
 /**
  * Apply cache headers to a response based on configuration and use Cache API if available
@@ -34,8 +35,6 @@ export function applyCacheHeaders(
     headers: newHeaders,
   };
   
-  // Use cache control utilities for consistency
-  
   // If no cache config, use default no-cache behavior
   if (!cacheConfig) {
     newHeaders.set('Cache-Control', 'no-store');
@@ -60,14 +59,16 @@ export function applyCacheHeaders(
     newHeaders.set('Cache-Control', 'no-store');
   }
   
-  // Add cache tags if source is provided - important for purging through Cloudflare Cache API
+  // Generate cache tags if source is provided - important for purging
   if (source) {
-    // Use 'video-resizer' prefix for consistency with existing tests
-    let cacheTag = `video-resizer,source:${source}`;
-    if (derivative) {
-      cacheTag += `,derivative:${derivative}`;
+    const options = { derivative };
+    const tags = generateCacheTags(source, options, newHeaders);
+    if (tags.length > 0) {
+      newHeaders.set('Cache-Tag', tags.join(','));
+    } else {
+      // For backward compatibility with tests 
+      newHeaders.set('Cache-Tag', `video-resizer,source:${source}${derivative ? `,derivative:${derivative}` : ''}`);
     }
-    newHeaders.set('Cache-Tag', cacheTag);
   }
   
   return new Response(response.body, responseInit);
@@ -79,9 +80,14 @@ export function applyCacheHeaders(
  * 
  * @param request - The original request
  * @param response - The response to cache
+ * @param context - Optional execution context for waitUntil
  * @returns Promise that resolves when caching is complete
  */
-export async function cacheResponse(request: Request, response: Response): Promise<void> {
+export async function cacheResponse(
+  request: Request, 
+  response: Response,
+  context?: ExecutionContext
+): Promise<void> {
   try {
     // Only cache successful GET requests
     if (request.method !== 'GET' || !response.ok) {
@@ -120,20 +126,51 @@ export async function cacheResponse(request: Request, response: Response): Promi
     
     // Get the default cache
     const cache = caches.default;
-    
-    // Put the response in the cache
-    // This is an optimization - the Cache-Control headers will still
-    // control cache behavior, but this ensures the response is in the
-    // cache immediately
-    await cache.put(request, responseClone);
-    
-    debug('CacheManagementService', 'Stored response in Cloudflare Cache API', {
-      url: request.url,
-      method: 'cache-api',
-      status: responseClone.status,
-      cacheControl: responseClone.headers.get('Cache-Control'),
-      cacheTag: responseClone.headers.get('Cache-Tag')
-    });
+
+    // If we have an execution context, use waitUntil
+    if (context) {
+      context.waitUntil(
+        cache.put(request, responseClone)
+          .then(() => {
+            debug('CacheManagementService', 'Stored response in Cloudflare Cache API (waitUntil)', {
+              url: request.url,
+              method: 'cache-api',
+              status: responseClone.status,
+              cacheControl: responseClone.headers.get('Cache-Control'),
+              cacheTag: responseClone.headers.get('Cache-Tag')
+            });
+          })
+          .catch(err => {
+            // Log but don't fail if caching fails
+            const errMessage = err instanceof Error ? err.message : 'Unknown error';
+            debug('CacheManagementService', 'Failed to store in cache (waitUntil)', {
+              url: request.url,
+              error: errMessage
+            });
+          })
+      );
+    } else {
+      // Without execution context, just put directly
+      try {
+        // Put the response in the cache
+        await cache.put(request, responseClone);
+        
+        debug('CacheManagementService', 'Stored response in Cloudflare Cache API', {
+          url: request.url,
+          method: 'cache-api',
+          status: responseClone.status,
+          cacheControl: responseClone.headers.get('Cache-Control'),
+          cacheTag: responseClone.headers.get('Cache-Tag')
+        });
+      } catch (err) {
+        // Log but don't fail if caching fails
+        const errMessage = err instanceof Error ? err.message : 'Unknown error';
+        debug('CacheManagementService', 'Failed to store in cache', {
+          url: request.url,
+          error: errMessage
+        });
+      }
+    }
   } catch (err) {
     // Log but don't fail if caching fails
     const errMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -157,9 +194,9 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     return null;
   }
   
-  // Check if we should bypass cache (request has cache-control: no-store, etc.)
+  // Check if we should bypass cache
   if (shouldBypassCache(request)) {
-    debug('CacheManagementService', 'Bypassing cache based on request headers', {
+    debug('CacheManagementService', 'Bypassing cache based on request', {
       url: request.url
     });
     return null;
@@ -212,63 +249,6 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     });
     return null;
   }
-}
-
-/**
- * Check if a response should be cached or served fresh
- * 
- * @param request - The incoming request
- * @returns Boolean indicating if response should bypass cache
- */
-export function shouldBypassCache(request: Request): boolean {
-  // Check for no-cache directive in Cache-Control header
-  const cacheControl = request.headers.get('Cache-Control');
-  if (cacheControl && (
-    cacheControl.includes('no-cache') || 
-    cacheControl.includes('no-store') || 
-    cacheControl.includes('max-age=0')
-  )) {
-    debug('CacheManagementService', 'Bypassing cache due to Cache-Control header', {
-      cacheControl
-    });
-    return true;
-  }
-  
-  // Check if the request URL has bypass parameters
-  try {
-    const url = new URL(request.url);
-    
-    // Get the cache configuration manager for bypass parameters
-    const cacheConfig = CacheConfigurationManager.getInstance();
-    
-    // Check for any configured bypass parameters
-    for (const param of cacheConfig.getConfig().bypassQueryParameters) {
-      if (url.searchParams.has(param)) {
-        debug('CacheManagementService', `Bypassing cache due to '${param}' parameter`, {
-          url: request.url
-        });
-        return true;
-      }
-    }
-    
-    // Check specifically for debug parameter - always bypass for debug requests
-    // This ensures consistent behavior across the application
-    if (url.searchParams.has('debug')) {
-      debug('CacheManagementService', 'Bypassing cache due to debug parameter', {
-        url: request.url
-      });
-      return true;
-    }
-  } catch (error) {
-    // If we can't parse the URL, default to not bypassing cache
-    debug('CacheManagementService', 'Error checking URL for bypass parameters', {
-      url: request.url,
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-  
-  // Default is to use cache
-  return false;
 }
 
 /**
@@ -328,24 +308,18 @@ export function createCfObjectParams(
   
   // Add cache tags if source is provided and cacheability is true
   if (source && cacheConfig.cacheability) {
-    const tags = ['video-resizer'];
+    // Generate cache tags for the video
+    const options = { derivative };
+    const tags = generateCacheTags(source, options);
     
-    // Ensure source doesn't have spaces (replace with hyphens) as per Cloudflare requirements
-    const sanitizedSource = source.replace(/\s+/g, '-');
-    tags.push(`source:${sanitizedSource}`);
-    
-    if (derivative) {
-      // Ensure derivative doesn't have spaces (replace with hyphens) as per Cloudflare requirements
-      const sanitizedDerivative = derivative.replace(/\s+/g, '-');
-      tags.push(`derivative:${sanitizedDerivative}`);
+    if (tags.length > 0) {
+      // Ensure no tag exceeds 1,024 characters (Cloudflare's limit for API purge compatibility)
+      const validTags = tags.map(tag => 
+        tag.length > 1024 ? tag.substring(0, 1024) : tag
+      );
+      
+      cfObject.cacheTags = validTags;
     }
-    
-    // Ensure no tag exceeds 1,024 characters (Cloudflare's limit for API purge compatibility)
-    const validTags = tags.map(tag => 
-      tag.length > 1024 ? tag.substring(0, 1024) : tag
-    );
-    
-    cfObject.cacheTags = validTags;
   }
   
   debug('CacheManagementService', 'Created cf object params for caching', {

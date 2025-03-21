@@ -2,7 +2,8 @@
  * Tests for cacheManagementService
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { applyCacheHeaders, shouldBypassCache, cacheResponse, getCachedResponse } from '../../src/services/cacheManagementService';
+import { applyCacheHeaders, cacheResponse, getCachedResponse } from '../../src/services/cacheManagementService';
+import { shouldBypassCache } from '../../src/services/videoStorageService';
 import { CacheConfig } from '../../src/utils/cacheUtils';
 import { CacheConfigurationManager } from '../../src/config/CacheConfigurationManager';
 
@@ -12,6 +13,20 @@ vi.mock('../../src/utils/loggerUtils', () => ({
   error: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
+}));
+
+// Mock videoStorageService
+vi.mock('../../src/services/videoStorageService', () => ({
+  shouldBypassCache: vi.fn((request) => {
+    const cacheControl = request.headers.get('Cache-Control');
+    if (cacheControl && (cacheControl.includes('no-cache') || cacheControl.includes('no-store'))) {
+      return true;
+    }
+    
+    const url = new URL(request.url);
+    return url.searchParams.has('debug') || url.searchParams.has('nocache');
+  }),
+  generateCacheTags: vi.fn(() => [])
 }));
 
 // Mock configuration

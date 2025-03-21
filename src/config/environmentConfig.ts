@@ -117,10 +117,13 @@ export interface EnvVariables {
   REQUEST_TIMEOUT?: string;
   MAX_VIDEO_SIZE?: string;
   
-  // Worker specific
+  // Worker specific bindings
   ASSETS?: {
     fetch: (request: Request) => Promise<Response>;
   } | undefined;
+  
+  // R2 bucket bindings
+  VIDEOS_BUCKET?: R2Bucket | undefined;
 }
 
 /**
