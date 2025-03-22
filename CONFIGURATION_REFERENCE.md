@@ -288,6 +288,49 @@ Environment variables can be used to override configuration values at runtime. T
 | `PATH_PATTERNS` | JSON | JSON array of path patterns |
 | `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
 
+### Storage Configuration
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `STORAGE_CONFIG` | JSON | Configuration for multiple storage backends |
+| `VIDEOS_BUCKET` | binding | R2 bucket binding for video storage |
+
+The `STORAGE_CONFIG` object supports the following structure:
+
+```json
+{
+  "priority": ["r2", "remote", "fallback"],
+  "r2": {
+    "enabled": true,
+    "bucketBinding": "VIDEOS_BUCKET"
+  },
+  "remoteUrl": "https://videos.example.com",
+  "remoteAuth": {
+    "enabled": false,
+    "type": "header",
+    "headers": {
+      "Authorization": "Bearer YOUR_TOKEN"
+    }
+  },
+  "fallbackUrl": "https://cdn.example.com",
+  "fetchOptions": {
+    "userAgent": "Cloudflare-Video-Resizer/1.0"
+  },
+  "pathTransforms": {
+    "videos": {
+      "r2": {
+        "removePrefix": true,
+        "prefix": ""
+      },
+      "remote": {
+        "removePrefix": true,
+        "prefix": "videos/"
+      }
+    }
+  }
+}
+```
+
 ### General Configuration
 
 | Variable | Type | Description |

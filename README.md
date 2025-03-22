@@ -28,6 +28,8 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - **Advanced Cache Control** - Path-specific TTLs and cache tags for granular control
 - **Debug Tooling** - Provides detailed debug headers and HTML reports
 - **Video Derivatives** - Pre-configured transformation presets for common use cases
+- **Multi-Source Storage** - Fetch videos from R2 buckets, remote URLs, or fallback sources
+- **Authentication Support** - Configure auth for remote video sources with multiple auth methods
 
 ### Architecture
 - **Service-Oriented Design** - Modular services with separation of concerns
@@ -294,6 +296,19 @@ PATH_PATTERNS = [
 | **`CACHE_METHOD`** | No | `cacheApi` | Caching method to use (`cacheApi` or `cf`) |
 | **`CACHE_DEBUG`** | No | `false` | Enable cache operation debugging |
 | **`PATH_PATTERNS`** | No | `[]` | Array of path patterns to process |
+| **`STORAGE_CONFIG`** | No | - | Configuration for multiple storage backends (R2, remote URLs, fallback) |
+
+#### Storage Configuration Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| **`priority`** | No | `["r2", "remote", "fallback"]` | Order in which storage locations are tried |
+| **`r2.enabled`** | No | `false` | Whether to use R2 storage |
+| **`r2.bucketBinding`** | No | `VIDEOS_BUCKET` | Name of the R2 bucket binding |
+| **`remoteUrl`** | No | - | URL for remote video storage |
+| **`remoteAuth`** | No | - | Authentication configuration for remote storage |
+| **`fallbackUrl`** | No | - | Fallback URL if primary sources fail |
+| **`pathTransforms`** | No | - | Path transformations for different storage types |
 
 ### Common Configuration Examples
 
@@ -1002,6 +1017,63 @@ The service returns different HTTP status codes for different errors:
 
 ## Advanced Configuration
 
+### Storage Configuration
+
+Configure multiple sources for video content with authentication:
+
+```jsonc
+"STORAGE_CONFIG": {
+  // Priority determines which storage is tried first
+  "priority": ["r2", "remote", "fallback"],
+  
+  // R2 bucket configuration
+  "r2": {
+    "enabled": true,
+    "bucketBinding": "VIDEOS_BUCKET"
+  },
+  
+  // Remote URL configuration with authentication
+  "remoteUrl": "https://videos.example.com",
+  "remoteAuth": {
+    "enabled": true,
+    "type": "header", // Options: "header", "bearer", "aws-s3", "query"
+    "headers": {
+      "Authorization": "Bearer YOUR-TOKEN",
+      "X-Api-Key": "YOUR-API-KEY"
+    }
+  },
+  
+  // Fallback URL in case primary sources fail
+  "fallbackUrl": "https://cdn.example.com",
+  
+  // Path transformations for different storage types
+  "pathTransforms": {
+    "videos": {
+      "r2": {
+        "removePrefix": true,
+        "prefix": ""
+      },
+      "remote": {
+        "removePrefix": true,
+        "prefix": "videos/"
+      }
+    }
+  }
+}
+```
+
+These storage settings enable seamless multi-source fetching with proper authentication. Configure your R2 bucket binding in wrangler.jsonc:
+
+```jsonc
+"r2_buckets": [
+  {
+    "binding": "VIDEOS_BUCKET",
+    "bucket_name": "videos",
+    "preview_bucket_name": "videos-dev"
+  }
+]
+```
+
 ### Extended Path Pattern Options
 
 Path patterns support advanced options:
@@ -1200,7 +1272,22 @@ flowchart TD
 
 ## Recent Enhancements
 
-### 1. Enhanced Debug Interface
+### 1. Multi-Source Storage System
+- Added support for fetching videos from multiple storage sources
+- Implemented R2 bucket integration for cloud-native storage
+- Added remote URL support with authentication options
+- Created fallback URL system for high-availability
+- Path transformations for different storage sources
+- Priority-based storage resolution for optimal performance
+
+### 2. Authentication and Origins
+- Added authentication support for remote video sources
+- Implemented multiple auth methods (header, bearer, AWS S3)
+- Configurable security levels and cache TTLs for auth
+- Origin authorization support with customizable headers
+- Added auth origins with proper security handling
+
+### 3. Enhanced Debug Interface
 - Added a pretty-printed JSON viewer with copy and expand/collapse functionality
 - Added media preview section showing the actual transformed video or image
 - Integrated Prism.js for syntax highlighting of JSON data
@@ -1210,19 +1297,19 @@ flowchart TD
 - Added browser capabilities section showing supported formats and features
 - Enhanced CSS styling for the media preview and JSON viewer
 
-### 2. Client Adaptivity Improvements
+### 4. Client Adaptivity Improvements
 - Enhanced device detection with more accurate device categorization
 - Improved network quality estimation for better adaptive streaming
 - Added content negotiation based on Accept headers
 - Enhanced responsive dimension adjustments based on device characteristics
 
-### 3. Service Architecture Restructuring
+### 5. Service Architecture Restructuring
 - Implemented proper service-oriented architecture
 - Resolved circular dependency issues through dynamic imports
 - Improved type safety throughout the codebase
 - Enhanced error handling with proper propagation
 
-### 4. Cache Management Upgrades
+### 6. Cache Management Upgrades
 - Improved cache tag structure for more granular purging
 - Enhanced TTL controls based on response type
 - Added automatic cache invalidation for debug requests
