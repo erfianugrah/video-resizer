@@ -93,7 +93,7 @@ export const videoConfig = {
     audio: true,
     format: null,
     time: null,
-    duration: null,
+    duration: '30m', // Default to 30 minutes to ensure full video plays (most videos < 30m)
     quality: null,
     compression: null,
     loop: null,
