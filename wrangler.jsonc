@@ -11,6 +11,7 @@
 		"directory": "./public",
 		"binding": "ASSETS"
 	},
+	// Development environment configuration (implicit)
 	"r2_buckets": [
 		{
 			"binding": "VIDEOS_BUCKET",
@@ -128,6 +129,13 @@
 				"directory": "./public",
 				"binding": "ASSETS"
 			},
+			"r2_buckets": [
+				{
+					"binding": "VIDEOS_BUCKET",
+					"bucket_name": "videos",
+					"preview_bucket_name": "videos-dev"
+				}
+			],
 			"vars": {
 				"ENVIRONMENT": "production",
 				"DEBUG_ENABLED": "true",
@@ -135,6 +143,46 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"STORAGE_CONFIG": {
+					"priority": ["r2", "remote", "fallback"],
+					"r2": {
+						"enabled": true,
+						"bucketBinding": "VIDEOS_BUCKET"
+					},
+					"remoteUrl": "https://videos.erfi.dev",
+					"remoteAuth": {
+						"enabled": false,
+						"type": "header"
+					},
+					"fallbackUrl": "https://cdn.erfi.dev",
+					"fetchOptions": {
+						"userAgent": "Cloudflare-Video-Resizer/1.0"
+					},
+					"pathTransforms": {
+						"videos": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": ""
+							},
+							"remote": {
+								"removePrefix": true,
+								"prefix": "videos/"
+							}
+						},
+						"popular": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": "popular/"
+							}
+						},
+						"shorts": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": "shorts/"
+							}
+						}
+					}
+				},
 				"PATH_PATTERNS": [
 					{
 						"name": "videos",
@@ -193,6 +241,13 @@
 				"directory": "./public",
 				"binding": "ASSETS"
 			},
+			"r2_buckets": [
+				{
+					"binding": "VIDEOS_BUCKET",
+					"bucket_name": "videos",
+					"preview_bucket_name": "videos-dev"
+				}
+			],
 			"vars": {
 				"ENVIRONMENT": "staging",
 				"DEBUG_ENABLED": "true",
@@ -200,6 +255,46 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"STORAGE_CONFIG": {
+					"priority": ["r2", "remote", "fallback"],
+					"r2": {
+						"enabled": true,
+						"bucketBinding": "VIDEOS_BUCKET"
+					},
+					"remoteUrl": "https://videos.erfi.dev",
+					"remoteAuth": {
+						"enabled": false,
+						"type": "header"
+					},
+					"fallbackUrl": "https://cdn.erfi.dev",
+					"fetchOptions": {
+						"userAgent": "Cloudflare-Video-Resizer/1.0"
+					},
+					"pathTransforms": {
+						"videos": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": ""
+							},
+							"remote": {
+								"removePrefix": true,
+								"prefix": "videos/"
+							}
+						},
+						"popular": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": "popular/"
+							}
+						},
+						"shorts": {
+							"r2": {
+								"removePrefix": true,
+								"prefix": "shorts/"
+							}
+						}
+					}
+				},
 				"PATH_PATTERNS": [
 					{
 						"name": "videos",
