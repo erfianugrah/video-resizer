@@ -33,26 +33,19 @@ export default {
       if (!runtimeConfig) {
         runtimeConfig = getEnvironmentConfig(env);
 
-        // Make LOGGING_CONFIG available globally
-        // Since wrangler sends objects as strings, we need to convert it back to an object
-        if (env.LOGGING_CONFIG) {
-          try {
-            // If it's already a string representation of a JSON object, we need to parse it
-            const config = typeof env.LOGGING_CONFIG === 'string' 
-              ? JSON.parse(env.LOGGING_CONFIG)
-              : env.LOGGING_CONFIG;
-            
-            // Now set the parsed object
-            (globalThis as any).LOGGING_CONFIG = config;
-          } catch (err) {
-            // Use error without context since this happens before context is initialized
-            // This will be replaced with proper logging once initialization is complete
-            const errMessage = err instanceof Error ? err.message : String(err);
-            const errStack = err instanceof Error ? err.stack : undefined;
-            console.error(`Error parsing LOGGING_CONFIG: ${errMessage}`, { stack: errStack });
-            // Fall back to empty config
-            (globalThis as any).LOGGING_CONFIG = {};
-          }
+        // Initialize the configuration managers instead of setting globals directly
+        try {
+          // Initialize the configuration system with environment variables
+          // This will properly configure all managers (Debug, Logging, etc.)
+          initializeConfiguration(env);
+          
+          // Log initialization using console (since logger isn't fully ready yet)
+          console.info(`Initialized configuration from environment`);
+        } catch (err) {
+          // Use error without context since this happens before context is initialized
+          const errMessage = err instanceof Error ? err.message : String(err);
+          const errStack = err instanceof Error ? err.stack : undefined;
+          console.error(`Error initializing configuration: ${errMessage}`, { stack: errStack });
         }
 
         // Initialize logging using our centralized manager

@@ -139,6 +139,20 @@ export class DebugConfigurationManager {
   public isVerbose(): boolean {
     return this.config.verbose && this.config.enabled;
   }
+  
+  /**
+   * Check if debug is enabled (alias for isEnabled for consistency)
+   */
+  public isDebugEnabled(): boolean {
+    return this.isEnabled();
+  }
+  
+  /**
+   * Check if verbose is enabled (alias for isVerbose for consistency)
+   */
+  public isVerboseEnabled(): boolean {
+    return this.isVerbose();
+  }
 
   /**
    * Check if header inclusion is enabled

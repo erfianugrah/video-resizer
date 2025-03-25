@@ -172,7 +172,8 @@ dist
 .wrangler/
 
 # misc docs
-Docs/
+docs/
+
 
 # build time
 public/

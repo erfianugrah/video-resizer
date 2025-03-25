@@ -44,6 +44,7 @@ export interface EnvironmentConfig {
     sampleRate: number;
     performance: boolean;
     performanceThreshold: number;
+    pinoSettings?: any; // Raw LOGGING_CONFIG from wrangler.jsonc
   };
   video: {
     defaultQuality: string;
@@ -99,7 +100,29 @@ export interface EnvVariables {
   LOG_SAMPLE_RATE?: string;
   LOG_PERFORMANCE?: string;
   LOG_PERFORMANCE_THRESHOLD?: string;
-  LOGGING_CONFIG?: string | Record<string, any>;
+  // The comprehensive logging configuration from wrangler.jsonc
+  // This can be either a string (JSON) or an already parsed object
+  LOGGING_CONFIG?: string | {
+    pino?: {
+      level?: string;
+      browser?: {
+        asObject?: boolean;
+      };
+      base?: {
+        service?: string;
+        env?: string;
+      };
+      transport?: unknown;
+    };
+    sampling?: {
+      enabled?: boolean;
+      rate?: number;
+    };
+    breadcrumbs?: {
+      enabled?: boolean;
+      maxItems?: number;
+    };
+  };
   
   // Video Configuration
   VIDEO_DEFAULT_QUALITY?: string;
@@ -216,6 +239,10 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       sampleRate: Math.min(Math.max(parseNumber(env.LOG_SAMPLE_RATE, 1), 0), 1), // Clamp between 0 and 1
       performance: parseBoolean(env.LOG_PERFORMANCE),
       performanceThreshold: parseNumber(env.LOG_PERFORMANCE_THRESHOLD, 1000),
+      // These are processed separately by LoggingConfigurationManager from LOGGING_CONFIG
+      pinoSettings: typeof env.LOGGING_CONFIG === 'string' 
+        ? JSON.parse(env.LOGGING_CONFIG) 
+        : env.LOGGING_CONFIG,
     },
     
     // Video configuration

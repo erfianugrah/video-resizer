@@ -48,13 +48,36 @@ export interface RequestContext {
 export function createRequestContext(request: Request): RequestContext {
   const url = new URL(request.url);
   
-  // Check for debug parameters
-  const debugEnabled = url.searchParams.has('debug') || 
-                      request.headers.get('X-Debug') === 'true';
+  // Get debug configuration from DebugConfigurationManager
+  let envDebugEnabled = false;
+  let envVerboseEnabled = false;
+  
+  try {
+    // Import in a way that avoids circular dependencies
+    const { DebugConfigurationManager } = require('../config/DebugConfigurationManager');
+    const debugConfig = DebugConfigurationManager.getInstance();
+    
+    // Get debug settings from manager
+    envDebugEnabled = debugConfig.isDebugEnabled();
+    envVerboseEnabled = debugConfig.isVerboseEnabled();
+  } catch (err) {
+    // Silently continue if we can't access configuration
+    console.warn('Error accessing debug configuration:', err);
+  }
+  
+  // Check for debug parameters - request parameters override environment settings
+  const urlHasDebug = url.searchParams.has('debug');
+  const headerHasDebug = request.headers.get('X-Debug') === 'true';
+  
+  // If URL explicitly sets debug=false, respect that regardless of env setting
+  const debugEnabled = urlHasDebug 
+    ? (url.searchParams.get('debug') !== 'false')
+    : (headerHasDebug || envDebugEnabled);
   
   const verboseEnabled = debugEnabled && 
                         (url.searchParams.has('verbose') || 
-                         url.searchParams.get('debug') === 'verbose');
+                         url.searchParams.get('debug') === 'verbose' ||
+                         envVerboseEnabled);
   
   // Create the context
   return {
@@ -69,6 +92,32 @@ export function createRequestContext(request: Request): RequestContext {
     debugEnabled,
     verboseEnabled
   };
+}
+
+/**
+ * Global breadcrumb configuration
+ */
+interface BreadcrumbConfig {
+  enabled: boolean;
+  maxItems: number;
+}
+
+// Default breadcrumb configuration
+let breadcrumbConfig: BreadcrumbConfig = {
+  enabled: true,
+  maxItems: 100
+};
+
+// Get breadcrumb configuration from LoggingConfigurationManager
+try {
+  // Import in a way that avoids circular dependencies
+  const { LoggingConfigurationManager } = require('../config/LoggingConfigurationManager');
+  const loggingConfig = LoggingConfigurationManager.getInstance();
+  
+  // Get breadcrumb configuration from manager
+  breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
+} catch (err) {
+  console.warn('Error loading breadcrumb configuration from LoggingConfigurationManager:', err);
 }
 
 /**
@@ -88,13 +137,6 @@ export function addBreadcrumb(
   const timestamp = performance.now();
   const elapsedMs = timestamp - context.startTime;
   
-  // Calculate duration from previous breadcrumb if available
-  let durationMs: number | undefined;
-  if (context.breadcrumbs.length > 0) {
-    const lastBreadcrumb = context.breadcrumbs[context.breadcrumbs.length - 1];
-    durationMs = timestamp - lastBreadcrumb.timestamp;
-  }
-  
   // Create the breadcrumb
   const breadcrumb: Breadcrumb = {
     timestamp,
@@ -102,15 +144,29 @@ export function addBreadcrumb(
     message,
     data,
     elapsedMs,
-    durationMs
+    durationMs: undefined
   };
   
-  // Add to breadcrumbs array
-  context.breadcrumbs.push(breadcrumb);
-  
-  // Update component timing
-  if (durationMs !== undefined) {
-    context.componentTiming[category] = (context.componentTiming[category] || 0) + durationMs;
+  // Only add breadcrumb to the context if breadcrumbs are enabled
+  if (breadcrumbConfig.enabled) {
+    // Calculate duration from previous breadcrumb if available
+    if (context.breadcrumbs.length > 0) {
+      const lastBreadcrumb = context.breadcrumbs[context.breadcrumbs.length - 1];
+      breadcrumb.durationMs = timestamp - lastBreadcrumb.timestamp;
+    }
+    
+    // Add to breadcrumbs array, respecting maxItems
+    context.breadcrumbs.push(breadcrumb);
+    
+    // Trim breadcrumbs if they exceed maxItems
+    if (context.breadcrumbs.length > breadcrumbConfig.maxItems) {
+      context.breadcrumbs = context.breadcrumbs.slice(-breadcrumbConfig.maxItems);
+    }
+    
+    // Update component timing if durationMs was calculated
+    if (breadcrumb.durationMs !== undefined) {
+      context.componentTiming[category] = (context.componentTiming[category] || 0) + breadcrumb.durationMs;
+    }
   }
   
   return breadcrumb;
@@ -119,33 +175,21 @@ export function addBreadcrumb(
 /**
  * Get performance metrics from the request context
  * @param context The request context
- * @returns Performance metrics object
+ * @returns Performance metrics
  */
 export function getPerformanceMetrics(context: RequestContext) {
-  const totalDurationMs = performance.now() - context.startTime;
-  
-  // Sort components by time spent
-  const componentBreakdown = Object.entries(context.componentTiming)
-    .map(([component, time]) => ({ component, time }))
-    .sort((a, b) => b.time - a.time);
-  
-  // Find slowest operations based on breadcrumbs
-  const operations = context.breadcrumbs
-    .filter(b => b.durationMs !== undefined)
-    .map(b => ({
-      category: b.category,
-      message: b.message,
-      durationMs: b.durationMs as number
-    }))
-    .sort((a, b) => b.durationMs - a.durationMs);
-  
-  // Get top 5 slowest operations
-  const slowestOperations = operations.slice(0, 5);
-  
   return {
-    totalDurationMs,
-    componentBreakdown,
-    slowestOperations,
+    totalElapsedMs: performance.now() - context.startTime,
+    componentTiming: context.componentTiming,
     breadcrumbCount: context.breadcrumbs.length
   };
+}
+
+/**
+ * Get breadcrumbs from the request context
+ * @param context The request context
+ * @returns Breadcrumbs array
+ */
+export function getBreadcrumbs(context: RequestContext): Breadcrumb[] {
+  return context.breadcrumbs;
 }

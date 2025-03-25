@@ -29,6 +29,32 @@ export const LoggingConfigSchema = z.object({
   // Performance logging
   enablePerformanceLogging: z.boolean().default(false),
   performanceThresholdMs: z.number().min(0).default(1000),
+  
+  // Breadcrumb configuration
+  breadcrumbs: z.object({
+    enabled: z.boolean().default(true),
+    maxItems: z.number().min(0).default(100)
+  }).default({
+    enabled: true,
+    maxItems: 100
+  }),
+  
+  // Pino specific configuration
+  pino: z.object({
+    level: LogLevelSchema.default('info'),
+    browser: z.object({
+      asObject: z.boolean().default(true)
+    }).optional(),
+    base: z.object({
+      service: z.string().default('video-resizer'),
+      env: z.string().default('development')
+    }).optional(),
+    transport: z.any().optional()
+  }).default({
+    level: 'info',
+    browser: { asObject: true },
+    base: { service: 'video-resizer', env: 'development' }
+  })
 });
 
 // Type exported from the schema
@@ -46,6 +72,15 @@ const defaultLoggingConfig: LoggingConfiguration = {
   sampleRate: 1,
   enablePerformanceLogging: false,
   performanceThresholdMs: 1000,
+  breadcrumbs: {
+    enabled: true,
+    maxItems: 100
+  },
+  pino: {
+    level: 'info',
+    browser: { asObject: true },
+    base: { service: 'video-resizer', env: 'development' }
+  }
 };
 
 /**
@@ -116,6 +151,13 @@ export class LoggingConfigurationManager {
   }
 
   /**
+   * Get the Pino-specific configuration
+   */
+  public getPinoConfig(): any {
+    return this.config.pino;
+  }
+
+  /**
    * Check if a component should be logged
    */
   public shouldLogComponent(componentName: string): boolean {
@@ -136,6 +178,16 @@ export class LoggingConfigurationManager {
   }
 
   /**
+   * Get the sampling configuration
+   */
+  public getSamplingConfig(): { enabled: boolean, rate: number } {
+    return {
+      enabled: this.config.sampleRate < 1.0, 
+      rate: this.config.sampleRate
+    };
+  }
+
+  /**
    * Check if performance should be logged
    */
   public shouldLogPerformance(): boolean {
@@ -147,6 +199,27 @@ export class LoggingConfigurationManager {
    */
   public getPerformanceThreshold(): number {
     return this.config.performanceThresholdMs;
+  }
+
+  /**
+   * Get breadcrumb configuration
+   */
+  public getBreadcrumbConfig(): { enabled: boolean, maxItems: number } {
+    return this.config.breadcrumbs;
+  }
+
+  /**
+   * Check if breadcrumbs are enabled
+   */
+  public areBreadcrumbsEnabled(): boolean {
+    return this.config.breadcrumbs.enabled;
+  }
+
+  /**
+   * Get maximum number of breadcrumbs to keep
+   */
+  public getMaxBreadcrumbs(): number {
+    return this.config.breadcrumbs.maxItems;
   }
 
   /**

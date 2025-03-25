@@ -3,6 +3,10 @@
  */
 import pino from 'pino';
 import { RequestContext, addBreadcrumb } from './requestContext';
+import { LoggingConfigurationManager } from '../config/LoggingConfigurationManager';
+
+// Get the logging configuration manager instance
+const loggingConfigManager = LoggingConfigurationManager.getInstance();
 
 // Pretty formatting is configured in the transport options
 
@@ -63,36 +67,22 @@ let samplingConfig = {
   rate: 1.0
 };
 
-// Check for Cloudflare environment configuration
-// Define the LOGGING_CONFIG if it doesn't exist for type safety
-declare const LOGGING_CONFIG: any | undefined;
-
-// Try to access the global LOGGING_CONFIG if it exists
+// Try to get configuration from the LoggingConfigurationManager
 try {
-  if (typeof LOGGING_CONFIG !== 'undefined') {
-    // Since we handle string conversion in index.ts, we expect an object here
-    const envConfig = LOGGING_CONFIG;
-    
-    if (envConfig?.pino) {
-      // Merge with default configuration
-      pinoConfig = {
-        ...pinoConfig,
-        ...envConfig.pino
-      };
-      
-      // Don't log in normal usage to avoid noise
-    }
-    
-    // Set up sampling configuration for later use
-    if (envConfig?.sampling) {
-      samplingConfig = {
-        enabled: !!envConfig.sampling.enabled,
-        rate: typeof envConfig.sampling.rate === 'number' ? envConfig.sampling.rate : 1.0
-      };
-    }
+  // Get Pino configuration
+  const managerPinoConfig = loggingConfigManager.getPinoConfig();
+  if (managerPinoConfig) {
+    // Merge with default configuration
+    pinoConfig = {
+      ...pinoConfig,
+      ...managerPinoConfig
+    };
   }
+  
+  // Get sampling configuration
+  samplingConfig = loggingConfigManager.getSamplingConfig();
 } catch (err) {
-  console.error('Error applying Pino configuration:', err);
+  console.error('Error applying Pino configuration from LoggingConfigurationManager:', err);
 }
 
 // Create the base logger
@@ -134,11 +124,16 @@ export function debug(
   message: string, 
   data?: Record<string, unknown>
 ) {
-  // Add breadcrumb
+  // Always add breadcrumb for tracking, regardless of log level or debug settings
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
-  // Skip debug logs if debug is not enabled
-  if (!context.debugEnabled) {
+  // Skip debug logs if:
+  // 1. The logger's level is higher than debug OR
+  // 2. Debug is not enabled in the request context
+  const loggerLevel = logger.level as string;
+  const isDebugAllowedByLevel = loggerLevel === 'debug' || loggerLevel === 'trace';
+  
+  if (!isDebugAllowedByLevel || !context.debugEnabled) {
     return breadcrumb;
   }
   
@@ -183,10 +178,18 @@ export function info(
   message: string, 
   data?: Record<string, unknown>
 ) {
-  // Add breadcrumb
+  // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
-  // Apply sampling if enabled - apply to info level logs as well
+  // Check if the logger's level allows info logs
+  const loggerLevel = logger.level as string;
+  const isLogLevelAllowed = ['debug', 'info', 'trace'].includes(loggerLevel);
+  
+  if (!isLogLevelAllowed) {
+    return breadcrumb;
+  }
+  
+  // Apply sampling if enabled
   if (samplingConfig.enabled && Math.random() > samplingConfig.rate) {
     return breadcrumb;
   }
@@ -227,8 +230,16 @@ export function warn(
   message: string, 
   data?: Record<string, unknown>
 ) {
-  // Add breadcrumb
+  // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
+  
+  // Check if the logger's level allows warn logs 
+  const loggerLevel = logger.level as string;
+  const isLogLevelAllowed = ['debug', 'info', 'warn', 'trace'].includes(loggerLevel);
+  
+  if (!isLogLevelAllowed) {
+    return breadcrumb;
+  }
   
   // Prepare log data - simplify structure for cleaner logging
   const logData = {
@@ -266,8 +277,17 @@ export function error(
   message: string, 
   data?: Record<string, unknown>
 ) {
-  // Add breadcrumb
+  // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
+  
+  // Check if the logger's level allows error logs
+  // Almost all log levels allow error logs, but we'll check anyway for consistency
+  const loggerLevel = logger.level as string;
+  const isLogLevelAllowed = ['debug', 'info', 'warn', 'error', 'trace'].includes(loggerLevel);
+  
+  if (!isLogLevelAllowed) {
+    return breadcrumb;
+  }
   
   // Prepare log data - simplify structure for cleaner logging
   const logData = {

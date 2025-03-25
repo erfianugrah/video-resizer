@@ -177,14 +177,14 @@
 			],
 			"vars": {
 				"ENVIRONMENT": "production",
-				"DEBUG_ENABLED": "true",
-				"DEBUG_VERBOSE": "true",
-				"DEBUG_INCLUDE_HEADERS": "true",
+				"DEBUG_ENABLED": "false",
+				"DEBUG_VERBOSE": "false",
+				"DEBUG_INCLUDE_HEADERS": "false",
 				"CACHE_METHOD": "cf",
-				"CACHE_DEBUG": "true",
+				"CACHE_DEBUG": "false",
 				"LOGGING_CONFIG": {
 					"pino": {
-						"level": "debug",
+						"level": "info",
 						"browser": {
 							"asObject": true
 						},
@@ -195,11 +195,11 @@
 					},
 					"sampling": {
 						"enabled": true,
-						"rate": 0.1
+						"rate": 0.05
 					},
 					"breadcrumbs": {
-						"enabled": true,
-						"maxItems": 50
+						"enabled": false,
+						"maxItems": 25
 					}
 				},
 				"VIDEO_CONFIG": {
@@ -329,7 +329,7 @@
 			"vars": {
 				"ENVIRONMENT": "staging",
 				"DEBUG_ENABLED": "true",
-				"DEBUG_VERBOSE": "true",
+				"DEBUG_VERBOSE": "false",
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",

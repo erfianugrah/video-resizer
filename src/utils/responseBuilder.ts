@@ -124,16 +124,13 @@ export class ResponseBuilder {
     // Add performance metrics if includePerformance is enabled
     if (debugInfo?.includePerformance || isVerboseEnabled) {
       const metrics = getPerformanceMetrics(this.context);
-      const totalDuration = metrics.totalDurationMs as number;
-      this.headers.set('X-Total-Duration-Ms', totalDuration.toString());
+      this.headers.set('X-Total-Duration-Ms', metrics.totalElapsedMs.toString());
       
       // Add component timing as JSON
-      const componentBreakdown = metrics.componentBreakdown as unknown[];
-      this.headers.set('X-Component-Timing', JSON.stringify(componentBreakdown));
+      this.headers.set('X-Component-Timing', JSON.stringify(metrics.componentTiming));
       
-      // Add slowest operations
-      const slowestOperations = metrics.slowestOperations as unknown[];
-      this.headers.set('X-Slowest-Operations', JSON.stringify(slowestOperations));
+      // Add breadcrumbs count (from metrics)
+      this.headers.set('X-Breadcrumbs-Count', metrics.breadcrumbCount.toString());
     }
     
     // Add standard diagnostics headers (using the existing pattern from debugHeadersUtils)
