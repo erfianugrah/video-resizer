@@ -5,7 +5,8 @@
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
-import { debug, error } from '../utils/loggerUtils';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
 import { createTransformationStrategy } from '../domain/strategies/StrategyFactory';
@@ -103,12 +104,21 @@ export async function prepareVideoTransformation(
     // Build the CDN-CGI media URL
     const cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl);
 
-    debug('TransformationService', 'Transformed URL', {
-      original: url.toString(),
-      transformed: cdnCgiUrl,
-      options,
-      pattern: pathPattern.name,
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'TransformationService', 'Transformed URL', {
+        original: url.toString(),
+        transformed: cdnCgiUrl,
+        options,
+        pattern: pathPattern.name,
+      });
+    } else {
+      // Fallback to console logging
+      console.debug(`TransformationService: Transformed URL from ${url.toString()} to ${cdnCgiUrl}`);
+    }
 
     // Get cache configuration for the video URL
     let cacheConfig = determineCacheConfig(videoUrl);
@@ -124,10 +134,16 @@ export async function prepareVideoTransformation(
         }
       };
       
-      debug('TransformationService', 'Using path-specific cache TTL', {
-        pathName: pathPattern.name,
-        ttl: pathPattern.cacheTtl
-      });
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoDebug(requestContext, logger, 'TransformationService', 'Using path-specific cache TTL', {
+          pathName: pathPattern.name,
+          ttl: pathPattern.cacheTtl
+        });
+      } else {
+        // Fallback to console logging
+        console.debug(`TransformationService: Using path-specific cache TTL ${pathPattern.cacheTtl} for ${pathPattern.name}`);
+      }
     }
     
     // Add cache info to diagnostics
@@ -148,10 +164,19 @@ export async function prepareVideoTransformation(
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    error('TransformationService', 'Error preparing video transformation', {
-      error: errorMessage,
-      stack: err instanceof Error ? err.stack : undefined,
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoError(requestContext, logger, 'TransformationService', 'Error preparing video transformation', {
+        error: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    } else {
+      // Fallback to console logging
+      console.error(`TransformationService: Error preparing video transformation: ${errorMessage}`);
+    }
     throw err;
   }
 }
@@ -219,7 +244,17 @@ function constructVideoUrl(
 
   // If pattern has transformation overrides, apply them to options
   if (pattern.transformationOverrides) {
-    debug('TransformationService', 'Applying path-specific overrides', pattern.transformationOverrides);
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'TransformationService', 'Applying path-specific overrides', 
+        pattern.transformationOverrides);
+    } else {
+      // Fallback to console logging
+      console.debug('TransformationService: Applying path-specific overrides');
+    }
     
     // Path-based quality presets get highest priority
     if (pattern.quality) {
@@ -238,11 +273,17 @@ function constructVideoUrl(
       options.width = preset.width;
       options.height = preset.height;
       
-      debug('TransformationService', 'Applied path-based quality preset', {
-        quality: pattern.quality,
-        width: preset.width,
-        height: preset.height
-      });
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoDebug(requestContext, logger, 'TransformationService', 'Applied path-based quality preset', {
+          quality: pattern.quality,
+          width: preset.width,
+          height: preset.height
+        });
+      } else {
+        // Fallback to console logging
+        console.debug(`TransformationService: Applied path-based quality preset ${pattern.quality}`);
+      }
     }
   }
 

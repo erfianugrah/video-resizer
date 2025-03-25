@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Copy, Expand, Minimize } from "lucide-react";
-import type { DiagnosticsInfo } from "@/types/diagnostics";
+import { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Copy, Expand, Minimize } from 'lucide-react';
+import type { DiagnosticsInfo } from '@/types/diagnostics';
 
 interface DiagnosticJSONProps {
   data: DiagnosticsInfo;
@@ -104,7 +104,7 @@ export function DiagnosticJSON({ data, className }: DiagnosticJSONProps) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className={`${isExpanded ? "max-h-[80vh]" : "max-h-60"} overflow-auto transition-all duration-200 rounded-b-lg`}>
+        <div className={`${isExpanded ? 'max-h-[80vh]' : 'max-h-60'} overflow-auto transition-all duration-200 rounded-b-lg`}>
           <pre className="bg-slate-50 dark:bg-slate-950 p-4 m-0 text-sm overflow-auto">
             <code className="text-xs font-mono">{code}</code>
           </pre>

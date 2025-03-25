@@ -59,7 +59,7 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
           </Button>
         </div>
       </div>
-      <div className={`${isExpanded ? "max-h-[80vh]" : "max-h-60"} overflow-auto transition-all duration-200`}>
+      <div className={`${isExpanded ? 'max-h-[80vh]' : 'max-h-60'} overflow-auto transition-all duration-200`}>
         <pre className="bg-muted/50 p-4 m-0 text-xs overflow-auto">
           <code>{formattedData}</code>
         </pre>
@@ -159,7 +159,7 @@ export function ConfigurationViewer({ configuration }: {
         </Button>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue={hasVideoConfig ? "video" : hasDebugConfig ? "debug" : "cache"}>
+        <Tabs defaultValue={hasVideoConfig ? 'video' : hasDebugConfig ? 'debug' : 'cache'}>
           <TabsList className="mb-4 w-full">
             {hasVideoConfig && <TabsTrigger value="video">Video</TabsTrigger>}
             {hasCacheConfig && <TabsTrigger value="cache">Cache</TabsTrigger>}

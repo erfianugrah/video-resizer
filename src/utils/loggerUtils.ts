@@ -1,6 +1,15 @@
 /**
  * Logging utility functions
+ * 
+ * This is now a facade that directs all logging calls to the new Pino-based
+ * logger system. It maintains the legacy API for backward compatibility.
  */
+import { 
+  info as pinoInfo, 
+  debug as pinoDebug, 
+  warn as pinoWarn, 
+  error as pinoError 
+} from './legacyLoggerAdapter';
 
 // Reference to global logger configuration
 let logConfig = {
@@ -26,7 +35,8 @@ export function initializeLogger(config: { debug?: { enabled?: boolean; verbose?
  * @param data Optional data to include in log
  */
 export function info(component: string, message: string, data?: Record<string, unknown>) {
-  log('INFO', component, message, data);
+  // Use the Pino logger through the legacy adapter
+  pinoInfo(component, message, data);
 }
 
 /**
@@ -37,7 +47,8 @@ export function info(component: string, message: string, data?: Record<string, u
  */
 export function debug(component: string, message: string, data?: Record<string, unknown>) {
   if (logConfig.debugEnabled) {
-    log('DEBUG', component, message, data);
+    // Use the Pino logger through the legacy adapter
+    pinoDebug(component, message, data);
   }
 }
 
@@ -48,7 +59,8 @@ export function debug(component: string, message: string, data?: Record<string, 
  * @param data Optional data to include in log
  */
 export function error(component: string, message: string, data?: Record<string, unknown>) {
-  log('ERROR', component, message, data);
+  // Use the Pino logger through the legacy adapter
+  pinoError(component, message, data);
 }
 
 /**
@@ -58,7 +70,8 @@ export function error(component: string, message: string, data?: Record<string, 
  * @param data Optional data to include in log
  */
 export function warn(component: string, message: string, data?: Record<string, unknown>) {
-  log('WARN', component, message, data);
+  // Use the Pino logger through the legacy adapter
+  pinoWarn(component, message, data);
 }
 
 /**
@@ -98,26 +111,4 @@ export function logResponse(component: string, response: Response) {
   };
 
   debug(component, 'Response', responseData);
-}
-
-/**
- * Internal log function
- * @param level Log level
- * @param component Component name
- * @param message Message to log
- * @param data Optional data to include in log
- */
-function log(level: string, component: string, message: string, data?: Record<string, unknown>) {
-  const timestamp = new Date().toISOString();
-  const logEntry = {
-    timestamp,
-    level,
-    component,
-    message,
-    data: logConfig.verboseEnabled ? data : undefined,
-  };
-
-  // For now we use console.log, but this could be adapted to send logs to a service
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify(logEntry));
 }

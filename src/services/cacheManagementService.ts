@@ -3,10 +3,11 @@
  * Supports both Cache API and Cloudflare cf object caching methods
  */
 import { CacheConfig } from '../utils/cacheUtils';
-import { debug } from '../utils/loggerUtils';
 import { CacheConfigurationManager } from '../config';
 import { determineCacheControl } from '../utils/cacheControlUtils';
 import { generateCacheTags, shouldBypassCache } from './videoStorageService';
+import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 
 /**
  * Apply cache headers to a response based on configuration and use Cache API if available
@@ -44,13 +45,22 @@ export function applyCacheHeaders(
   // Get the appropriate cache control header
   const cacheControl = determineCacheControl(status, cacheConfig);
   
-  debug('CacheManagementService', 'Applying cache headers', {
-    status,
-    cacheControl,
-    cacheability: cacheConfig.cacheability,
-    source,
-    derivative
-  });
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'CacheManagementService', 'Applying cache headers', {
+      status,
+      cacheControl,
+      cacheability: cacheConfig.cacheability,
+      source,
+      derivative
+    });
+  } else {
+    // Fallback to legacy debugging
+    console.warn('CacheManagementService: No request context available');
+  }
   
   // Apply cache headers
   if (cacheConfig.cacheability && cacheControl) {
@@ -102,11 +112,20 @@ export async function cacheResponse(
     // as caching is handled by the cf object in fetch
     if (cacheMethod === 'cf') {
       if (cacheConfig.getConfig().debug) {
-        debug('CacheManagementService', 'Using cf object for caching, no explicit cache.put needed', {
-          url: request.url,
-          status: response.status,
-          cacheControl: response.headers.get('Cache-Control')
-        });
+        // Get the current request context if available
+        const requestContext = getCurrentContext();
+        
+        if (requestContext) {
+          const logger = createLogger(requestContext);
+          pinoDebug(requestContext, logger, 'CacheManagementService', 'Using cf object for caching, no explicit cache.put needed', {
+            url: request.url,
+            status: response.status,
+            cacheControl: response.headers.get('Cache-Control')
+          });
+        } else {
+          // Fallback to legacy debugging
+          console.warn('CacheManagementService: No request context available for cf object caching');
+        }
       }
       return;
     }
@@ -114,10 +133,19 @@ export async function cacheResponse(
     // Get the response Cache-Control header to check if we should cache
     const cacheControl = response.headers.get('Cache-Control');
     if (cacheControl && cacheControl.includes('no-store')) {
-      debug('CacheManagementService', 'Skipping cache.put for no-store response', {
-        url: request.url,
-        cacheControl
-      });
+      // Get the current request context if available
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoDebug(requestContext, logger, 'CacheManagementService', 'Skipping cache.put for no-store response', {
+          url: request.url,
+          cacheControl
+        });
+      } else {
+        // Fallback to legacy debugging
+        console.warn('CacheManagementService: No request context available for skipping cache.put');
+      }
       return;
     }
     
@@ -132,21 +160,39 @@ export async function cacheResponse(
       context.waitUntil(
         cache.put(request, responseClone)
           .then(() => {
-            debug('CacheManagementService', 'Stored response in Cloudflare Cache API (waitUntil)', {
-              url: request.url,
-              method: 'cache-api',
-              status: responseClone.status,
-              cacheControl: responseClone.headers.get('Cache-Control'),
-              cacheTag: responseClone.headers.get('Cache-Tag')
-            });
+            // Get the current request context if available
+            const requestContext = getCurrentContext();
+            
+            if (requestContext) {
+              const logger = createLogger(requestContext);
+              pinoDebug(requestContext, logger, 'CacheManagementService', 'Stored response in Cloudflare Cache API (waitUntil)', {
+                url: request.url,
+                method: 'cache-api',
+                status: responseClone.status,
+                cacheControl: responseClone.headers.get('Cache-Control'),
+                cacheTag: responseClone.headers.get('Cache-Tag')
+              });
+            } else {
+              // Fallback to legacy debugging
+              console.warn('CacheManagementService: No request context available for cache storage (waitUntil)');
+            }
           })
           .catch(err => {
             // Log but don't fail if caching fails
             const errMessage = err instanceof Error ? err.message : 'Unknown error';
-            debug('CacheManagementService', 'Failed to store in cache (waitUntil)', {
-              url: request.url,
-              error: errMessage
-            });
+            // Get the current request context if available
+            const requestContext = getCurrentContext();
+            
+            if (requestContext) {
+              const logger = createLogger(requestContext);
+              pinoDebug(requestContext, logger, 'CacheManagementService', 'Failed to store in cache (waitUntil)', {
+                url: request.url,
+                error: errMessage
+              });
+            } else {
+              // Fallback to legacy debugging
+              console.warn(`CacheManagementService: Failed to store in cache (waitUntil): ${errMessage}`);
+            }
           })
       );
     } else {
@@ -155,29 +201,56 @@ export async function cacheResponse(
         // Put the response in the cache
         await cache.put(request, responseClone);
         
-        debug('CacheManagementService', 'Stored response in Cloudflare Cache API', {
-          url: request.url,
-          method: 'cache-api',
-          status: responseClone.status,
-          cacheControl: responseClone.headers.get('Cache-Control'),
-          cacheTag: responseClone.headers.get('Cache-Tag')
-        });
+        // Get the current request context if available
+        const requestContext = getCurrentContext();
+        
+        if (requestContext) {
+          const logger = createLogger(requestContext);
+          pinoDebug(requestContext, logger, 'CacheManagementService', 'Stored response in Cloudflare Cache API', {
+            url: request.url,
+            method: 'cache-api',
+            status: responseClone.status,
+            cacheControl: responseClone.headers.get('Cache-Control'),
+            cacheTag: responseClone.headers.get('Cache-Tag')
+          });
+        } else {
+          // Fallback to legacy debugging
+          console.warn('CacheManagementService: No request context available for cache storage');
+        }
       } catch (err) {
         // Log but don't fail if caching fails
         const errMessage = err instanceof Error ? err.message : 'Unknown error';
-        debug('CacheManagementService', 'Failed to store in cache', {
-          url: request.url,
-          error: errMessage
-        });
+        // Get the current request context if available
+        const requestContext = getCurrentContext();
+        
+        if (requestContext) {
+          const logger = createLogger(requestContext);
+          pinoDebug(requestContext, logger, 'CacheManagementService', 'Failed to store in cache', {
+            url: request.url,
+            error: errMessage
+          });
+        } else {
+          // Fallback to legacy debugging
+          console.warn(`CacheManagementService: Failed to store in cache: ${errMessage}`);
+        }
       }
     }
   } catch (err) {
     // Log but don't fail if caching fails
     const errMessage = err instanceof Error ? err.message : 'Unknown error';
-    debug('CacheManagementService', 'Failed to store in cache', {
-      url: request.url,
-      error: errMessage
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'CacheManagementService', 'Failed to store in cache', {
+        url: request.url,
+        error: errMessage
+      });
+    } else {
+      // Fallback to legacy debugging
+      console.warn(`CacheManagementService: Failed to store in cache: ${errMessage}`);
+    }
   }
 }
 
@@ -196,9 +269,18 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
   
   // Check if we should bypass cache
   if (shouldBypassCache(request)) {
-    debug('CacheManagementService', 'Bypassing cache based on request', {
-      url: request.url
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'CacheManagementService', 'Bypassing cache based on request', {
+        url: request.url
+      });
+    } else {
+      // Fallback to legacy debugging
+      console.warn(`CacheManagementService: Bypassing cache based on request: ${request.url}`);
+    }
     return null;
   }
   
@@ -210,10 +292,19 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
   // Instead, we rely on Cloudflare's built-in caching with the cf object in fetch
   if (cacheMethod === 'cf') {
     if (cacheConfig.getConfig().debug) {
-      debug('CacheManagementService', 'Using cf object for caching, skipping explicit cache check', {
-        url: request.url,
-        method: 'cf-object'
-      });
+      // Get the current request context if available
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoDebug(requestContext, logger, 'CacheManagementService', 'Using cf object for caching, skipping explicit cache check', {
+          url: request.url,
+          method: 'cf-object'
+        });
+      } else {
+        // Fallback to legacy debugging
+        console.warn(`CacheManagementService: Using cf object for caching, skipping explicit cache check: ${request.url}`);
+      }
     }
     return null;
   }
@@ -227,26 +318,53 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     const cachedResponse = await cache.match(request);
     
     if (cachedResponse) {
-      debug('CacheManagementService', 'Cache hit using Cache API', {
-        url: request.url,
-        method: 'cache-api',
-        status: cachedResponse.status
-      });
+      // Get the current request context if available
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoDebug(requestContext, logger, 'CacheManagementService', 'Cache hit using Cache API', {
+          url: request.url,
+          method: 'cache-api',
+          status: cachedResponse.status
+        });
+      } else {
+        // Fallback to legacy debugging
+        console.warn(`CacheManagementService: Cache hit using Cache API: ${request.url}`);
+      }
       return cachedResponse;
     }
     
-    debug('CacheManagementService', 'Cache miss using Cache API', {
-      url: request.url,
-      method: 'cache-api'
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'CacheManagementService', 'Cache miss using Cache API', {
+        url: request.url,
+        method: 'cache-api'
+      });
+    } else {
+      // Fallback to legacy debugging
+      console.warn(`CacheManagementService: Cache miss using Cache API: ${request.url}`);
+    }
     return null;
   } catch (err) {
     // Log but don't fail if cache check fails
     const errMessage = err instanceof Error ? err.message : 'Unknown error';
-    debug('CacheManagementService', 'Error checking cache', {
-      url: request.url,
-      error: errMessage
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'CacheManagementService', 'Error checking cache', {
+        url: request.url,
+        error: errMessage
+      });
+    } else {
+      // Fallback to legacy debugging
+      console.warn(`CacheManagementService: Error checking cache: ${errMessage}`);
+    }
     return null;
   }
 }
@@ -275,10 +393,19 @@ export function createCfObjectParams(
     cfObject.cacheEverything = false;
     cfObject.cacheTtl = 0; // Don't cache
     
-    debug('CacheManagementService', 'Created cf object with no caching (no config)', {
-      cacheEverything: false,
-      cacheTtl: 0
-    });
+    // Get the current request context if available
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'CacheManagementService', 'Created cf object with no caching (no config)', {
+        cacheEverything: false,
+        cacheTtl: 0
+      });
+    } else {
+      // Fallback to legacy debugging
+      console.warn('CacheManagementService: Created cf object with no caching (no config)');
+    }
     
     return cfObject;
   }
@@ -322,12 +449,21 @@ export function createCfObjectParams(
     }
   }
   
-  debug('CacheManagementService', 'Created cf object params for caching', {
-    cacheEverything: cfObject.cacheEverything,
-    cacheTtl: cfObject.cacheTtl,
-    cacheTags: cfObject.cacheTags,
-    cacheability: cacheConfig.cacheability
-  });
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'CacheManagementService', 'Created cf object params for caching', {
+      cacheEverything: cfObject.cacheEverything,
+      cacheTtl: cfObject.cacheTtl,
+      cacheTags: cfObject.cacheTags,
+      cacheability: cacheConfig.cacheability
+    });
+  } else {
+    // Fallback to legacy debugging
+    console.warn('CacheManagementService: Created cf object params for caching');
+  }
   
   return cfObject;
 }

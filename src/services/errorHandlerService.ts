@@ -1,8 +1,9 @@
 /**
  * Service for handling errors consistently across the application
  */
-import { error as logError } from '../utils/loggerUtils';
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { createLogger, error as pinoError } from '../utils/pinoLogger';
 import type { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 
 /**
@@ -43,15 +44,27 @@ export async function createErrorResponse(
   // Normalize the error
   const normalizedError = normalizeError(err, { originalUrl: request.url });
   
-  // Log the error with context
-  logError('ErrorHandlerService', 'Error processing request', {
-    error: normalizedError.message,
-    errorType: normalizedError.errorType,
-    statusCode: normalizedError.statusCode,
-    context: normalizedError.context,
-    stack: normalizedError instanceof Error ? normalizedError.stack : undefined,
-    url: request.url
-  });
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, 'ErrorHandlerService', 'Error processing request', {
+      error: normalizedError.message,
+      errorType: normalizedError.errorType,
+      statusCode: normalizedError.statusCode,
+      context: normalizedError.context,
+      stack: normalizedError instanceof Error ? normalizedError.stack : undefined,
+      url: request.url
+    });
+  } else {
+    // Fallback to legacy logging
+    console.error(`ErrorHandlerService: Error processing request: ${normalizedError.message}`, {
+      errorType: normalizedError.errorType,
+      statusCode: normalizedError.statusCode,
+      url: request.url
+    });
+  }
   
   // Initialize diagnostics if not provided
   const diagInfo = diagnosticsInfo || {
@@ -135,9 +148,16 @@ export async function createErrorResponse(
         }
       } catch (htmlErr) {
         // Log but continue if there's an error generating the HTML
-        logError('ErrorHandlerService', 'Error generating debug HTML', {
-          error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error'
-        });
+        if (requestContext) {
+          const logger = createLogger(requestContext);
+          pinoError(requestContext, logger, 'ErrorHandlerService', 'Error generating debug HTML', {
+            error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
+            stack: htmlErr instanceof Error ? htmlErr.stack : undefined
+          });
+        } else {
+          console.error('ErrorHandlerService: Error generating debug HTML:', 
+            htmlErr instanceof Error ? htmlErr.message : 'Unknown error');
+        }
       }
     }
     

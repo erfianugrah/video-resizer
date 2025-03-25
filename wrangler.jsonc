@@ -27,6 +27,26 @@
 		"DEBUG_INCLUDE_HEADERS": "true",
 		"CACHE_METHOD": "cf",
 		"CACHE_DEBUG": "true",
+		"LOGGING_CONFIG": {
+			"pino": {
+				"level": "debug",
+				"browser": {
+					"asObject": true
+				},
+				"base": {
+					"service": "video-resizer",
+					"env": "development"
+				}
+			},
+			"sampling": {
+				"enabled": false,
+				"rate": 1.0
+			},
+			"breadcrumbs": {
+				"enabled": true,
+				"maxItems": 100
+			}
+		},
 		"VIDEO_CONFIG": {
 			"derivatives": {
 				"preview": {
@@ -44,7 +64,11 @@
 		},
 		// Storage configuration for multi-source fetching
 		"STORAGE_CONFIG": {
-			"priority": ["r2", "remote", "fallback"],
+			"priority": [
+				"r2",
+				"remote",
+				"fallback"
+			],
 			"r2": {
 				"enabled": true,
 				"bucketBinding": "VIDEOS_BUCKET"
@@ -158,6 +182,26 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"LOGGING_CONFIG": {
+					"pino": {
+						"level": "debug",
+						"browser": {
+							"asObject": true
+						},
+						"base": {
+							"service": "video-resizer",
+							"env": "production"
+						}
+					},
+					"sampling": {
+						"enabled": true,
+						"rate": 0.1
+					},
+					"breadcrumbs": {
+						"enabled": true,
+						"maxItems": 50
+					}
+				},
 				"VIDEO_CONFIG": {
 					"derivatives": {
 						"preview": {
@@ -174,7 +218,11 @@
 					}
 				},
 				"STORAGE_CONFIG": {
-					"priority": ["r2", "remote", "fallback"],
+					"priority": [
+						"r2",
+						"remote",
+						"fallback"
+					],
 					"r2": {
 						"enabled": true,
 						"bucketBinding": "VIDEOS_BUCKET"
@@ -285,6 +333,26 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"LOGGING_CONFIG": {
+					"pino": {
+						"level": "debug",
+						"browser": {
+							"asObject": true
+						},
+						"base": {
+							"service": "video-resizer",
+							"env": "staging"
+						}
+					},
+					"sampling": {
+						"enabled": true,
+						"rate": 0.25
+					},
+					"breadcrumbs": {
+						"enabled": true,
+						"maxItems": 75
+					}
+				},
 				"VIDEO_CONFIG": {
 					"derivatives": {
 						"preview": {
@@ -301,7 +369,11 @@
 					}
 				},
 				"STORAGE_CONFIG": {
-					"priority": ["r2", "remote", "fallback"],
+					"priority": [
+						"r2",
+						"remote",
+						"fallback"
+					],
 					"r2": {
 						"enabled": true,
 						"bucketBinding": "VIDEOS_BUCKET"

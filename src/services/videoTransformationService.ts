@@ -5,7 +5,8 @@
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { PathPattern } from '../utils/pathUtils';
 import { DebugInfo } from '../utils/debugHeadersUtils';
-import { debug, error } from '../utils/loggerUtils';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 
 /**
  * Transform a video using CDN-CGI media format
@@ -28,30 +29,65 @@ export async function transformVideo(
   }
 ): Promise<Response> {
   try {
-    debug('VideoTransformationService', 'Transforming video', {
-      url: request.url,
-      options,
-    });
+    // Get the current request context - should be available from the handler
+    const requestContext = getCurrentContext() || undefined;
+    let logger;
+    
+    // Create logger if we have a context
+    if (requestContext) {
+      logger = createLogger(requestContext);
+      
+      // Log with Pino
+      pinoDebug(requestContext, logger, 'VideoTransformationService', 'Transforming video', {
+        url: request.url
+      });
+    } else {
+      // Legacy logging fallback - this branch should not typically be hit
+      // since request context should be available
+      console.warn('VideoTransformationService: No request context available');
+      const { debug } = await import('../utils/legacyLoggerAdapter');
+      debug('VideoTransformationService', 'Transforming video', {
+        url: request.url,
+        options,
+      });
+    }
 
     // Import dynamically to avoid circular dependencies
     const { TransformVideoCommand } = await import('../domain/commands/TransformVideoCommand');
     
-    // Create and execute the command
+    // Create and execute the command - pass the request context
     const command = new TransformVideoCommand({
       request,
       options,
       pathPatterns,
       debugInfo,
       env,
+      requestContext,
+      logger
     });
 
     return await command.execute();
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    error('VideoTransformationService', 'Error transforming video', {
-      error: errorMessage,
-      stack: err instanceof Error ? err.stack : undefined,
-    });
+    
+    // Get the request context and log the error using the new system if available
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoError(requestContext, logger, 'VideoTransformationService', 'Error transforming video', {
+        error: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    } else {
+      // Legacy logging fallback - this branch should not typically be hit
+      // since request context should be available
+      console.warn('VideoTransformationService: No request context available for error');
+      const { error } = await import('../utils/legacyLoggerAdapter');
+      error('VideoTransformationService', 'Error transforming video', {
+        error: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    }
 
     throw err; // Rethrow to be handled by the caller
   }

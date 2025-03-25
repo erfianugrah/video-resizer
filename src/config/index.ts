@@ -120,14 +120,21 @@ function applyEnvironmentVariables(env: EnvVariables): void {
             try {
               videoConfig.addPathPattern(pattern as unknown as z.infer<typeof PathPatternSchema>);
             } catch (error) {
-              // Log error but continue with other patterns
-              console.error(`Failed to add path pattern ${pattern.name}:`, error);
+              // Log error but continue with other patterns - would use pino logger in the future
+              // For now keep console since logger might not be initialized yet
+              const errMessage = error instanceof Error ? error.message : String(error);
+              const errStack = error instanceof Error ? error.stack : undefined;
+              console.error(`Failed to add path pattern ${pattern.name}: ${errMessage}`, { stack: errStack });
             }
           }
         }
       }
     } catch (error) {
-      console.error('Failed to process PATH_PATTERNS environment variable:', error);
+      // Log error but continue - would use pino logger in the future
+      // For now keep console since logger might not be initialized yet
+      const errMessage = error instanceof Error ? error.message : String(error);
+      const errStack = error instanceof Error ? error.stack : undefined;
+      console.error(`Failed to process PATH_PATTERNS environment variable: ${errMessage}`, { stack: errStack });
     }
   }
 }

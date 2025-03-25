@@ -31,6 +31,8 @@ export interface BrowserCapabilities {
   [key: string]: boolean | undefined;
 }
 
+import { Breadcrumb } from '../utils/requestContext';
+
 export interface DiagnosticsInfo {
   // Basic metadata
   originalUrl?: string;
@@ -64,12 +66,29 @@ export interface DiagnosticsInfo {
   source?: string;
   
   // Configuration information (for debug UI)
-  videoConfig?: Record<string, any>;
-  cacheConfig?: Record<string, any>;
-  debugConfig?: Record<string, any>;
-  loggingConfig?: Record<string, any>;
-  environment?: Record<string, any>;
+  videoConfig?: Record<string, unknown>;
+  cacheConfig?: Record<string, unknown>;
+  debugConfig?: Record<string, unknown>;
+  loggingConfig?: Record<string, unknown>;
+  environment?: Record<string, unknown>;
+  
+  // Request context information
+  requestId?: string;
+  breadcrumbs?: Breadcrumb[];
+  performanceMetrics?: Record<string, unknown>;
+  
+  // Headers information for debugging
+  requestHeaders?: Record<string, string>;
+  originalHeaders?: Record<string, string>;
+  finalHeaders?: Record<string, string>;
+  originalRequestHeaders?: Record<string, string>;
+  
+  // Special flags
+  isRangeRequest?: boolean;
+  isMediaContent?: boolean;
+  originalRequestHadRange?: boolean;
+  cachingMethod?: string;
   
   // Additional data
-  [key: string]: any;
+  [key: string]: unknown;
 }

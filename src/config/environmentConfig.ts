@@ -99,6 +99,7 @@ export interface EnvVariables {
   LOG_SAMPLE_RATE?: string;
   LOG_PERFORMANCE?: string;
   LOG_PERFORMANCE_THRESHOLD?: string;
+  LOGGING_CONFIG?: string | Record<string, any>;
   
   // Video Configuration
   VIDEO_DEFAULT_QUALITY?: string;
@@ -244,7 +245,10 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       try {
         config.pathPatterns = JSON.parse(env.PATH_PATTERNS);
       } catch (err) {
-        console.error('Error parsing PATH_PATTERNS environment variable', err);
+        // Can't use logger here as this is during init
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const errStack = err instanceof Error ? err.stack : undefined;
+        console.error(`Error parsing PATH_PATTERNS environment variable: ${errMessage}`, { stack: errStack });
       }
     } else {
       // Already an object array

@@ -4,10 +4,13 @@
  */
 import { determineVideoOptions } from './videoOptionsService';
 import { transformVideo } from '../services/videoTransformationService';
-import { debug, error, info } from '../utils/loggerUtils';
 import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import { videoConfig } from '../config/videoConfig';
 import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
+import { createRequestContext, addBreadcrumb } from '../utils/requestContext';
+import { createLogger, info, debug, error } from '../utils/pinoLogger';
+import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
+import { ResponseBuilder } from '../utils/responseBuilder';
 
 /**
  * Main handler for video requests
@@ -20,13 +23,26 @@ export async function handleVideoRequest(
   config: EnvironmentConfig, 
   env?: EnvVariables
 ): Promise<Response> {
+  // Create request context and logger
+  const context = createRequestContext(request);
+  const logger = createLogger(context);
+  
+  // Initialize legacy logger for backward compatibility
+  initializeLegacyLogger(request);
+  
+  // Add initial breadcrumb
+  addBreadcrumb(context, 'VideoHandler', 'Request received', {
+    url: request.url,
+    method: request.method
+  });
+  
   try {
     const url = new URL(request.url);
     const path = url.pathname;
 
     // Check if the request is already a CDN-CGI media request
     if (isCdnCgiMediaPath(path)) {
-      info('VideoHandler', 'Request is already a CDN-CGI media request, passing through');
+      info(context, logger, 'VideoHandler', 'Request is already a CDN-CGI media request, passing through');
       return fetch(request);
     }
     
@@ -34,13 +50,17 @@ export async function handleVideoRequest(
     const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
 
     // Try to get the response from cache first
+    addBreadcrumb(context, 'VideoHandler', 'Checking cache');
     const cachedResponse = await getCachedResponse(request);
     if (cachedResponse) {
-      info('VideoHandler', 'Serving from cache', {
+      info(context, logger, 'VideoHandler', 'Serving from cache', {
         url: url.toString(),
         cacheControl: cachedResponse.headers.get('Cache-Control'),
       });
-      return cachedResponse;
+      
+      // Use ResponseBuilder for consistent response handling including range requests
+      const responseBuilder = new ResponseBuilder(cachedResponse, context);
+      return await responseBuilder.build();
     }
 
     // Get path patterns from config or use defaults
@@ -50,51 +70,76 @@ export async function handleVideoRequest(
     const urlParams = url.searchParams;
 
     // Determine video options from URL parameters
+    addBreadcrumb(context, 'VideoHandler', 'Determining video options');
     const videoOptions = determineVideoOptions(request, urlParams, path);
 
-    debug('VideoHandler', 'Processing video request', {
+    debug(context, logger, 'VideoHandler', 'Processing video request', {
       url: url.toString(),
       path,
       options: videoOptions,
     });
 
-    // Prepare debug information
+    // Prepare debug information - add context tracking for breadcrumbs
     const debugInfo = {
-      isEnabled: config.debug?.enabled,
-      isVerbose: config.debug?.verbose,
+      isEnabled: context.debugEnabled || config.debug?.enabled,
+      isVerbose: context.verboseEnabled || config.debug?.verbose,
       includeHeaders: config.debug?.includeHeaders,
       includePerformance: true,
     };
 
+    // Store original request headers for diagnostics
+    if (debugInfo.isEnabled && debugInfo.includeHeaders) {
+      context.diagnostics.originalRequestHeaders = Object.fromEntries(
+        [...request.headers.entries()]
+      );
+    }
+
     // Use the video transformation service
+    addBreadcrumb(context, 'VideoHandler', 'Transforming video');
     const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo, env);
+    
+    // Add final timing information to diagnostics
+    context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
     
     // Store the response in cache if it's cacheable
     if (response.headers.get('Cache-Control')?.includes('max-age=')) {
       // Use a non-blocking cache write to avoid delaying the response
+      addBreadcrumb(context, 'VideoHandler', 'Caching response');
       cacheResponse(request, response.clone()).catch(err => {
-        error('VideoHandler', 'Error caching response', {
+        error(context, logger, 'VideoHandler', 'Error caching response', {
           error: err instanceof Error ? err.message : 'Unknown error',
         });
       });
     }
 
-    return response;
+    // Use ResponseBuilder for consistent response handling including range requests
+    const responseBuilder = new ResponseBuilder(response, context);
+    return await responseBuilder.build();
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     const errorStack = err instanceof Error ? err.stack : undefined;
     
-    error('VideoHandler', 'Error handling video request', {
+    error(context, logger, 'VideoHandler', 'Error handling video request', {
       error: errorMessage,
       stack: errorStack,
     });
 
-    return new Response(`Error processing video: ${errorMessage}`, {
+    // Add error to diagnostics
+    if (!context.diagnostics.errors) {
+      context.diagnostics.errors = [];
+    }
+    context.diagnostics.errors.push(errorMessage);
+    
+    // Create error response with ResponseBuilder
+    const errorResponse = new Response(`Error processing video: ${errorMessage}`, {
       status: 500,
       headers: {
         'Content-Type': 'text/plain',
         'Cache-Control': 'no-store',
       },
     });
+    
+    const responseBuilder = new ResponseBuilder(errorResponse, context);
+    return await responseBuilder.withDebugInfo().build();
   }
 }

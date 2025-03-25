@@ -1,8 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { getOriginalUrl } from "@/utils/diagnostics";
-import type { DiagnosticsInfo, TransformParams } from "@/types/diagnostics";
-import { ExternalLink } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { getOriginalUrl } from '@/utils/diagnostics';
+import type { DiagnosticsInfo, TransformParams } from '@/types/diagnostics';
+import { ExternalLink } from 'lucide-react';
 
 interface MediaPreviewProps {
   diagnostics: DiagnosticsInfo;

@@ -112,7 +112,7 @@ describe('debugService', () => {
       };
       
       // Mock assets binding
-      const mockHtmlContent = `<!DOCTYPE html><html><body>Video Resizer Debug 50 ms videos client-hints</body></html>`;
+      const mockHtmlContent = '<!DOCTYPE html><html><body>Video Resizer Debug 50 ms videos client-hints</body></html>';
       const mockAssets = {
         fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
           status: 200,
@@ -142,7 +142,7 @@ describe('debugService', () => {
       };
       
       // Mock assets binding
-      const mockHtmlContent = `<!DOCTYPE html><html><body>Errors & Warnings Error 1 Error 2 Warning 1</body></html>`;
+      const mockHtmlContent = '<!DOCTYPE html><html><body>Errors & Warnings Error 1 Error 2 Warning 1</body></html>';
       const mockAssets = {
         fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
           status: 200,
@@ -176,7 +176,7 @@ describe('debugService', () => {
       };
       
       // Mock assets binding
-      const mockHtmlContent = `<!DOCTYPE html><html><body>Transform Parameters width 720 height 480 mode video fit contain</body></html>`;
+      const mockHtmlContent = '<!DOCTYPE html><html><body>Transform Parameters width 720 height 480 mode video fit contain</body></html>';
       const mockAssets = {
         fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
           status: 200,
@@ -210,7 +210,7 @@ describe('debugService', () => {
       };
       
       // Mock assets binding
-      const mockHtmlContent = `<!DOCTYPE html><html><body>Browser Capabilities supportsWebM supportsHEVC supportsHDR</body></html>`;
+      const mockHtmlContent = '<!DOCTYPE html><html><body>Browser Capabilities supportsWebM supportsHEVC supportsHDR</body></html>';
       const mockAssets = {
         fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
           status: 200,
@@ -238,7 +238,7 @@ describe('debugService', () => {
       };
       
       // Mock assets binding with HTML response
-      const mockHtmlContent = `<!DOCTYPE html><html><body>Debug UI</body></html>`;
+      const mockHtmlContent = '<!DOCTYPE html><html><body>Debug UI</body></html>';
       const mockAssets = {
         fetch: vi.fn().mockResolvedValue(new Response(mockHtmlContent, {
           status: 200,

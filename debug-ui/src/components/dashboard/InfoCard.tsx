@@ -14,7 +14,7 @@ export function InfoCard({ title, icon, children, className, titleClassName }: I
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
-        <CardTitle className={cn("flex items-center gap-2", titleClassName)}>
+        <CardTitle className={cn('flex items-center gap-2', titleClassName)}>
           <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
             {icon}
           </div>

@@ -2,7 +2,8 @@
  * Service for handling debug information and reporting
  */
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
-import { debug } from '../utils/loggerUtils';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 
 /**
  * Add debug headers to a response
@@ -22,10 +23,25 @@ export function addDebugHeaders(
     return response;
   }
   
-  debug('DebugService', 'Adding debug headers', {
-    isVerbose: debugInfo.isVerbose,
-    includeHeaders: debugInfo.includeHeaders,
-  });
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'DebugService', 'Adding debug headers', {
+      isVerbose: debugInfo.isVerbose,
+      includeHeaders: debugInfo.includeHeaders,
+    });
+  } else {
+    // Legacy fallback - this shouldn't typically happen
+    console.warn('DebugService: No request context available');
+    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+      debug('DebugService', 'Adding debug headers', {
+        isVerbose: debugInfo.isVerbose,
+        includeHeaders: debugInfo.includeHeaders,
+      });
+    });
+  }
   
   // Create new headers object
   const newHeaders = new Headers(response.headers);
@@ -161,7 +177,19 @@ export async function createDebugReport(
         });
       }
     } catch (error) {
-      console.error('Error loading debug UI from assets:', error);
+      // Get the current request context if available
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        pinoError(requestContext, logger, 'DebugService', 'Error loading debug UI from assets', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      } else {
+        // Legacy fallback - this shouldn't typically happen
+        console.error('Error loading debug UI from assets:', error);
+      }
     }
   }
   

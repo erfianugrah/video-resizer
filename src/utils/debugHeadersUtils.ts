@@ -14,48 +14,13 @@ export interface DebugInfo {
   includePerformance?: boolean;
 }
 
+// Import the shared DiagnosticsInfo from the types directory
+import { DiagnosticsInfo as SharedDiagnosticsInfo } from '../types/diagnostics';
+
 /**
  * Interface for diagnostics information
  */
-export interface DiagnosticsInfo {
-  processingTimeMs?: number;
-  transformSource?: string;
-  deviceType?: string;
-  networkQuality?: string;
-  responsiveSize?: VideoSize;
-  requestHeaders?: Record<string, string>;
-  transformParams?: TransformParams;
-  pathMatch?: string;
-  videoId?: string;
-  cacheability?: boolean;
-  cacheTtl?: number;
-  clientHints?: boolean;
-  browserCapabilities?: Record<string, boolean>;
-  errors?: string[];
-  warnings?: string[];
-  // New fields for content negotiation and service architecture
-  videoFormat?: string;
-  estimatedBitrate?: number;
-  // Original URL for debug view
-  originalUrl?: string;
-  // Caching method (cf-object or cache-api)
-  cachingMethod?: string;
-  // Strategy-specific fields
-  transformationType?: string;
-  videoQuality?: string;
-  videoCompression?: string;
-  playbackSettings?: Record<string, boolean | string>;
-  imageFormat?: string;
-  frameTimestamp?: string;
-  startTime?: string;
-  duration?: string;
-  // Configuration data for debug UI
-  videoConfig?: Record<string, any>;
-  cacheConfig?: Record<string, any>;
-  debugConfig?: Record<string, any>;
-  loggingConfig?: Record<string, any>;
-  environment?: Record<string, any>;
-}
+export type DiagnosticsInfo = SharedDiagnosticsInfo;
 
 /**
  * Add debug headers to a Response
@@ -132,10 +97,17 @@ export function addDebugHeaders(
   // If verbose mode is enabled, add more detailed headers
   if (debugInfo.isVerbose) {
     // Include responsive sizing info if available
-    if (diagnosticsInfo.responsiveSize) {
-      headers.set('X-Responsive-Width', diagnosticsInfo.responsiveSize.width.toString());
-      headers.set('X-Responsive-Height', diagnosticsInfo.responsiveSize.height.toString());
-      headers.set('X-Responsive-Method', diagnosticsInfo.responsiveSize.source);
+    if (diagnosticsInfo.responsiveSize && 
+        typeof diagnosticsInfo.responsiveSize === 'object' &&
+        'width' in diagnosticsInfo.responsiveSize &&
+        'height' in diagnosticsInfo.responsiveSize &&
+        'source' in diagnosticsInfo.responsiveSize) {
+      const width = (diagnosticsInfo.responsiveSize as any).width;
+      const height = (diagnosticsInfo.responsiveSize as any).height;
+      const source = (diagnosticsInfo.responsiveSize as any).source;
+      headers.set('X-Responsive-Width', String(width));
+      headers.set('X-Responsive-Height', String(height));
+      headers.set('X-Responsive-Method', String(source));
     }
     
     // Include transform parameters in a JSON-encoded header
@@ -153,7 +125,7 @@ export function addDebugHeaders(
       headers.set('X-Video-Format', diagnosticsInfo.videoFormat);
     }
     
-    if (diagnosticsInfo.estimatedBitrate !== undefined) {
+    if (diagnosticsInfo.estimatedBitrate !== undefined && diagnosticsInfo.estimatedBitrate !== null) {
       headers.set('X-Estimated-Bitrate', diagnosticsInfo.estimatedBitrate.toString());
     }
     
