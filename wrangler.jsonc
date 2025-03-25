@@ -27,6 +27,21 @@
 		"DEBUG_INCLUDE_HEADERS": "true",
 		"CACHE_METHOD": "cf",
 		"CACHE_DEBUG": "true",
+		"VIDEO_CONFIG": {
+			"derivatives": {
+				"preview": {
+					"width": 480,
+					"height": 270,
+					"mode": "video",
+					"fit": "contain",
+					"audio": false,
+					"duration": "3s",
+					"quality": "low",
+					"compression": "high",
+					"preload": "auto"
+				}
+			}
+		},
 		// Storage configuration for multi-source fetching
 		"STORAGE_CONFIG": {
 			"priority": ["r2", "remote", "fallback"],
@@ -143,6 +158,21 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"VIDEO_CONFIG": {
+					"derivatives": {
+						"preview": {
+							"width": 480,
+							"height": 270,
+							"mode": "video",
+							"fit": "contain",
+							"audio": false,
+							"duration": "10s",
+							"quality": "low",
+							"compression": "high",
+							"preload": "auto"
+						}
+					}
+				},
 				"STORAGE_CONFIG": {
 					"priority": ["r2", "remote", "fallback"],
 					"r2": {
@@ -255,6 +285,21 @@
 				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
+				"VIDEO_CONFIG": {
+					"derivatives": {
+						"preview": {
+							"width": 480,
+							"height": 270,
+							"mode": "video",
+							"fit": "contain",
+							"audio": false,
+							"duration": "8s",
+							"quality": "low",
+							"compression": "high",
+							"preload": "auto"
+						}
+					}
+				},
 				"STORAGE_CONFIG": {
 					"priority": ["r2", "remote", "fallback"],
 					"r2": {
