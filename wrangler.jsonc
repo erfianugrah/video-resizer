@@ -7,6 +7,9 @@
 		"nodejs_compat"
 	],
 	"account_id": "25f21f141824546aa72c74451a11b419",
+	"observability": {
+		"enabled": true
+	},
 	"assets": {
 		"directory": "./public",
 		"binding": "ASSETS"
