@@ -258,24 +258,32 @@ export async function createErrorResponse(
   if (fallbackConfig?.enabled) {
     // Only apply fallback for 400 Bad Request errors if badRequestOnly is true
     if (!fallbackConfig.badRequestOnly || normalizedError.statusCode === 400) {
-      const fallbackResponse = await fetchOriginalContentFallback(originalUrl, normalizedError, request);
-      
-      // If fallback was successful, use it instead of error response
-      if (fallbackResponse) {
-        // Add debug headers if debug is enabled
-        if (debugInfo?.isEnabled) {
-          // Add the fallback information to diagnostics
-          diagInfo.warnings = diagInfo.warnings || [];
-          diagInfo.warnings.push('Returned original content due to transformation failure');
-          diagInfo.fallbackApplied = true;
-          diagInfo.fallbackReason = normalizedError.message;
-          
-          // Import debug service functions dynamically to avoid circular dependencies
-          const { addDebugHeaders } = await import('./debugService');
-          return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
-        }
+      try {
+        const fallbackResponse = await fetchOriginalContentFallback(originalUrl, normalizedError, request);
         
-        return fallbackResponse;
+        // If fallback was successful, use it instead of error response
+        if (fallbackResponse) {
+          // Add debug headers if debug is enabled
+          if (debugInfo?.isEnabled) {
+            // Add the fallback information to diagnostics
+            diagInfo.warnings = diagInfo.warnings || [];
+            diagInfo.warnings.push('Returned original content due to transformation failure');
+            diagInfo.fallbackApplied = true;
+            diagInfo.fallbackReason = normalizedError.message;
+            
+            // Import debug service functions dynamically to avoid circular dependencies
+            const { addDebugHeaders } = await import('./debugService');
+            return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
+          }
+          
+          return fallbackResponse;
+        }
+      } catch (fallbackError) {
+        // Log the fallback error but continue with the original error response
+        logError('ErrorHandlerService', 'Error in fallback handler', {
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          originalError: normalizedError.message
+        });
       }
     }
   }

@@ -19,6 +19,15 @@ module.exports = {
     'no-console': ['warn', { allow: ['warn', 'error', 'info', 'debug'] }],
     quotes: ['error', 'single', { avoidEscape: true }],
     semi: ['error', 'always'],
+    '@typescript-eslint/no-require-imports': 'error',
   },
+  overrides: [
+    {
+      files: ['src/services/debugService.ts'],
+      rules: {
+        '@typescript-eslint/no-require-imports': 'off'
+      }
+    }
+  ],
   ignorePatterns: ['node_modules/', 'dist/', 'build/'],
 };

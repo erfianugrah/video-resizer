@@ -80,11 +80,22 @@ export function addDebugHeaders(
   let performanceMetrics;
   
   if (requestContext && diagnosticsInfo) {
-    const { getPerformanceMetrics } = require('../utils/requestContext');
-    performanceMetrics = getPerformanceMetrics(requestContext);
-    
-    // Add performance metrics to diagnostics
-    diagnosticsInfo.performanceMetrics = performanceMetrics;
+    // Get performance metrics synchronously to avoid timing issues
+    // First try to import directly to avoid timing issues
+    try {
+      // Using a dynamic import with top-level await would be better,
+      // but for now we're using synchronous approach for compatibility
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+      const requestContextModule = require('../utils/requestContext');
+      performanceMetrics = requestContextModule.getPerformanceMetrics(requestContext);
+      
+      // Add performance metrics to diagnostics
+      if (performanceMetrics) {
+        diagnosticsInfo.performanceMetrics = performanceMetrics;
+      }
+    } catch (err) {
+      logError('Error getting performance metrics', { error: String(err) });
+    }
   }
   
   // Create new headers object
@@ -107,20 +118,27 @@ export function addDebugHeaders(
   }
   
   // Add performance metrics if available
-  if (performanceMetrics) {
-    newHeaders.set('X-Total-Processing-Time', `${performanceMetrics.totalElapsedMs.toFixed(2)}ms`);
-    newHeaders.set('X-Breadcrumb-Count', String(performanceMetrics.breadcrumbCount));
+  if (performanceMetrics && typeof performanceMetrics === 'object') {
+    if (typeof performanceMetrics.totalElapsedMs === 'number') {
+      newHeaders.set('X-Total-Processing-Time', `${performanceMetrics.totalElapsedMs.toFixed(2)}ms`);
+    }
     
-    // Add timings for top components
-    const componentTimings = performanceMetrics.componentTiming || {};
-    const topComponents = Object.entries(componentTimings)
-      .sort(([, timeA], [, timeB]) => Number(timeB) - Number(timeA))
-      .slice(0, 3);
+    if (typeof performanceMetrics.breadcrumbCount === 'number') {
+      newHeaders.set('X-Breadcrumb-Count', String(performanceMetrics.breadcrumbCount));
+    }
     
-    topComponents.forEach(([component, time], index) => {
-      newHeaders.set(`X-Component-${index+1}-Time`, 
-        `${component}=${(Number(time)).toFixed(2)}ms`);
-    });
+    // Add timings for top components if available
+    if (performanceMetrics.componentTiming && typeof performanceMetrics.componentTiming === 'object') {
+      const componentTimings = performanceMetrics.componentTiming;
+      const topComponents = Object.entries(componentTimings)
+        .sort(([, timeA], [, timeB]) => Number(timeB) - Number(timeA))
+        .slice(0, 3);
+      
+      topComponents.forEach(([component, time], index) => {
+        newHeaders.set(`X-Component-${index+1}-Time`, 
+          `${component}=${(Number(time)).toFixed(2)}ms`);
+      });
+    }
   }
   
   // Add path match if available
