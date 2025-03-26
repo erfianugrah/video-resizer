@@ -75,6 +75,18 @@ export function addDebugHeaders(
     includeHeaders: debugInfo.includeHeaders
   });
   
+  // Get the request context for performance metrics if available
+  const requestContext = getCurrentContext();
+  let performanceMetrics;
+  
+  if (requestContext && diagnosticsInfo) {
+    const { getPerformanceMetrics } = require('../utils/requestContext');
+    performanceMetrics = getPerformanceMetrics(requestContext);
+    
+    // Add performance metrics to diagnostics
+    diagnosticsInfo.performanceMetrics = performanceMetrics;
+  }
+  
   // Create new headers object
   const newHeaders = new Headers(response.headers);
   
@@ -92,6 +104,23 @@ export function addDebugHeaders(
   if (diagnosticsInfo.processingTimeMs !== undefined) {
     newHeaders.set('X-Processing-Time-Ms', 
       diagnosticsInfo.processingTimeMs.toString());
+  }
+  
+  // Add performance metrics if available
+  if (performanceMetrics) {
+    newHeaders.set('X-Total-Processing-Time', `${performanceMetrics.totalElapsedMs.toFixed(2)}ms`);
+    newHeaders.set('X-Breadcrumb-Count', String(performanceMetrics.breadcrumbCount));
+    
+    // Add timings for top components
+    const componentTimings = performanceMetrics.componentTiming || {};
+    const topComponents = Object.entries(componentTimings)
+      .sort(([, timeA], [, timeB]) => Number(timeB) - Number(timeA))
+      .slice(0, 3);
+    
+    topComponents.forEach(([component, time], index) => {
+      newHeaders.set(`X-Component-${index+1}-Time`, 
+        `${component}=${(Number(time)).toFixed(2)}ms`);
+    });
   }
   
   // Add path match if available

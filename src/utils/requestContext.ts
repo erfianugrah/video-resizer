@@ -59,10 +59,21 @@ export interface RequestContext {
   
   // Performance tracking
   componentTiming: Record<string, number>; // Time spent in each component
+  operations?: Record<string, TimedOperation>; // For tracking timed operations
   
   // Feature flags
   debugEnabled: boolean;  // Whether debug mode is enabled
   verboseEnabled: boolean; // Whether verbose logging is enabled
+}
+
+/**
+ * Timed operation for tracking performance
+ */
+export interface TimedOperation {
+  startTime: number;      // When the operation started
+  endTime?: number;       // When the operation ended (if completed)
+  duration?: number;      // Duration of the operation
+  category?: string;      // Category for breadcrumb grouping
 }
 
 /**
@@ -270,14 +281,78 @@ export function addBreadcrumb(
 }
 
 /**
+ * Start a timed operation in the request context
+ * This is useful for tracking performance metrics for specific operations
+ * @param context The request context
+ * @param operationName The name of the operation
+ * @param category Optional category for grouping operations
+ */
+export function startTimedOperation(context: RequestContext, operationName: string, category?: string): void {
+  if (!context.operations) {
+    context.operations = {};
+  }
+  
+  context.operations[operationName] = {
+    startTime: performance.now(),
+    endTime: undefined,
+    duration: undefined,
+    category: category || 'Operation'
+  };
+  
+  // Add a breadcrumb to mark the start of this operation
+  addBreadcrumb(context, category || 'Performance', `Started ${operationName}`, {
+    operationType: 'start',
+    operation: operationName
+  });
+}
+
+/**
+ * End a timed operation in the request context
+ * Call this after startTimedOperation to record the duration
+ * @param context The request context
+ * @param operationName The name of the operation
+ * @returns Duration in milliseconds
+ */
+export function endTimedOperation(context: RequestContext, operationName: string): number | undefined {
+  if (!context.operations || !context.operations[operationName]) {
+    return undefined;
+  }
+  
+  const operation = context.operations[operationName];
+  operation.endTime = performance.now();
+  operation.duration = operation.endTime - operation.startTime;
+  
+  // Add a breadcrumb to mark the end of this operation with duration
+  addBreadcrumb(context, operation.category || 'Performance', `Completed ${operationName}`, {
+    operationType: 'end',
+    operation: operationName,
+    durationMs: operation.duration
+  });
+  
+  return operation.duration;
+}
+
+/**
  * Get performance metrics from the request context
  * @param context The request context
  * @returns Performance metrics
  */
 export function getPerformanceMetrics(context: RequestContext) {
+  // Gather all operation durations
+  const operations: Record<string, number> = {};
+  
+  if (context.operations) {
+    Object.entries(context.operations).forEach(([name, operation]) => {
+      if (operation.duration !== undefined) {
+        operations[name] = operation.duration;
+      }
+    });
+  }
+  
   return {
     totalElapsedMs: performance.now() - context.startTime,
     componentTiming: context.componentTiming,
+    operations,
     breadcrumbCount: context.breadcrumbs.length
   };
 }
