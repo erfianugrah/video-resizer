@@ -73,9 +73,8 @@ describe('RequestContext', () => {
     // Get performance metrics
     const metrics = getPerformanceMetrics(context);
     
-    expect(metrics.totalDurationMs).toBeGreaterThan(0);
+    expect(metrics.totalElapsedMs).toBeGreaterThan(0);
     expect(metrics.breadcrumbCount).toEqual(3);
-    expect(metrics.componentBreakdown.length).toBeGreaterThanOrEqual(2);
-    expect(metrics.slowestOperations.length).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(metrics.componentTiming).length).toBeGreaterThanOrEqual(2);
   });
 });

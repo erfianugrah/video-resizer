@@ -123,6 +123,47 @@ export function isValidTime(timeStr: string | null): boolean {
   return seconds >= 0 && seconds <= 30;
 }
 
+// In-memory cache for transformation limits discovered from API errors
+// Initially empty - will be populated from API responses
+const transformationLimits: Record<string, Record<string, number>> = {
+  duration: {}, // Will be populated with min and max from API errors
+  fileSize: {}  // Will be populated with max from API errors
+};
+
+/**
+ * Store discovered transformation limit
+ * 
+ * @param type - The type of limit (duration, fileSize, etc.)
+ * @param key - The limit key (max, min, etc.)
+ * @param value - The limit value
+ */
+export function storeTransformationLimit(type: string, key: string, value: number): void {
+  if (!transformationLimits[type]) {
+    transformationLimits[type] = {};
+  }
+  transformationLimits[type][key] = value;
+}
+
+/**
+ * Get a transformation limit
+ * 
+ * @param type - The type of limit (duration, fileSize, etc.)
+ * @param key - The limit key (max, min, etc.)
+ * @returns The limit value
+ */
+export function getTransformationLimit(type: string, key: string): number | undefined {
+  return transformationLimits[type]?.[key];
+}
+
+/**
+ * Check if we have learned duration limits
+ * @returns Whether we have both min and max duration limits
+ */
+export function haveDurationLimits(): boolean {
+  return 'min' in transformationLimits.duration && 
+         'max' in transformationLimits.duration;
+}
+
 /**
  * Validate duration parameter
  * @param durationStr Duration string
@@ -134,8 +175,45 @@ export function isValidDuration(durationStr: string | null): boolean {
   const seconds = parseTimeString(durationStr);
   if (seconds === null) return false;
   
-  // Duration must be positive
-  return seconds > 0;
+  // If we don't have learned limits yet, just validate that it's positive
+  if (!haveDurationLimits()) {
+    return seconds > 0;
+  }
+  
+  const minDuration = transformationLimits.duration.min;
+  const maxDuration = transformationLimits.duration.max;
+  
+  // Use our learned limits for validation
+  return seconds >= minDuration && seconds <= maxDuration;
+}
+
+/**
+ * Adjust duration to be within valid limits
+ * @param durationStr Duration string
+ * @returns Adjusted duration string or original if already valid or no limits known
+ */
+export function adjustDuration(durationStr: string | null): string | null {
+  if (!durationStr) return durationStr;
+  
+  const seconds = parseTimeString(durationStr);
+  if (seconds === null) return durationStr;
+  
+  // If we don't have learned limits yet, return the original
+  if (!haveDurationLimits()) {
+    return durationStr;
+  }
+  
+  const minDuration = transformationLimits.duration.min;
+  const maxDuration = transformationLimits.duration.max;
+  
+  // Adjust duration if outside limits
+  if (seconds < minDuration) {
+    return formatTimeString(minDuration);
+  } else if (seconds > maxDuration) {
+    return formatTimeString(maxDuration);
+  }
+  
+  return durationStr;
 }
 
 /**

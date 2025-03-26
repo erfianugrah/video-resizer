@@ -40,7 +40,7 @@ export default {
           initializeConfiguration(env);
           
           // Log initialization using console (since logger isn't fully ready yet)
-          console.info(`Initialized configuration from environment`);
+          console.info('Initialized configuration from environment');
         } catch (err) {
           // Use error without context since this happens before context is initialized
           const errMessage = err instanceof Error ? err.message : String(err);

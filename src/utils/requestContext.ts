@@ -53,16 +53,24 @@ export function createRequestContext(request: Request): RequestContext {
   let envVerboseEnabled = false;
   
   try {
-    // Import in a way that avoids circular dependencies
-    const { DebugConfigurationManager } = require('../config/DebugConfigurationManager');
-    const debugConfig = DebugConfigurationManager.getInstance();
-    
-    // Get debug settings from manager
-    envDebugEnabled = debugConfig.isDebugEnabled();
-    envVerboseEnabled = debugConfig.isVerboseEnabled();
+    // Use dynamic import to load the configuration manager
+    // We'll use Promise.resolve to handle the async nature but proceed with default values
+    // while the import is in progress
+    import('../config/DebugConfigurationManager').then(module => {
+      try {
+        const debugConfig = module.DebugConfigurationManager.getInstance();
+        // Get debug settings from manager - these will apply to future requests
+        envDebugEnabled = debugConfig.isDebugEnabled();
+        envVerboseEnabled = debugConfig.isVerboseEnabled();
+      } catch (importErr) {
+        console.warn('Error getting DebugConfigurationManager instance:', importErr);
+      }
+    }).catch(importErr => {
+      console.warn('Error importing DebugConfigurationManager:', importErr);
+    });
   } catch (err) {
     // Silently continue if we can't access configuration
-    console.warn('Error accessing debug configuration:', err);
+    console.warn('Error in debug configuration loading:', err);
   }
   
   // Check for debug parameters - request parameters override environment settings
@@ -108,16 +116,35 @@ let breadcrumbConfig: BreadcrumbConfig = {
   maxItems: 100
 };
 
-// Get breadcrumb configuration from LoggingConfigurationManager
+// Try to load breadcrumb configuration from LoggingConfigurationManager
 try {
   // Import in a way that avoids circular dependencies
-  const { LoggingConfigurationManager } = require('../config/LoggingConfigurationManager');
-  const loggingConfig = LoggingConfigurationManager.getInstance();
-  
-  // Get breadcrumb configuration from manager
-  breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
+  // Use dynamic import to load the configuration manager
+  import('../config/LoggingConfigurationManager').then(module => {
+    try {
+      // Get the logging config instance
+      const loggingConfig = module.LoggingConfigurationManager.getInstance();
+      // Update the breadcrumb config
+      breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
+    } catch (importErr) {
+      console.warn('Error getting LoggingConfigurationManager instance:', importErr);
+    }
+  }).catch(importErr => {
+    // If dynamic import fails, try global config as fallback
+    if (typeof globalThis !== 'undefined' && 
+        typeof (globalThis as any).LOGGING_CONFIG !== 'undefined' && 
+        (globalThis as any).LOGGING_CONFIG.breadcrumbs) {
+      const globalConfig = (globalThis as any).LOGGING_CONFIG.breadcrumbs;
+      breadcrumbConfig = {
+        enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
+        maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100
+      };
+    } else {
+      console.warn('Error loading LoggingConfigurationManager and no global config available:', importErr);
+    }
+  });
 } catch (err) {
-  console.warn('Error loading breadcrumb configuration from LoggingConfigurationManager:', err);
+  console.warn('Error in breadcrumb configuration loading:', err);
 }
 
 /**

@@ -9,6 +9,11 @@ import { videoConfig } from '../config/videoConfig';
 export interface CacheConfig {
   cacheability: boolean;
   videoCompression: string;
+  /**
+   * Choose whether to use status-based TTLs or a single TTL for all statuses
+   * When true, cacheTtlByStatus will be used; when false, cacheTtl will be used
+   */
+  useTtlByStatus?: boolean;
   ttl: {
     ok: number;
     redirects: number;

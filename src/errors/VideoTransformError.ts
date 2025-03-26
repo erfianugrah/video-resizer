@@ -57,7 +57,7 @@ export class VideoTransformError extends Error {
     // This check is needed for environments where captureStackTrace isn't available
     // TypeScript doesn't know about V8's captureStackTrace, so we need to use type assertions
     if (typeof Error.captureStackTrace === 'function') {
-      (Error.captureStackTrace as (thisArg: object, constructorOpt?: Function) => void)(this, VideoTransformError);
+      (Error.captureStackTrace as (thisArg: object, constructorOpt?: { new(...args: any[]): any }) => void)(this, VideoTransformError);
     }
   }
   

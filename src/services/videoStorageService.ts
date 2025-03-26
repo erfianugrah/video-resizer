@@ -1032,7 +1032,7 @@ export async function fetchVideo(
         });
       } else {
         // Fallback for when no context is available
-        console.debug(`VideoStorageService: R2 not available for media-transformation subrequest`);
+        console.debug('VideoStorageService: R2 not available for media-transformation subrequest');
       }
     }
   }

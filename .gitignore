@@ -177,3 +177,5 @@ docs/
 
 # build time
 public/
+
+**/CLAUDE.local.md

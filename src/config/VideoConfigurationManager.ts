@@ -54,7 +54,11 @@ export const PathPatternSchema = z.object({
   baseUrl: z.string().nullable(),
   originUrl: z.string().nullable(),
   quality: z.string().optional(),
+  // For backward compatibility, still support cacheTtl but mark as deprecated
   cacheTtl: z.number().positive().optional(),
+  // New ttl structure and useTtlByStatus flag
+  ttl: TtlSchema.optional(),
+  useTtlByStatus: z.boolean().optional().default(true),
   priority: z.number().optional(),
   transformationOverrides: z.record(z.unknown()).optional(),
   captureGroups: z.array(z.string()).optional(),
@@ -236,6 +240,19 @@ export class VideoConfigurationManager {
 
   public addPathPattern(pattern: z.infer<typeof PathPatternSchema>) {
     try {
+      // Convert legacy cacheTtl to ttl structure if needed
+      if (pattern.cacheTtl && !pattern.ttl) {
+        pattern = {
+          ...pattern,
+          ttl: {
+            ok: pattern.cacheTtl,
+            redirects: Math.floor(pattern.cacheTtl / 10),  // Default to 1/10th of ok time
+            clientError: 60,  // Fixed value of 60 seconds for client errors
+            serverError: 10   // Fixed value of 10 seconds for server errors
+          }
+        };
+      }
+      
       const validatedPattern = PathPatternSchema.parse(pattern);
       this.config.pathPatterns.push(validatedPattern);
       return validatedPattern;

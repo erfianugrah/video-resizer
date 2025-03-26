@@ -410,28 +410,56 @@ export function createCfObjectParams(
     return cfObject;
   }
   
-  // Always add cacheEverything parameter
-  cfObject.cacheEverything = cacheConfig.cacheability || false;
-  
-  // Determine appropriate TTL based on status code using the shared utility
-  const statusGroup = Math.floor(status / 100);
-  const ttlMap: Record<number, keyof CacheConfig['ttl']> = {
-    2: 'ok', // 200-299 status codes
-    3: 'redirects', // 300-399 status codes
-    4: 'clientError', // 400-499 status codes 
-    5: 'serverError', // 500-599 status codes
-  };
-  
-  // Set TTL based on status and cacheability
-  const ttlProperty = ttlMap[statusGroup];
-  let ttl = 0; // Default to 0 (no caching)
-  
-  if (cacheConfig.cacheability && ttlProperty) {
-    ttl = cacheConfig.ttl[ttlProperty];
+  // First, decide whether we should cache at all
+  if (!cacheConfig.cacheability) {
+    // If not cacheable, set cacheEverything to false and set cacheTtl to 0 for backward compatibility
+    cfObject.cacheEverything = false;
+    cfObject.cacheTtl = 0;
+    return cfObject;
   }
   
-  // Always add cacheTtl parameter
-  cfObject.cacheTtl = ttl;
+  // If we got here, we've decided to cache. Always explicitly set cacheEverything to true
+  cfObject.cacheEverything = true;
+  
+  // Choose between cacheTtl and cacheTtlByStatus based on the config setting
+  const useTtlByStatus = cacheConfig.useTtlByStatus !== undefined ? cacheConfig.useTtlByStatus : true;
+  
+  if (useTtlByStatus) {
+    // Use cacheTtlByStatus for more granular control of TTL by status code range
+    cfObject.cacheTtlByStatus = {};
+    
+    // Determine appropriate TTLs based on status code ranges
+    if (cacheConfig.ttl.ok > 0) {
+      (cfObject.cacheTtlByStatus as Record<string, number>)['200-299'] = cacheConfig.ttl.ok;
+    }
+    
+    if (cacheConfig.ttl.redirects > 0) {
+      (cfObject.cacheTtlByStatus as Record<string, number>)['300-399'] = cacheConfig.ttl.redirects;
+    }
+    
+    if (cacheConfig.ttl.clientError > 0) {
+      (cfObject.cacheTtlByStatus as Record<string, number>)['400-499'] = cacheConfig.ttl.clientError;
+    }
+    
+    if (cacheConfig.ttl.serverError > 0) {
+      (cfObject.cacheTtlByStatus as Record<string, number>)['500-599'] = cacheConfig.ttl.serverError;
+    }
+  } else {
+    // Use cacheTtl for simpler TTL management
+    // Determine TTL based on status code
+    let ttl = cacheConfig.ttl.ok; // Default to OK TTL
+    
+    // Adjust TTL based on status code
+    const statusGroup = Math.floor(status / 100);
+    switch (statusGroup) {
+      case 2: ttl = cacheConfig.ttl.ok; break;
+      case 3: ttl = cacheConfig.ttl.redirects; break;
+      case 4: ttl = cacheConfig.ttl.clientError; break;
+      case 5: ttl = cacheConfig.ttl.serverError; break;
+    }
+    
+    cfObject.cacheTtl = ttl;
+  }
   
   // Add cache tags if source is provided and cacheability is true
   if (source && cacheConfig.cacheability) {
@@ -456,6 +484,7 @@ export function createCfObjectParams(
     const logger = createLogger(requestContext);
     pinoDebug(requestContext, logger, 'CacheManagementService', 'Created cf object params for caching', {
       cacheEverything: cfObject.cacheEverything,
+      cacheTtlByStatus: cfObject.cacheTtlByStatus,
       cacheTtl: cfObject.cacheTtl,
       cacheTags: cfObject.cacheTags,
       cacheability: cacheConfig.cacheability

@@ -3,3 +3,7 @@
 node_modules
 coverage
 dist
+debug-ui/dist/**/*
+debug-ui/dist/
+debug-ui/node_modules/**/*
+debug-ui/node_modules/

@@ -201,6 +201,7 @@ export const videoConfig = {
       regex: '.*',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true, // Use status-based TTLs by default
       ttl: {
         ok: 86400, // 24 hours for successful responses
         redirects: 3600, // 1 hour for redirects
@@ -213,6 +214,7 @@ export const videoConfig = {
       regex: '.*\/popular\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 604800, // 7 days for successful responses
         redirects: 3600, // 1 hour for redirects
@@ -225,6 +227,7 @@ export const videoConfig = {
       regex: '.*\/shorts\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 172800, // 2 days for successful responses
         redirects: 3600, // 1 hour for redirects
@@ -237,6 +240,7 @@ export const videoConfig = {
       regex: '.*\/live\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 300, // 5 minutes for successful responses
         redirects: 60, // 1 minute for redirects

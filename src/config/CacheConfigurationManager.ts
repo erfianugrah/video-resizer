@@ -19,6 +19,8 @@ export const CacheProfileSchema = z.object({
   regex: z.string(),
   cacheability: z.boolean().default(true),
   videoCompression: z.enum(['auto', 'low', 'medium', 'high', 'off']).default('auto'),
+  // Whether to use status-based TTLs (cacheTtlByStatus) or a single TTL (cacheTtl)
+  useTtlByStatus: z.boolean().optional().default(true),
   ttl: CacheTTLSchema.default({
     ok: 86400,
     redirects: 3600,
@@ -85,6 +87,7 @@ const defaultCacheConfig: CacheConfiguration = {
       regex: '.*',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 86400,
         redirects: 3600,
@@ -96,6 +99,7 @@ const defaultCacheConfig: CacheConfiguration = {
       regex: '.*\\/popular\\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 604800, // 7 days
         redirects: 3600,
@@ -107,6 +111,7 @@ const defaultCacheConfig: CacheConfiguration = {
       regex: '.*\\/shorts\\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 172800, // 2 days
         redirects: 3600,
@@ -118,6 +123,7 @@ const defaultCacheConfig: CacheConfiguration = {
       regex: '.*\\/live\\/.*\\.mp4',
       cacheability: true,
       videoCompression: 'auto',
+      useTtlByStatus: true,
       ttl: {
         ok: 300, // 5 minutes
         redirects: 60,

@@ -114,7 +114,13 @@
 				"processPath": true,
 				"baseUrl": null,
 				"originUrl": null,
-				"cacheTtl": 3600,
+				"ttl": {
+					"ok": 3600,
+					"redirects": 360,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
 				"captureGroups": [
 					"videoId"
 				],
@@ -126,7 +132,13 @@
 				"processPath": true,
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
-				"cacheTtl": 86400,
+				"ttl": {
+					"ok": 86400,
+					"redirects": 3600,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
 				"captureGroups": [
 					"videoId"
 				]
@@ -137,7 +149,13 @@
 				"processPath": true,
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
-				"cacheTtl": 43200,
+				"ttl": {
+					"ok": 43200,
+					"redirects": 3600,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
 				"captureGroups": [
 					"videoId"
 				],
@@ -149,7 +167,13 @@
 				"processPath": true,
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
-				"cacheTtl": 7200
+				"ttl": {
+					"ok": 7200,
+					"redirects": 3600,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true
 			}
 		]
 	},
@@ -177,14 +201,14 @@
 			],
 			"vars": {
 				"ENVIRONMENT": "production",
-				"DEBUG_ENABLED": "false",
-				"DEBUG_VERBOSE": "false",
-				"DEBUG_INCLUDE_HEADERS": "false",
+				"DEBUG_ENABLED": "true",
+				"DEBUG_VERBOSE": "true",
+				"DEBUG_INCLUDE_HEADERS": "true",
 				"CACHE_METHOD": "cf",
-				"CACHE_DEBUG": "false",
+				"CACHE_DEBUG": "true",
 				"LOGGING_CONFIG": {
 					"pino": {
-						"level": "info",
+						"level": "debug",
 						"browser": {
 							"asObject": true
 						},
@@ -268,7 +292,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": null,
-						"cacheTtl": 86400,
+						"ttl": {
+							"ok": 86400,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						],
@@ -280,7 +310,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 604800,
+						"ttl": {
+							"ok": 604800,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						]
@@ -291,7 +327,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 172800,
+						"ttl": {
+							"ok": 172800,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						],
@@ -303,7 +345,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 86400
+						"ttl": {
+							"ok": 86400,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true
 					}
 				]
 			},
@@ -419,7 +467,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": null,
-						"cacheTtl": 3600,
+						"ttl": {
+							"ok": 3600,
+							"redirects": 360,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						],
@@ -431,7 +485,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 86400,
+						"ttl": {
+							"ok": 86400,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						]
@@ -442,7 +502,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 43200,
+						"ttl": {
+							"ok": 43200,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true,
 						"captureGroups": [
 							"videoId"
 						],
@@ -454,7 +520,13 @@
 						"processPath": true,
 						"baseUrl": null,
 						"originUrl": "https://videos.erfi.dev",
-						"cacheTtl": 7200
+						"ttl": {
+							"ok": 7200,
+							"redirects": 3600,
+							"clientError": 60,
+							"serverError": 10
+						},
+						"useTtlByStatus": true
 					}
 				]
 			},

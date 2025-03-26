@@ -4,7 +4,14 @@
 import { VideoTransformOptions } from '../commands/TransformVideoCommand';
 import { TransformationContext, TransformationStrategy, TransformParams } from './TransformationStrategy';
 import { VideoConfigurationManager } from '../../config';
-import { isValidPlaybackOptions, isValidTime, isValidDuration } from '../../utils/transformationUtils';
+import { 
+  isValidPlaybackOptions, 
+  isValidTime, 
+  isValidDuration, 
+  adjustDuration,
+  haveDurationLimits,
+  getTransformationLimit
+} from '../../utils/transformationUtils';
 import { debug } from '../../utils/loggerUtils';
 import { ValidationError } from '../../errors';
 
@@ -17,10 +24,36 @@ export class VideoStrategy implements TransformationStrategy {
     const params: TransformParams = {};
     const configManager = VideoConfigurationManager.getInstance();
     
-    // Map parameters using the defined mapping
+    // Create a copy of options that we can modify if needed
+    const adjustedOptions = { ...options };
+    
+    // Adjust duration if needed and if we have learned limits
+    if (adjustedOptions.duration && haveDurationLimits()) {
+      const maxDuration = getTransformationLimit('duration', 'max');
+      
+      // Only adjust if we've learned limits from previous API responses
+      if (maxDuration) {
+        const originalDuration = adjustedOptions.duration;
+        
+        // Adjust duration to fit within known limits
+        adjustedOptions.duration = adjustDuration(originalDuration);
+        
+        // If duration was adjusted, add info to diagnostics
+        if (adjustedOptions.duration !== originalDuration) {
+          context.diagnosticsInfo.warnings = context.diagnosticsInfo.warnings || [];
+          context.diagnosticsInfo.warnings.push(`Duration adjusted to ${adjustedOptions.duration} to fit within learned limit of ${maxDuration}s`);
+          
+          // Add to diagnostics
+          context.diagnosticsInfo.adjustedDuration = adjustedOptions.duration;
+          context.diagnosticsInfo.originalDuration = originalDuration;
+        }
+      }
+    }
+    
+    // Map parameters using the defined mapping, but use our adjusted options
     for (const [ourParam, cdnParam] of Object.entries(configManager.getParamMapping())) {
       const optionKey = ourParam as keyof VideoTransformOptions;
-      const optionValue = options[optionKey];
+      const optionValue = adjustedOptions[optionKey];
       
       if (optionValue !== null && optionValue !== undefined) {
         params[cdnParam] = optionValue;
@@ -34,6 +67,14 @@ export class VideoStrategy implements TransformationStrategy {
     
     // Log the params for debugging
     debug('VideoStrategy', 'Prepared video transformation params', params);
+    
+    if (adjustedOptions.duration !== options.duration) {
+      debug('VideoStrategy', 'Adjusted duration parameter', {
+        original: options.duration,
+        adjusted: adjustedOptions.duration,
+        maxDuration: getTransformationLimit('duration', 'max')
+      });
+    }
     
     return params;
   }

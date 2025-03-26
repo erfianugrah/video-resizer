@@ -50,7 +50,16 @@ describe('VideoConfigurationManager', () => {
       const manager = VideoConfigurationManager.getInstance();
       const config = manager.getConfig();
       
-      expect(config).toEqual(videoConfig);
+      // Check keys one by one to allow for defaults added by the schema
+      expect(Object.keys(config).sort()).toEqual(Object.keys(videoConfig).sort());
+      expect(config.derivatives).toEqual(videoConfig.derivatives);
+      expect(config.defaults).toEqual(videoConfig.defaults);
+      expect(config.validOptions).toEqual(videoConfig.validOptions);
+      expect(config.responsive).toEqual(videoConfig.responsive);
+      expect(config.paramMapping).toEqual(videoConfig.paramMapping);
+      expect(config.cdnCgi).toEqual(videoConfig.cdnCgi);
+      expect(config.pathPatterns).toEqual(videoConfig.pathPatterns);
+      expect(config.caching).toEqual(videoConfig.caching);
     });
 
     it('should return a derivative by name', () => {
@@ -121,7 +130,15 @@ describe('VideoConfigurationManager', () => {
       const manager = VideoConfigurationManager.getInstance();
       const cacheConfig = manager.getCacheConfig();
       
-      expect(cacheConfig).toEqual(videoConfig.cache);
+      // Check that all cache profile keys exist
+      expect(Object.keys(cacheConfig).sort()).toEqual(Object.keys(videoConfig.cache).sort());
+      
+      // Check essential properties of each cache profile, allowing for default properties
+      Object.keys(cacheConfig).forEach(key => {
+        expect(cacheConfig[key].cacheability).toEqual(videoConfig.cache[key].cacheability);
+        expect(cacheConfig[key].videoCompression).toEqual(videoConfig.cache[key].videoCompression);
+        expect(cacheConfig[key].ttl).toEqual(videoConfig.cache[key].ttl);
+      });
     });
 
     it('should return responsive configuration', () => {
@@ -157,8 +174,76 @@ describe('VideoConfigurationManager', () => {
       const addedPattern = manager.addPathPattern(newPattern);
       
       expect(manager.getPathPatterns().length).toBe(initialPatternCount + 1);
-      expect(addedPattern).toEqual(newPattern);
-      expect(manager.getPathPatterns()[initialPatternCount]).toEqual(newPattern);
+      // Check all properties except useTtlByStatus which is added by default
+      expect(addedPattern.name).toEqual(newPattern.name);
+      expect(addedPattern.matcher).toEqual(newPattern.matcher);
+      expect(addedPattern.processPath).toEqual(newPattern.processPath);
+      expect(addedPattern.baseUrl).toEqual(newPattern.baseUrl);
+      expect(addedPattern.originUrl).toEqual(newPattern.originUrl);
+      expect(addedPattern.priority).toEqual(newPattern.priority);
+      expect(addedPattern.captureGroups).toEqual(newPattern.captureGroups);
+      // Check that the pattern was added to the path patterns array
+      const addedToArray = manager.getPathPatterns()[initialPatternCount];
+      expect(addedToArray.name).toBe(newPattern.name);
+      expect(addedToArray.matcher).toBe(newPattern.matcher);
+    });
+    
+    it('should add a path pattern with ttl structure', () => {
+      const manager = VideoConfigurationManager.getInstance();
+      const initialPatternCount = manager.getPathPatterns().length;
+      
+      const newPattern = {
+        name: 'testPatternWithTtl',
+        matcher: '\\/videos\\/([^\\/]+)',
+        processPath: true,
+        baseUrl: null,
+        originUrl: 'https://example.com/videos',
+        ttl: {
+          ok: 86400,
+          redirects: 3600,
+          clientError: 60,
+          serverError: 10
+        },
+        useTtlByStatus: true,
+        priority: 10,
+        captureGroups: ['videoId']
+      };
+      
+      const addedPattern = manager.addPathPattern(newPattern);
+      
+      expect(manager.getPathPatterns().length).toBe(initialPatternCount + 1);
+      expect(addedPattern.ttl).toEqual(newPattern.ttl);
+      expect(addedPattern.useTtlByStatus).toBe(true);
+    });
+    
+    it('should convert legacy cacheTtl to ttl structure', () => {
+      const manager = VideoConfigurationManager.getInstance();
+      const initialPatternCount = manager.getPathPatterns().length;
+      
+      const legacyPattern = {
+        name: 'legacyPattern',
+        matcher: '\\/legacy\\/([^\\/]+)',
+        processPath: true,
+        baseUrl: null,
+        originUrl: 'https://example.com/videos',
+        cacheTtl: 3600, // Legacy TTL
+        priority: 10,
+        captureGroups: ['videoId']
+      };
+      
+      const addedPattern = manager.addPathPattern(legacyPattern);
+      
+      expect(manager.getPathPatterns().length).toBe(initialPatternCount + 1);
+      
+      // Should create ttl structure from legacy cacheTtl
+      expect(addedPattern.ttl).toBeDefined();
+      expect(addedPattern.ttl?.ok).toBe(3600);
+      expect(addedPattern.ttl?.redirects).toBe(360); // 1/10th of the TTL
+      expect(addedPattern.ttl?.clientError).toBe(60); // Min of 60 seconds
+      expect(addedPattern.ttl?.serverError).toBe(10); // Min of 10 seconds
+      
+      // Should retain the original cacheTtl for backward compatibility
+      expect(addedPattern.cacheTtl).toBe(3600);
     });
 
     it('should throw an error when adding an invalid path pattern', () => {

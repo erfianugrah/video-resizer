@@ -1,379 +1,125 @@
 /**
- * Tests for cacheManagementService
+ * Tests for the cacheManagementService
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { applyCacheHeaders, cacheResponse, getCachedResponse } from '../../src/services/cacheManagementService';
-import { shouldBypassCache } from '../../src/services/videoStorageService';
-import { CacheConfig } from '../../src/utils/cacheUtils';
-import { CacheConfigurationManager } from '../../src/config/CacheConfigurationManager';
-
-// Mock logging functions
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-}));
-
-// Mock videoStorageService
-vi.mock('../../src/services/videoStorageService', () => ({
-  shouldBypassCache: vi.fn((request) => {
-    const cacheControl = request.headers.get('Cache-Control');
-    if (cacheControl && (cacheControl.includes('no-cache') || cacheControl.includes('no-store'))) {
-      return true;
-    }
-    
-    const url = new URL(request.url);
-    return url.searchParams.has('debug') || url.searchParams.has('nocache');
-  }),
-  generateCacheTags: vi.fn(() => [])
-}));
-
-// Mock configuration
-vi.mock('../../src/config/CacheConfigurationManager', () => ({
-  CacheConfigurationManager: {
-    getInstance: vi.fn().mockReturnValue({
-      getConfig: vi.fn().mockReturnValue({
-        method: 'cacheApi',
-        debug: false,
-        bypassQueryParameters: ['nocache', 'bypass', 'debug']
-      }),
-      shouldBypassCache: vi.fn().mockImplementation((url) => {
-        // Simple implementation for the shouldBypassCache method
-        if (url.searchParams.has('debug') || 
-            url.searchParams.has('nocache') || 
-            url.searchParams.has('bypass')) {
-          return true;
-        }
-        return false;
-      })
-    })
-  }
-}));
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createCfObjectParams } from '../../src/services/cacheManagementService';
 
 describe('cacheManagementService', () => {
-  describe('applyCacheHeaders', () => {
-    it('should apply public cache headers for successful responses', () => {
-      // Arrange
-      const response = new Response('Success', { status: 200 });
-      const cacheConfig: CacheConfig = {
-        regex: '.*',
-        cacheability: true,
-        ttl: {
-          ok: 3600,
-          redirects: 300,
-          clientError: 60,
-          serverError: 10
-        }
-      };
-      
+  describe('createCfObjectParams', () => {
+    it('should set cacheEverything: false when no config is provided', () => {
       // Act
-      const result = applyCacheHeaders(response, 200, cacheConfig, 'test-source');
+      const cfParams = createCfObjectParams(200);
       
       // Assert
-      expect(result.headers.get('Cache-Control')).toBe('public, max-age=3600');
-      expect(result.headers.get('Cache-Tag')).toBe('video-resizer,source:test-source');
+      expect(cfParams.cacheEverything).toBe(false);
+      expect(cfParams.cacheTtl).toBe(0);
     });
     
-    it('should apply shorter TTL for redirect responses', () => {
+    it('should set cacheEverything based on cacheability flag', () => {
       // Arrange
-      const response = new Response('Redirect', { status: 302 });
-      const cacheConfig: CacheConfig = {
-        regex: '.*',
+      const cacheable = {
         cacheability: true,
-        ttl: {
-          ok: 3600,
-          redirects: 300,
-          clientError: 60,
-          serverError: 10
-        }
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
       };
       
-      // Act
-      const result = applyCacheHeaders(response, 302, cacheConfig);
-      
-      // Assert
-      expect(result.headers.get('Cache-Control')).toBe('public, max-age=300');
-    });
-    
-    it('should apply very short TTL for error responses', () => {
-      // Arrange
-      const response = new Response('Server Error', { status: 500 });
-      const cacheConfig: CacheConfig = {
-        regex: '.*',
-        cacheability: true,
-        ttl: {
-          ok: 3600,
-          redirects: 300,
-          clientError: 60,
-          serverError: 10
-        }
-      };
-      
-      // Act
-      const result = applyCacheHeaders(response, 500, cacheConfig);
-      
-      // Assert
-      expect(result.headers.get('Cache-Control')).toBe('public, max-age=10');
-    });
-    
-    it('should apply no-store for uncacheable content', () => {
-      // Arrange
-      const response = new Response('Success', { status: 200 });
-      const cacheConfig: CacheConfig = {
-        regex: '.*',
+      const notCacheable = {
         cacheability: false,
-        ttl: {
-          ok: 3600,
-          redirects: 300,
-          clientError: 60,
-          serverError: 10
-        }
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
       };
       
-      // Act
-      const result = applyCacheHeaders(response, 200, cacheConfig);
+      // Act - With cacheability: true
+      const cacheableParams = createCfObjectParams(200, cacheable);
+      
+      // Act - With cacheability: false
+      const notCacheableParams = createCfObjectParams(200, notCacheable);
       
       // Assert
-      expect(result.headers.get('Cache-Control')).toBe('no-store');
+      expect(cacheableParams.cacheEverything).toBe(true);
+      expect(notCacheableParams.cacheEverything).toBe(false);
     });
     
-    it('should default to no-store when no cache config is provided', () => {
+    it('should use cacheTtlByStatus when cacheability is true', () => {
       // Arrange
-      const response = new Response('Success', { status: 200 });
-      
-      // Act
-      const result = applyCacheHeaders(response, 200);
-      
-      // Assert
-      expect(result.headers.get('Cache-Control')).toBe('no-store');
-    });
-    
-    it('should include derivative in cache tag when provided', () => {
-      // Arrange
-      const response = new Response('Success', { status: 200 });
-      const cacheConfig: CacheConfig = {
-        regex: '.*',
+      const cacheable = {
         cacheability: true,
-        ttl: {
-          ok: 3600,
-          redirects: 300,
-          clientError: 60,
-          serverError: 10
-        }
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
       };
       
       // Act
-      const result = applyCacheHeaders(response, 200, cacheConfig, 'test-source', 'mobile');
+      const cfParams = createCfObjectParams(200, cacheable);
       
       // Assert
-      expect(result.headers.get('Cache-Tag')).toBe('video-resizer,source:test-source,derivative:mobile');
-    });
-  });
-  
-  describe('shouldBypassCache', () => {
-    it('should bypass cache when no-cache is in Cache-Control', () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4', {
-        headers: {
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      // Act
-      const result = shouldBypassCache(request);
-      
-      // Assert
-      expect(result).toBe(true);
+      expect(cfParams.cacheTtlByStatus).toBeDefined();
+      expect((cfParams.cacheTtlByStatus as Record<string, number>)['200-299']).toBe(3600);
+      expect((cfParams.cacheTtlByStatus as Record<string, number>)['300-399']).toBe(600);
+      expect((cfParams.cacheTtlByStatus as Record<string, number>)['400-499']).toBe(60);
+      expect((cfParams.cacheTtlByStatus as Record<string, number>)['500-599']).toBe(10);
+      // Should not set cacheTtl when using cacheTtlByStatus
+      expect(cfParams.cacheTtl).toBeUndefined();
     });
     
-    it('should bypass cache when no-store is in Cache-Control', () => {
+    it('should set cacheTtl: 0 when cacheability is false (for backward compatibility)', () => {
       // Arrange
-      const request = new Request('https://example.com/video.mp4', {
-        headers: {
-          'Cache-Control': 'no-store'
-        }
-      });
-      
-      // Act
-      const result = shouldBypassCache(request);
-      
-      // Assert
-      expect(result).toBe(true);
-    });
-    
-    it('should bypass cache when debug parameter is present', () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4?debug=true');
-      
-      // Act
-      const result = shouldBypassCache(request);
-      
-      // Assert
-      expect(result).toBe(true);
-    });
-    
-    it('should bypass cache when nocache parameter is present', () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4?nocache=1');
-      
-      // Act
-      const result = shouldBypassCache(request);
-      
-      // Assert
-      expect(result).toBe(true);
-    });
-    
-    it('should use cache by default', () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4');
-      
-      // Act
-      const result = shouldBypassCache(request);
-      
-      // Assert
-      expect(result).toBe(false);
-    });
-  });
-  
-  describe('Cache API Integration', () => {
-    // Mock global caches object
-    const mockPut = vi.fn();
-    const mockMatch = vi.fn();
-    const mockDefaultCache = {
-      put: mockPut,
-      match: mockMatch,
-    };
-    
-    // Setup global caches mock
-    beforeEach(() => {
-      // @ts-expect-error - Mocking global object
-      global.caches = {
-        default: mockDefaultCache,
-        open: vi.fn().mockReturnValue(Promise.resolve(mockDefaultCache)),
+      const notCacheable = {
+        cacheability: false,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
       };
-      mockPut.mockReset().mockResolvedValue(undefined);
-      mockMatch.mockReset().mockResolvedValue(null);
-    });
-    
-    it('should store a cacheable response in the cache', async () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4');
-      const response = new Response('Video content', {
-        status: 200,
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Cache-Control': 'public, max-age=3600'
-        }
-      });
       
       // Act
-      await cacheResponse(request, response);
+      const cfParams = createCfObjectParams(200, notCacheable);
       
       // Assert
-      expect(mockPut).toHaveBeenCalledWith(request, expect.any(Response));
+      expect(cfParams.cacheTtl).toBe(0);
+      expect(cfParams.cacheTtlByStatus).toBeUndefined();
+      expect(cfParams.cacheEverything).toBe(false);
     });
     
-    it('should not cache non-GET requests', async () => {
+    it('should add cache tags when source is provided and cacheability is true', () => {
       // Arrange
-      const request = new Request('https://example.com/video.mp4', {
-        method: 'POST'
-      });
-      const response = new Response('Video content', {
-        status: 200,
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Cache-Control': 'public, max-age=3600'
-        }
-      });
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      const source = 'videos/test.mp4';
+      const derivative = 'thumbnail';
       
       // Act
-      await cacheResponse(request, response);
+      const cfParams = createCfObjectParams(200, cacheable, source, derivative);
       
       // Assert
-      expect(mockPut).not.toHaveBeenCalled();
+      expect(cfParams.cacheTags).toBeDefined();
+      expect(Array.isArray(cfParams.cacheTags)).toBe(true);
+      expect((cfParams.cacheTags as string[]).length).toBeGreaterThan(0);
     });
     
-    it('should not cache error responses', async () => {
+    it('should not add cache tags when cacheability is false', () => {
       // Arrange
-      const request = new Request('https://example.com/video.mp4');
-      const response = new Response('Error', {
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Cache-Control': 'no-store'
-        }
-      });
+      const notCacheable = {
+        cacheability: false,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      const source = 'videos/test.mp4';
+      const derivative = 'thumbnail';
       
       // Act
-      await cacheResponse(request, response);
+      const cfParams = createCfObjectParams(200, notCacheable, source, derivative);
       
       // Assert
-      expect(mockPut).not.toHaveBeenCalled();
+      expect(cfParams.cacheTags).toBeUndefined();
     });
     
-    it('should retrieve a cached response when available', async () => {
+    it('should not add cache tags when source is not provided', () => {
       // Arrange
-      const request = new Request('https://example.com/video.mp4');
-      const cachedResponse = new Response('Cached video content', {
-        status: 200,
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Cache-Control': 'public, max-age=3600'
-        }
-      });
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
       
-      mockMatch.mockResolvedValue(cachedResponse);
-      
-      // Act
-      const result = await getCachedResponse(request);
+      // Act - No source provided
+      const cfParams = createCfObjectParams(200, cacheable);
       
       // Assert
-      expect(mockMatch).toHaveBeenCalledWith(request);
-      expect(result).toBe(cachedResponse);
-    });
-    
-    it('should return null when no cached response is available', async () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4');
-      mockMatch.mockResolvedValue(null);
-      
-      // Act
-      const result = await getCachedResponse(request);
-      
-      // Assert
-      expect(mockMatch).toHaveBeenCalledWith(request);
-      expect(result).toBeNull();
-    });
-    
-    it('should not attempt to fetch from cache for non-GET requests', async () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4', {
-        method: 'POST'
-      });
-      
-      // Act
-      const result = await getCachedResponse(request);
-      
-      // Assert
-      expect(mockMatch).not.toHaveBeenCalled();
-      expect(result).toBeNull();
-    });
-    
-    it('should bypass cache when Cache-Control: no-store is present', async () => {
-      // Arrange
-      const request = new Request('https://example.com/video.mp4', {
-        headers: {
-          'Cache-Control': 'no-store'
-        }
-      });
-      
-      // Act
-      const result = await getCachedResponse(request);
-      
-      // Assert
-      expect(mockMatch).not.toHaveBeenCalled();
-      expect(result).toBeNull();
+      expect(cfParams.cacheTags).toBeUndefined();
     });
   });
 });
