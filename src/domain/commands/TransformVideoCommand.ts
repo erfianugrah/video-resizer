@@ -14,8 +14,53 @@ import {
 } from '../../utils/debugHeadersUtils';
 import { RequestContext } from '../../utils/requestContext';
 import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
-import { createLogger } from '../../utils/pinoLogger';
+import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
 import type { Logger } from 'pino';
+
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+async function logDebug(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to legacy adapter as first fallback
+    try {
+      const { debug } = await import('../../utils/legacyLoggerAdapter');
+      debug(category, message, data || {});
+    } catch {
+      // Fall back to console as a last resort
+      console.debug(`[${category}] ${message}`, data || {});
+    }
+  }
+}
+
+/**
+ * Log an error message with proper context handling
+ */
+async function logError(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to legacy adapter as first fallback
+    try {
+      const { error } = await import('../../utils/legacyLoggerAdapter');
+      error(category, message, data || {});
+    } catch {
+      // Fall back to console as a last resort
+      console.error(`[${category}] ${message}`, data || {});
+    }
+  }
+}
 
 export interface VideoTransformOptions {
   width?: number | null;
@@ -337,27 +382,13 @@ export class TransformVideoCommand {
       
       // If no matching pattern found or if the pattern is set to not process, pass through
       if (!pathPattern || !pathPattern.processPath) {
-        // Log through new logging system if available
-        if (this.requestContext && this.logger) {
-          const { debug } = await import('../../utils/pinoLogger');
-          debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Skipping path transformation', {
-            path,
-            url: url.toString(),
-            hasPattern: !!pathPattern,
-            shouldProcess: pathPattern?.processPath,
-          });
-        } else {
-          // Legacy logging fallback - this branch should not typically be hit
-          // since request context should be available
-          // Use dynamic import of logger to avoid circular dependencies
-          const { debug } = await import('../../utils/legacyLoggerAdapter');
-          debug('TransformVideoCommand', 'Skipping path transformation', {
-            path,
-            url: url.toString(),
-            hasPattern: !!pathPattern,
-            shouldProcess: pathPattern?.processPath,
-          });
-        }
+        // Log skipping path transformation
+        await logDebug('TransformVideoCommand', 'Skipping path transformation', {
+          path,
+          url: url.toString(),
+          hasPattern: !!pathPattern,
+          shouldProcess: pathPattern?.processPath,
+        });
         
         // Add breadcrumb
         if (this.requestContext) {
@@ -409,15 +440,8 @@ export class TransformVideoCommand {
       const userAgent = request.headers.get('User-Agent') || '';
       const browserCapabilities = detectBrowserVideoCapabilities(userAgent);
       
-      // Log through new logging system if available
-      if (this.requestContext && this.logger) {
-        const { debug } = await import('../../utils/pinoLogger');
-        debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Browser video capabilities', browserCapabilities);
-      } else {
-        // Legacy logging fallback
-        const { debug } = await import('../../utils/legacyLoggerAdapter');
-        debug('TransformVideoCommand', 'Browser video capabilities', browserCapabilities);
-      }
+      // Log browser capabilities
+      await logDebug('TransformVideoCommand', 'Browser video capabilities', browserCapabilities);
       
       // Add browser capabilities to diagnostics
       diagnosticsInfo.browserCapabilities = browserCapabilities;
@@ -511,41 +535,21 @@ export class TransformVideoCommand {
           derivative
         );
         
-        // Log through new logging system if available
-        if (this.requestContext && this.logger) {
-          const { debug } = await import('../../utils/pinoLogger');
-          debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Using cf object for caching', {
-            cacheability: cacheConfig?.cacheability
-          });
-        } else {
-          // Legacy logging fallback
-          const { debug } = await import('../../utils/legacyLoggerAdapter');
-          debug('TransformVideoCommand', 'Using cf object for caching', {
-            cfObject: fetchOptions.cf,
-            cacheability: cacheConfig?.cacheability
-          });
-        }
+        // Log caching configuration
+        await logDebug('TransformVideoCommand', 'Using cf object for caching', {
+          cfObject: fetchOptions.cf,
+          cacheability: cacheConfig?.cacheability
+        });
         
         // Add to diagnostics info - always use cf-object when method is cf
         diagnosticsInfo.cachingMethod = 'cf-object';
       } else {
         // When method is cacheApi, use Cache API for caching mechanism
         // cacheability will be handled by cache service logic
-        // Log through new logging system if available
-        if (this.requestContext && this.logger) {
-          const { debug } = await import('../../utils/pinoLogger');
-          debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Using Cache API for caching', {
-            cacheability: cacheConfig?.cacheability
-          });
-        } else {
-          // Legacy logging fallback - this branch should not typically be hit
-          // since request context should be available
-          // Use dynamic import of logger to avoid circular dependencies
-          const { debug } = await import('../../utils/legacyLoggerAdapter');
-          debug('TransformVideoCommand', 'Using Cache API for caching', {
-            cacheability: cacheConfig?.cacheability
-          });
-        }
+        // Log caching configuration
+        await logDebug('TransformVideoCommand', 'Using Cache API for caching', {
+          cacheability: cacheConfig?.cacheability
+        });
         
         // Add to diagnostics info
         diagnosticsInfo.cachingMethod = 'cache-api';
@@ -566,6 +570,102 @@ export class TransformVideoCommand {
           status: response.status,
           contentType: response.headers.get('Content-Type'),
           isRangeRequest: response.status === 206 || response.headers.has('Content-Range')
+        });
+      }
+      
+      // Handle 400 Bad Request status from the transformation proxy
+      if (response.status === 400) {
+        const errorText = await response.text();
+        
+        await logError('TransformVideoCommand', 'Transformation proxy returned 400 Bad Request', {
+          url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
+          error: errorText
+        });
+        
+        // For 400 Bad Request errors, use the videoStorageService to fetch the original content
+        const path = new URL(this.context.request.url).pathname;
+        
+        // Add breadcrumb for fallback attempt
+        if (this.requestContext) {
+          const { addBreadcrumb } = await import('../../utils/requestContext');
+          addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Fetching original video as fallback due to 400 error', {
+            path,
+            errorText
+          });
+        }
+        
+        // Import the videoStorageService to fetch the original content
+        const { fetchVideo } = await import('../../services/videoStorageService');
+        
+        // Get the VideoConfigurationManager to access configuration
+        const { VideoConfigurationManager } = await import('../../config');
+        const videoConfigManager = VideoConfigurationManager.getInstance();
+        const cacheConfig = videoConfigManager.getCachingConfig();
+        
+        // Create a configuration object for fetchVideo that follows the VideoResizerConfig interface
+        // We need to access the storage configuration from environment, but safely cast it
+        const env = this.context.env || {};
+        const storageConfig = (env as any)?.STORAGE_CONFIG || {};
+        
+        const videoResizerConfig = {
+          storage: storageConfig,
+          cache: {
+            ttl: {
+              // Use a reasonable default TTL for the fallback content
+              ok: 600 // 10 minutes
+            }
+          }
+        };
+        
+        await logDebug('TransformVideoCommand', 'Using videoStorageService for fallback content', {
+          path,
+          fallbackEnabled: cacheConfig.fallback?.enabled
+        });
+        
+        // Fetch the video using the storage service
+        const storageResult = await fetchVideo(
+          path, 
+          videoResizerConfig, 
+          this.context.env || {}, 
+          this.context.request
+        );
+        
+        // Check if we successfully got a fallback video
+        if (storageResult.sourceType === 'error') {
+          // If we couldn't get the video, log the error
+          await logError('TransformVideoCommand', 'Failed to get fallback content', {
+            path,
+            error: storageResult.error?.message
+          });
+          
+          // Let the original error propagate
+          throw new Error(`Unable to get fallback content: ${errorText}`);
+        }
+        
+        // Create new headers to preserve critical ones from the storage result
+        const headers = new Headers(storageResult.response.headers);
+        
+        // Add fallback-specific headers
+        headers.set('X-Fallback-Applied', 'true');
+        headers.set('X-Fallback-Reason', errorText);
+        headers.set('X-Original-Error', 'Bad Request (400)');
+        headers.set('X-Video-Too-Large', 'true');
+        headers.set('X-Storage-Source', storageResult.sourceType);
+        headers.set('Cache-Control', 'no-store');
+        
+        await logDebug('TransformVideoCommand', 'Successfully fetched original content as fallback', {
+          path,
+          sourceType: storageResult.sourceType,
+          status: storageResult.response.status,
+          contentType: storageResult.contentType,
+          size: storageResult.size
+        });
+        
+        // Return the fallback response with the enhanced headers
+        return new Response(storageResult.response.body, {
+          status: storageResult.response.status,
+          statusText: storageResult.response.statusText,
+          headers
         });
       }
       
@@ -593,23 +693,12 @@ export class TransformVideoCommand {
       
       // Debug mode disables cache storage but keeps the method for debugging purposes
       if (url.searchParams.has('debug')) {
-        // Log through new logging system if available
-        if (this.requestContext && this.logger) {
-          const { debug } = await import('../../utils/pinoLogger');
-          debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Debug mode active - cache storage disabled', {
-            url: url.toString(),
-            cacheMethod: diagnosticsInfo.cachingMethod,
-            cacheability: false // Debug forces no caching, but keeps the method
-          });
-        } else {
-          // Legacy logging fallback
-          const { debug } = await import('../../utils/legacyLoggerAdapter');
-          debug('TransformVideoCommand', 'Debug mode active - cache storage disabled', {
-            url: url.toString(),
-            cacheMethod: diagnosticsInfo.cachingMethod,
-            cacheability: false // Debug forces no caching, but keeps the method
-          });
-        }
+        // Log debug mode disabling cache storage
+        await logDebug('TransformVideoCommand', 'Debug mode active - cache storage disabled', {
+          url: url.toString(),
+          cacheMethod: diagnosticsInfo.cachingMethod,
+          cacheability: false // Debug forces no caching, but keeps the method
+        });
         
         // Add to warnings if not already present
         if (!diagnosticsInfo.warnings?.includes('Debug mode disables caching')) {
@@ -681,25 +770,17 @@ export class TransformVideoCommand {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       const errorStack = err instanceof Error ? err.stack : undefined;
       
-      // Log the error through the appropriate logger
-      if (this.requestContext && this.logger) {
-        const { error } = await import('../../utils/pinoLogger');
-        error(this.requestContext, this.logger, 'TransformVideoCommand', 'Error transforming video', {
-          error: errorMessage,
-          stack: errorStack,
-        });
-        
-        // Add breadcrumb for error
+      // Log the error through consistent helper
+      await logError('TransformVideoCommand', 'Error transforming video', {
+        error: errorMessage,
+        stack: errorStack,
+      });
+      
+      // Add breadcrumb for error
+      if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
         addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Transformation error', {
           error: errorMessage
-        });
-      } else {
-        // Legacy logging fallback
-        const { error } = await import('../../utils/legacyLoggerAdapter');
-        error('TransformVideoCommand', 'Error transforming video', {
-          error: errorMessage,
-          stack: errorStack,
         });
       }
       
@@ -729,23 +810,12 @@ export class TransformVideoCommand {
         // Get the video configuration manager
         const videoConfigManager = VideoConfigurationManager.getInstance();
         
-        // Log through new logging system if available
-        if (this.requestContext && this.logger) {
-          const { debug } = await import('../../utils/pinoLogger');
-          debug(this.requestContext, this.logger, 'TransformVideoCommand', 'Debug mode active - cache storage disabled (error case)', {
-            url: url.toString(),
-            status: 500,
-            cacheMethod: videoConfigManager.getCachingConfig().method
-          });
-        } else {
-          // Legacy logging fallback
-          const { debug } = await import('../../utils/legacyLoggerAdapter');
-          debug('TransformVideoCommand', 'Debug mode active - cache storage disabled (error case)', {
-            url: url.toString(),
-            status: 500,
-            cacheMethod: videoConfigManager.getCachingConfig().method
-          });
-        }
+        // Log debug mode for error case
+        await logDebug('TransformVideoCommand', 'Debug mode active - cache storage disabled (error case)', {
+          url: url.toString(),
+          status: 500,
+          cacheMethod: videoConfigManager.getCachingConfig().method
+        });
         
         // Add to warnings if not already present
         if (!diagnosticsInfo.warnings?.includes('Debug mode disables caching')) {
