@@ -98,7 +98,7 @@ The video-resizer logging system has evolved over time, resulting in multiple lo
 | `/home/erfi/resizer/video-resizer/src/services/videoStorageService.ts` | **Completed** | Critical | 0 (was ~55) | Storage service used by fallback |
 | `/home/erfi/resizer/video-resizer/src/domain/commands/TransformVideoCommand.ts` | **Completed** | Critical | 0 (was ~15) | Core transformation logic |
 | `/home/erfi/resizer/video-resizer/src/utils/requestContext.ts` | **Completed** | Critical | 2* | Manages breadcrumbs |
-| `/home/erfi/resizer/video-resizer/src/index.ts` | **Priority 1** | Critical | Few | Entry point |
+| `/home/erfi/resizer/video-resizer/src/index.ts` | **Completed** | Critical | 3* | Entry point |
 
 #### Implementation Notes
 
@@ -158,12 +158,28 @@ Implementation approach:
 3. Replaced all direct console.* calls with these helper functions
 4. Added proper structured data to all logs for easier filtering
 
+##### index.ts
+
+This file is the main entry point for all requests and required special care:
+
+1. ✅ Created custom helper functions with both logger and console fallbacks
+2. ✅ Handled initialization edge cases gracefully
+3. ✅ Maintained proper logging before logger system is fully initialized
+4. ✅ Added consistent structured data to all log messages
+
+Implementation approach:
+1. Added logInfo/logError/logDebug helpers with try/catch for logger initialization
+2. Included fallbacks to console.* in helper functions for early initialization
+3. Used consistent message formatting and structured data patterns
+4. Simplified the main fetch code by removing redundant logging logic
+
 Progress:
 - ✅ Completed replacing all ~55 console calls with logDebug/logError helpers in videoStorageService.ts
 - ✅ Completed replacing all ~10 console calls with logDebug/logError helpers in errorHandlerService.ts
 - ✅ Completed replacing all ~15 console calls with async logDebug/logError helpers in TransformVideoCommand.ts
 - ✅ Completed replacing all ~13 console calls in requestContext.ts with special dependency-safe helpers
-- ✅ Fully standardized logging in all critical path services except index.ts (last remaining file)
+- ✅ Completed replacing all ~6 console calls in index.ts with initialization-safe helper functions
+- ✅ Fully standardized logging in all critical path services ✓
 
 Common patterns in this file:
 - Pattern 1: Context check with fallback to console
@@ -231,7 +247,7 @@ Common patterns in this file:
 | File Path | Status | Notes |
 |-----------|--------|-------|
 | `/home/erfi/resizer/video-resizer/src/services/debugService.ts` | Pending | |
-| `/home/erfi/resizer/video-resizer/src/index.ts` | Pending | |
+| `/home/erfi/resizer/video-resizer/src/index.ts` | **Completed** | Fully migrated to helper functions with proper fallbacks |
 | `/home/erfi/resizer/video-resizer/src/domain/commands/TransformVideoCommand.ts` | **Completed** | Fully migrated to pino logging with helper functions |
 | `/home/erfi/resizer/video-resizer/src/services/errorHandlerService.ts` | **Completed** | Fully migrated to pino logging with helper functions |
 | `/home/erfi/resizer/video-resizer/src/utils/requestContext.ts` | **Completed** | Special implementation due to circular dependency concerns |
