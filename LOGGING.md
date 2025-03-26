@@ -76,11 +76,20 @@ The video-resizer logging system has evolved over time, resulting in multiple lo
 - [ ] Fix any issues with context initialization in `index.ts`
 
 #### 2B: File Updates (by category)
-- [ ] Update core framework files (handlers, utils)
-- [x] Update videoStorageService.ts - COMPLETED (Mar 26, 2025)
-- [ ] Update remaining service layer files
-- [ ] Update domain layer files
-- [ ] Update configuration files
+- [x] Update critical path files - COMPLETED (Mar 26, 2025)
+  - [x] errorHandlerService.ts
+  - [x] videoStorageService.ts
+  - [x] TransformVideoCommand.ts
+  - [x] requestContext.ts
+  - [x] index.ts
+- [ ] Update medium priority service files
+  - [ ] TransformationService.ts (~8 console calls)
+  - [ ] cacheManagementService.ts (~15 console calls)
+  - [ ] videoTransformationService.ts (~2 console calls)
+  - [ ] debugService.ts (~9 console calls)
+- [ ] Update remaining low priority files
+  - [ ] Config files
+  - [ ] Utils files
 
 ### Phase 3: Validation (Verify)
 
@@ -180,6 +189,22 @@ Progress:
 - ✅ Completed replacing all ~13 console calls in requestContext.ts with special dependency-safe helpers
 - ✅ Completed replacing all ~6 console calls in index.ts with initialization-safe helper functions
 - ✅ Fully standardized logging in all critical path services ✓
+
+### Remaining Console Calls (Phase 2)
+
+Based on a code scan, these files still have console calls that need to be standardized:
+
+| File Path | Console Calls | Priority |
+|-----------|--------------|----------|
+| `TransformationService.ts` | ~8 calls | Medium |
+| `cacheManagementService.ts` | ~15 calls | Medium |
+| `videoTransformationService.ts` | ~2 calls | Medium |
+| `debugService.ts` | ~9 calls | Medium |
+| `config/environmentConfig.ts` | ~1 call | Low |
+| `config/index.ts` | ~3 calls | Low |
+| `pinoLogger.ts` | 1 call | Low |
+
+All console calls in helper functions and intentional browser-side logging have been preserved as required.
 
 Common patterns in this file:
 - Pattern 1: Context check with fallback to console
