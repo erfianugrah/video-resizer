@@ -45,7 +45,9 @@
 			"breadcrumbs": {
 				"enabled": true,
 				"maxItems": 100
-			}
+			},
+			"enablePerformanceLogging": true,
+			"performanceThresholdMs": 100
 		},
 		"VIDEO_CONFIG": {
 			"derivatives": {
@@ -224,7 +226,9 @@
 					"breadcrumbs": {
 						"enabled": true,
 						"maxItems": 25
-					}
+					},
+					"enablePerformanceLogging": true,
+					"performanceThresholdMs": 100
 				},
 				"VIDEO_CONFIG": {
 					"derivatives": {
@@ -399,7 +403,9 @@
 					"breadcrumbs": {
 						"enabled": true,
 						"maxItems": 75
-					}
+					},
+					"enablePerformanceLogging": true,
+					"performanceThresholdMs": 100
 				},
 				"VIDEO_CONFIG": {
 					"derivatives": {
