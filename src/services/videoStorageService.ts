@@ -10,6 +10,39 @@ import { EnvVariables } from '../config/environmentConfig';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+function logDebug(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.debug(`[${category}] ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an error message with proper context handling
+ */
+function logError(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.error(`[${category}] ${message}`, data || {});
+  }
+}
+
 // Type definitions for configuration objects
 interface CacheTTLConfig {
   ok?: number;
@@ -140,19 +173,12 @@ function applyPathTransformation(
         // Apply the new prefix
         normalizedPath = String(originTransform.prefix) + pathWithoutSegment;
         
-        // Get the current request context if available
-        const requestContext = getCurrentContext();
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Applied path transformation', {
-            segment,
-            originalPath: path,
-            transformed: normalizedPath
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Applied path transformation for ${path} to ${normalizedPath}`);
-        }
+        // Use our helper to log with proper context handling
+        logDebug('VideoStorageService', 'Applied path transformation', {
+          segment,
+          originalPath: path,
+          transformed: normalizedPath
+        });
         
         break; // Only apply one transformation
       }
@@ -209,15 +235,8 @@ async function fetchFromR2(
             options.range = range;
           }
         } catch (err) {
-          // Invalid range header, ignore
-          const requestContext = getCurrentContext();
-          if (requestContext) {
-            const logger = createLogger(requestContext);
-            pinoDebug(requestContext, logger, 'VideoStorageService', 'Invalid range header', { rangeHeader });
-          } else {
-            // Fallback for when no context is available
-            console.debug(`VideoStorageService: Invalid range header: ${rangeHeader}`);
-          }
+          // Invalid range header, ignore but still log it
+          logDebug('VideoStorageService', 'Invalid range header', { rangeHeader });
         }
       }
       
@@ -297,18 +316,12 @@ async function fetchFromR2(
       };
     }
   } catch (err) {
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, 'VideoStorageService', 'Error fetching from R2', { 
-        error: err instanceof Error ? err.message : String(err),
-        path,
-        stack: err instanceof Error ? err.stack : undefined
-      });
-    } else {
-      // Fallback for when no context is available
-      console.error(`VideoStorageService: Error fetching from R2: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    // Use our helper function to log consistently
+    logError('VideoStorageService', 'Error fetching from R2', { 
+      error: err instanceof Error ? err.message : String(err),
+      path,
+      stack: err instanceof Error ? err.stack : undefined
+    });
     throw new Error('Error accessing R2 storage: ' + 
       (err instanceof Error ? err.message : String(err)));
   }
@@ -351,16 +364,11 @@ async function fetchFromRemote(
     // Apply path transformations for remote URLs
     const transformedPath = applyPathTransformation(path, config, 'remote');
     
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote path after transformation', { 
-        originalPath: path, 
-        transformedPath 
-      });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Remote path after transformation: ${path} -> ${transformedPath}`);
-    }
+    // Use our helper function for consistent logging
+    logDebug('VideoStorageService', 'Remote path after transformation', { 
+      originalPath: path, 
+      transformedPath 
+    });
     
     // Check if authentication is required for this origin
     // Set the base URL
@@ -368,16 +376,11 @@ async function fetchFromRemote(
     
     // Check if remote auth is enabled specifically for this remote URL
     if (config?.storage?.remoteAuth?.enabled) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote auth enabled', {
-          type: config.storage.remoteAuth.type,
-          url: finalUrl
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Remote auth enabled for ${finalUrl}`);
-      }
+      // Use our helper function for consistent logging
+      logDebug('VideoStorageService', 'Remote auth enabled', {
+        type: config.storage.remoteAuth.type,
+        url: finalUrl
+      });
       
       const remoteAuth = config.storage.remoteAuth;
       
@@ -427,28 +430,18 @@ async function fetchFromRemote(
                 }
               });
               
-              if (requestContext) {
-                const logger = createLogger(requestContext);
-                pinoDebug(requestContext, logger, 'VideoStorageService', 'Added AWS signed headers', {
-                  url: finalUrl,
-                  headerCount: Object.keys(fetchOptions.headers || {}).length
-                });
-              } else {
-                // Fallback for when no context is available
-                console.debug(`VideoStorageService: Added AWS signed headers for ${finalUrl}`);
-              }
+              // Use our helper function for consistent logging
+              logDebug('VideoStorageService', 'Added AWS signed headers', {
+                url: finalUrl,
+                headerCount: Object.keys(fetchOptions.headers || {}).length
+              });
             } catch (err) {
-              if (requestContext) {
-                const logger = createLogger(requestContext);
-                pinoError(requestContext, logger, 'VideoStorageService', 'Error signing AWS request', {
-                  error: err instanceof Error ? err.message : String(err),
-                  url: finalUrl,
-                  stack: err instanceof Error ? err.stack : undefined
-                });
-              } else {
-                // Fallback for when no context is available
-                console.error(`VideoStorageService: Error signing AWS request: ${err instanceof Error ? err.message : String(err)}`);
-              }
+              // Use our helper function for error logging
+              logError('VideoStorageService', 'Error signing AWS request', {
+                error: err instanceof Error ? err.message : String(err),
+                url: finalUrl,
+                stack: err instanceof Error ? err.stack : undefined
+              });
               
               // Continue without authentication if in permissive mode
               if (config.storage.auth?.securityLevel !== 'permissive') {
@@ -456,16 +449,11 @@ async function fetchFromRemote(
               }
             }
           } else {
-            if (requestContext) {
-              const logger = createLogger(requestContext);
-              pinoError(requestContext, logger, 'VideoStorageService', 'AWS credentials not found', {
-                accessKeyVar,
-                secretKeyVar
-              });
-            } else {
-              // Fallback for when no context is available
-              console.error(`VideoStorageService: AWS credentials not found for ${accessKeyVar} and ${secretKeyVar}`);
-            }
+            // Use our helper function for error logging
+            logError('VideoStorageService', 'AWS credentials not found', {
+              accessKeyVar,
+              secretKeyVar
+            });
             
             // Continue without authentication if in permissive mode
             if (config.storage.auth?.securityLevel !== 'permissive') {
@@ -473,15 +461,10 @@ async function fetchFromRemote(
             }
           }
         } else {
-          if (requestContext) {
-            const logger = createLogger(requestContext);
-            pinoDebug(requestContext, logger, 'VideoStorageService', 'AWS S3 auth requires origin-auth to be enabled', {
-              url: finalUrl
-            });
-          } else {
-            // Fallback for when no context is available
-            console.debug(`VideoStorageService: AWS S3 auth requires origin-auth to be enabled for ${finalUrl}`);
-          }
+          // Use our helper function for consistent logging
+          logDebug('VideoStorageService', 'AWS S3 auth requires origin-auth to be enabled', {
+            url: finalUrl
+          });
         }
       } else if (remoteAuth.type === 'bearer') {
         // Implement bearer token auth
@@ -507,40 +490,23 @@ async function fetchFromRemote(
         fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
       }
     } else {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote auth not enabled for this URL', {
-          url: finalUrl
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Remote auth not enabled for ${finalUrl}`);
-      }
+      // Use our helper function for consistent logging
+      logDebug('VideoStorageService', 'Remote auth not enabled for this URL', {
+        url: finalUrl
+      });
     }
     
     // Fetch the video from the remote URL
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Fetching from remote URL', { url: finalUrl });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Fetching from remote URL: ${finalUrl}`);
-    }
+    logDebug('VideoStorageService', 'Fetching from remote URL', { url: finalUrl });
     
     const response = await fetch(finalUrl, fetchOptions);
     
     if (!response.ok) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote fetch failed', { 
-          url: finalUrl, 
-          status: response.status, 
-          statusText: response.statusText 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Remote fetch failed: ${finalUrl} (${response.status} ${response.statusText})`);
-      }
+      logDebug('VideoStorageService', 'Remote fetch failed', { 
+        url: finalUrl, 
+        status: response.status, 
+        statusText: response.statusText 
+      });
       return null;
     }
     
@@ -556,19 +522,12 @@ async function fetchFromRemote(
       path: transformedPath
     };
   } catch (err) {
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, 'VideoStorageService', 'Error fetching from remote', { 
-        error: err instanceof Error ? err.message : String(err),
-        url: baseUrl,
-        path,
-        stack: err instanceof Error ? err.stack : undefined
-      });
-    } else {
-      // Fallback for when no context is available
-      console.error(`VideoStorageService: Error fetching from remote: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    logError('VideoStorageService', 'Error fetching from remote', { 
+      error: err instanceof Error ? err.message : String(err),
+      url: baseUrl,
+      path,
+      stack: err instanceof Error ? err.stack : undefined
+    });
     return null;
   }
 }
@@ -626,16 +585,10 @@ async function fetchFromFallback(
     
     // Check if fallback auth is enabled specifically for this URL
     if (config?.storage?.fallbackAuth?.enabled) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback auth enabled', {
-          type: config.storage.fallbackAuth.type,
-          url: finalUrl
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Fallback auth enabled for ${finalUrl}`);
-      }
+      logDebug('VideoStorageService', 'Fallback auth enabled', {
+        type: config.storage.fallbackAuth.type,
+        url: finalUrl
+      });
       
       const fallbackAuth = config.storage.fallbackAuth;
       
@@ -685,28 +638,16 @@ async function fetchFromFallback(
                 }
               });
               
-              if (requestContext) {
-                const logger = createLogger(requestContext);
-                pinoDebug(requestContext, logger, 'VideoStorageService', 'Added AWS signed headers for fallback', {
-                  url: finalUrl,
-                  headerCount: Object.keys(fetchOptions.headers || {}).length
-                });
-              } else {
-                // Fallback for when no context is available
-                console.debug(`VideoStorageService: Added AWS signed headers for fallback URL ${finalUrl}`);
-              }
+              logDebug('VideoStorageService', 'Added AWS signed headers for fallback', {
+                url: finalUrl,
+                headerCount: Object.keys(fetchOptions.headers || {}).length
+              });
             } catch (err) {
-              if (requestContext) {
-                const logger = createLogger(requestContext);
-                pinoError(requestContext, logger, 'VideoStorageService', 'Error signing AWS request for fallback', {
-                  error: err instanceof Error ? err.message : String(err),
-                  url: finalUrl,
-                  stack: err instanceof Error ? err.stack : undefined
-                });
-              } else {
-                // Fallback for when no context is available
-                console.error(`VideoStorageService: Error signing AWS request for fallback: ${err instanceof Error ? err.message : String(err)}`);
-              }
+              logError('VideoStorageService', 'Error signing AWS request for fallback', {
+                error: err instanceof Error ? err.message : String(err),
+                url: finalUrl,
+                stack: err instanceof Error ? err.stack : undefined
+              });
               
               // Continue without authentication if in permissive mode
               if (config.storage.auth?.securityLevel !== 'permissive') {
@@ -714,16 +655,10 @@ async function fetchFromFallback(
               }
             }
           } else {
-            if (requestContext) {
-              const logger = createLogger(requestContext);
-              pinoError(requestContext, logger, 'VideoStorageService', 'AWS credentials not found for fallback', {
-                accessKeyVar,
-                secretKeyVar
-              });
-            } else {
-              // Fallback for when no context is available
-              console.error(`VideoStorageService: AWS credentials not found for fallback: ${accessKeyVar} and ${secretKeyVar}`);
-            }
+            logError('VideoStorageService', 'AWS credentials not found for fallback', {
+              accessKeyVar,
+              secretKeyVar
+            });
             
             // Continue without authentication if in permissive mode
             if (config.storage.auth?.securityLevel !== 'permissive') {
@@ -755,40 +690,22 @@ async function fetchFromFallback(
         fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
       }
     } else {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback auth not enabled for this URL', {
-          url: finalUrl
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Fallback auth not enabled for ${finalUrl}`);
-      }
+      logDebug('VideoStorageService', 'Fallback auth not enabled for this URL', {
+        url: finalUrl
+      });
     }
     
     // Fetch the video from the fallback URL
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Fetching from fallback URL', { url: finalUrl });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Fetching from fallback URL: ${finalUrl}`);
-    }
+    logDebug('VideoStorageService', 'Fetching from fallback URL', { url: finalUrl });
     
     const response = await fetch(finalUrl, fetchOptions);
     
     if (!response.ok) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback fetch failed', { 
-          url: finalUrl, 
-          status: response.status, 
-          statusText: response.statusText 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Fallback fetch failed: ${finalUrl} (${response.status} ${response.statusText})`);
-      }
+      logDebug('VideoStorageService', 'Fallback fetch failed', { 
+        url: finalUrl, 
+        status: response.status, 
+        statusText: response.statusText 
+      });
       return null;
     }
     
@@ -804,19 +721,12 @@ async function fetchFromFallback(
       path: transformedPath
     };
   } catch (err) {
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, 'VideoStorageService', 'Error fetching from fallback', { 
-        error: err instanceof Error ? err.message : String(err),
-        url: fallbackUrl,
-        path,
-        stack: err instanceof Error ? err.stack : undefined
-      });
-    } else {
-      // Fallback for when no context is available
-      console.error(`VideoStorageService: Error fetching from fallback: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    logError('VideoStorageService', 'Error fetching from fallback', { 
+      error: err instanceof Error ? err.message : String(err),
+      url: fallbackUrl,
+      path,
+      stack: err instanceof Error ? err.stack : undefined
+    });
     return null;
   }
 }
@@ -835,73 +745,42 @@ export async function fetchVideo(
   env: EnvVariables,
   request?: Request
 ): Promise<StorageResult> {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Starting video fetch', {
-      path,
-      hasRequest: !!request,
-      storageOptions: config.storage?.priority ?? []
-    });
-  } else {
-    // Fallback for when no context is available
-    console.debug(`VideoStorageService: Starting video fetch for ${path}`);
-  }
+  logDebug('VideoStorageService', 'Starting video fetch', {
+    path,
+    hasRequest: !!request,
+    storageOptions: config.storage?.priority ?? []
+  });
   
   // First, check the request type to determine if this is a Cloudflare Media Transformation subrequest
   const via = request?.headers.get('via') || '';
   const isMediaTransformationSubrequest = via.includes('media-transformation');
   
   // Log the request type for debugging
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Video fetch request analysis', { 
-      path, 
-      isMediaTransformationSubrequest,
-      via
-    });
-  } else {
-    // Fallback for when no context is available
-    console.debug(`VideoStorageService: Video fetch request analysis - isMediaTransformationSubrequest=${isMediaTransformationSubrequest}`);
-  }
+  logDebug('VideoStorageService', 'Video fetch request analysis', { 
+    path, 
+    isMediaTransformationSubrequest,
+    via
+  });
   
   // Special handling for Media Transformation subrequests
   if (isMediaTransformationSubrequest) {
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Detected media-transformation subrequest', { path });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Detected media-transformation subrequest for ${path}`);
-    }
+    logDebug('VideoStorageService', 'Detected media-transformation subrequest', { path });
     
     // First, determine if R2 should be used based on storage priority
     const shouldUseR2 = config.storage?.priority?.includes('r2') && 
                        config.storage?.r2?.enabled === true && 
                        env.VIDEOS_BUCKET;
                        
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Subrequest storage evaluation', {
-        path: path,
-        storageOrder: config.storage?.priority?.join(',') ?? '',
-        r2Available: (config.storage?.r2?.enabled === true && !!env.VIDEOS_BUCKET) ? true : false,
-        shouldUseR2: shouldUseR2 ? true : false
-      });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Subrequest storage evaluation - shouldUseR2=${shouldUseR2}`);
-    }
+    logDebug('VideoStorageService', 'Subrequest storage evaluation', {
+      path: path,
+      storageOrder: config.storage?.priority?.join(',') ?? '',
+      r2Available: (config.storage?.r2?.enabled === true && !!env.VIDEOS_BUCKET) ? true : false,
+      shouldUseR2: shouldUseR2 ? true : false
+    });
     
     // Check if R2 is available, enabled, and in the priority list
     if (shouldUseR2) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Using R2 for media-transformation subrequest', { path });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Using R2 for media-transformation subrequest ${path}`);
-      }
+      logDebug('VideoStorageService', 'Using R2 for media-transformation subrequest', { path });
       
       const bucket = env.VIDEOS_BUCKET;
       const fetchStart = Date.now();
@@ -909,29 +788,17 @@ export async function fetchVideo(
       // Apply path transformations for R2 storage
       const r2Key = applyPathTransformation(path, config, 'r2');
       
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Video key for subrequest', { 
-          originalPath: path,
-          transformedKey: r2Key,
-          url: request?.url
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Video key for subrequest: ${path} -> ${r2Key}`);
-      }
+      logDebug('VideoStorageService', 'Video key for subrequest', { 
+        originalPath: path,
+        transformedKey: r2Key,
+        url: request?.url
+      });
       
       // Try to get the object from R2
       try {
         // Make sure bucket is defined before using it
         if (!bucket) {
-          if (requestContext) {
-            const logger = createLogger(requestContext);
-            pinoError(requestContext, logger, 'VideoStorageService', 'R2 bucket is undefined', { path: r2Key });
-          } else {
-            // Fallback for when no context is available
-            console.error(`VideoStorageService: R2 bucket is undefined for ${r2Key}`);
-          }
+          logError('VideoStorageService', 'R2 bucket is undefined', { path: r2Key });
           throw new Error('R2 bucket is undefined');
         }
         
@@ -939,119 +806,71 @@ export async function fetchVideo(
         const fetchEnd = Date.now();
         
         if (result) {
-          if (requestContext) {
-            const logger = createLogger(requestContext);
-            pinoDebug(requestContext, logger, 'VideoStorageService', 'Found video in R2 bucket for subrequest', { r2Key });
-            pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 fetch successful for media-transformation subrequest', {
-              contentType: result.contentType,
-              size: result.size,
-              key: r2Key,
-              timeMs: fetchEnd - fetchStart
-            });
-          } else {
-            // Fallback for when no context is available
-            console.debug(`VideoStorageService: Found video in R2 bucket for subrequest: ${r2Key}`);
-          }
+          logDebug('VideoStorageService', 'Found video in R2 bucket for subrequest', { r2Key });
+          logDebug('VideoStorageService', 'R2 fetch successful for media-transformation subrequest', {
+            contentType: result.contentType,
+            size: result.size,
+            key: r2Key,
+            timeMs: fetchEnd - fetchStart
+          });
           return result;
         }
         
         // If the video is not found with transformed path, try the simple normalized path as fallback
         const normalizedPath = path.startsWith('/') ? path.substring(1) : path;
         if (r2Key !== normalizedPath) {
-          if (requestContext) {
-            const logger = createLogger(requestContext);
-            pinoDebug(requestContext, logger, 'VideoStorageService', 'Video not found with transformed key, trying normalized path', { 
-              r2Key, 
-              normalizedPath 
-            });
-          } else {
-            // Fallback for when no context is available
-            console.debug(`VideoStorageService: Video not found with transformed key, trying normalized path: ${r2Key} -> ${normalizedPath}`);
-          }
+          logDebug('VideoStorageService', 'Video not found with transformed key, trying normalized path', { 
+            r2Key, 
+            normalizedPath 
+          });
           
           // Make sure bucket is defined before using it
           if (!bucket) {
-            if (requestContext) {
-              const logger = createLogger(requestContext);
-              pinoError(requestContext, logger, 'VideoStorageService', 'R2 bucket is undefined', { path: normalizedPath });
-            } else {
-              // Fallback for when no context is available
-              console.error(`VideoStorageService: R2 bucket is undefined for ${normalizedPath}`);
-            }
+            logError('VideoStorageService', 'R2 bucket is undefined', { path: normalizedPath });
             throw new Error('R2 bucket is undefined');
           }
           
           const fallbackResult = await fetchFromR2(normalizedPath, bucket, request, config);
           if (fallbackResult) {
-            if (requestContext) {
-              const logger = createLogger(requestContext);
-              pinoDebug(requestContext, logger, 'VideoStorageService', 'Found video in R2 bucket using normalized path', { normalizedPath });
-              pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 fallback fetch successful', {
-                contentType: fallbackResult.contentType,
-                size: fallbackResult.size,
-                key: normalizedPath,
-                timeMs: Date.now() - fetchStart
-              });
-            } else {
-              // Fallback for when no context is available
-              console.debug(`VideoStorageService: Found video in R2 bucket using normalized path: ${normalizedPath}`);
-            }
+            logDebug('VideoStorageService', 'Found video in R2 bucket using normalized path', { normalizedPath });
+            logDebug('VideoStorageService', 'R2 fallback fetch successful', {
+              contentType: fallbackResult.contentType,
+              size: fallbackResult.size,
+              key: normalizedPath,
+              timeMs: Date.now() - fetchStart
+            });
             return fallbackResult;
           }
         }
         
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Video not found in R2 for subrequest', {
-            paths: r2Key !== normalizedPath ? `${r2Key}, ${normalizedPath}` : r2Key,
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Video not found in R2 for subrequest: ${path}`);
-        }
+        logDebug('VideoStorageService', 'Video not found in R2 for subrequest', {
+          paths: r2Key !== normalizedPath ? `${r2Key}, ${normalizedPath}` : r2Key,
+          timeMs: fetchEnd - fetchStart
+        });
       } catch (err) {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoError(requestContext, logger, 'VideoStorageService', 'Error in R2 fetch for subrequest', {
-            error: err instanceof Error ? err.message : String(err),
-            path: r2Key,
-            stack: err instanceof Error ? err.stack : undefined
-          });
-        } else {
-          // Fallback for when no context is available
-          console.error(`VideoStorageService: Error in R2 fetch for subrequest: ${err instanceof Error ? err.message : String(err)}`);
-        }
+        logError('VideoStorageService', 'Error in R2 fetch for subrequest', {
+          error: err instanceof Error ? err.message : String(err),
+          path: r2Key,
+          stack: err instanceof Error ? err.stack : undefined
+        });
       }
     } else {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 not available for media-transformation subrequest', { 
-          r2Enabled: config.storage?.r2?.enabled,
-          hasBucket: !!env.VIDEOS_BUCKET
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug('VideoStorageService: R2 not available for media-transformation subrequest');
-      }
+      logDebug('VideoStorageService', 'R2 not available for media-transformation subrequest', { 
+        r2Enabled: config.storage?.r2?.enabled,
+        hasBucket: !!env.VIDEOS_BUCKET
+      });
     }
   }
 
   // Determine available storage options
   const availableStorage = config.storage?.priority ?? ['remote', 'fallback'];
   
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Trying storage options in priority order', { 
-      storageOrder: availableStorage,
-      r2Enabled: (config.storage?.r2?.enabled === true && !!env.VIDEOS_BUCKET) ? true : false,
-      remoteUrlSet: !!config.storage?.remoteUrl,
-      fallbackUrlSet: !!config.storage?.fallbackUrl
-    });
-  } else {
-    // Fallback for when no context is available
-    console.debug(`VideoStorageService: Trying storage options in priority order: ${availableStorage.join(', ')}`);
-  }
+  logDebug('VideoStorageService', 'Trying storage options in priority order', { 
+    storageOrder: availableStorage,
+    r2Enabled: (config.storage?.r2?.enabled === true && !!env.VIDEOS_BUCKET) ? true : false,
+    remoteUrlSet: !!config.storage?.remoteUrl,
+    fallbackUrlSet: !!config.storage?.fallbackUrl
+  });
   
   // Try each storage option in order of priority
   for (const storageType of availableStorage) {
@@ -1059,40 +878,22 @@ export async function fetchVideo(
     
     // Try to fetch from R2
     if (storageType === 'r2' && config.storage?.r2?.enabled === true && env.VIDEOS_BUCKET) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Trying R2 storage', { path });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Trying R2 storage for ${path}`);
-      }
+      logDebug('VideoStorageService', 'Trying R2 storage', { path });
       
       // Apply path transformations for R2
       const transformedPath = applyPathTransformation(path, config, 'r2');
       
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 path after transformation', { 
-          originalPath: path, 
-          transformedPath 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: R2 path after transformation: ${path} -> ${transformedPath}`);
-      }
+      logDebug('VideoStorageService', 'R2 path after transformation', { 
+        originalPath: path, 
+        transformedPath 
+      });
       
       const bucket = env.VIDEOS_BUCKET;
       const fetchStart = Date.now();
       
       // Make sure bucket is defined before using it
       if (!bucket) {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoError(requestContext, logger, 'VideoStorageService', 'R2 bucket is undefined', { path: transformedPath });
-        } else {
-          // Fallback for when no context is available
-          console.error(`VideoStorageService: R2 bucket is undefined for ${transformedPath}`);
-        }
+        logError('VideoStorageService', 'R2 bucket is undefined', { path: transformedPath });
         throw new Error('R2 bucket is undefined');
       }
       
@@ -1100,167 +901,95 @@ export async function fetchVideo(
       const fetchEnd = Date.now();
       
       if (result) {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 fetch successful', {
-            size: result.size,
-            contentType: result.contentType,
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: R2 fetch successful for ${path}`);
-        }
+        logDebug('VideoStorageService', 'R2 fetch successful', {
+          size: result.size,
+          contentType: result.contentType,
+          timeMs: fetchEnd - fetchStart
+        });
       } else {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'R2 fetch failed', {
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: R2 fetch failed for ${path}`);
-        }
+        logDebug('VideoStorageService', 'R2 fetch failed', {
+          timeMs: fetchEnd - fetchStart
+        });
       }
     }
     
     // Try to fetch from remote URL
     if (storageType === 'remote' && config.storage?.remoteUrl) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Trying remote URL', { 
-          path, 
-          remoteUrl: config.storage.remoteUrl 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Trying remote URL for ${path}`);
-      }
+      logDebug('VideoStorageService', 'Trying remote URL', { 
+        path, 
+        remoteUrl: config.storage.remoteUrl 
+      });
       
       // Apply path transformations for remote
       const transformedPath = applyPathTransformation(path, config, 'remote');
       
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote path after transformation', { 
-          originalPath: path, 
-          transformedPath 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Remote path after transformation: ${path} -> ${transformedPath}`);
-      }
+      logDebug('VideoStorageService', 'Remote path after transformation', { 
+        originalPath: path, 
+        transformedPath 
+      });
       
       const fetchStart = Date.now();
       result = await fetchFromRemote(transformedPath, config.storage.remoteUrl, config, env);
       const fetchEnd = Date.now();
       
       if (result) {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote fetch successful', {
-            size: result.size,
-            contentType: result.contentType,
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Remote fetch successful for ${path}`);
-        }
+        logDebug('VideoStorageService', 'Remote fetch successful', {
+          size: result.size,
+          contentType: result.contentType,
+          timeMs: fetchEnd - fetchStart
+        });
       } else {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Remote fetch failed', {
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Remote fetch failed for ${path}`);
-        }
+        logDebug('VideoStorageService', 'Remote fetch failed', {
+          timeMs: fetchEnd - fetchStart
+        });
       }
     }
     
     // Try to fetch from fallback URL
     if (storageType === 'fallback' && config.storage?.fallbackUrl) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Trying fallback URL', { 
-          path, 
-          fallbackUrl: config.storage.fallbackUrl 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Trying fallback URL for ${path}`);
-      }
+      logDebug('VideoStorageService', 'Trying fallback URL', { 
+        path, 
+        fallbackUrl: config.storage.fallbackUrl 
+      });
       
       // Apply path transformations for fallback
       const transformedPath = applyPathTransformation(path, config, 'fallback');
       
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback path after transformation', { 
-          originalPath: path, 
-          transformedPath 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Fallback path after transformation: ${path} -> ${transformedPath}`);
-      }
+      logDebug('VideoStorageService', 'Fallback path after transformation', { 
+        originalPath: path, 
+        transformedPath 
+      });
       
       const fetchStart = Date.now();
       result = await fetchFromFallback(transformedPath, config.storage.fallbackUrl, config, env);
       const fetchEnd = Date.now();
       
       if (result) {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback fetch successful', {
-            size: result.size,
-            contentType: result.contentType,
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Fallback fetch successful for ${path}`);
-        }
+        logDebug('VideoStorageService', 'Fallback fetch successful', {
+          size: result.size,
+          contentType: result.contentType,
+          timeMs: fetchEnd - fetchStart
+        });
       } else {
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback fetch failed', {
-            timeMs: fetchEnd - fetchStart
-          });
-        } else {
-          // Fallback for when no context is available
-          console.debug(`VideoStorageService: Fallback fetch failed for ${path}`);
-        }
+        logDebug('VideoStorageService', 'Fallback fetch failed', {
+          timeMs: fetchEnd - fetchStart
+        });
       }
     }
     
     // If we found the video, return it
     if (result) {
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoDebug(requestContext, logger, 'VideoStorageService', 'Found video in storage', { 
-          sourceType: result.sourceType, 
-          contentType: result.contentType, 
-          size: result.size 
-        });
-      } else {
-        // Fallback for when no context is available
-        console.debug(`VideoStorageService: Found video in storage: ${result.sourceType}`);
-      }
+      logDebug('VideoStorageService', 'Found video in storage', { 
+        sourceType: result.sourceType, 
+        contentType: result.contentType, 
+        size: result.size 
+      });
       return result;
     }
   }
   
   // If we couldn't find the video anywhere, return an error
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Video not found in any storage location', { path });
-  } else {
-    // Fallback for when no context is available
-    console.debug(`VideoStorageService: Video not found in any storage location: ${path}`);
-  }
+  logDebug('VideoStorageService', 'Video not found in any storage location', { path });
   
   return {
     response: new Response('Video not found', { status: 404 }),
@@ -1325,13 +1054,7 @@ export function generateCacheTags(
   
   // If cache tags are disabled, return empty array
   if (!cacheConfig.getConfig().enableCacheTags) {
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Cache tags are disabled');
-    } else {
-      console.debug('VideoStorageService: Cache tags are disabled');
-    }
+    logDebug('VideoStorageService', 'Cache tags are disabled');
     return [];
   }
   
@@ -1344,17 +1067,11 @@ export function generateCacheTags(
   const invalidCharsPattern = '[^a-zA-Z0-9-_/.]';
   const replacementChar = '-';
   
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Generating cache tags', {
-      videoPath,
-      hasOptions: !!options,
-      hasHeaders: !!headers
-    });
-  } else {
-    console.debug(`VideoStorageService: Generating cache tags for ${videoPath}`);
-  }
+  logDebug('VideoStorageService', 'Generating cache tags', {
+    videoPath,
+    hasOptions: !!options,
+    hasHeaders: !!headers
+  });
   
   // Normalize path to create safe tags
   const normalizedPath = videoPath
@@ -1426,15 +1143,10 @@ export function generateCacheTags(
   // Calculate processing time
   const endTime = Date.now();
   
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoStorageService', 'Generated cache tags', {
-      tagCount: tags.length,
-      generationTime: endTime - startTime
-    });
-  } else {
-    console.debug(`VideoStorageService: Generated ${tags.length} cache tags`);
-  }
+  logDebug('VideoStorageService', 'Generated cache tags', {
+    tagCount: tags.length,
+    generationTime: endTime - startTime
+  });
   
   return tags;
 }
