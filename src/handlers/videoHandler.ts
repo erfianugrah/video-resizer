@@ -30,15 +30,19 @@ export async function handleVideoRequest(
   // Initialize legacy logger for backward compatibility
   initializeLegacyLogger(request);
   
+  // Parse URL first for the breadcrumb data
+  const url = new URL(request.url);
+  const path = url.pathname;
+
   // Add initial breadcrumb
-  addBreadcrumb(context, 'VideoHandler', 'Request received', {
+  addBreadcrumb(context, 'Request', 'Request received', {
     url: request.url,
-    method: request.method
+    method: request.method,
+    pathname: path,
+    search: url.search
   });
   
   try {
-    const url = new URL(request.url);
-    const path = url.pathname;
 
     // Check if the request is already a CDN-CGI media request
     if (isCdnCgiMediaPath(path)) {
@@ -46,11 +50,16 @@ export async function handleVideoRequest(
       return fetch(request);
     }
     
-    // Import the cache management service
+    // Import the cache management service and cache configuration
     const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
+    const { CacheConfigurationManager } = await import('../config');
 
     // Try to get the response from cache first
-    addBreadcrumb(context, 'VideoHandler', 'Checking cache');
+    addBreadcrumb(context, 'Cache', 'Checking cache', {
+      url: request.url,
+      method: 'cache-api',
+      bypassParams: CacheConfigurationManager.getInstance().getConfig().bypassQueryParameters?.join(',')
+    });
     const cachedResponse = await getCachedResponse(request);
     if (cachedResponse) {
       info(context, logger, 'VideoHandler', 'Serving from cache', {
@@ -70,7 +79,10 @@ export async function handleVideoRequest(
     const urlParams = url.searchParams;
 
     // Determine video options from URL parameters
-    addBreadcrumb(context, 'VideoHandler', 'Determining video options');
+    addBreadcrumb(context, 'Client', 'Determining video options', {
+      hasParams: urlParams.toString().length > 0,
+      path: path
+    });
     const videoOptions = determineVideoOptions(request, urlParams, path);
 
     debug(context, logger, 'VideoHandler', 'Processing video request', {
@@ -95,7 +107,16 @@ export async function handleVideoRequest(
     }
 
     // Use the video transformation service
-    addBreadcrumb(context, 'VideoHandler', 'Transforming video');
+    addBreadcrumb(context, 'Transform', 'Transforming video', {
+      options: {
+        width: videoOptions.width,
+        height: videoOptions.height,
+        format: videoOptions.format,
+        quality: videoOptions.quality,
+        derivative: videoOptions.derivative
+      },
+      debug: debugInfo.isEnabled
+    });
     const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo, env);
     
     // Add final timing information to diagnostics
@@ -104,7 +125,13 @@ export async function handleVideoRequest(
     // Store the response in cache if it's cacheable
     if (response.headers.get('Cache-Control')?.includes('max-age=')) {
       // Use a non-blocking cache write to avoid delaying the response
-      addBreadcrumb(context, 'VideoHandler', 'Caching response');
+      addBreadcrumb(context, 'Cache', 'Caching response', {
+        status: response.status,
+        cacheControl: response.headers.get('Cache-Control'),
+        contentType: response.headers.get('Content-Type'),
+        contentLength: response.headers.get('Content-Length') || undefined,
+        cfCacheStatus: response.headers.get('CF-Cache-Status') || undefined
+      });
       cacheResponse(request, response.clone()).catch(err => {
         error(context, logger, 'VideoHandler', 'Error caching response', {
           error: err instanceof Error ? err.message : 'Unknown error',

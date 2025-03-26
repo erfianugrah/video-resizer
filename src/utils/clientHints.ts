@@ -11,6 +11,9 @@ export interface VideoSize {
   width: number;
   height: number;
   source: string;
+  deviceType?: string;
+  viewportWidth?: number;
+  dpr?: number;
 }
 
 /**
@@ -137,6 +140,8 @@ export function getVideoSizeFromClientHints(request: Request): VideoSize {
       width: optimizedWidth,
       height: optimizedHeight,
       source: `client-hints-${optimizedWidth}p`,
+      viewportWidth: vw,
+      dpr: actualDpr ? parseFloat(actualDpr) : 1.0
     };
   }
 

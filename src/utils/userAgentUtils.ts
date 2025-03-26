@@ -93,6 +93,7 @@ export function getVideoSizeForDeviceType(
       width,
       height,
       source: `ua-${deviceType}`,
+      deviceType
     };
   }
 
@@ -105,6 +106,7 @@ export function getVideoSizeForDeviceType(
     width,
     height,
     source: `ua-${deviceType}`,
+    deviceType
   };
 }
 

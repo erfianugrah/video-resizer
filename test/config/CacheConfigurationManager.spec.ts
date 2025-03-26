@@ -186,6 +186,7 @@ describe('CacheConfigurationManager', () => {
         regex: '.*\\/premium\\/.*\\.mp4',
         cacheability: true,
         videoCompression: 'high' as const,
+        useTtlByStatus: true, // Add this to match what the CacheConfigurationManager adds
         ttl: {
           ok: 259200, // 3 days
           redirects: 3600,

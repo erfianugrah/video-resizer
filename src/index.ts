@@ -150,6 +150,15 @@ export default {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       const errorStack = err instanceof Error ? err.stack : undefined;
       
+      // Add breadcrumb for worker-level error
+      if (context) {
+        const { addBreadcrumb } = await import('./utils/requestContext');
+        addBreadcrumb(context, 'Error', 'Unexpected worker error', {
+          error: errorMessage,
+          url: request.url
+        });
+      }
+      
       logError(context, 'Unexpected error in worker', {
         error: errorMessage,
         stack: errorStack,

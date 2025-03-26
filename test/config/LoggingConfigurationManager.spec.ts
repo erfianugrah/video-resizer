@@ -50,18 +50,23 @@ describe('LoggingConfigurationManager', () => {
       const manager = LoggingConfigurationManager.getInstance();
       const config = manager.getConfig();
       
-      expect(config).toEqual({
-        level: 'info',
-        includeTimestamps: true,
-        includeComponentName: true,
-        format: 'text',
-        colorize: true,
-        enabledComponents: [],
-        disabledComponents: [],
-        sampleRate: 1,
-        enablePerformanceLogging: false,
-        performanceThresholdMs: 1000,
-      });
+      // Test key properties instead of the entire object
+      // This is more maintainable as the configuration evolves
+      expect(config.level).toBe('info');
+      expect(config.includeTimestamps).toBe(true);
+      expect(config.includeComponentName).toBe(true);
+      expect(config.format).toBe('text');
+      expect(config.colorize).toBe(true);
+      expect(config.enabledComponents).toEqual([]);
+      expect(config.disabledComponents).toEqual([]);
+      expect(config.sampleRate).toBe(1);
+      expect(config.enablePerformanceLogging).toBe(false);
+      expect(config.performanceThresholdMs).toBe(1000);
+      
+      // Check that breadcrumbs configuration exists
+      expect(config.breadcrumbs).toBeDefined();
+      expect(config.breadcrumbs.enabled).toBe(true);
+      expect(config.breadcrumbs.maxItems).toBe(100);
     });
 
     it('should return the current log level', () => {

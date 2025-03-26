@@ -166,6 +166,16 @@ export async function fetchOriginalContentFallback(
       headers
     });
   } catch (fallbackError) {
+    // Add breadcrumb for fallback error
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      const { addBreadcrumb } = await import('../utils/requestContext');
+      addBreadcrumb(requestContext, 'Error', 'Fallback fetch failed', {
+        originalUrl,
+        error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+      });
+    }
+
     // Log fallback error
     logError('ErrorHandlerService', 'Error fetching fallback content', {
       error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
@@ -195,6 +205,17 @@ export async function createErrorResponse(
 ): Promise<Response> {
   // Normalize the error
   const normalizedError = normalizeError(err, { originalUrl: request.url });
+  
+  // Add breadcrumb for error normalization
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const { addBreadcrumb } = await import('../utils/requestContext');
+    addBreadcrumb(requestContext, 'Error', 'Error normalized', {
+      errorType: normalizedError.errorType,
+      statusCode: normalizedError.statusCode,
+      url: request.url
+    });
+  }
   
   // Log error processing request
   logError('ErrorHandlerService', 'Error processing request', {
@@ -332,6 +353,16 @@ export async function createErrorResponse(
           });
         }
       } catch (htmlErr) {
+        // Add breadcrumb for HTML generation error
+        const requestContext = getCurrentContext();
+        if (requestContext) {
+          const { addBreadcrumb } = await import('../utils/requestContext');
+          addBreadcrumb(requestContext, 'Error', 'Debug HTML generation failed', {
+            error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
+            url: request.url
+          });
+        }
+        
         // Log but continue if there's an error generating the HTML
         logError('ErrorHandlerService', 'Error generating debug HTML', {
           error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',

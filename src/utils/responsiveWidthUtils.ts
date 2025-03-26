@@ -4,6 +4,8 @@
 import { videoConfig } from '../config/videoConfig';
 import { hasClientHints, getVideoSizeFromClientHints } from './clientHints';
 import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from './deviceUtils';
+import { getCurrentContext } from './legacyLoggerAdapter';
+import { addBreadcrumb } from './requestContext';
 
 /**
  * Interface for responsive video size result
@@ -13,6 +15,9 @@ export interface ResponsiveSize {
   height: number;
   quality: string;
   method: string;
+  deviceType?: string;
+  viewportWidth?: number;
+  usingClientHints?: boolean;
 }
 
 /**
@@ -66,32 +71,74 @@ export function getResponsiveVideoSize(
   // Start with client hints, which are most accurate when available
   if (hasClientHints(request)) {
     videoSize = getVideoSizeFromClientHints(request);
+    
+    // Add breadcrumb for client hints detection
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Client', 'Using client hints for dimensions', {
+        width: videoSize.width,
+        height: videoSize.height,
+        viewportWidth: videoSize.viewportWidth,
+        density: videoSize.dpr,
+        quality: 'adaptive'
+      });
+    }
+    
     return {
       width: videoSize.width,
       height: videoSize.height,
       quality: 'adaptive',
-      method: 'client-hints'
+      method: 'client-hints',
+      viewportWidth: videoSize.viewportWidth,
+      usingClientHints: true
     };
   }
   
   // Next try CF-Device-Type header
   if (hasCfDeviceType(request)) {
     videoSize = getVideoSizeFromCfDeviceType(request);
+    
+    // Add breadcrumb for device type detection
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Client', 'Using CF-Device-Type for dimensions', {
+        width: videoSize.width,
+        height: videoSize.height,
+        deviceType: videoSize.deviceType,
+        quality: 'adaptive'
+      });
+    }
+    
     return {
       width: videoSize.width,
       height: videoSize.height,
       quality: 'adaptive',
-      method: 'cf-device-type'
+      method: 'cf-device-type',
+      deviceType: videoSize.deviceType
     };
   }
   
   // Fall back to User-Agent detection
   videoSize = getVideoSizeFromUserAgent(request);
+  
+  // Add breadcrumb for user agent detection
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Client', 'Using User-Agent for dimensions', {
+      width: videoSize.width,
+      height: videoSize.height,
+      deviceType: videoSize.deviceType,
+      userAgent: request.headers.get('User-Agent')?.substring(0, 50) || 'unknown',
+      quality: 'adaptive'
+    });
+  }
+  
   return {
     width: videoSize.width,
     height: videoSize.height,
     quality: 'adaptive',
-    method: 'user-agent'
+    method: 'user-agent',
+    deviceType: videoSize.deviceType
   };
 }
 

@@ -7,6 +7,7 @@ import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
+import { addBreadcrumb } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 
 /**
@@ -85,6 +86,19 @@ export async function prepareVideoTransformation(
 
     // Find matching path pattern for the URL
     const pathPattern = findMatchingPathPattern(path, pathPatterns);
+    
+    // Add breadcrumb for path pattern matching
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Path pattern matching', {
+        path,
+        url: url.toString(),
+        matchFound: !!pathPattern,
+        patternName: pathPattern ? pathPattern.name : undefined,
+        patternCount: pathPatterns.length
+      });
+    }
+    
     if (!pathPattern) {
       throw new Error('No matching path pattern found');
     }
@@ -102,12 +116,42 @@ export async function prepareVideoTransformation(
 
     // Get the appropriate strategy for the transformation type
     const strategy = createTransformationStrategy(options);
+    
+    // Add breadcrumb for strategy creation
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Created transformation strategy', {
+        strategyType: options.mode || 'video',
+        derivative: options.derivative,
+        format: options.format,
+        width: options.width,
+        height: options.height,
+        quality: options.quality
+      });
+    }
 
     // Validate options
     try {
       strategy.validateOptions(options);
+      
+      // Log successful validation
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Transform', 'Options validated successfully', {
+          strategyType: options.mode || 'video'
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Validation error';
+      
+      // Log validation failure
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Error', 'Transformation options validation failed', {
+          error: message,
+          strategyType: options.mode || 'video',
+          errorType: 'ValidationError',
+          severity: 'high'
+        });
+      }
+      
       if (!diagnosticsInfo.errors) {
         diagnosticsInfo.errors = [];
       }
@@ -121,13 +165,42 @@ export async function prepareVideoTransformation(
     // Map options to CDN-CGI parameters
     const cdnParams = strategy.prepareTransformParams(context);
     diagnosticsInfo.transformParams = cdnParams;
+    
+    // Add breadcrumb for CDN parameters
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Prepared CDN-CGI parameters', {
+        hasParams: Object.keys(cdnParams).length > 0,
+        format: cdnParams.format,
+        width: cdnParams.width,
+        height: cdnParams.height,
+        quality: cdnParams.quality
+      });
+    }
 
     // Construct the video URL
     let videoUrl: string;
     if (pathPattern.originUrl) {
       videoUrl = constructVideoUrl(path, url, pathPattern, options);
+      
+      // Add breadcrumb for URL construction
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Transform', 'Constructed origin URL', {
+          originalUrl: url.toString(),
+          constructedUrl: videoUrl,
+          patternName: pathPattern.name,
+          hasCaptures: !!pathPattern.captureGroups
+        });
+      }
     } else {
       videoUrl = url.toString();
+      
+      // Add breadcrumb for passthrough URL
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Transform', 'Using passthrough URL', {
+          url: videoUrl,
+          reason: 'No originUrl in path pattern'
+        });
+      }
     }
 
     // Try to extract video ID
@@ -137,6 +210,21 @@ export async function prepareVideoTransformation(
     // Build the CDN-CGI media URL
     const cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl);
 
+    // Add timing information for transformation operation
+    const transformationTime = performance.now() - (requestContext?.startTime || 0);
+    
+    // Add breadcrumb for URL transformation
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Transformed URL', {
+        original: url.toString(),
+        transformed: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
+        videoUrl: videoUrl.split('?')[0], // Don't include query parameters for security
+        hasTransformParams: Object.keys(cdnParams).length > 0,
+        patternName: pathPattern.name,
+        transformationTimeMs: Math.round(transformationTime)
+      });
+    }
+    
     logDebug('Transformed URL', {
       original: url.toString(),
       transformed: cdnCgiUrl,
@@ -157,6 +245,16 @@ export async function prepareVideoTransformation(
           ok: pathPattern.cacheTtl
         }
       };
+      
+      // Add breadcrumb for path-specific cache TTL
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Cache', 'Using path-specific cache TTL', {
+          pathName: pathPattern.name,
+          ttl: pathPattern.cacheTtl,
+          originalTtl: cacheConfig.ttl?.ok || undefined,
+          reason: 'Pattern override'
+        });
+      }
       
       logDebug('Using path-specific cache TTL', {
         pathName: pathPattern.name,

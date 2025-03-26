@@ -219,7 +219,7 @@ export async function createDebugReport(
   // Fallback to a simple JSON response if assets aren't available
   return new Response(
     JSON.stringify({
-      message: "Debug UI could not be loaded. Raw diagnostic data is provided below.",
+      message: 'Debug UI could not be loaded. Raw diagnostic data is provided below.',
       diagnostics: diagnosticsInfo
     }, null, 2),
     {

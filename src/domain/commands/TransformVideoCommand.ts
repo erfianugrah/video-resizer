@@ -118,7 +118,12 @@ export class TransformVideoCommand {
       // Import dynamically to avoid circular references
       import('../../utils/requestContext').then(({ addBreadcrumb }) => {
         if (this.requestContext) {
-          addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Command initialized');
+          addBreadcrumb(this.requestContext, 'Transform', 'Command initialized', {
+            hasOptions: !!this.context.options,
+            hasRequestContext: true,
+            hasPathPatterns: Array.isArray(this.context.pathPatterns) && this.context.pathPatterns.length > 0,
+            debugEnabled: !!this.context.debugInfo?.isEnabled
+          });
         }
       });
     }
@@ -134,8 +139,12 @@ export class TransformVideoCommand {
     // Add breadcrumb if we have a request context
     if (this.requestContext) {
       const { addBreadcrumb } = await import('../../utils/requestContext');
-      addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Generating debug page', {
-        isError
+      addBreadcrumb(this.requestContext, 'Response', 'Generating debug page', {
+        isError,
+        debugEnabled: true,
+        pageType: isError ? 'error' : 'standard',
+        hasDiagnostics: !!diagnosticsInfo,
+        diagnosticsSize: Object.keys(diagnosticsInfo || {}).length
       });
     }
     
@@ -144,7 +153,11 @@ export class TransformVideoCommand {
       // Create a minimal error response if ASSETS binding isn't available
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'ASSETS binding not available');
+        addBreadcrumb(this.requestContext, 'Error', 'ASSETS binding not available', {
+          errorType: 'ConfigurationError',
+          missingBinding: 'ASSETS',
+          severity: 'high'
+        });
       }
       
       return new Response(
@@ -174,7 +187,11 @@ export class TransformVideoCommand {
     try {
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Fetching debug UI template');
+        addBreadcrumb(this.requestContext, 'Response', 'Fetching debug UI template', {
+          url: debugUrl.toString(),
+          type: 'html',
+          forError: isError
+        });
       }
       
       // Fetch the debug.html page from the ASSETS binding
@@ -184,8 +201,11 @@ export class TransformVideoCommand {
         // Create a minimal error response if debug.html can't be loaded
         if (this.requestContext) {
           const { addBreadcrumb } = await import('../../utils/requestContext');
-          addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Debug UI template not found', {
-            status: response.status
+          addBreadcrumb(this.requestContext, 'Error', 'Debug UI template not found', {
+            status: response.status,
+            url: debugUrl.toString(),
+            errorType: 'TemplateError',
+            severity: 'medium'
           });
         }
         
@@ -224,7 +244,11 @@ export class TransformVideoCommand {
       
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Preparing debug UI data');
+        addBreadcrumb(this.requestContext, 'Response', 'Preparing debug UI data', {
+          breadcrumbCount: this.requestContext.breadcrumbs.length,
+          hasDiagnostics: !!diagnosticsInfo,
+          totalElapsedMs: Math.round(performance.now() - this.requestContext.startTime)
+        });
         
         // Add breadcrumbs to diagnostics info
         diagnosticsInfo.breadcrumbs = this.requestContext.breadcrumbs;
@@ -487,10 +511,12 @@ export class TransformVideoCommand {
       // Add breadcrumb for transformation result
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Transformation prepared', {
+        addBreadcrumb(this.requestContext, 'Transform', 'Transformation prepared', {
           cdnUrl: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
           source,
-          derivative
+          derivative,
+          hasCacheConfig: !!cacheConfig,
+          cacheability: cacheConfig?.cacheability
         });
       }
       
@@ -516,8 +542,11 @@ export class TransformVideoCommand {
       // Add breadcrumb for caching method
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Setting up caching method', {
-          method: cacheMethod
+        addBreadcrumb(this.requestContext, 'Cache', 'Setting up caching method', {
+          method: cacheMethod,
+          ttl: cacheConfig?.ttl?.ok,
+          cacheability: cacheConfig?.cacheability,
+          useTtlByStatus: cacheConfig?.useTtlByStatus
         });
       }
       
@@ -558,7 +587,11 @@ export class TransformVideoCommand {
       // Create a fetch request to the CDN-CGI URL
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Fetching transformed video from CDN-CGI');
+        addBreadcrumb(this.requestContext, 'Transform', 'Fetching transformed video from CDN-CGI', {
+          url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
+          method: request.method,
+          hasCf: !!fetchOptions.cf
+        });
       }
       
       const response = await fetch(cdnCgiUrl, fetchOptions);
@@ -566,10 +599,13 @@ export class TransformVideoCommand {
       // Add breadcrumb for response received
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'CDN-CGI response received', {
+        addBreadcrumb(this.requestContext, 'Response', 'CDN-CGI response received', {
           status: response.status,
           contentType: response.headers.get('Content-Type'),
-          isRangeRequest: response.status === 206 || response.headers.has('Content-Range')
+          contentLength: response.headers.get('Content-Length'),
+          isRangeRequest: response.status === 206 || response.headers.has('Content-Range'),
+          cfRay: response.headers.get('CF-Ray'),
+          cacheStatus: response.headers.get('CF-Cache-Status')
         });
       }
       
@@ -588,9 +624,12 @@ export class TransformVideoCommand {
         // Add breadcrumb for fallback attempt
         if (this.requestContext) {
           const { addBreadcrumb } = await import('../../utils/requestContext');
-          addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Fetching original video as fallback due to 400 error', {
+          addBreadcrumb(this.requestContext, 'Error', 'Fetching original video as fallback due to 400 error', {
             path,
-            errorText
+            errorText: errorText.substring(0, 100), // Limit error text length for safety
+            status: 400,
+            errorType: 'CDN-CGIError',
+            fallbackEnabled: true
           });
         }
         

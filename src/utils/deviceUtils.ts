@@ -39,6 +39,7 @@ export function getVideoSizeFromCfDeviceType(request: Request): VideoSize {
     width,
     height,
     source: `cf-device-type-${cfDeviceType}`,
+    deviceType: cfDeviceType || undefined
   };
 }
 

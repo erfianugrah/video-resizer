@@ -3,7 +3,7 @@
  * 
  * Centralizes response creation with header management
  */
-import { RequestContext, getPerformanceMetrics } from './requestContext';
+import { RequestContext, getPerformanceMetrics, addBreadcrumb } from './requestContext';
 import { DebugInfo } from './debugHeadersUtils';
 
 /**
@@ -72,8 +72,24 @@ export class ResponseBuilder {
         if (cacheTags && Array.isArray(cacheTags) && cacheTags.length > 0) {
           this.headers.set('Cache-Tag', cacheTags.join(','));
         }
+        
+        // Add breadcrumb for caching
+        addBreadcrumb(this.context, 'Response', 'Applied cache headers', {
+          cacheControl: `public, max-age=${cacheTtl}`,
+          cacheTtl,
+          hasCacheTags: !!(cacheTags && Array.isArray(cacheTags) && cacheTags.length > 0),
+          status,
+          statusCategory: Math.floor(status / 100) * 100
+        });
       } else {
         this.headers.set('Cache-Control', 'no-store, no-cache');
+        
+        // Add breadcrumb for no-cache
+        addBreadcrumb(this.context, 'Response', 'Applied no-cache headers', {
+          reason: 'Zero TTL',
+          status,
+          statusCategory: Math.floor(status / 100) * 100
+        });
       }
       
       // Add diagnostic info to context
@@ -87,6 +103,12 @@ export class ResponseBuilder {
     } else {
       this.headers.set('Cache-Control', 'no-store, no-cache');
       this.context.diagnostics.cacheability = false;
+      
+      // Add breadcrumb for disabled caching
+      addBreadcrumb(this.context, 'Response', 'Caching disabled', {
+        reason: 'cacheability=false in config',
+        status
+      });
     }
     
     this.cachingApplied = true;
@@ -275,7 +297,7 @@ export class ResponseBuilder {
       const requestContextModule = await import('./requestContext');
       requestContextModule.addBreadcrumb(
         this.context,
-        'ResponseBuilder',
+        'Response',
         'Processing headers for response',
         {
           isRangeRequest,
@@ -297,7 +319,7 @@ export class ResponseBuilder {
           
           requestContextModule.addBreadcrumb(
             this.context,
-            'ResponseBuilder',
+            'Response',
             'Added Accept-Ranges header for media content',
             { contentType }
           );
@@ -312,7 +334,7 @@ export class ResponseBuilder {
           
           requestContextModule.addBreadcrumb(
             this.context,
-            'ResponseBuilder',
+            'Response',
             'Preserved Content-Range header for 206 response',
             { contentRange }
           );
@@ -330,7 +352,7 @@ export class ResponseBuilder {
       // Add a final breadcrumb with complete information
       requestContextModule.addBreadcrumb(
         this.context,
-        'ResponseBuilder',
+        'Response',
         'Building response with enhanced streaming support',
         {
           isRangeRequest,
@@ -347,7 +369,7 @@ export class ResponseBuilder {
       const requestContextModuleFinal = await import('./requestContext');
       requestContextModuleFinal.addBreadcrumb(
         this.context,
-        'ResponseBuilder',
+        'Response',
         'Creating 206 Partial Content response',
         {
           contentRange: this.headers.get('Content-Range'),
@@ -369,7 +391,7 @@ export class ResponseBuilder {
       const requestContextModuleFinal = await import('./requestContext');
       requestContextModuleFinal.addBreadcrumb(
         this.context,
-        'ResponseBuilder',
+        'Response',
         'Creating media content response',
         {
           status: this.response.status,

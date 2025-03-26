@@ -135,10 +135,15 @@ interface BreadcrumbConfig {
   maxItems: number;
 }
 
-// Default breadcrumb configuration
-let breadcrumbConfig: BreadcrumbConfig = {
+// Default breadcrumb configuration with initialization tracking
+interface BreadcrumbConfigWithInit extends BreadcrumbConfig {
+  initialized: boolean;
+}
+
+let breadcrumbConfig: BreadcrumbConfigWithInit = {
   enabled: true,
-  maxItems: 100
+  maxItems: 100,
+  initialized: false
 };
 
 // Helper function to update breadcrumb config
@@ -146,7 +151,8 @@ export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: num
   if (config && typeof config.enabled === 'boolean' && typeof config.maxItems === 'number') {
     breadcrumbConfig = {
       enabled: config.enabled,
-      maxItems: config.maxItems
+      maxItems: config.maxItems,
+      initialized: true
     };
     
     logDebug('Updated breadcrumb config', { enabled: config.enabled, maxItems: config.maxItems });
@@ -154,48 +160,35 @@ export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: num
 }
 
 // Try to load breadcrumb configuration from LoggingConfigurationManager
-// First try to synchronously get the config if it's already initialized
-try {
-  // Use a require-like approach to avoid circular dependencies
-  const LoggingConfigModule = require('../config/LoggingConfigurationManager');
-  if (LoggingConfigModule && LoggingConfigModule.LoggingConfigurationManager) {
-    const loggingConfig = LoggingConfigModule.LoggingConfigurationManager.getInstance();
-    const config = loggingConfig.getBreadcrumbConfig();
-    breadcrumbConfig = config;
-    logDebug('Loaded breadcrumb config synchronously', { enabled: config.enabled, maxItems: config.maxItems });
-  }
-} catch (err) {
-  // Fallback to asynchronous loading if synchronous fails
+// Using dynamic import to avoid circular dependencies
+// This function is called at the end of this module to initialize breadcrumb config
+async function initializeBreadcrumbConfig() {
   try {
-    // Import in a way that avoids circular dependencies
-    // Use dynamic import to load the configuration manager
-    import('../config/LoggingConfigurationManager').then(module => {
-      try {
-        // Get the logging config instance
-        const loggingConfig = module.LoggingConfigurationManager.getInstance();
-        // Update the breadcrumb config
-        breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
-        logDebug('Loaded breadcrumb config asynchronously', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
-      } catch (importErr) {
-        logWarn('Error getting LoggingConfigurationManager instance', { error: String(importErr) });
-      }
-    }).catch(importErr => {
-      // If dynamic import fails, try global config as fallback
-      if (typeof globalThis !== 'undefined' && 
-          typeof (globalThis as any).LOGGING_CONFIG !== 'undefined' && 
-          (globalThis as any).LOGGING_CONFIG.breadcrumbs) {
-        const globalConfig = (globalThis as any).LOGGING_CONFIG.breadcrumbs;
-        breadcrumbConfig = {
-          enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
-          maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100
-        };
-        logDebug('Loaded breadcrumb config from global', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
-      } else {
-        logWarn('Error loading LoggingConfigurationManager and no global config available', { error: String(importErr) });
-      }
-    });
-  } catch (err) {
-    logWarn('Error in breadcrumb configuration loading', { error: String(err) });
+    const LoggingConfigModule = await import('../config/LoggingConfigurationManager');
+    if (LoggingConfigModule && LoggingConfigModule.LoggingConfigurationManager) {
+      const loggingConfig = LoggingConfigModule.LoggingConfigurationManager.getInstance();
+      const config = loggingConfig.getBreadcrumbConfig();
+      breadcrumbConfig = {
+        ...config,
+        initialized: true
+      };
+      logDebug('Loaded breadcrumb config asynchronously', { enabled: config.enabled, maxItems: config.maxItems });
+    }
+  } catch {
+    // If loading fails, we'll use the default config
+    // Try fallback with global config if available
+    if (typeof globalThis !== 'undefined' && 
+        typeof (globalThis as any).LOGGING_CONFIG !== 'undefined' && 
+        (globalThis as any).LOGGING_CONFIG.breadcrumbs) {
+      const globalConfig = (globalThis as any).LOGGING_CONFIG.breadcrumbs;
+      breadcrumbConfig = {
+        enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
+        maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100,
+        initialized: true
+      };
+      logDebug('Loaded breadcrumb config from global', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
+    }
+    // If no fallback is available, we'll use the defaults already set
   }
 }
 
@@ -213,6 +206,15 @@ export function addBreadcrumb(
   message: string,
   data?: Record<string, unknown>
 ): Breadcrumb {
+  // Initialize breadcrumb config if not already done
+  if (!breadcrumbConfig.initialized) {
+    // We don't need to await this - it'll be ready for future calls
+    initializeBreadcrumbConfig().catch(() => {
+      // Silently continue with defaults if initialization fails
+    });
+    breadcrumbConfig.initialized = true;
+  }
+
   const timestamp = performance.now();
   const elapsedMs = timestamp - context.startTime;
   

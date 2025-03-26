@@ -6,6 +6,8 @@ import { videoConfig } from '../config/videoConfig';
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/transformationUtils';
 import { getResponsiveVideoSize } from '../utils/responsiveWidthUtils';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { addBreadcrumb } from '../utils/requestContext';
 
 /**
  * Type for video derivatives
@@ -31,12 +33,27 @@ export function determineVideoOptions(
     derivative: null
   };
 
+  // Get the request context for breadcrumbs
+  const requestContext = getCurrentContext();
+  
   // Check if a derivative was specified
   const derivative = params.get('derivative');
   if (derivative && isValidDerivative(derivative)) {
     // Apply derivative configuration
     Object.assign(options, videoConfig.derivatives[derivative]);
     options.derivative = derivative;
+    
+    // Add breadcrumb for derivative selection
+    if (requestContext) {
+      const derivativeConfig = videoConfig.derivatives[derivative];
+      addBreadcrumb(requestContext, 'Client', 'Applied video derivative', {
+        derivative,
+        width: derivativeConfig.width,
+        height: derivativeConfig.height,
+        quality: 'quality' in derivativeConfig ? derivativeConfig.quality : undefined,
+        format: 'format' in derivativeConfig ? derivativeConfig.format : undefined
+      });
+    }
   }
 
   // Process both standard Cloudflare params and Akamai format params
@@ -165,10 +182,32 @@ export function determineVideoOptions(
     
     // Add responsive source information to options
     options.source = options.source || responsiveSize.method;
+    
+    // Add breadcrumb for responsive sizing
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Client', 'Applied responsive sizing', {
+        width: options.width,
+        height: options.height,
+        method: responsiveSize.method,
+        clientHints: responsiveSize.usingClientHints,
+        deviceType: responsiveSize.deviceType,
+        viewportWidth: responsiveSize.viewportWidth,
+        explicitDimensions: !!(explicitWidth || explicitHeight)
+      });
+    }
   }
   // Otherwise set the source based on how options were generated
   else {
     options.source = derivative ? 'derivative' : 'params';
+    
+    // Add breadcrumb for explicit dimensions
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Client', 'Using explicit dimensions', {
+        width: options.width,
+        height: options.height,
+        source: options.source
+      });
+    }
   }
 
   return options;

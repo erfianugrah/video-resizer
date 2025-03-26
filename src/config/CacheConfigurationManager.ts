@@ -287,10 +287,16 @@ export class CacheConfigurationManager {
       // Validate the profile
       const validatedProfile = CacheProfileSchema.parse(profile);
       
-      // Update the config with the new profile
-      this.config.profiles[name] = validatedProfile;
+      // Add the useTtlByStatus field with default value true if it doesn't exist
+      const profileWithDefaults = {
+        ...validatedProfile,
+        useTtlByStatus: validatedProfile.useTtlByStatus !== undefined ? validatedProfile.useTtlByStatus : true
+      };
       
-      return validatedProfile;
+      // Update the config with the new profile
+      this.config.profiles[name] = profileWithDefaults;
+      
+      return profileWithDefaults;
     } catch (error) {
       if (error instanceof z.ZodError) {
         const issues = error.errors.map(issue => 
