@@ -18,6 +18,22 @@ describe('TransformVideoCommand Parameterized Tests', () => {
     vi.clearAllMocks();
     // Default mock response
     mockFetch('Video content');
+    
+    // Mock videoStorageService
+    vi.mock('../../src/services/videoStorageService', () => ({
+      fetchVideo: vi.fn().mockResolvedValue({
+        response: new Response('Video content', {
+          status: 200,
+          headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' }
+        }),
+        sourceType: 'remote',
+        contentType: 'video/mp4',
+        size: 1000,
+        originalUrl: 'https://example.com/videos/test.mp4',
+        path: 'test.mp4'
+      }),
+      generateCacheTags: vi.fn().mockReturnValue(['video-test', 'video-format-mp4'])
+    }));
   });
   
   describe('Video mode variations', () => {

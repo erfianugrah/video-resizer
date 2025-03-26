@@ -6,7 +6,54 @@ import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand'
 import { PathPattern } from '../utils/pathUtils';
 import { DebugInfo } from '../utils/debugHeadersUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
+import { createLogger, debug as pinoDebug, error as pinoError, warn as pinoWarn } from '../utils/pinoLogger';
+
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'VideoTransformationService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.debug(`VideoTransformationService: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log a warning message with proper context handling
+ */
+function logWarn(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoWarn(requestContext, logger, 'VideoTransformationService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.warn(`VideoTransformationService: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an error message with proper context handling
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, 'VideoTransformationService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.error(`VideoTransformationService: ${message}`, data || {});
+  }
+}
 
 /**
  * Transform a video using CDN-CGI media format
@@ -37,14 +84,14 @@ export async function transformVideo(
     if (requestContext) {
       logger = createLogger(requestContext);
       
-      // Log with Pino
-      pinoDebug(requestContext, logger, 'VideoTransformationService', 'Transforming video', {
+      // Log with helper function
+      logDebug('Transforming video', {
         url: request.url
       });
     } else {
-      // Legacy logging fallback - this branch should not typically be hit
-      // since request context should be available
-      console.warn('VideoTransformationService: No request context available');
+      // Request context not available - use direct warning and then 
+      // dynamically import logger to avoid circular dependencies
+      logWarn('No request context available');
       const { debug } = await import('../utils/legacyLoggerAdapter');
       debug('VideoTransformationService', 'Transforming video', {
         url: request.url,
@@ -74,14 +121,14 @@ export async function transformVideo(
     const requestContext = getCurrentContext();
     if (requestContext) {
       const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, 'VideoTransformationService', 'Error transforming video', {
+      logError('Error transforming video', {
         error: errorMessage,
         stack: err instanceof Error ? err.stack : undefined,
       });
     } else {
-      // Legacy logging fallback - this branch should not typically be hit
-      // since request context should be available
-      console.warn('VideoTransformationService: No request context available for error');
+      // Request context not available - use direct warning and then 
+      // dynamically import logger to avoid circular dependencies
+      logWarn('No request context available for error');
       const { error } = await import('../utils/legacyLoggerAdapter');
       error('VideoTransformationService', 'Error transforming video', {
         error: errorMessage,

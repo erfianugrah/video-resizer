@@ -127,6 +127,11 @@ export const VideoConfigSchema = z.object({
   caching: z.object({
     method: z.enum(['cf', 'cacheApi']),
     debug: z.boolean(),
+    fallback: z.object({
+      enabled: z.boolean(),
+      badRequestOnly: z.boolean(),
+      preserveHeaders: z.array(z.string()).optional()
+    }),
   }),
   cache: z.record(CacheConfigSchema),
 });

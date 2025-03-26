@@ -89,6 +89,14 @@ export function addDebugHeaders(
     headers.set('X-Cache-Method', diagnosticsInfo.cachingMethod);
   }
   
+  // Add fallback information if available
+  if (diagnosticsInfo.fallbackApplied) {
+    headers.set('X-Fallback-Applied', 'true');
+    if (diagnosticsInfo.fallbackReason) {
+      headers.set('X-Fallback-Reason', diagnosticsInfo.fallbackReason.toString());
+    }
+  }
+  
   // Add client capability detection results
   if (diagnosticsInfo.clientHints !== undefined) {
     headers.set('X-Client-Hints-Available', diagnosticsInfo.clientHints.toString());

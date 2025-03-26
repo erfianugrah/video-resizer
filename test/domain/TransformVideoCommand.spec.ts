@@ -167,4 +167,81 @@ describe('TransformVideoCommand', () => {
     const responseText = await response.text();
     expect(responseText).toContain('Width must be between 10 and 2000 pixels');
   });
+  
+  it('should handle 400 Bad Request from transformation proxy by returning original content', async () => {
+    // Arrange
+    const request = createMockRequest('https://example.com/videos/test-error-400.mp4');
+    const pathPatterns = createMockPathPatterns();
+    const options = {
+      width: 1080,
+      height: 608,
+      mode: 'video',
+    };
+    
+    // Mock the fetch to return 400 for cdn-cgi URLs
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (typeof url === 'string' && url.includes('cdn-cgi/media')) {
+        return Promise.resolve(
+          new Response('Input video must be less than 268435456 bytes', {
+            status: 400,
+            headers: { 'Content-Type': 'text/plain' }
+          })
+        );
+      } else {
+        // Default response for other URLs
+        return Promise.resolve(
+          new Response('Default response', {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain' }
+          })
+        );
+      }
+    });
+    
+    // Mock the videoStorageService
+    vi.mock('../../src/services/videoStorageService', () => ({
+      fetchVideo: vi.fn().mockResolvedValue({
+        response: new Response('Original video content', {
+          status: 200,
+          headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' }
+        }),
+        sourceType: 'remote',
+        contentType: 'video/mp4',
+        size: 1000,
+        originalUrl: 'https://videos.example.com/test-error-400.mp4',
+        path: 'test-error-400.mp4'
+      }),
+      generateCacheTags: vi.fn().mockReturnValue(['video-test', 'video-format-mp4'])
+    }));
+    
+    // Mock the environment config
+    vi.mock('../../src/config/environmentConfig', () => ({
+      getEnvironmentConfig: vi.fn().mockReturnValue({
+        storage: {
+          priority: ['remote', 'fallback'],
+          remoteUrl: 'https://videos.example.com'
+        }
+      })
+    }));
+
+    const command = new TransformVideoCommand({
+      request,
+      options,
+      pathPatterns,
+      debugInfo: {},
+    });
+
+    // Act
+    const response = await command.execute();
+
+    // Assert
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Fallback-Applied')).toBe('true');
+    expect(response.headers.get('X-Video-Too-Large')).toBe('true');
+    expect(response.headers.get('X-Storage-Source')).toBe('remote');
+    
+    // Check original content
+    const responseText = await response.text();
+    expect(responseText).toBe('Original video content');
+  });
 });

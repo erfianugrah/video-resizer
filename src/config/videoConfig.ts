@@ -192,6 +192,16 @@ export const videoConfig = {
     method: 'cacheApi', 
     // Whether to enable debug logging for cache operations
     debug: false,
+    // Fallback configuration for transformation errors
+    fallback: {
+      // Whether to enable fallback to original content
+      // Set to true to ensure this is enabled by default
+      enabled: true,
+      // Whether to only apply fallback for 400 Bad Request errors
+      badRequestOnly: true,
+      // Headers to preserve from the original response when applying fallback
+      preserveHeaders: ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']
+    },
   },
   
   // Cache configuration for different video types

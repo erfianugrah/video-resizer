@@ -5,6 +5,15 @@ import pino from 'pino';
 import { RequestContext, addBreadcrumb } from './requestContext';
 import { LoggingConfigurationManager } from '../config/LoggingConfigurationManager';
 
+/**
+ * Log an error message - simplified helper for pino logger initialization
+ * Direct console.error is appropriate here as this runs during initialization
+ * before the logging system is fully available
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  console.error(`PinoLogger: ${message}`, data || {});
+}
+
 // Get the logging configuration manager instance
 const loggingConfigManager = LoggingConfigurationManager.getInstance();
 
@@ -82,7 +91,10 @@ try {
   // Get sampling configuration
   samplingConfig = loggingConfigManager.getSamplingConfig();
 } catch (err) {
-  console.error('Error applying Pino configuration from LoggingConfigurationManager:', err);
+  logError('Error applying Pino configuration from LoggingConfigurationManager', {
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined
+  });
 }
 
 // Create the base logger

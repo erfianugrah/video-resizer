@@ -149,7 +149,7 @@ export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: num
       maxItems: config.maxItems
     };
     
-    logDebug(`Updated breadcrumb config`, { enabled: config.enabled, maxItems: config.maxItems });
+    logDebug('Updated breadcrumb config', { enabled: config.enabled, maxItems: config.maxItems });
   }
 }
 
@@ -241,7 +241,7 @@ export function addBreadcrumb(
     }
     
     // Log breadcrumb for debugging
-    logDebug(`Adding breadcrumb`, { category, message });
+    logDebug('Adding breadcrumb', { category, message });
     
     // Add to breadcrumbs array, respecting maxItems
     context.breadcrumbs.push(breadcrumb);
@@ -261,7 +261,7 @@ export function addBreadcrumb(
       context.componentTiming[category] = (context.componentTiming[category] || 0) + breadcrumb.durationMs;
     }
   } else {
-    logDebug(`Breadcrumb recording disabled, skipping`, { category, message });
+    logDebug('Breadcrumb recording disabled, skipping', { category, message });
   }
   
   return breadcrumb;

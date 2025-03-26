@@ -11,6 +11,15 @@ import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
 
 /**
+ * Log an error message - simplified helper for config module
+ * Direct console.error is appropriate here as this runs during initialization
+ * before the logging system is available
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  console.error(`Config: ${message}`, data || {});
+}
+
+/**
  * Interface for the configuration system
  */
 export interface ConfigurationSystem {
@@ -120,21 +129,25 @@ function applyEnvironmentVariables(env: EnvVariables): void {
             try {
               videoConfig.addPathPattern(pattern as unknown as z.infer<typeof PathPatternSchema>);
             } catch (error) {
-              // Log error but continue with other patterns - would use pino logger in the future
-              // For now keep console since logger might not be initialized yet
+              // Log error but continue with other patterns
               const errMessage = error instanceof Error ? error.message : String(error);
               const errStack = error instanceof Error ? error.stack : undefined;
-              console.error(`Failed to add path pattern ${pattern.name}: ${errMessage}`, { stack: errStack });
+              logError(`Failed to add path pattern ${pattern.name}`, { 
+                error: errMessage, 
+                stack: errStack 
+              });
             }
           }
         }
       }
     } catch (error) {
-      // Log error but continue - would use pino logger in the future
-      // For now keep console since logger might not be initialized yet
+      // Log error but continue
       const errMessage = error instanceof Error ? error.message : String(error);
       const errStack = error instanceof Error ? error.stack : undefined;
-      console.error(`Failed to process PATH_PATTERNS environment variable: ${errMessage}`, { stack: errStack });
+      logError('Failed to process PATH_PATTERNS environment variable', { 
+        error: errMessage, 
+        stack: errStack 
+      });
     }
   }
 }

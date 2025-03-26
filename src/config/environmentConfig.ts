@@ -7,6 +7,15 @@
 import { PathPattern } from '../utils/pathUtils';
 
 /**
+ * Log an error message - simplified helper for config module
+ * Direct console.error is appropriate here as this runs during initialization
+ * before the logging system is available
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  console.error(`EnvironmentConfig: ${message}`, data || {});
+}
+
+/**
  * Application environment configuration
  */
 export interface EnvironmentConfig {
@@ -275,7 +284,10 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
         // Can't use logger here as this is during init
         const errMessage = err instanceof Error ? err.message : String(err);
         const errStack = err instanceof Error ? err.stack : undefined;
-        console.error(`Error parsing PATH_PATTERNS environment variable: ${errMessage}`, { stack: errStack });
+        logError('Error parsing PATH_PATTERNS environment variable', { 
+          error: errMessage, 
+          stack: errStack 
+        });
       }
     } else {
       // Already an object array

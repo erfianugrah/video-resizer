@@ -30,6 +30,7 @@ export enum ErrorType {
 
 export interface ErrorContext {
   originalUrl?: string;
+  transformUrl?: string;
   parameters?: Record<string, unknown>;
   source?: string;
   additionalInfo?: string;

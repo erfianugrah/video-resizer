@@ -1208,6 +1208,58 @@ function ResponsiveVideo({ src, aspectRatio = "16:9" }) {
 }
 ```
 
+## Graceful Error Handling with Fallback
+
+The video-resizer implements a configurable fallback mechanism that returns the original, untransformed content when a transformation fails with a 400 Bad Request error. This provides graceful degradation and ensures users always get content, even if the optimal transformation isn't possible.
+
+### Fallback Configuration
+
+The fallback mechanism can be configured in your environment settings:
+
+```jsonc
+"caching": {
+  "method": "cacheApi",
+  "debug": false,
+  "fallback": {
+    "enabled": true,               // Enable/disable the fallback mechanism
+    "badRequestOnly": true,        // Only apply fallback for 400 errors
+    "preserveHeaders": [           // Headers to preserve from original response
+      "Content-Type", 
+      "Content-Length", 
+      "Content-Range", 
+      "Accept-Ranges"
+    ]
+  }
+}
+```
+
+### How Fallback Works
+
+1. When a transformation error occurs, the error status code is checked
+2. If the error is a 400 Bad Request (and `badRequestOnly` is true), the fallback mechanism activates
+3. The worker fetches the original, untransformed content directly from the origin
+4. Specified headers from the original response are preserved
+5. Custom headers are added to indicate fallback was applied:
+   - `X-Fallback-Applied: true`
+   - `X-Fallback-Reason: [error message]`
+   - `X-Original-Error-Type: [error type]`
+   - `X-Original-Status-Code: [status code]`
+6. The original content is returned to the client
+
+This approach ensures users always get a response, even when transformation parameters are invalid or not supported by Cloudflare's Media Transformation API.
+
+### Common Fallback Scenarios
+
+- Width/height values outside the supported 10-2000px range
+- Time parameter outside the supported 0-30s range
+- Unsupported format requested
+- Invalid combination of parameters
+- Features requested that aren't available in the underlying Cloudflare API
+
+### Debugging Fallback
+
+When debugging is enabled, the fallback information is included in debug headers and the debug view. You can see when fallback was applied and why, helping you optimize your transformation parameters.
+
 ## Architecture
 
 The project follows domain-driven design with command pattern and service-oriented architecture for maintainability:
@@ -1314,6 +1366,23 @@ flowchart TD
 - Enhanced TTL controls based on response type
 - Added automatic cache invalidation for debug requests
 - Implemented cache bypass mechanisms for development
+
+### 7. Error Handling Improvements
+- Added fallback mechanism to return original content when transformations fail
+- Configurable fallback behavior for specific error types
+- Graceful degradation with original content when transformations encounter 400 errors
+- Detailed error logging and debugging for fallback scenarios
+- Preserved headers option for maintaining important response metadata
+
+### 8. Logging Standardization
+- Implemented consistent logging pattern across all components
+- Replaced all direct console.* calls with structured logging
+- Enhanced breadcrumb tracking for improved request tracing
+- Added context-aware logging with proper fallbacks
+- Improved error reporting with standardized error and stack trace handling
+- Centralized logging configuration for unified control
+- Added structured data objects instead of string concatenation for better analysis
+- Enhanced debugging capabilities with consistent log format
 
 ## Limitations & Compatibility Notes
 

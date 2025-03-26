@@ -3,7 +3,54 @@
  */
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
+import { createLogger, debug as pinoDebug, error as pinoError, warn as pinoWarn } from '../utils/pinoLogger';
+
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'DebugService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.debug(`DebugService: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log a warning message with proper context handling
+ */
+function logWarn(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoWarn(requestContext, logger, 'DebugService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.warn(`DebugService: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an error message with proper context handling
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, 'DebugService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.error(`DebugService: ${message}`, data || {});
+  }
+}
 
 /**
  * Add debug headers to a response
@@ -23,25 +70,10 @@ export function addDebugHeaders(
     return response;
   }
   
-  // Get the current request context if available
-  const requestContext = getCurrentContext();
-  
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'DebugService', 'Adding debug headers', {
-      isVerbose: debugInfo.isVerbose,
-      includeHeaders: debugInfo.includeHeaders,
-    });
-  } else {
-    // Legacy fallback - this shouldn't typically happen
-    console.warn('DebugService: No request context available');
-    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
-      debug('DebugService', 'Adding debug headers', {
-        isVerbose: debugInfo.isVerbose,
-        includeHeaders: debugInfo.includeHeaders,
-      });
-    });
-  }
+  logDebug('Adding debug headers', {
+    isVerbose: debugInfo.isVerbose,
+    includeHeaders: debugInfo.includeHeaders
+  });
   
   // Create new headers object
   const newHeaders = new Headers(response.headers);
@@ -177,49 +209,22 @@ export async function createDebugReport(
         });
       }
     } catch (error) {
-      // Get the current request context if available
-      const requestContext = getCurrentContext();
-      
-      if (requestContext) {
-        const logger = createLogger(requestContext);
-        pinoError(requestContext, logger, 'DebugService', 'Error loading debug UI from assets', {
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-      } else {
-        // Legacy fallback - this shouldn't typically happen
-        console.error('Error loading debug UI from assets:', error);
-      }
+      logError('Error loading debug UI from assets', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   }
   
-  // Fallback to a simple minimal HTML response if assets aren't available
+  // Fallback to a simple JSON response if assets aren't available
   return new Response(
-    `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Debug Report</title>
-      <style>
-        body { font-family: system-ui, sans-serif; line-height: 1.5; padding: 2rem; }
-        pre { background: #f1f1f1; padding: 1rem; overflow-x: auto; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        h1 { color: #0051c3; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Video Resizer Debug Report</h1>
-        <p>This is a minimal fallback debug view. The Astro debug UI could not be loaded.</p>
-        <h2>Diagnostic Data:</h2>
-        <pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre>
-      </div>
-    </body>
-    </html>`,
+    JSON.stringify({
+      message: "Debug UI could not be loaded. Raw diagnostic data is provided below.",
+      diagnostics: diagnosticsInfo
+    }, null, 2),
     {
       headers: {
-        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Type': 'application/json',
         'Cache-Control': 'no-store'
       }
     }
