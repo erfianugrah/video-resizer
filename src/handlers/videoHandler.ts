@@ -27,6 +27,12 @@ export async function handleVideoRequest(
   const context = createRequestContext(request);
   const logger = createLogger(context);
   
+  // Import performance tracking functions
+  const { startTimedOperation, endTimedOperation } = await import('../utils/requestContext');
+  
+  // Start timing the entire request processing
+  startTimedOperation(context, 'total-request-processing', 'Request');
+  
   // Initialize legacy logger for backward compatibility
   initializeLegacyLogger(request);
   
@@ -60,7 +66,11 @@ export async function handleVideoRequest(
       method: 'cache-api',
       bypassParams: CacheConfigurationManager.getInstance().getConfig().bypassQueryParameters?.join(',')
     });
+    
+    // Time the cache lookup operation
+    startTimedOperation(context, 'cache-lookup', 'Cache');
     const cachedResponse = await getCachedResponse(request);
+    endTimedOperation(context, 'cache-lookup');
     if (cachedResponse) {
       info(context, logger, 'VideoHandler', 'Serving from cache', {
         url: url.toString(),
@@ -83,7 +93,11 @@ export async function handleVideoRequest(
       hasParams: urlParams.toString().length > 0,
       path: path
     });
+    
+    // Time the options determination operation
+    startTimedOperation(context, 'options-determination', 'Client');
     const videoOptions = determineVideoOptions(request, urlParams, path);
+    endTimedOperation(context, 'options-determination');
 
     debug(context, logger, 'VideoHandler', 'Processing video request', {
       url: url.toString(),
@@ -117,7 +131,11 @@ export async function handleVideoRequest(
       },
       debug: debugInfo.isEnabled
     });
+    
+    // Time the video transformation operation
+    startTimedOperation(context, 'video-transformation', 'Transform');
     const response = await transformVideo(request, videoOptions, pathPatterns, debugInfo, env);
+    endTimedOperation(context, 'video-transformation');
     
     // Add final timing information to diagnostics
     context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
@@ -132,17 +150,33 @@ export async function handleVideoRequest(
         contentLength: response.headers.get('Content-Length') || undefined,
         cfCacheStatus: response.headers.get('CF-Cache-Status') || undefined
       });
-      cacheResponse(request, response.clone()).catch(err => {
-        error(context, logger, 'VideoHandler', 'Error caching response', {
-          error: err instanceof Error ? err.message : 'Unknown error',
+      
+      // Time the cache storage operation
+      startTimedOperation(context, 'cache-storage', 'Cache');
+      cacheResponse(request, response.clone())
+        .then(() => endTimedOperation(context, 'cache-storage'))
+        .catch(err => {
+          endTimedOperation(context, 'cache-storage');
+          error(context, logger, 'VideoHandler', 'Error caching response', {
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
         });
-      });
     }
 
     // Use ResponseBuilder for consistent response handling including range requests
+    startTimedOperation(context, 'response-building', 'Response');
     const responseBuilder = new ResponseBuilder(response, context);
-    return await responseBuilder.build();
+    const result = await responseBuilder.build();
+    endTimedOperation(context, 'response-building');
+    
+    // End the total request timing
+    endTimedOperation(context, 'total-request-processing');
+    
+    return result;
   } catch (err: unknown) {
+    // Record error timing
+    startTimedOperation(context, 'error-handling', 'Error');
+    
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     const errorStack = err instanceof Error ? err.stack : undefined;
     
@@ -167,6 +201,14 @@ export async function handleVideoRequest(
     });
     
     const responseBuilder = new ResponseBuilder(errorResponse, context);
-    return await responseBuilder.withDebugInfo().build();
+    const result = await responseBuilder.withDebugInfo().build();
+    
+    // End error handling timing
+    endTimedOperation(context, 'error-handling');
+    
+    // End the total request timing
+    endTimedOperation(context, 'total-request-processing');
+    
+    return result;
   }
 }
