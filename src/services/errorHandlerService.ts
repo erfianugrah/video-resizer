@@ -3,8 +3,41 @@
  */
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, error as pinoError } from '../utils/pinoLogger';
+import { createLogger, error as pinoError, debug as pinoDebug } from '../utils/pinoLogger';
 import type { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
+
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+function logDebug(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.debug(`[${category}] ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an error message with proper context handling
+ */
+function logError(category: string, message: string, data?: Record<string, unknown>) {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, category, message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.error(`[${category}] ${message}`, data || {});
+  }
+}
 
 /**
  * Convert any error to a VideoTransformError
@@ -27,6 +60,125 @@ export function normalizeError(err: unknown, context: Record<string, unknown> = 
 }
 
 /**
+ * Fetch the original content when transformation fails with a 400 error
+ * This provides graceful degradation by falling back to the original content
+ * 
+ * @param originalUrl - The original URL before transformation attempt
+ * @param error - The error that occurred during transformation
+ * @param request - The original request
+ * @returns A response with the original content, or null if fallback should not be applied
+ */
+export async function fetchOriginalContentFallback(
+  originalUrl: string, 
+  error: VideoTransformError, 
+  request: Request
+): Promise<Response | null> {
+  // Import configuration manager to check if fallback is enabled
+  const { VideoConfigurationManager } = await import('../config');
+  const config = VideoConfigurationManager.getInstance();
+  const caching = config.getCachingConfig();
+  const fallbackConfig = caching?.fallback;
+  
+  // Log configuration loaded for fallback
+  logDebug('ErrorHandlerService', 'Configuration loaded for fallback', {
+    errorStatus: error.statusCode,
+    errorType: error.errorType,
+    cachingMethod: caching?.method,
+    fallbackEnabled: fallbackConfig?.enabled,
+    badRequestOnly: fallbackConfig?.badRequestOnly
+  });
+  
+  // Check if fallback is enabled in config
+  if (!fallbackConfig || !fallbackConfig.enabled) {
+    logDebug('ErrorHandlerService', 'Fallback disabled in config, skipping');
+    return null;
+  }
+  
+  // Only apply fallback for 400 Bad Request errors if badRequestOnly is true
+  if (fallbackConfig.badRequestOnly && error.statusCode !== 400) {
+    logDebug('ErrorHandlerService', 'Not a 400 error, skipping fallback');
+    return null;
+  }
+
+  logDebug('ErrorHandlerService', 'Fetching original content as fallback', {
+    originalUrl,
+    errorType: error.errorType,
+    errorMessage: error.message,
+    config: {
+      enabled: fallbackConfig.enabled,
+      badRequestOnly: fallbackConfig.badRequestOnly
+    }
+  });
+
+  try {
+    // Create a new request for the original content
+    const originalRequest = new Request(originalUrl, {
+      method: request.method,
+      headers: request.headers,
+      redirect: 'follow'
+    });
+
+    // Fetch the original content
+    const response = await fetch(originalRequest);
+
+    // Create new headers
+    const headers = new Headers();
+    
+    // Determine which headers to preserve
+    const preserveHeaders = fallbackConfig.preserveHeaders || 
+      ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'];
+    
+    // Copy preserved headers from original response
+    preserveHeaders.forEach(headerName => {
+      const headerValue = response.headers.get(headerName);
+      if (headerValue) {
+        headers.set(headerName, headerValue);
+      }
+    });
+    
+    // Add fallback-specific headers
+    headers.set('X-Fallback-Applied', 'true');
+    headers.set('X-Fallback-Reason', error.message);
+    headers.set('X-Original-Error-Type', error.errorType);
+    headers.set('X-Original-Status-Code', error.statusCode.toString());
+    
+    // Add Cache-Control header to prevent caching of fallback response
+    headers.set('Cache-Control', 'no-store');
+
+    // Log successful fallback
+    logDebug('ErrorHandlerService', 'Successfully fetched fallback content', {
+      status: response.status,
+      contentType: response.headers.get('Content-Type'),
+      preservedHeaders: preserveHeaders
+    });
+    
+    logDebug('ErrorHandlerService', 'Successfully fetched original content', {
+      originalUrl,
+      status: response.status,
+      contentType: response.headers.get('Content-Type'),
+      size: response.headers.get('Content-Length')
+    });
+
+    // Return new response with modified headers
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  } catch (fallbackError) {
+    // Log fallback error
+    logError('ErrorHandlerService', 'Error fetching fallback content', {
+      error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+      stack: fallbackError instanceof Error ? fallbackError.stack : undefined,
+      originalUrl
+    });
+    
+    // Return null to indicate fallback failed
+    return null;
+  }
+}
+
+/**
  * Create an appropriate error response based on the error type
  * This is the main entry point for handling errors throughout the application
  */
@@ -44,27 +196,15 @@ export async function createErrorResponse(
   // Normalize the error
   const normalizedError = normalizeError(err, { originalUrl: request.url });
   
-  // Get the current request context if available
-  const requestContext = getCurrentContext();
-  
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'ErrorHandlerService', 'Error processing request', {
-      error: normalizedError.message,
-      errorType: normalizedError.errorType,
-      statusCode: normalizedError.statusCode,
-      context: normalizedError.context,
-      stack: normalizedError instanceof Error ? normalizedError.stack : undefined,
-      url: request.url
-    });
-  } else {
-    // Fallback to legacy logging
-    console.error(`ErrorHandlerService: Error processing request: ${normalizedError.message}`, {
-      errorType: normalizedError.errorType,
-      statusCode: normalizedError.statusCode,
-      url: request.url
-    });
-  }
+  // Log error processing request
+  logError('ErrorHandlerService', 'Error processing request', {
+    error: normalizedError.message,
+    errorType: normalizedError.errorType,
+    statusCode: normalizedError.statusCode,
+    context: normalizedError.context,
+    stack: normalizedError instanceof Error ? normalizedError.stack : undefined,
+    url: request.url
+  });
   
   // Initialize diagnostics if not provided
   const diagInfo = diagnosticsInfo || {
@@ -73,6 +213,51 @@ export async function createErrorResponse(
     originalUrl: request.url,
     processingTimeMs: 0
   };
+
+  // Get the original URL if available in diagnostics, otherwise use request URL
+  const originalUrl = diagInfo.originalUrl || request.url;
+  
+  // Check if we should apply the fallback logic
+  // Import configuration manager to check if fallback is enabled
+  const { VideoConfigurationManager } = await import('../config');
+  const config = VideoConfigurationManager.getInstance();
+  const caching = config.getCachingConfig();
+  const fallbackConfig = caching?.fallback;
+  
+  // Log the configuration to help with debugging
+  logDebug('FallbackHandler', 'Caching config loaded', {
+    method: caching?.method,
+    debug: caching?.debug,
+    fallbackEnabled: fallbackConfig?.enabled,
+    badRequestOnly: fallbackConfig?.badRequestOnly,
+    preserveHeaders: fallbackConfig?.preserveHeaders?.length || 0
+  });
+  
+  // If fallback is enabled, try to fetch original content
+  if (fallbackConfig?.enabled) {
+    // Only apply fallback for 400 Bad Request errors if badRequestOnly is true
+    if (!fallbackConfig.badRequestOnly || normalizedError.statusCode === 400) {
+      const fallbackResponse = await fetchOriginalContentFallback(originalUrl, normalizedError, request);
+      
+      // If fallback was successful, use it instead of error response
+      if (fallbackResponse) {
+        // Add debug headers if debug is enabled
+        if (debugInfo?.isEnabled) {
+          // Add the fallback information to diagnostics
+          diagInfo.warnings = diagInfo.warnings || [];
+          diagInfo.warnings.push('Returned original content due to transformation failure');
+          diagInfo.fallbackApplied = true;
+          diagInfo.fallbackReason = normalizedError.message;
+          
+          // Import debug service functions dynamically to avoid circular dependencies
+          const { addDebugHeaders } = await import('./debugService');
+          return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
+        }
+        
+        return fallbackResponse;
+      }
+    }
+  }
   
   // Check if this is a debug view request
   const url = new URL(request.url);
@@ -148,16 +333,10 @@ export async function createErrorResponse(
         }
       } catch (htmlErr) {
         // Log but continue if there's an error generating the HTML
-        if (requestContext) {
-          const logger = createLogger(requestContext);
-          pinoError(requestContext, logger, 'ErrorHandlerService', 'Error generating debug HTML', {
-            error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
-            stack: htmlErr instanceof Error ? htmlErr.stack : undefined
-          });
-        } else {
-          console.error('ErrorHandlerService: Error generating debug HTML:', 
-            htmlErr instanceof Error ? htmlErr.message : 'Unknown error');
-        }
+        logError('ErrorHandlerService', 'Error generating debug HTML', {
+          error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
+          stack: htmlErr instanceof Error ? htmlErr.stack : undefined
+        });
       }
     }
     
