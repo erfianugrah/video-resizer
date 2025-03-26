@@ -253,8 +253,13 @@ export function addBreadcrumb(
       breadcrumb.durationMs = timestamp - lastBreadcrumb.timestamp;
     }
     
-    // Log breadcrumb for debugging
-    logDebug('Adding breadcrumb', { category, message });
+    // Log breadcrumb for debugging with timing information
+    logDebug('Adding breadcrumb', { 
+      category, 
+      message, 
+      elapsedMs: elapsedMs.toFixed(2), 
+      durationMs: breadcrumb.durationMs !== undefined ? breadcrumb.durationMs.toFixed(2) : undefined 
+    });
     
     // Add to breadcrumbs array, respecting maxItems
     context.breadcrumbs.push(breadcrumb);
