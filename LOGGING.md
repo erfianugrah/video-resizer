@@ -97,7 +97,7 @@ The video-resizer logging system has evolved over time, resulting in multiple lo
 | `/home/erfi/resizer/video-resizer/src/services/errorHandlerService.ts` | **Completed** | Critical | 0 (was ~10) | Main error handling service |
 | `/home/erfi/resizer/video-resizer/src/services/videoStorageService.ts` | **Completed** | Critical | 0 (was ~55) | Storage service used by fallback |
 | `/home/erfi/resizer/video-resizer/src/domain/commands/TransformVideoCommand.ts` | **Completed** | Critical | 0 (was ~15) | Core transformation logic |
-| `/home/erfi/resizer/video-resizer/src/utils/requestContext.ts` | **Priority 1** | Critical | Few | Manages breadcrumbs |
+| `/home/erfi/resizer/video-resizer/src/utils/requestContext.ts` | **Completed** | Critical | 2* | Manages breadcrumbs |
 | `/home/erfi/resizer/video-resizer/src/index.ts` | **Priority 1** | Critical | Few | Entry point |
 
 #### Implementation Notes
@@ -143,11 +143,27 @@ Implementation approach:
 3. Added proper error handling in the logging functions themselves
 4. Preserved console.logs that run in browser context (in script tags)
 
+##### requestContext.ts
+
+This file required a special approach due to its central role in the logging system:
+
+1. ✅ Created specialized local helper functions that avoid circular dependencies
+2. ✅ Used direct console.debug/warn calls in helper functions (intentional)
+3. ✅ Structured all log messages with proper context data
+4. ✅ Improved error handling in configuration loading
+
+Implementation approach:
+1. Created dedicated logDebug/logWarn functions for this module only
+2. Kept direct console.* calls in these helpers to avoid circular dependencies
+3. Replaced all direct console.* calls with these helper functions
+4. Added proper structured data to all logs for easier filtering
+
 Progress:
 - ✅ Completed replacing all ~55 console calls with logDebug/logError helpers in videoStorageService.ts
 - ✅ Completed replacing all ~10 console calls with logDebug/logError helpers in errorHandlerService.ts
 - ✅ Completed replacing all ~15 console calls with async logDebug/logError helpers in TransformVideoCommand.ts
-- ✅ Fully standardized logging in all critical path services
+- ✅ Completed replacing all ~13 console calls in requestContext.ts with special dependency-safe helpers
+- ✅ Fully standardized logging in all critical path services except index.ts (last remaining file)
 
 Common patterns in this file:
 - Pattern 1: Context check with fallback to console
@@ -218,6 +234,7 @@ Common patterns in this file:
 | `/home/erfi/resizer/video-resizer/src/index.ts` | Pending | |
 | `/home/erfi/resizer/video-resizer/src/domain/commands/TransformVideoCommand.ts` | **Completed** | Fully migrated to pino logging with helper functions |
 | `/home/erfi/resizer/video-resizer/src/services/errorHandlerService.ts` | **Completed** | Fully migrated to pino logging with helper functions |
+| `/home/erfi/resizer/video-resizer/src/utils/requestContext.ts` | **Completed** | Special implementation due to circular dependency concerns |
 | `/home/erfi/resizer/video-resizer/src/services/cacheManagementService.ts` | Pending | |
 | `/home/erfi/resizer/video-resizer/src/services/videoStorageService.ts` | **Completed** | Fully migrated to pino logging with helper functions |
 | `/home/erfi/resizer/video-resizer/src/services/TransformationService.ts` | Pending | |

@@ -6,6 +6,31 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { DiagnosticsInfo } from '../types/diagnostics';
+import { debug as pinoDebug, warn as pinoWarn } from './pinoLogger';
+
+/**
+ * Unified logging functions that avoid circular dependencies
+ * Since this module is imported by the logging system itself,
+ * we need to be careful about how we log from here
+ */
+
+/**
+ * Local debug logging that avoids circular dependencies
+ * This function only uses console.debug as this module is imported by the logging system
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  // Only use console.debug since we're in a core module imported by the logging system
+  console.debug(`RequestContext: ${message}`, data || {});
+}
+
+/**
+ * Local warning logging that avoids circular dependencies
+ * This function only uses console.warn as this module is imported by the logging system
+ */
+function logWarn(message: string, data?: Record<string, unknown>): void {
+  // Only use console.warn since we're in a core module imported by the logging system
+  console.warn(`RequestContext: ${message}`, data || {});
+}
 
 /**
  * Breadcrumb for tracking events during request processing
@@ -63,14 +88,14 @@ export function createRequestContext(request: Request): RequestContext {
         envDebugEnabled = debugConfig.isDebugEnabled();
         envVerboseEnabled = debugConfig.isVerboseEnabled();
       } catch (importErr) {
-        console.warn('Error getting DebugConfigurationManager instance:', importErr);
+        logWarn('Error getting DebugConfigurationManager instance', { error: String(importErr) });
       }
     }).catch(importErr => {
-      console.warn('Error importing DebugConfigurationManager:', importErr);
+      logWarn('Error importing DebugConfigurationManager', { error: String(importErr) });
     });
   } catch (err) {
-    // Silently continue if we can't access configuration
-    console.warn('Error in debug configuration loading:', err);
+    // Continue if we can't access configuration
+    logWarn('Error in debug configuration loading', { error: String(err) });
   }
   
   // Check for debug parameters - request parameters override environment settings
@@ -116,35 +141,62 @@ let breadcrumbConfig: BreadcrumbConfig = {
   maxItems: 100
 };
 
+// Helper function to update breadcrumb config
+export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: number }) {
+  if (config && typeof config.enabled === 'boolean' && typeof config.maxItems === 'number') {
+    breadcrumbConfig = {
+      enabled: config.enabled,
+      maxItems: config.maxItems
+    };
+    
+    logDebug(`Updated breadcrumb config`, { enabled: config.enabled, maxItems: config.maxItems });
+  }
+}
+
 // Try to load breadcrumb configuration from LoggingConfigurationManager
+// First try to synchronously get the config if it's already initialized
 try {
-  // Import in a way that avoids circular dependencies
-  // Use dynamic import to load the configuration manager
-  import('../config/LoggingConfigurationManager').then(module => {
-    try {
-      // Get the logging config instance
-      const loggingConfig = module.LoggingConfigurationManager.getInstance();
-      // Update the breadcrumb config
-      breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
-    } catch (importErr) {
-      console.warn('Error getting LoggingConfigurationManager instance:', importErr);
-    }
-  }).catch(importErr => {
-    // If dynamic import fails, try global config as fallback
-    if (typeof globalThis !== 'undefined' && 
-        typeof (globalThis as any).LOGGING_CONFIG !== 'undefined' && 
-        (globalThis as any).LOGGING_CONFIG.breadcrumbs) {
-      const globalConfig = (globalThis as any).LOGGING_CONFIG.breadcrumbs;
-      breadcrumbConfig = {
-        enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
-        maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100
-      };
-    } else {
-      console.warn('Error loading LoggingConfigurationManager and no global config available:', importErr);
-    }
-  });
+  // Use a require-like approach to avoid circular dependencies
+  const LoggingConfigModule = require('../config/LoggingConfigurationManager');
+  if (LoggingConfigModule && LoggingConfigModule.LoggingConfigurationManager) {
+    const loggingConfig = LoggingConfigModule.LoggingConfigurationManager.getInstance();
+    const config = loggingConfig.getBreadcrumbConfig();
+    breadcrumbConfig = config;
+    logDebug('Loaded breadcrumb config synchronously', { enabled: config.enabled, maxItems: config.maxItems });
+  }
 } catch (err) {
-  console.warn('Error in breadcrumb configuration loading:', err);
+  // Fallback to asynchronous loading if synchronous fails
+  try {
+    // Import in a way that avoids circular dependencies
+    // Use dynamic import to load the configuration manager
+    import('../config/LoggingConfigurationManager').then(module => {
+      try {
+        // Get the logging config instance
+        const loggingConfig = module.LoggingConfigurationManager.getInstance();
+        // Update the breadcrumb config
+        breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
+        logDebug('Loaded breadcrumb config asynchronously', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
+      } catch (importErr) {
+        logWarn('Error getting LoggingConfigurationManager instance', { error: String(importErr) });
+      }
+    }).catch(importErr => {
+      // If dynamic import fails, try global config as fallback
+      if (typeof globalThis !== 'undefined' && 
+          typeof (globalThis as any).LOGGING_CONFIG !== 'undefined' && 
+          (globalThis as any).LOGGING_CONFIG.breadcrumbs) {
+        const globalConfig = (globalThis as any).LOGGING_CONFIG.breadcrumbs;
+        breadcrumbConfig = {
+          enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
+          maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100
+        };
+        logDebug('Loaded breadcrumb config from global', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
+      } else {
+        logWarn('Error loading LoggingConfigurationManager and no global config available', { error: String(importErr) });
+      }
+    });
+  } catch (err) {
+    logWarn('Error in breadcrumb configuration loading', { error: String(err) });
+  }
 }
 
 /**
@@ -174,6 +226,12 @@ export function addBreadcrumb(
     durationMs: undefined
   };
   
+  // Make sure the breadcrumbs array exists
+  if (!context.breadcrumbs) {
+    context.breadcrumbs = [];
+    logDebug('Created breadcrumbs array for context');
+  }
+
   // Only add breadcrumb to the context if breadcrumbs are enabled
   if (breadcrumbConfig.enabled) {
     // Calculate duration from previous breadcrumb if available
@@ -181,6 +239,9 @@ export function addBreadcrumb(
       const lastBreadcrumb = context.breadcrumbs[context.breadcrumbs.length - 1];
       breadcrumb.durationMs = timestamp - lastBreadcrumb.timestamp;
     }
+    
+    // Log breadcrumb for debugging
+    logDebug(`Adding breadcrumb`, { category, message });
     
     // Add to breadcrumbs array, respecting maxItems
     context.breadcrumbs.push(breadcrumb);
@@ -192,8 +253,15 @@ export function addBreadcrumb(
     
     // Update component timing if durationMs was calculated
     if (breadcrumb.durationMs !== undefined) {
+      // Make sure the componentTiming object exists
+      if (!context.componentTiming) {
+        context.componentTiming = {};
+      }
+      
       context.componentTiming[category] = (context.componentTiming[category] || 0) + breadcrumb.durationMs;
     }
+  } else {
+    logDebug(`Breadcrumb recording disabled, skipping`, { category, message });
   }
   
   return breadcrumb;
