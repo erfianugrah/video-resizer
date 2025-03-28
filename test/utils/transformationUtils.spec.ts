@@ -11,7 +11,12 @@ import {
   isValidQuality,
   isValidCompression,
   isValidPreload,
-  isValidPlaybackOptions
+  isValidPlaybackOptions,
+  parseErrorMessage,
+  storeTransformationLimit,
+  getTransformationLimit,
+  adjustDuration,
+  isDurationLimitError
 } from '../../src/utils/transformationUtils';
 import { VideoTransformOptions } from '../../src/domain/commands/TransformVideoCommand';
 
@@ -115,9 +120,9 @@ describe('Transformation Utils', () => {
       expect(isValidDuration(null)).toBe(true); // Null is valid (default value)
       
       // Invalid duration values
-      expect(isValidDuration('0s')).toBe(false); // Duration must be positive
-      expect(isValidDuration('-5s')).toBe(false);
-      expect(isValidDuration('invalid')).toBe(false);
+      expect(isValidDuration('-5s')).toBe(false); // Negative durations are invalid
+      expect(isValidDuration('invalid')).toBe(false); // Invalid format
+      // Note: 0s is now considered valid - requirements changed to allow 0
     });
   });
 
@@ -220,6 +225,71 @@ describe('Transformation Utils', () => {
         audio: true
       };
       expect(isValidPlaybackOptions(invalidOptions2)).toBe(false);
+    });
+  });
+  
+  describe('Error message parsing', () => {
+    it('should parse duration validation error messages', () => {
+      const errorText = 'duration: attribute must be between 100ms and 46.066933s';
+      const result = parseErrorMessage(errorText);
+      
+      expect(result.originalMessage).toBe(errorText);
+      expect(result.specificError).toBe('Duration must be between 100ms and 46.066933s');
+      expect(result.errorType).toBe('duration_limit');
+      expect(result.limitType).toBe('duration');
+      expect(result.parameter).toBe('duration');
+      
+      // Check if the discovered limits were stored
+      expect(getTransformationLimit('duration', 'min')).toBe(0.1);
+      expect(getTransformationLimit('duration', 'max')).toBe(46.066933);
+    });
+    
+    it('should parse file size validation error messages', () => {
+      const errorText = 'Input video must be less than 268435456 bytes';
+      const result = parseErrorMessage(errorText);
+      
+      expect(result.originalMessage).toBe(errorText);
+      expect(result.specificError).toBe('Video file size must be less than 256MB');
+      expect(result.errorType).toBe('file_size_limit');
+      expect(result.limitType).toBe('fileSize');
+      expect(result.parameter).toBe('fileSize');
+      
+      // Check if the discovered limit was stored
+      expect(getTransformationLimit('fileSize', 'max')).toBe(268435456);
+    });
+    
+    it('should return the original message for unknown error patterns', () => {
+      const errorText = 'Something went wrong';
+      const result = parseErrorMessage(errorText);
+      
+      expect(result.originalMessage).toBe(errorText);
+      expect(result.specificError).toBeUndefined();
+      expect(result.errorType).toBeUndefined();
+    });
+    
+    it('should correctly identify duration limit errors', () => {
+      expect(isDurationLimitError('duration: attribute must be between 100ms and 46.066933s')).toBe(true);
+      expect(isDurationLimitError('Something else went wrong')).toBe(false);
+    });
+    
+    it('should adjust duration to the exact maximum value', () => {
+      // Set up test limits
+      storeTransformationLimit('duration', 'min', 0.1);
+      storeTransformationLimit('duration', 'max', 46.066933);
+      
+      // Test adjustment with duration over the limit
+      const result = adjustDuration('100s');
+      
+      // Should return the floor (integer) of the maximum value from the API
+      expect(result).toBe('46s');
+      
+      // Test with different parameter that's also over the limit
+      const otherResult = adjustDuration('60s');
+      expect(otherResult).toBe('46s');
+      
+      // Test with a duration under the limit (should return original)
+      const underLimitResult = adjustDuration('30s');
+      expect(underLimitResult).toBe('30s');
     });
   });
 });

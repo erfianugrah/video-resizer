@@ -52,7 +52,7 @@ export class FrameStrategy implements TransformationStrategy {
   /**
    * Validate frame-specific options
    */
-  validateOptions(options: VideoTransformOptions): void {
+  async validateOptions(options: VideoTransformOptions): Promise<void> {
     const configManager = VideoConfigurationManager.getInstance();
     const context = { parameters: { mode: 'frame' } };
     

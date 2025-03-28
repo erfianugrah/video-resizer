@@ -52,7 +52,7 @@ export class SpritesheetStrategy implements TransformationStrategy {
   /**
    * Validate spritesheet-specific options
    */
-  validateOptions(options: VideoTransformOptions): void {
+  async validateOptions(options: VideoTransformOptions): Promise<void> {
     const configManager = VideoConfigurationManager.getInstance();
     const context = { parameters: { mode: 'spritesheet' } };
     
@@ -92,11 +92,18 @@ export class SpritesheetStrategy implements TransformationStrategy {
       }
     }
     
-    // Validate duration parameter
+    // Validate duration parameter format only
     if (options.duration !== null && options.duration !== undefined) {
-      if (!isValidDuration(options.duration)) {
+      const { parseTimeString } = await import('../../utils/transformationUtils');
+      
+      // Check if the format is valid (not checking limits)
+      const seconds = parseTimeString(options.duration);
+      if (seconds === null) {
+        // Invalid format
         throw ValidationError.invalidTimeValue('duration', options.duration, context);
       }
+      
+      // Allow any valid duration format - we'll let the API limit it
     }
     
     // Validate if video-specific parameters are used, which is not allowed for spritesheet mode

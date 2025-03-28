@@ -82,7 +82,7 @@ export class VideoStrategy implements TransformationStrategy {
   /**
    * Validate video-specific options
    */
-  validateOptions(options: VideoTransformOptions): void {
+  async validateOptions(options: VideoTransformOptions): Promise<void> {
     const configManager = VideoConfigurationManager.getInstance();
     const contextObj = { parameters: { mode: 'video', ...options } };
     
@@ -111,11 +111,19 @@ export class VideoStrategy implements TransformationStrategy {
       }
     }
     
-    // Validate duration parameter
+    // Validate and adjust duration parameter
     if (options.duration !== null && options.duration !== undefined) {
-      if (!isValidDuration(options.duration)) {
+      const { parseTimeString, isValidDuration, adjustDuration } = await import('../../utils/transformationUtils');
+      
+      // Check if the format is valid (not checking limits)
+      const seconds = parseTimeString(options.duration);
+      if (seconds === null) {
+        // Invalid format
         throw ValidationError.invalidTimeValue('duration', options.duration, contextObj);
       }
+      
+      // Allow any valid duration format - we'll let the API limit it
+      // We will adjust it automatically when we hit the API limit error
     }
     
     // Validate quality

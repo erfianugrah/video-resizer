@@ -165,9 +165,9 @@ export function haveDurationLimits(): boolean {
 }
 
 /**
- * Validate duration parameter
+ * Validate duration parameter format
  * @param durationStr Duration string
- * @returns If the duration is valid
+ * @returns If the duration is a valid format (regardless of limits)
  */
 export function isValidDuration(durationStr: string | null): boolean {
   if (!durationStr) return true;
@@ -175,9 +175,24 @@ export function isValidDuration(durationStr: string | null): boolean {
   const seconds = parseTimeString(durationStr);
   if (seconds === null) return false;
   
-  // If we don't have learned limits yet, just validate that it's positive
+  // Only validate that it's a non-negative value (0 is allowed)
+  return seconds >= 0;
+}
+
+/**
+ * Check if duration is within learned limits
+ * @param durationStr Duration string
+ * @returns If the duration is within known limits
+ */
+export function isDurationWithinLimits(durationStr: string | null): boolean {
+  if (!durationStr) return true;
+  
+  const seconds = parseTimeString(durationStr);
+  if (seconds === null) return false;
+  
+  // If we don't have learned limits yet, we can't check
   if (!haveDurationLimits()) {
-    return seconds > 0;
+    return true;
   }
   
   const minDuration = transformationLimits.duration.min;
@@ -190,9 +205,10 @@ export function isValidDuration(durationStr: string | null): boolean {
 /**
  * Adjust duration to be within valid limits
  * @param durationStr Duration string
+ * @param useSafeMax Whether to use a safe integer maximum (slightly below the actual max)
  * @returns Adjusted duration string or original if already valid or no limits known
  */
-export function adjustDuration(durationStr: string | null): string | null {
+export function adjustDuration(durationStr: string | null, useSafeMax: boolean = false): string | null {
   if (!durationStr) return durationStr;
   
   const seconds = parseTimeString(durationStr);
@@ -210,10 +226,22 @@ export function adjustDuration(durationStr: string | null): string | null {
   if (seconds < minDuration) {
     return formatTimeString(minDuration);
   } else if (seconds > maxDuration) {
-    return formatTimeString(maxDuration);
+    // Use the integer value (floor) of the maximum value from the API response
+    // This gives us a clean, stable value that's safely below the limit
+    const safeMax = Math.floor(maxDuration);
+    return formatTimeString(safeMax);
   }
   
   return durationStr;
+}
+
+/**
+ * Check if the error is related to duration limits
+ * @param errorText The error message from the API
+ * @returns Boolean indicating if it's a duration limit error
+ */
+export function isDurationLimitError(errorText: string): boolean {
+  return errorText.includes('duration: attribute must be between');
 }
 
 /**
@@ -309,6 +337,66 @@ export function translateAkamaiToCloudflareParams(
       result[cloudflareKey] = translateAkamaiParamValue(key, value);
     }
   }
+  
+  return result;
+}
+
+/**
+ * Parse error messages from Cloudflare's API to extract specific validation issues
+ * This helps provide more detailed error information to clients
+ * 
+ * @param errorText - The error message text from Cloudflare's API
+ * @returns An object with parsed error details and original error message
+ */
+export function parseErrorMessage(errorText: string): {
+  originalMessage: string;
+  specificError?: string;
+  errorType?: string;
+  limitType?: string;
+  parameter?: string;
+} {
+  const result = {
+    originalMessage: errorText,
+  };
+
+  // Check for duration validation errors
+  const durationMatch = errorText.match(/duration: attribute must be between (\d+)ms and ([\d.]+)s/i);
+  if (durationMatch) {
+    const minMs = parseInt(durationMatch[1], 10);
+    const maxS = parseFloat(durationMatch[2]);
+    
+    // Store the discovered limits
+    storeTransformationLimit('duration', 'min', minMs / 1000); // Convert ms to seconds
+    storeTransformationLimit('duration', 'max', maxS);
+    
+    return {
+      ...result,
+      specificError: `Duration must be between ${minMs}ms and ${maxS}s`,
+      errorType: 'duration_limit',
+      limitType: 'duration',
+      parameter: 'duration'
+    };
+  }
+  
+  // Check for file size validation errors
+  const fileSizeMatch = errorText.match(/Input video must be less than (\d+) bytes/i);
+  if (fileSizeMatch) {
+    const maxBytes = parseInt(fileSizeMatch[1], 10);
+    const maxMB = Math.round(maxBytes / (1024 * 1024) * 10) / 10; // Convert to MB with 1 decimal
+    
+    // Store the discovered limit
+    storeTransformationLimit('fileSize', 'max', maxBytes);
+    
+    return {
+      ...result,
+      specificError: `Video file size must be less than ${maxMB}MB`,
+      errorType: 'file_size_limit',
+      limitType: 'fileSize',
+      parameter: 'fileSize'
+    };
+  }
+  
+  // Add more error patterns as they are discovered
   
   return result;
 }

@@ -970,6 +970,39 @@ The service returns different HTTP status codes for different errors:
 - **415**: Unsupported video format
 - **500**: Internal server error or Cloudflare service error
 
+When errors occur and fallback is enabled, the service provides detailed error headers to help diagnose issues:
+
+- **X-Fallback-Applied**: Set to 'true' when fallback is applied
+- **X-Fallback-Reason**: Detailed reason for the fallback, based on the specific error
+- **X-Original-Error-Type**: The internal error type classification
+- **X-Original-Status-Code**: The original HTTP status code before fallback
+- **X-Error-Type**: Specific error category (e.g., 'duration_limit', 'file_size_limit')
+- **X-Invalid-Parameter**: Which parameter failed validation
+
+For example, if a video exceeds Cloudflare's duration limits, you might see:
+```
+X-Fallback-Reason: Duration must be between 100ms and 46.066933s
+X-Error-Type: duration_limit
+X-Invalid-Parameter: duration
+```
+
+For duration limit errors that were automatically adjusted and successfully retried, you'll see:
+```
+X-Duration-Adjusted: true
+X-Original-Duration: 100s
+X-Adjusted-Duration: 46s
+X-Duration-Limit-Applied: true
+```
+
+For file size limitations:
+```
+X-Fallback-Reason: Video file size must be less than 256MB
+X-Error-Type: file_size_limit
+X-Invalid-Parameter: fileSize
+```
+
+These specific error headers help quickly identify and resolve transformation issues and show when parameters were automatically adjusted to ensure successful transformation.
+
 ### Debugging
 
 1. **Enable debug mode:**
@@ -1212,6 +1245,33 @@ function ResponsiveVideo({ src, aspectRatio = "16:9" }) {
 
 The video-resizer implements a configurable fallback mechanism that returns the original, untransformed content when a transformation fails with a 400 Bad Request error. This provides graceful degradation and ensures users always get content, even if the optimal transformation isn't possible.
 
+### Intelligent Auto-Adjustment
+
+When video transformations fail due to parameter limits (like duration), the system automatically adjusts parameters and retries the transformation:
+
+1. For duration limits: When a duration exceeds the maximum allowed (approximately 46 seconds), the system automatically:
+   - Detects the specific duration limit error from Cloudflare's API response
+   - Extracts the exact minimum and maximum duration limits from the error message
+   - Stores these discovered limits for future validation
+   - Adjusts the duration to the integer floor of the maximum value (e.g., 46s from 46.066933s)
+   - Retries the transformation with the adjusted value
+   - Adds headers to indicate the adjustment was applied
+   
+For example, if you request a duration of "100s" but Cloudflare's API only supports up to ~46s:
+1. The initial request fails with a specific duration limit error
+2. The system extracts the exact limit from the error (e.g., "duration: attribute must be between 100ms and 46.066933s")
+3. The system adjusts the duration to "46s" (the integer floor of the maximum value)
+4. The transformation is retried with the adjusted duration
+5. If successful, the response includes headers showing the adjustment:
+   ```
+   X-Duration-Adjusted: true
+   X-Original-Duration: 100s
+   X-Adjusted-Duration: 46s
+   X-Duration-Limit-Applied: true
+   ```
+
+This ensures you get successfully transformed content even when parameters exceed limits, rather than falling back to the original content. The system is also self-learning, storing discovered limits for future use.
+
 ### Fallback Configuration
 
 The fallback mechanism can be configured in your environment settings:
@@ -1233,20 +1293,30 @@ The fallback mechanism can be configured in your environment settings:
 }
 ```
 
-### How Fallback Works
+### How Auto-Adjustment and Fallback Work
 
-1. When a transformation error occurs, the error status code is checked
-2. If the error is a 400 Bad Request (and `badRequestOnly` is true), the fallback mechanism activates
-3. The worker fetches the original, untransformed content directly from the origin
-4. Specified headers from the original response are preserved
-5. Custom headers are added to indicate fallback was applied:
-   - `X-Fallback-Applied: true`
-   - `X-Fallback-Reason: [error message]`
-   - `X-Original-Error-Type: [error type]`
-   - `X-Original-Status-Code: [status code]`
-6. The original content is returned to the client
+1. When a transformation error occurs, the system analyzes the error type
+2. For duration limit errors, it:
+   - Adjusts the duration to the integer floor of the maximum allowed value
+   - Retries the transformation with the adjusted value
+   - Adds headers indicating the adjustment:
+     - `X-Duration-Adjusted: true`
+     - `X-Original-Duration: [original value]`
+     - `X-Adjusted-Duration: [new value]`
+     - `X-Duration-Limit-Applied: true`
+3. For other 400 errors (or if retry fails), the fallback mechanism activates:
+   - The worker fetches the original, untransformed content directly from the origin
+   - Specified headers from the original response are preserved
+   - Custom headers are added to indicate fallback was applied:
+     - `X-Fallback-Applied: true`
+     - `X-Fallback-Reason: [specific error message]`
+     - `X-Original-Error-Type: [error type]`
+     - `X-Original-Status-Code: [status code]`
+     - `X-Error-Type: [specific error category]` (e.g., 'duration_limit', 'file_size_limit')
+     - `X-Invalid-Parameter: [parameter name]` (which parameter failed validation)
+4. The response (adjusted or original) is returned to the client
 
-This approach ensures users always get a response, even when transformation parameters are invalid or not supported by Cloudflare's Media Transformation API.
+This approach ensures users always get the best possible response, with either automatically adjusted parameters or original content as a last resort.
 
 ### Common Fallback Scenarios
 
@@ -1373,6 +1443,12 @@ flowchart TD
 - Graceful degradation with original content when transformations encounter 400 errors
 - Detailed error logging and debugging for fallback scenarios
 - Preserved headers option for maintaining important response metadata
+- Smart error detection with specific, detailed error headers based on the actual error type
+- Automatic extraction of API limitations from error messages (duration limits, file size limits)
+- Improved error headers with specific information about validation failures
+- Self-learning system that tracks discovered API limitations for future validation
+- Intelligent duration auto-adjustment that retries with adjusted values when limits are exceeded
+- Transparent parameter adjustment with detailed headers explaining what was changed
 
 ### 8. Logging Standardization
 - Implemented consistent logging pattern across all components

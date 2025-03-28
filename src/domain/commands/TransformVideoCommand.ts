@@ -613,10 +613,100 @@ export class TransformVideoCommand {
       if (response.status === 400) {
         const errorText = await response.text();
         
+        // Parse the error text to extract specific validation issues
+        const { parseErrorMessage, isDurationLimitError, adjustDuration } = await import('../../utils/transformationUtils');
+        const parsedError = parseErrorMessage(errorText);
+        
         await logError('TransformVideoCommand', 'Transformation proxy returned 400 Bad Request', {
           url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
-          error: errorText
+          error: errorText,
+          parsedError
         });
+        
+        // Check if this is a duration limit error and we can retry with adjusted duration
+        if (isDurationLimitError(errorText) && this.context.options?.duration) {
+          // Store the original duration for logging/headers
+          const originalDuration = this.context.options.duration;
+          
+          // Adjust the duration to the exact maximum value from the API
+          const adjustedDuration = adjustDuration(originalDuration);
+          
+          if (adjustedDuration && adjustedDuration !== originalDuration) {
+            await logDebug('TransformVideoCommand', 'Retrying with adjusted duration', {
+              originalDuration,
+              adjustedDuration,
+              maxAllowed: parsedError.specificError
+            });
+            
+            // Add breadcrumb for retry attempt
+            if (this.requestContext) {
+              const { addBreadcrumb } = await import('../../utils/requestContext');
+              addBreadcrumb(this.requestContext, 'Transform', 'Retrying with adjusted duration', {
+                originalDuration,
+                adjustedDuration,
+                error: parsedError.specificError
+              });
+            }
+            
+            // Update the options with the adjusted duration
+            const adjustedOptions = {
+              ...this.context.options,
+              duration: adjustedDuration
+            };
+            
+            // Import the transformation service to rebuild the URL
+            const { prepareVideoTransformation } = await import('../../services/TransformationService');
+            
+            // Prepare the transformation with the adjusted options
+            const transformResult = await prepareVideoTransformation(
+              this.context.request, 
+              adjustedOptions, 
+              this.context.pathPatterns,
+              this.context.debugInfo,
+              this.context.env
+            );
+            
+            // Get the new URL with adjusted duration
+            const adjustedCdnCgiUrl = transformResult.cdnCgiUrl;
+            
+            await logDebug('TransformVideoCommand', 'Retrying transformation with adjusted URL', {
+              adjustedCdnCgiUrl: adjustedCdnCgiUrl.split('?')[0] // Don't include query parameters for security
+            });
+            
+            // Retry the fetch with the adjusted URL
+            const retryResponse = await fetch(adjustedCdnCgiUrl);
+            
+            // If retry succeeded, add headers to indicate the adjustment
+            if (retryResponse.ok) {
+              const headers = new Headers(retryResponse.headers);
+              
+              // Add headers to indicate duration adjustment
+              headers.set('X-Duration-Adjusted', 'true');
+              headers.set('X-Original-Duration', originalDuration);
+              headers.set('X-Adjusted-Duration', adjustedDuration);
+              headers.set('X-Duration-Limit-Applied', 'true');
+              
+              await logDebug('TransformVideoCommand', 'Successfully transformed with adjusted duration', {
+                originalDuration,
+                adjustedDuration,
+                status: retryResponse.status
+              });
+              
+              // Return the adjusted response
+              return new Response(retryResponse.body, {
+                status: retryResponse.status,
+                statusText: retryResponse.statusText,
+                headers
+              });
+            }
+            
+            // If retry failed, log the error and continue with normal fallback
+            await logError('TransformVideoCommand', 'Retry with adjusted duration failed', {
+              adjustedCdnCgiUrl: adjustedCdnCgiUrl.split('?')[0],
+              retryStatus: retryResponse.status
+            });
+          }
+        }
         
         // For 400 Bad Request errors, use the videoStorageService to fetch the original content
         const path = new URL(this.context.request.url).pathname;
@@ -627,8 +717,8 @@ export class TransformVideoCommand {
           addBreadcrumb(this.requestContext, 'Error', 'Fetching original video as fallback due to 400 error', {
             path,
             errorText: errorText.substring(0, 100), // Limit error text length for safety
-            status: 400,
-            errorType: 'CDN-CGIError',
+            specificError: parsedError.specificError,
+            errorType: parsedError.errorType || 'CDN-CGIError',
             fallbackEnabled: true
           });
         }
@@ -684,11 +774,28 @@ export class TransformVideoCommand {
         // Create new headers to preserve critical ones from the storage result
         const headers = new Headers(storageResult.response.headers);
         
+        // Use the parsed error for more specific headers
+        const fallbackReason = parsedError.specificError || errorText;
+        
         // Add fallback-specific headers
         headers.set('X-Fallback-Applied', 'true');
-        headers.set('X-Fallback-Reason', errorText);
+        headers.set('X-Fallback-Reason', fallbackReason);
         headers.set('X-Original-Error', 'Bad Request (400)');
-        headers.set('X-Video-Too-Large', 'true');
+        
+        // Add more specific headers based on parsed error
+        if (parsedError.errorType) {
+          headers.set('X-Error-Type', parsedError.errorType);
+        }
+        
+        if (parsedError.parameter) {
+          headers.set('X-Invalid-Parameter', parsedError.parameter);
+        }
+        
+        // Legacy headers for backward compatibility
+        if (parsedError.errorType === 'file_size_limit') {
+          headers.set('X-Video-Too-Large', 'true');
+        }
+        
         headers.set('X-Storage-Source', storageResult.sourceType);
         headers.set('Cache-Control', 'no-store');
         
@@ -697,7 +804,8 @@ export class TransformVideoCommand {
           sourceType: storageResult.sourceType,
           status: storageResult.response.status,
           contentType: storageResult.contentType,
-          size: storageResult.size
+          size: storageResult.size,
+          fallbackReason
         });
         
         // Return the fallback response with the enhanced headers

@@ -136,11 +136,32 @@ export async function fetchOriginalContentFallback(
       }
     });
     
+    // Import error parsing utility
+    const { parseErrorMessage } = await import('../utils/transformationUtils');
+    
+    // Check if the error message is from Cloudflare's API
+    const parsedError = parseErrorMessage(error.message);
+    const fallbackReason = parsedError.specificError || error.message;
+    
     // Add fallback-specific headers
     headers.set('X-Fallback-Applied', 'true');
-    headers.set('X-Fallback-Reason', error.message);
+    headers.set('X-Fallback-Reason', fallbackReason);
     headers.set('X-Original-Error-Type', error.errorType);
     headers.set('X-Original-Status-Code', error.statusCode.toString());
+    
+    // Add more specific headers if available
+    if (parsedError.errorType) {
+      headers.set('X-Error-Type', parsedError.errorType);
+    }
+    
+    if (parsedError.parameter) {
+      headers.set('X-Invalid-Parameter', parsedError.parameter);
+    }
+    
+    // Legacy headers for backward compatibility
+    if (parsedError.errorType === 'file_size_limit') {
+      headers.set('X-Video-Too-Large', 'true');
+    }
     
     // Add Cache-Control header to prevent caching of fallback response
     headers.set('Cache-Control', 'no-store');

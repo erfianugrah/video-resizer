@@ -39,7 +39,7 @@ export interface TransformationStrategy {
    * @param options The transformation options
    * @throws Error if options are invalid
    */
-  validateOptions(options: VideoTransformOptions): void;
+  validateOptions(options: VideoTransformOptions): void | Promise<void>;
   
   /**
    * Update diagnostics information with strategy-specific details

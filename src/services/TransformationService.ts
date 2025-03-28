@@ -131,7 +131,7 @@ export async function prepareVideoTransformation(
 
     // Validate options
     try {
-      strategy.validateOptions(options);
+      await strategy.validateOptions(options);
       
       // Log successful validation
       if (requestContext) {
