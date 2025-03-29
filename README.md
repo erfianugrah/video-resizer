@@ -308,7 +308,71 @@ PATH_PATTERNS = [
 | **`remoteUrl`** | No | - | URL for remote video storage |
 | **`remoteAuth`** | No | - | Authentication configuration for remote storage |
 | **`fallbackUrl`** | No | - | Fallback URL if primary sources fail |
+| **`fallbackAuth`** | No | - | Authentication configuration for fallback storage |
 | **`pathTransforms`** | No | - | Path transformations for different storage types |
+
+### AWS S3 Authentication
+
+The video-resizer supports AWS S3 compatible authentication for accessing storage providers that use the S3 API, including Cloudflare R2, AWS S3, and Google Cloud Storage (with S3 compatibility):
+
+```jsonc
+"remoteAuth": {
+  "enabled": true,
+  "type": "aws-s3",
+  "accessKeyVar": "AWS_ACCESS_KEY_ID",     // Name of environment variable for access key
+  "secretKeyVar": "AWS_SECRET_ACCESS_KEY", // Name of environment variable for secret key
+  "region": "us-east-1",                   // AWS region or "auto" for R2
+  "service": "s3"                          // Always use "s3" for S3-compatible APIs
+}
+```
+
+#### Security Best Practices
+
+For production use, always store your AWS credentials as Cloudflare Worker secrets instead of directly in wrangler.jsonc:
+
+```bash
+# Set your AWS credentials as Worker secrets
+wrangler secret put AWS_ACCESS_KEY_ID     # You'll be prompted to enter the value securely
+wrangler secret put AWS_SECRET_ACCESS_KEY # You'll be prompted to enter the value securely
+```
+
+#### Provider-Specific Configuration
+
+1. **Cloudflare R2**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "R2_ACCESS_KEY_ID",
+     "secretKeyVar": "R2_SECRET_ACCESS_KEY",
+     "region": "auto",
+     "service": "s3"
+   }
+   ```
+
+2. **AWS S3**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "AWS_ACCESS_KEY_ID",
+     "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+     "region": "us-east-1",  // Replace with your bucket's region
+     "service": "s3"
+   }
+   ```
+
+3. **Google Cloud Storage with S3 API**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "GCS_ACCESS_KEY_ID",
+     "secretKeyVar": "GCS_SECRET_ACCESS_KEY",
+     "region": "us-central1",  // Match your GCS location
+     "service": "s3"
+   }
+   ```
 
 ### Common Configuration Examples
 
@@ -1065,7 +1129,7 @@ Configure multiple sources for video content with authentication:
     "bucketBinding": "VIDEOS_BUCKET"
   },
   
-  // Remote URL configuration with authentication
+  // Remote URL configuration with authentication (using headers)
   "remoteUrl": "https://videos.example.com",
   "remoteAuth": {
     "enabled": true,
@@ -1076,8 +1140,16 @@ Configure multiple sources for video content with authentication:
     }
   },
   
-  // Fallback URL in case primary sources fail
-  "fallbackUrl": "https://cdn.example.com",
+  // Fallback URL with AWS S3 authentication
+  "fallbackUrl": "https://your-bucket.s3.amazonaws.com",
+  "fallbackAuth": {
+    "enabled": true,
+    "type": "aws-s3",
+    "accessKeyVar": "AWS_ACCESS_KEY_ID",     // Name of environment variable storing the access key
+    "secretKeyVar": "AWS_SECRET_ACCESS_KEY", // Name of environment variable storing the secret key
+    "region": "us-east-1",                   // AWS region (use "auto" for R2)
+    "service": "s3"                          // Service name (use "s3" for all S3-compatible APIs)
+  },
   
   // Path transformations for different storage types
   "pathTransforms": {
@@ -1106,6 +1178,16 @@ These storage settings enable seamless multi-source fetching with proper authent
   }
 ]
 ```
+
+For secure authentication with S3-compatible storage (R2, AWS S3, GCS), store your credentials as Cloudflare Worker secrets:
+
+```bash
+# Set your AWS/S3 credentials as secrets
+wrangler secret put AWS_ACCESS_KEY_ID     # You'll be prompted to enter the value securely
+wrangler secret put AWS_SECRET_ACCESS_KEY # You'll be prompted to enter the value securely
+```
+
+This approach keeps sensitive credentials out of your codebase and configuration files.
 
 ### Extended Path Pattern Options
 

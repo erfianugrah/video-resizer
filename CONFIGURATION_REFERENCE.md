@@ -294,6 +294,8 @@ Environment variables can be used to override configuration values at runtime. T
 |----------|------|-------------|
 | `STORAGE_CONFIG` | JSON | Configuration for multiple storage backends |
 | `VIDEOS_BUCKET` | binding | R2 bucket binding for video storage |
+| `AWS_ACCESS_KEY_ID` | string | AWS access key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
+| `AWS_SECRET_ACCESS_KEY` | string | AWS secret key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
 
 The `STORAGE_CONFIG` object supports the following structure:
 
@@ -313,6 +315,14 @@ The `STORAGE_CONFIG` object supports the following structure:
     }
   },
   "fallbackUrl": "https://cdn.example.com",
+  "fallbackAuth": {
+    "enabled": true,
+    "type": "aws-s3",
+    "accessKeyVar": "AWS_ACCESS_KEY_ID",
+    "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+    "region": "us-east-1",
+    "service": "s3"
+  },
   "fetchOptions": {
     "userAgent": "Cloudflare-Video-Resizer/1.0"
   },
@@ -337,3 +347,80 @@ The `STORAGE_CONFIG` object supports the following structure:
 |----------|------|-------------|
 | `ENVIRONMENT` | string | Environment: 'production', 'staging', 'development' |
 | `VERSION` | string | Application version |
+
+## AWS S3 Authentication Options
+
+The video-resizer supports AWS S3 compatible authentication for storage providers like Cloudflare R2, AWS S3, and Google Cloud Storage (with S3 API compatibility). This enables secure access to these storage systems.
+
+### Authentication Types
+
+The `aws-s3` authentication type uses the [aws4fetch](https://github.com/mhart/aws4fetch) library to sign requests according to AWS's Signature Version 4 process. This works with:
+
+- **Cloudflare R2**: Set region to "auto" 
+- **Amazon S3**: Set region to your S3 bucket region (e.g., "us-east-1")
+- **Google Cloud Storage**: Set region to match your GCS location and use the "s3" service
+
+### Configuration Example
+
+```jsonc
+"remoteAuth": {
+  "enabled": true,
+  "type": "aws-s3",
+  "accessKeyVar": "AWS_ACCESS_KEY_ID",       // Environment variable name for access key
+  "secretKeyVar": "AWS_SECRET_ACCESS_KEY",   // Environment variable name for secret key
+  "region": "us-east-1",                    // AWS region or "auto" for R2
+  "service": "s3"                           // Service identifier (always "s3" for S3-compatible APIs)
+}
+```
+
+### Security Best Practices
+
+For production deployments, it's strongly recommended to use Cloudflare Worker secrets instead of storing credentials directly in wrangler.jsonc:
+
+```bash
+# Set AWS credentials as Cloudflare Worker secrets
+wrangler secret put AWS_ACCESS_KEY_ID
+wrangler secret put AWS_SECRET_ACCESS_KEY
+```
+
+This ensures your keys are stored securely and not committed to version control.
+
+### Provider-Specific Configuration
+
+1. **Cloudflare R2**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "R2_ACCESS_KEY_ID",
+     "secretKeyVar": "R2_SECRET_ACCESS_KEY",
+     "region": "auto",
+     "service": "s3"
+   }
+   ```
+
+2. **AWS S3**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "AWS_ACCESS_KEY_ID",
+     "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+     "region": "us-east-1",  // Replace with your bucket's region
+     "service": "s3"
+   }
+   ```
+
+3. **Google Cloud Storage with S3 API**
+   ```jsonc
+   "remoteAuth": {
+     "enabled": true,
+     "type": "aws-s3",
+     "accessKeyVar": "GCS_ACCESS_KEY_ID",
+     "secretKeyVar": "GCS_SECRET_ACCESS_KEY",
+     "region": "us-central1",  // Match your GCS location
+     "service": "s3"
+   }
+   ```
+
+You can apply these same patterns to `fallbackAuth` as well.

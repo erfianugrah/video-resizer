@@ -80,10 +80,26 @@
 			},
 			"remoteUrl": "https://videos.erfi.dev",
 			"remoteAuth": {
-				"enabled": false,
-				"type": "header"
+				"enabled": true,
+				"type": "aws-s3",
+				"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
+			"auth": {
+				"useOriginAuth": true,
+				"securityLevel": "strict"
 			},
 			"fallbackUrl": "https://cdn.erfi.dev",
+			"fallbackAuth": {
+				"enabled": false,
+				"type": "aws-s3",
+				"accessKeyVar": "AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
 			"fetchOptions": {
 				"userAgent": "Cloudflare-Video-Resizer/1.0"
 			},
@@ -260,10 +276,26 @@
 					},
 					"remoteUrl": "https://videos.erfi.dev",
 					"remoteAuth": {
-						"enabled": false,
-						"type": "header"
+						"enabled": true,
+						"type": "aws-s3",
+						"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
+						"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
+						"region": "us-east-1",
+						"service": "s3"
+					},
+					"auth": {
+						"useOriginAuth": true,
+						"securityLevel": "strict"
 					},
 					"fallbackUrl": "https://cdn.erfi.dev",
+					"fallbackAuth": {
+						"enabled": false,
+						"type": "aws-s3",
+						"accessKeyVar": "AWS_ACCESS_KEY_ID",
+						"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+						"region": "us-east-1",
+						"service": "s3"
+					},
 					"fetchOptions": {
 						"userAgent": "Cloudflare-Video-Resizer/1.0"
 					},
@@ -437,10 +469,26 @@
 					},
 					"remoteUrl": "https://videos.erfi.dev",
 					"remoteAuth": {
-						"enabled": false,
-						"type": "header"
+						"enabled": true,
+						"type": "aws-s3",
+						"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
+						"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
+						"region": "us-east-1",
+						"service": "s3"
+					},
+					"auth": {
+						"useOriginAuth": true,
+						"securityLevel": "strict"
 					},
 					"fallbackUrl": "https://cdn.erfi.dev",
+					"fallbackAuth": {
+						"enabled": false,
+						"type": "aws-s3",
+						"accessKeyVar": "AWS_ACCESS_KEY_ID",
+						"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+						"region": "us-east-1",
+						"service": "s3"
+					},
 					"fetchOptions": {
 						"userAgent": "Cloudflare-Video-Resizer/1.0"
 					},
