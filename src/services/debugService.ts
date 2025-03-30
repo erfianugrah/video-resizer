@@ -85,7 +85,7 @@ export function addDebugHeaders(
     try {
       // Using a dynamic import with top-level await would be better,
       // but for now we're using synchronous approach for compatibility
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const requestContextModule = require('../utils/requestContext');
       performanceMetrics = requestContextModule.getPerformanceMetrics(requestContext);
       
