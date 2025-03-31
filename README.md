@@ -1,6 +1,6 @@
 # Video Resizer
 
-A Cloudflare Worker for performing on-the-fly video transformations by transparently rewriting requests to use Cloudflare's Media Transformation API.
+A Cloudflare Worker for performing on-the-fly video transformations by transparently rewriting requests to use Cloudflare's Media Transformation API. Now with KV caching for transformed variants!
 
 > **⚠️ Important Note on Parameter Support:** While this documentation lists many parameters, only those officially supported by Cloudflare (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented as convenience features through our worker but may not be fully supported by the underlying Cloudflare API.
 
@@ -24,7 +24,8 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - **Responsive Video** - Automatically adjusts dimensions based on client device
 - **Network Awareness** - Optimizes bitrate based on connection quality
 - **Content Negotiation** - Selects best video format based on browser support
-- **Flexible Caching** - Configurable caching using either Cloudflare Cache API or cf fetch() object
+- **Multi-Layered Caching** - Cloudflare Cache API, KV storage for variants, and cf fetch() object options
+- **KV Caching** - Store transformed variants in KV with metadata for faster serving
 - **Advanced Cache Control** - Path-specific TTLs and cache tags for granular control
 - **Debug Tooling** - Provides detailed debug headers and HTML reports
 - **Video Derivatives** - Pre-configured transformation presets for common use cases
@@ -536,7 +537,7 @@ This will add detailed debug headers to the response:
 
 ## Caching Strategy
 
-The service implements a comprehensive caching strategy using the Cloudflare Cache API with cache tags for purging.
+The service implements a multi-layered caching strategy using the Cloudflare Cache API, KV storage for transformed variants, and cache tags for purging.
 
 ### Cache Configuration
 
@@ -559,43 +560,52 @@ Default cache times are configured by response type:
 
 ### Cache Implementation
 
-The service supports two caching methods that can be configured through environment variables:
+The service supports multiple caching methods that can be configured through environment variables:
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
 flowchart TD
     A[Cache Configuration] -->|method=cf| B[CF Object Method]
     A -->|method=cacheApi| C[Cache API Method]
+    A -->|enableKVCache=true| D[KV Cache Method]
     
-    B -->|fetch with cf object| D{Cacheability Check}
-    C -->|explicit cache operations| E{Cacheability Check}
+    B -->|fetch with cf object| E{Cacheability Check}
+    C -->|explicit cache operations| F{Cacheability Check}
+    D -->|check KV storage| G{KV Cache Hit?}
     
-    D -->|true| F[cf.cacheEverything=true]
-    D -->|false| G[cf.cacheEverything=false]
+    E -->|true| H[cf.cacheEverything=true]
+    E -->|false| I[cf.cacheEverything=false]
     
-    E -->|true| H[cache.put operations]
-    E -->|false| I[skip cache.put]
+    F -->|true| J[cache.put operations]
+    F -->|false| K[skip cache.put]
     
-    F --> J[Set cf.cacheTtl & cf.cacheTags]
-    G --> K[Set cf.cacheTtl=0]
+    G -->|yes| L[Return KV cached response]
+    G -->|no| M[Transform & store in KV]
     
-    J --> L[Fetch with cf object]
-    K --> L
+    H --> N[Set cf.cacheTtl & cf.cacheTags]
+    I --> O[Set cf.cacheTtl=0]
     
-    H --> M[Apply Cache-Control headers]
-    I --> M
+    N --> P[Fetch with cf object]
+    O --> P
     
-    L --> N[Apply Cache-Control headers]
-    M --> O[Add Cache-Tag headers]
-    N --> O
+    J --> Q[Apply Cache-Control headers]
+    K --> Q
+    
+    P --> R[Apply Cache-Control headers]
+    Q --> S[Add Cache-Tag headers]
+    R --> S
+    L --> S
+    M --> S
     
     style A fill:#5D8AA8,stroke:#333,stroke-width:2px
     style B fill:#006400,stroke:#333,stroke-width:2px
     style C fill:#7B68EE,stroke:#333,stroke-width:2px
-    style D fill:#F8B229,stroke:#333,stroke-width:2px
+    style D fill:#AA5D7B,stroke:#333,stroke-width:2px
     style E fill:#F8B229,stroke:#333,stroke-width:2px
-    style L fill:#5D8AA8,stroke:#333,stroke-width:2px
-    style M fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style F fill:#F8B229,stroke:#333,stroke-width:2px
+    style G fill:#F8B229,stroke:#333,stroke-width:2px
+    style P fill:#5D8AA8,stroke:#333,stroke-width:2px
+    style Q fill:#5D8AA8,stroke:#333,stroke-width:2px
 ```
 
 1. **CF Object method** (default, recommended):
@@ -611,17 +621,72 @@ flowchart TD
    - Provides maximum control over caching behavior
    - Ideal for complex caching scenarios with custom logic that requires granular control
 
-Both methods implement:
+3. **KV Cache method** (for transformed variants):
+   - Stores transformed video variants in KV storage with metadata
+   - Enables faster serving of previously transformed videos
+   - Includes metadata about transformations for easier management
+   - Uses cache tags for coordinated purging with Cloudflare Cache
+   - Background storage with `waitUntil()` for optimal performance
+   - Configurable TTLs based on response status
+   - Ideal for frequently accessed video variants
+
+### KV Caching System
+
+The KV caching system provides an additional layer of caching specifically for storing transformed video variants:
+
+1. **Multi-Layer Cache Flow**:
+   - First checks Cloudflare Cache API for a cached response
+   - If not found, checks KV storage for a cached variant
+   - If still not found, transforms the video and stores in KV for future use
+   - Background storage with `waitUntil()` ensures response is returned quickly
+
+2. **Metadata Storage**:
+   - Each transformed video is stored with detailed metadata
+   - Includes transformation parameters (width, height, quality, etc.)
+   - Stores cache tags for coordinated purging
+   - Includes content type, size, and creation timestamps
+   - Enables detailed analytics and management of cached variants
+
+3. **Key Generation**:
+   - Keys follow a pattern of `video:<source_path>[:option=value][:option=value]...`
+   - Example: `video:videos/sample.mp4:w=640:h=360:f=mp4:q=high`
+   - Ensures each unique transformation has its own cached variant
+
+4. **TTL Management**:
+   - Different TTLs based on response status (success, redirects, errors)
+   - Configurable via environment variables
+   - Default TTL for successful responses is 24 hours
+
+For detailed documentation of the KV caching system, see [KV_CACHING.md](./docs/KV_CACHING.md).
+
+### Cache Configuration
+
+All caching methods implement:
 1. **Cache Headers**: Sets appropriate `Cache-Control` headers based on configuration
 2. **Cache Tags**: Adds `Cache-Tag` headers with video source and derivative information for granular purging
 3. **Cache Bypass**: Respects client cache control headers and debug parameters
 
-The caching method can be configured in `wrangler.jsonc` using the `CACHE_METHOD` environment variable:
+The caching methods can be configured in `wrangler.jsonc` using environment variables:
 ```jsonc
 "vars": {
   "CACHE_METHOD": "cf", // Use "cf" for CF object method or "cacheApi" for Cache API method
-  "CACHE_DEBUG": "true" // Enable debug logging for cache operations
+  "CACHE_DEBUG": "true", // Enable debug logging for cache operations
+  "CACHE_ENABLE_KV": "true", // Enable KV caching for transformed variants
+  "CACHE_KV_TTL_OK": "86400", // 24 hours for successful responses
+  "CACHE_KV_TTL_REDIRECTS": "3600", // 1 hour for redirects
+  "CACHE_KV_TTL_CLIENT_ERROR": "60", // 1 minute for client errors
+  "CACHE_KV_TTL_SERVER_ERROR": "10" // 10 seconds for server errors
 }
+```
+
+KV caching requires setting up a KV namespace binding in your wrangler.jsonc:
+```jsonc
+"kv_namespaces": [
+  {
+    "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+    "id": "your-kv-namespace-id"
+  }
+]
 ```
 
 ### Cache Purging
@@ -629,24 +694,32 @@ The caching method can be configured in `wrangler.jsonc` using the `CACHE_METHOD
 Videos can be purged by tag using the Cloudflare API:
 
 ```sh
-# Purge all videos
+# Purge all videos from both Cache API and KV
 curl -X POST "https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache" \
   -H "Authorization: Bearer {api_token}" \
   -H "Content-Type: application/json" \
   --data '{"tags":["video-resizer"]}'
 
-# Purge specific derivative
+# Purge specific derivative from both Cache API and KV
 curl -X POST "https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache" \
   -H "Authorization: Bearer {api_token}" \
   -H "Content-Type: application/json" \
-  --data '{"tags":["derivative:mobile"]}'
+  --data '{"tags":["video-derivative-mobile"]}'
 
-# Purge specific source
+# Purge specific format or quality from both Cache API and KV
+curl -X POST "https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache" \
+  -H "Authorization: Bearer {api_token}" \
+  -H "Content-Type: application/json" \
+  --data '{"tags":["video-format-mp4"]}'
+
+# Purge specific source path from both Cache API and KV
 curl -X POST "https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache" \
   -H "Authorization: Bearer {api_token}" \
   -H "Content-Type: application/json" \
   --data '{"tags":["source:videos"]}'
 ```
+
+The KV caching system uses the same cache tag structure as the Cache API, ensuring that purging operations affect both caching layers simultaneously. Cache tags are stored in the metadata of KV entries and are included in the response headers for cached variants.
 
 ## Supported Parameters
 
@@ -1476,7 +1549,16 @@ flowchart TD
 
 ## Recent Enhancements
 
-### 1. Multi-Source Storage System
+### 1. KV Caching for Transformed Variants
+- Added Cloudflare KV storage for transformed video variants
+- Implemented multi-layered caching strategy (Cloudflare Cache → KV → Origin)
+- Added metadata storage for transformation details
+- Integrated cache tag system for coordinated purging
+- Optimized storage with background processing via waitUntil
+- Added TTL configuration based on response status
+- For more details, see [KV_CACHING.md](./docs/KV_CACHING.md)
+
+### 2. Multi-Source Storage System
 - Added support for fetching videos from multiple storage sources
 - Implemented R2 bucket integration for cloud-native storage
 - Added remote URL support with authentication options

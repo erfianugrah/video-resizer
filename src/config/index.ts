@@ -74,6 +74,8 @@ function applyEnvironmentVariables(env: EnvVariables): void {
     enableCacheTags: envConfig.cache.enableTags,
     purgeOnUpdate: envConfig.cache.purgeOnUpdate,
     bypassQueryParameters: envConfig.cache.bypassParams,
+    // We'll handle KV cache configuration separately
+    // as it's not part of the CacheConfigSchema
   });
   
   // Logging configuration from environment
@@ -173,8 +175,35 @@ export {
   debugConfig
 } from './DebugConfigurationManager';
 
+// Export video path patterns getter
+export function getVideoPathPatterns() {
+  return VideoConfigurationManager.getInstance().getPathPatterns();
+}
+
 // Initialize default configuration system with environment variables
 // This will be populated from the Worker environment at runtime
 const config = initializeConfiguration();
 
 export default config;
+
+/**
+ * Get KV cache configuration from environment
+ * @returns KV cache configuration
+ */
+export function getCacheConfig(envVars?: EnvVariables) {
+  // Get environment config
+  const envConfig = getEnvironmentConfig(envVars);
+  
+  // Log the KV cache configuration details for debugging
+  logError('KV cache configuration from environment', { 
+    enableKVCache: envConfig.cache.enableKVCache,
+    ttl: envConfig.cache.kvTtl,
+    isProduction: envConfig.isProduction,
+    mode: envConfig.mode
+  });
+  
+  return {
+    enableKVCache: envConfig.cache.enableKVCache,
+    ttl: envConfig.cache.kvTtl
+  };
+}

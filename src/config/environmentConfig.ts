@@ -16,6 +16,13 @@ function logError(message: string, data?: Record<string, unknown>): void {
 }
 
 /**
+ * Debug log message - helper for config module debugging
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  console.log(`EnvironmentConfig DEBUG: ${message}`, data || {});
+}
+
+/**
  * Application environment configuration
  */
 export interface EnvironmentConfig {
@@ -41,6 +48,13 @@ export interface EnvironmentConfig {
     enableTags: boolean;
     purgeOnUpdate: boolean;
     bypassParams: string[];
+    enableKVCache: boolean;
+    kvTtl: {
+      ok: number;
+      redirects: number;
+      clientError: number;
+      serverError: number;
+    };
   };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -97,6 +111,11 @@ export interface EnvVariables {
   CACHE_ENABLE_TAGS?: string;
   CACHE_PURGE_ON_UPDATE?: string;
   CACHE_BYPASS_PARAMS?: string;
+  CACHE_ENABLE_KV?: string;
+  CACHE_KV_TTL_OK?: string;
+  CACHE_KV_TTL_REDIRECTS?: string;
+  CACHE_KV_TTL_CLIENT_ERROR?: string;
+  CACHE_KV_TTL_SERVER_ERROR?: string;
   
   // Logging Configuration
   LOG_LEVEL?: string;
@@ -155,8 +174,10 @@ export interface EnvVariables {
     fetch: (request: Request) => Promise<Response>;
   } | undefined;
   
-  // R2 bucket bindings
+  // Storage bindings
   VIDEOS_BUCKET?: R2Bucket | undefined;
+  VIDEO_TRANSFORMS_KV?: KVNamespace | undefined;
+  VIDEO_TRANSFORMATIONS_CACHE?: KVNamespace | undefined;
 }
 
 /**
@@ -167,7 +188,25 @@ export interface EnvVariables {
  */
 function parseBoolean(value?: string, defaultValue = false): boolean {
   if (value === undefined) return defaultValue;
-  return value.toLowerCase() === 'true';
+  
+  // String value 'true' (case insensitive)
+  if (value.toLowerCase() === 'true') return true;
+  
+  // String value '1' is also considered true
+  if (value === '1') return true;
+  
+  // String value 'yes' (case insensitive) also means true 
+  if (value.toLowerCase() === 'yes') return true;
+  
+  // Debug log the boolean parsing
+  const parsedValue = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+  logDebug('parseBoolean', { 
+    rawValue: value, 
+    parsedValue, 
+    defaultValue 
+  });
+  
+  return parsedValue;
 }
 
 /**
@@ -205,6 +244,15 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
   const isStaging = mode === 'staging';
   const isDevelopment = mode === 'development';
   
+  // Debug log environment variables
+  logDebug('Environment configuration parsing', { 
+    ENVIRONMENT: env.ENVIRONMENT,
+    mode,
+    isProduction,
+    CACHE_ENABLE_KV: env.CACHE_ENABLE_KV,
+    CACHE_ENABLE_KV_TYPE: typeof env.CACHE_ENABLE_KV
+  });
+  
   // Configuration object
   const config: EnvironmentConfig = {
     // General settings
@@ -234,6 +282,13 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       enableTags: parseBoolean(env.CACHE_ENABLE_TAGS, true),
       purgeOnUpdate: parseBoolean(env.CACHE_PURGE_ON_UPDATE),
       bypassParams: parseStringArray(env.CACHE_BYPASS_PARAMS, ['nocache', 'bypass']),
+      enableKVCache: parseBoolean(env.CACHE_ENABLE_KV, isProduction), // Enable KV by default in production
+      kvTtl: {
+        ok: parseNumber(env.CACHE_KV_TTL_OK, 86400), // 24 hours
+        redirects: parseNumber(env.CACHE_KV_TTL_REDIRECTS, 3600), // 1 hour
+        clientError: parseNumber(env.CACHE_KV_TTL_CLIENT_ERROR, 60), // 1 minute
+        serverError: parseNumber(env.CACHE_KV_TTL_SERVER_ERROR, 10), // 10 seconds
+      },
     },
     
     // Logging configuration

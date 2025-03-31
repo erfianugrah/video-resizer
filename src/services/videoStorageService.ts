@@ -1028,12 +1028,12 @@ export function shouldBypassCache(request: Request): boolean {
  * Interface for video options
  */
 interface VideoOptions {
-  derivative?: string;
-  format?: string;
-  width?: number;
-  height?: number;
-  quality?: string;
-  compression?: string;
+  derivative?: string | null;
+  format?: string | null;
+  width?: number | null;
+  height?: number | null;
+  quality?: string | null;
+  compression?: string | null;
   [key: string]: unknown;
 }
 

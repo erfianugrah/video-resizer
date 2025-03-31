@@ -133,7 +133,7 @@ export default {
         pathname: url.pathname,
         search: url.search
       });
-
+      
       // Define patterns to skip resizing
       const skipPatterns = [(headers: Headers) => /video-resizing/.test(headers.get('via') || '')];
 
@@ -141,7 +141,7 @@ export default {
       const shouldSkip = skipPatterns.some((pattern) => pattern(request.headers));
 
       if (!shouldSkip && runtimeConfig) {
-        return handleVideoRequest(request, runtimeConfig, env);
+        return handleVideoRequest(request, runtimeConfig, env, _ctx);
       }
 
       logInfo(context, 'Skipping video processing, passing through request');

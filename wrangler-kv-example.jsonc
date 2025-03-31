@@ -1,0 +1,82 @@
+{
+  // Example wrangler configuration with KV namespace
+  "name": "video-resizer",
+  "main": "dist/index.js",
+  "compatibility_date": "2023-12-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "env": {
+    "production": {
+      "name": "video-resizer-production",
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+          "id": "8e790768576242cc98fa3e4aa327f815"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "VERSION": "1.0.0",
+        "CACHE_ENABLE_KV": "true",
+        "CACHE_KV_TTL_OK": "86400",        // 24 hours for successful responses
+        "CACHE_KV_TTL_REDIRECTS": "3600",  // 1 hour for redirects
+        "CACHE_KV_TTL_CLIENT_ERROR": "60", // 1 minute for client errors
+        "CACHE_KV_TTL_SERVER_ERROR": "10"  // 10 seconds for server errors
+      }
+    },
+    "staging": {
+      "name": "video-resizer-staging",
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+          "id": "8e790768576242cc98fa3e4aa327f815"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "VERSION": "1.0.0",
+        "CACHE_ENABLE_KV": "true",
+        "CACHE_KV_TTL_OK": "3600",         // 1 hour for successful responses in staging
+        "CACHE_KV_TTL_REDIRECTS": "1800",  // 30 minutes for redirects
+        "CACHE_KV_TTL_CLIENT_ERROR": "60", // 1 minute for client errors
+        "CACHE_KV_TTL_SERVER_ERROR": "10"  // 10 seconds for server errors
+      }
+    },
+    "development": {
+      "name": "video-resizer-dev",
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+          "id": "8e790768576242cc98fa3e4aa327f815",
+          "preview_id": "8e790768576242cc98fa3e4aa327f815"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "development",
+        "VERSION": "1.0.0",
+        "CACHE_ENABLE_KV": "true",
+        "CACHE_KV_TTL_OK": "300",          // 5 minutes for successful responses in dev
+        "CACHE_KV_TTL_REDIRECTS": "300",   // 5 minutes for redirects
+        "CACHE_KV_TTL_CLIENT_ERROR": "60", // 1 minute for client errors
+        "CACHE_KV_TTL_SERVER_ERROR": "10"  // 10 seconds for server errors
+      }
+    }
+  },
+  
+  // Common configuration for all environments
+  "build": {
+    "command": "npm run build"
+  },
+  
+  // Setup commands for KV namespaces
+  // To create the KV namespaces, run:
+  // 1. wrangler kv:namespace create "VIDEO_TRANSFORMATIONS_CACHE" --env development
+  // 2. wrangler kv:namespace create "VIDEO_TRANSFORMATIONS_CACHE" --env staging
+  // 3. wrangler kv:namespace create "VIDEO_TRANSFORMATIONS_CACHE" --env production
+  //
+  // To create a local preview namespace, run:
+  // wrangler kv:namespace create "VIDEO_TRANSFORMATIONS_CACHE" --preview --env development
+  //
+  // Remember to update the IDs in this config with the IDs from the commands above
+}

@@ -370,3 +370,15 @@ export function getPerformanceMetrics(context: RequestContext) {
 export function getBreadcrumbs(context: RequestContext): Breadcrumb[] {
   return context.breadcrumbs;
 }
+
+/**
+ * Get the current request context from thread local storage
+ * This is a convenience function for the KV caching components
+ * @returns The current request context or undefined if not available
+ */
+export function getCurrentContext(): RequestContext | undefined {
+  // For now we're returning undefined as this is just a stub to fix compilation errors
+  // In the actual implementation, we would need to access the thread local storage
+  // or use a context store to retrieve the current request context
+  return undefined;
+}

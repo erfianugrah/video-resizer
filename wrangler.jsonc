@@ -213,11 +213,16 @@
 				"directory": "./public",
 				"binding": "ASSETS"
 			},
+			"kv_namespaces": [
+				{
+					"binding": "VIDEO_TRANSFORMATIONS_CACHE",
+					"id": "8e790768576242cc98fa3e4aa327f815"
+				}
+			],
 			"r2_buckets": [
 				{
 					"binding": "VIDEOS_BUCKET",
 					"bucket_name": "videos",
-					"preview_bucket_name": "videos-dev"
 				}
 			],
 			"vars": {
@@ -225,6 +230,11 @@
 				"DEBUG_ENABLED": "true",
 				"DEBUG_VERBOSE": "true",
 				"DEBUG_INCLUDE_HEADERS": "true",
+				"CACHE_ENABLE_KV": "true",
+				"CACHE_KV_TTL_OK": "86400", // 24 hours for successful responses
+				"CACHE_KV_TTL_REDIRECTS": "3600", // 1 hour for redirects
+				"CACHE_KV_TTL_CLIENT_ERROR": "60", // 1 minute for client errors
+				"CACHE_KV_TTL_SERVER_ERROR": "10", // 10 seconds for server errors
 				"CACHE_METHOD": "cf",
 				"CACHE_DEBUG": "true",
 				"LOGGING_CONFIG": {
@@ -410,7 +420,6 @@
 				{
 					"binding": "VIDEOS_BUCKET",
 					"bucket_name": "videos",
-					"preview_bucket_name": "videos-dev"
 				}
 			],
 			"vars": {

@@ -7,9 +7,11 @@ import { transformVideo } from '../services/videoTransformationService';
 import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import { videoConfig } from '../config/videoConfig';
 import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
+import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
 import { createRequestContext, addBreadcrumb } from '../utils/requestContext';
 import { createLogger, info, debug, error } from '../utils/pinoLogger';
 import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
+import { TransformOptions } from '../utils/kvCacheUtils';
 import { ResponseBuilder } from '../utils/responseBuilder';
 
 /**
@@ -21,11 +23,26 @@ import { ResponseBuilder } from '../utils/responseBuilder';
 export async function handleVideoRequest(
   request: Request, 
   config: EnvironmentConfig, 
-  env?: EnvVariables
+  env?: EnvVariables,
+  ctx?: ExecutionContext
 ): Promise<Response> {
+  // Pass execution context to environment for waitUntil usage in caching
+  if (env && ctx) {
+    (env as unknown as EnvWithExecutionContext).executionCtx = ctx;
+  }
   // Create request context and logger
   const context = createRequestContext(request);
   const logger = createLogger(context);
+  
+  // Log environment variables received for debugging
+  if (env) {
+    debug(context, logger, 'VideoHandler', 'Environment variables received', {
+      CACHE_ENABLE_KV: env.CACHE_ENABLE_KV || 'not set',
+      VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
+      VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV,
+      ENVIRONMENT: env.ENVIRONMENT || 'not set'
+    });
+  }
   
   // Import performance tracking functions
   const { startTimedOperation, endTimedOperation } = await import('../utils/requestContext');
@@ -56,9 +73,10 @@ export async function handleVideoRequest(
       return fetch(request);
     }
     
-    // Import the cache management service and cache configuration
+    // Import the cache services
     const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
     const { CacheConfigurationManager } = await import('../config');
+    const { getFromKVCache, storeInKVCache } = await import('../utils/kvCacheUtils');
 
     // Try to get the response from cache first
     addBreadcrumb(context, 'Cache', 'Checking cache', {
@@ -69,18 +87,73 @@ export async function handleVideoRequest(
     
     // Time the cache lookup operation
     startTimedOperation(context, 'cache-lookup', 'Cache');
-    const cachedResponse = await getCachedResponse(request);
-    endTimedOperation(context, 'cache-lookup');
-    if (cachedResponse) {
-      info(context, logger, 'VideoHandler', 'Serving from cache', {
-        url: url.toString(),
-        cacheControl: cachedResponse.headers.get('Cache-Control'),
+    
+    // Check Cloudflare Cache API first
+    // Skip this check if debug mode is enabled but still check KV
+    const skipCfCache = context.debugEnabled || url.searchParams.has('debug');
+    let cachedResponse = null;
+    
+    if (!skipCfCache) {
+      cachedResponse = await getCachedResponse(request);
+      if (cachedResponse) {
+        info(context, logger, 'VideoHandler', 'Serving from CF cache', {
+          url: url.toString(),
+          cacheControl: cachedResponse.headers.get('Cache-Control'),
+        });
+        
+        endTimedOperation(context, 'cache-lookup');
+        
+        // Use ResponseBuilder for consistent response handling including range requests
+        const responseBuilder = new ResponseBuilder(cachedResponse, context);
+        return await responseBuilder.build();
+      }
+    } else {
+      debug(context, logger, 'VideoHandler', 'Skipping CF cache due to debug mode', {
+        debugEnabled: context.debugEnabled,
+        hasDebugParam: url.searchParams.has('debug')
+      });
+    }
+    
+    // If we get here, Cloudflare cache missed, so check KV cache
+    if (env) {
+      // Get the path for KV lookup
+      const sourcePath = url.pathname;
+      
+      // Get video options first to use as cache key
+      const videoOptions = determineVideoOptions(request, url.searchParams, path);
+        
+      addBreadcrumb(context, 'Cache', 'Checking KV cache', {
+        url: request.url,
+        path: sourcePath
       });
       
-      // Use ResponseBuilder for consistent response handling including range requests
-      const responseBuilder = new ResponseBuilder(cachedResponse, context);
-      return await responseBuilder.build();
+      // Use type assertion to fix interface compatibility issues
+      const kvResponse = await getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions);
+      
+      if (kvResponse) {
+        info(context, logger, 'VideoHandler', 'Serving from KV cache', {
+          url: url.toString(),
+          path: sourcePath,
+        });
+        
+        addBreadcrumb(context, 'Cache', 'KV cache hit', {
+          path: sourcePath
+        });
+        
+        endTimedOperation(context, 'cache-lookup');
+        
+        // Use ResponseBuilder for consistent response handling
+        const responseBuilder = new ResponseBuilder(kvResponse, context);
+        return await responseBuilder.build();
+      }
+      
+      debug(context, logger, 'VideoHandler', 'KV cache miss', {
+        path: sourcePath,
+        options: videoOptions
+      });
     }
+    
+    endTimedOperation(context, 'cache-lookup');
 
     // Get path patterns from config or use defaults
     const pathPatterns = config.pathPatterns || videoConfig.pathPatterns;
@@ -153,14 +226,76 @@ export async function handleVideoRequest(
       
       // Time the cache storage operation
       startTimedOperation(context, 'cache-storage', 'Cache');
+      
+      // Store in Cloudflare Cache API (edge cache)
       cacheResponse(request, response.clone())
-        .then(() => endTimedOperation(context, 'cache-storage'))
+        .then(() => {
+          debug(context, logger, 'VideoHandler', 'Stored in CF cache');
+        })
         .catch(err => {
-          endTimedOperation(context, 'cache-storage');
-          error(context, logger, 'VideoHandler', 'Error caching response', {
+          error(context, logger, 'VideoHandler', 'Error caching in CF cache', {
             error: err instanceof Error ? err.message : 'Unknown error',
           });
         });
+      
+      // Also store in KV cache if environment is available
+      if (env && videoOptions) {
+        const sourcePath = url.pathname;
+        const responseClone = response.clone();
+        
+        // Use waitUntil if available to store in KV without blocking response
+        const envWithCtx = env as unknown as EnvWithExecutionContext;
+        if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
+          envWithCtx.executionCtx.waitUntil(
+            storeInKVCache(env, sourcePath, responseClone, videoOptions as unknown as TransformOptions)
+              .then(success => {
+                if (success) {
+                  debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
+                    path: sourcePath
+                  });
+                } else {
+                  debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
+                    path: sourcePath
+                  });
+                }
+              })
+              .catch(err => {
+                error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
+                  error: err instanceof Error ? err.message : 'Unknown error',
+                  path: sourcePath
+                });
+              })
+              .finally(() => {
+                endTimedOperation(context, 'cache-storage');
+              })
+          );
+        } else {
+          // No waitUntil available, try to store directly
+          storeInKVCache(env, sourcePath, responseClone, videoOptions as unknown as TransformOptions)
+            .then(success => {
+              if (success) {
+                debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
+                  path: sourcePath
+                });
+              } else {
+                debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
+                  path: sourcePath
+                });
+              }
+            })
+            .catch(err => {
+              error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
+                error: err instanceof Error ? err.message : 'Unknown error',
+                path: sourcePath
+              });
+            })
+            .finally(() => {
+              endTimedOperation(context, 'cache-storage');
+            });
+        }
+      } else {
+        endTimedOperation(context, 'cache-storage');
+      }
     }
 
     // Use ResponseBuilder for consistent response handling including range requests

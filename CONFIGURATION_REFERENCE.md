@@ -170,6 +170,31 @@ TTL (Time To Live) settings based on response status:
 | `clientError` | number | 60 | TTL for client errors (400-499) |
 | `serverError` | number | 10 | TTL for server errors (500-599) |
 
+### KV Cache Configuration
+
+The cache system also supports storing transformed video variants in Cloudflare KV for faster retrieval:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enableKVCache` | boolean | false | Enable KV storage for transformed variants |
+| `kvTtl.ok` | number | 86400 | TTL for 2xx responses in KV storage |
+| `kvTtl.redirects` | number | 3600 | TTL for 3xx responses in KV storage |
+| `kvTtl.clientError` | number | 60 | TTL for 4xx responses in KV storage |
+| `kvTtl.serverError` | number | 10 | TTL for 5xx responses in KV storage |
+
+The KV cache system requires a KV namespace binding:
+
+```jsonc
+"kv_namespaces": [
+  {
+    "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+    "id": "your-kv-namespace-id"
+  }
+]
+```
+
+For detailed documentation on the KV caching system, see [docs/KV_CACHING.md](./docs/KV_CACHING.md).
+
 ### Default Profiles
 
 | Profile | Description | TTL (OK) |
@@ -271,6 +296,11 @@ Environment variables can be used to override configuration values at runtime. T
 |----------|------|-------------|---------|
 | `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' | 'cf' |
 | `CACHE_DEBUG` | boolean | Enable cache debugging | false |
+| `CACHE_ENABLE_KV` | boolean | Enable KV storage for transformed variants | false |
+| `CACHE_KV_TTL_OK` | number | TTL for 2xx responses in seconds | 86400 |
+| `CACHE_KV_TTL_REDIRECTS` | number | TTL for 3xx responses in seconds | 3600 |
+| `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for 4xx responses in seconds | 60 |
+| `CACHE_KV_TTL_SERVER_ERROR` | number | TTL for 5xx responses in seconds | 10 |
 
 ### Logging Configuration
 
@@ -294,6 +324,8 @@ Environment variables can be used to override configuration values at runtime. T
 |----------|------|-------------|
 | `STORAGE_CONFIG` | JSON | Configuration for multiple storage backends |
 | `VIDEOS_BUCKET` | binding | R2 bucket binding for video storage |
+| `VIDEO_TRANSFORMATIONS_CACHE` | binding | KV namespace binding for transformed video variants |
+| `VIDEO_TRANSFORMS_KV` | binding | Alternative KV namespace binding name |
 | `AWS_ACCESS_KEY_ID` | string | AWS access key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
 | `AWS_SECRET_ACCESS_KEY` | string | AWS secret key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
 
