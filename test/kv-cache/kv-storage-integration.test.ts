@@ -152,7 +152,12 @@ describe('KV Caching Integration', () => {
     };
     
     // Simulate the caching orchestrator flow
-    async function withCaching(request: Request, env: any, handler: Function, options: any) {
+    async function withCaching(
+      request: Request, 
+      env: any, 
+      handler: (req: Request, env: any) => Promise<Response>, 
+      options: any
+    ) {
       // Step 1: Check Cloudflare Cache API
       const cachedResponse = await getCachedResponse(request);
       if (cachedResponse) {

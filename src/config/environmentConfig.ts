@@ -6,20 +6,39 @@
  */
 import { PathPattern } from '../utils/pathUtils';
 
+// Import from our own logger module
+import { info as pinoInfo, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { createLogger } from '../utils/pinoLogger';
+
 /**
- * Log an error message - simplified helper for config module
- * Direct console.error is appropriate here as this runs during initialization
- * before the logging system is available
+ * Log an error message - helper for config module
+ * Falls back to console.error during initialization before logging system is available
  */
 function logError(message: string, data?: Record<string, unknown>): void {
-  console.error(`EnvironmentConfig: ${message}`, data || {});
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, 'EnvironmentConfig', message, data);
+  } else {
+    // Direct console.error is appropriate only during initialization
+    console.error(`EnvironmentConfig: ${message}`, data || {});
+  }
 }
 
 /**
  * Debug log message - helper for config module debugging
+ * Falls back to console.log during initialization before logging system is available
  */
 function logDebug(message: string, data?: Record<string, unknown>): void {
-  console.log(`EnvironmentConfig DEBUG: ${message}`, data || {});
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'EnvironmentConfig', message, data);
+  } else {
+    // Direct console.log is appropriate only during initialization
+    console.log(`EnvironmentConfig DEBUG: ${message}`, data || {});
+  }
 }
 
 /**
