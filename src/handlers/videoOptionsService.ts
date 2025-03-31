@@ -167,16 +167,21 @@ export function determineVideoOptions(
     }
   });
 
-  // Apply responsive sizing if width/height aren't explicitly set or auto quality is requested
-  if (autoQuality || (!explicitWidth && !explicitHeight)) {
+  // Check if dimensions are already set by derivative
+  const hasDerivativeDimensions = options.derivative && 
+                               (typeof options.width === 'number' || 
+                                typeof options.height === 'number');
+  
+  // Apply responsive sizing if no explicit dimensions (URL or derivative)
+  if (autoQuality || (!explicitWidth && !explicitHeight && !hasDerivativeDimensions)) {
     const responsiveSize = getResponsiveVideoSize(request, explicitWidth, explicitHeight);
     
     // Only override values that weren't explicitly set
-    if (!explicitWidth) {
+    if (!explicitWidth && !hasDerivativeDimensions) {
       options.width = responsiveSize.width;
     }
     
-    if (!explicitHeight) {
+    if (!explicitHeight && !hasDerivativeDimensions) {
       options.height = responsiveSize.height;
     }
     
@@ -192,20 +197,28 @@ export function determineVideoOptions(
         clientHints: responsiveSize.usingClientHints,
         deviceType: responsiveSize.deviceType,
         viewportWidth: responsiveSize.viewportWidth,
-        explicitDimensions: !!(explicitWidth || explicitHeight)
+        explicitDimensions: !!(explicitWidth || explicitHeight),
+        derivativeDimensions: hasDerivativeDimensions,
+        derivative: options.derivative
       });
     }
   }
   // Otherwise set the source based on how options were generated
   else {
-    options.source = derivative ? 'derivative' : 'params';
+    if (hasDerivativeDimensions) {
+      options.source = 'derivative';
+    } else {
+      options.source = derivative ? 'derivative' : 'params';
+    }
     
     // Add breadcrumb for explicit dimensions
     if (requestContext) {
       addBreadcrumb(requestContext, 'Client', 'Using explicit dimensions', {
         width: options.width,
         height: options.height,
-        source: options.source
+        source: options.source,
+        hasDerivativeDimensions: hasDerivativeDimensions,
+        derivative: options.derivative
       });
     }
   }
