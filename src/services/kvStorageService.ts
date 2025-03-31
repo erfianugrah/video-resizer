@@ -85,7 +85,7 @@ export function generateKVKey(
   // Create a base key from the path
   let key = `video:${normalizedPath}`;
   
-  // Add transformation parameters to the key
+  // Add transformation parameters to the key - always use = as delimiter for consistency
   if (options.derivative) {
     key += `:derivative=${options.derivative}`;
   } else {
@@ -132,8 +132,17 @@ export async function storeTransformedVideo(
     // Clone the response to avoid consuming it
     const responseClone = response.clone();
     
-    // Generate a key for this transformed variant
+    // Generate a key for this transformed variant using consistent format with = delimiter
     const key = generateKVKey(sourcePath, options);
+    
+    // Log key information for debugging
+    logDebug('Generated KV cache key', {
+      key,
+      sourcePath,
+      derivative: options.derivative,
+      width: options.width,
+      height: options.height
+    });
     
     // Create metadata object
     const metadata: TransformationMetadata = {
@@ -233,8 +242,17 @@ export async function getTransformedVideo(
   }
 ): Promise<{ response: Response; metadata: TransformationMetadata } | null> {
   try {
-    // Generate a key for this transformed variant
+    // Generate a key for this transformed variant using consistent format with = delimiter
     const key = generateKVKey(sourcePath, options);
+    
+    // Log lookup key for debugging
+    logDebug('Looking up KV cache with key', {
+      key,
+      sourcePath,
+      derivative: options.derivative,
+      width: options.width,
+      height: options.height
+    });
     
     // Check if the key exists in KV
     const { value, metadata } = await namespace.getWithMetadata<TransformationMetadata>(key, 'arrayBuffer');
