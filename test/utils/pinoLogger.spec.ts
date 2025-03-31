@@ -16,9 +16,9 @@ describe('PinoLogger', () => {
     expect(typeof logger.error).toBe('function');
   });
   
-  // Skip this test as it's checking debug level behavior that requires 
-  // more complex mocking of the pino logger internal behavior
-  it.skip('should add breadcrumb and log when using debug', () => {
+  // This test checks that debug level properly adds breadcrumbs and calls the debug method
+  // when debug mode is enabled
+  it('should add breadcrumb and log when using debug', () => {
     const mockRequest = new Request('https://example.com/video.mp4?debug=true');
     const context = createRequestContext(mockRequest);
     
@@ -27,14 +27,28 @@ describe('PinoLogger', () => {
     
     const logger = pinoLoggerModule.createLogger(context);
     
-    // Use debug method
-    pinoLoggerModule.debug(context, logger, 'TestComponent', 'Debug message', { key: 'value' });
+    // Create mock logger with debugSpy
+    const debugSpy = vi.fn();
+    const mockedLogger = {
+      debug: debugSpy,
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      level: 'debug'  // Important: set log level to debug to allow debug logs
+    };
     
-    // Just check that breadcrumb was added
+    // Use debug method with our mocked logger
+    pinoLoggerModule.debug(context, mockedLogger, 'TestComponent', 'Debug message', { key: 'value' });
+    
+    // Check that breadcrumb was added
     expect(context.breadcrumbs.length).toBe(1);
     expect(context.breadcrumbs[0].category).toBe('TestComponent');
     expect(context.breadcrumbs[0].message).toBe('Debug message');
     expect(context.breadcrumbs[0].data).toEqual({ key: 'value' });
+    
+    // Check that the debug method was called on our mocked logger
+    expect(debugSpy).toHaveBeenCalled();
   });
   
   it('should not log debug messages when debug mode is disabled', () => {

@@ -46,6 +46,20 @@ export function createMockConfig(options?: Partial<EnvironmentConfig>): Environm
       verbose: true,
       includeHeaders: true,
     },
+    cache: {
+      method: 'cf',
+      debug: false,
+      defaultTtl: 86400,
+      cacheEverything: true,
+      enableTags: true,
+      enableKVCache: true,
+      kvTtl: {
+        ok: 86400,
+        redirects: 3600,
+        clientError: 60,
+        serverError: 10
+      }
+    },
     pathPatterns: createMockPathPatterns(),
     ...options
   };

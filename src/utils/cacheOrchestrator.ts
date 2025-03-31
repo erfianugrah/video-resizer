@@ -45,12 +45,12 @@ export async function withCaching(
     }
   };
 
-  // Skip CF cache for non-GET requests or debug mode, but still use KV
+  // Skip CF cache for non-GET requests or debug mode, also skip KV for these requests
   const url = new URL(request.url);
-  const skipCfCache = request.method !== 'GET' || url.searchParams.has('debug');
+  const skipCache = request.method !== 'GET' || url.searchParams.has('debug');
   
-  if (skipCfCache) {
-    logDebug('Bypassing CF edge cache', { 
+  if (skipCache) {
+    logDebug('Bypassing cache', { 
       method: request.method, 
       hasDebug: url.searchParams.has('debug')
     });
@@ -59,7 +59,7 @@ export async function withCaching(
   try {
     // Step 1: Check Cloudflare Cache API first (if not skipping)
     let cachedResponse = null;
-    if (!skipCfCache) {
+    if (!skipCache) {
       cachedResponse = await getCachedResponse(request);
       if (cachedResponse) {
         logDebug('Cache API hit');
@@ -76,8 +76,8 @@ export async function withCaching(
       logDebug('Skipped CF cache check due to request parameters');
     }
     
-    // Step 2: Check KV cache if options provided
-    if (options && env) {
+    // Step 2: Check KV cache if options provided and not skipping cache
+    if (options && env && !skipCache) {
       const sourcePath = url.pathname;
       const kvResponse = await getFromKVCache(env, sourcePath, options);
       
@@ -98,8 +98,8 @@ export async function withCaching(
     logDebug('All caches missed, executing handler');
     const response = await handler();
     
-    // Step 4: Store result in KV if it was successful
-    if (options && env && response.ok && request.method === 'GET') {
+    // Step 4: Store result in KV if it was successful and not skipping cache
+    if (options && env && response.ok && request.method === 'GET' && !skipCache) {
       const sourcePath = url.pathname;
       const responseClone = response.clone();
       
@@ -108,6 +108,7 @@ export async function withCaching(
       
       if (ctx && typeof ctx.waitUntil === 'function') {
         // Store in background with waitUntil
+        logDebug('Storing in KV using waitUntil', { sourcePath });
         ctx.waitUntil(
           storeInKVCache(env, sourcePath, responseClone, options)
             .then((success: boolean) => {
@@ -115,9 +116,15 @@ export async function withCaching(
                 sourcePath
               });
             })
+            .catch((err) => {
+              logDebug('Error storing in KV cache', {
+                error: err instanceof Error ? err.message : String(err)
+              });
+            })
         );
       } else {
         // No execution context, try to store directly
+        logDebug('No execution context, storing directly', { sourcePath });
         try {
           await storeInKVCache(env, sourcePath, responseClone, options);
         } catch (err) {
@@ -126,6 +133,11 @@ export async function withCaching(
           });
         }
       }
+    } else if (options && env && response.ok && request.method === 'GET') {
+      logDebug('Skipped KV storage due to request parameters', {
+        method: request.method,
+        hasDebug: url.searchParams.has('debug')
+      });
     }
     
     return response;

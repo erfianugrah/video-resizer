@@ -2,8 +2,8 @@
 import { vi, beforeEach } from 'vitest';
 
 // Mock environment configuration
-vi.mock('../../src/config', () => ({
-  getCacheConfig: vi.fn(() => ({
+vi.mock('../../src/config', () => {
+  const cacheConfig = {
     enableKVCache: true,
     ttl: {
       ok: 86400,
@@ -11,24 +11,42 @@ vi.mock('../../src/config', () => ({
       clientError: 60,
       serverError: 10
     }
-  })),
-  getVideoPathPatterns: vi.fn(() => [
-    {
-      pattern: '/videos/:path',
-      ttl: 86400,
-      cacheTag: 'video'
-    }
-  ]),
-  CacheConfigurationManager: {
-    getInstance: vi.fn(() => ({
-      getConfig: vi.fn(() => ({ 
-        defaultMaxAge: 86400,
-        method: 'cf',
-        enableCacheTags: true
+  };
+
+  return {
+    getCacheConfig: vi.fn((env) => {
+      // Log the environment variables when called
+      console.debug('Mock getCacheConfig called with env:', env);
+      
+      // Return based on environment
+      if (env && env.CACHE_ENABLE_KV === "true") {
+        return {
+          ...cacheConfig,
+          enableKVCache: true
+        };
+      }
+      
+      return cacheConfig;
+    }),
+    getVideoPathPatterns: vi.fn(() => [
+      {
+        pattern: '/videos/:path',
+        ttl: 86400,
+        cacheTag: 'video'
+      }
+    ]),
+    CacheConfigurationManager: {
+      getInstance: vi.fn(() => ({
+        getConfig: vi.fn(() => ({ 
+          defaultMaxAge: 86400,
+          method: 'cf',
+          enableCacheTags: true,
+          enableKVCache: true
+        }))
       }))
-    }))
-  }
-}));
+    }
+  };
+});
 
 // Mock Pino logger
 vi.mock('../../src/utils/pinoLogger', () => {

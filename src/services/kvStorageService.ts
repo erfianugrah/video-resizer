@@ -97,8 +97,8 @@ export function generateKVKey(
     if (options.compression) key += `:c=${options.compression}`;
   }
   
-  // Ensure the key is valid by replacing invalid characters
-  return key.replace(/[^a-zA-Z0-9:._-]/g, '-');
+  // Only replace spaces and other truly invalid characters, preserving slashes and equals signs
+  return key.replace(/[^\w:/=.*-]/g, '-');
 }
 
 /**
@@ -329,7 +329,8 @@ export async function listVariants(
     const normalizedPath = sourcePath.replace(/^\/+/, '');
     
     // Create a prefix for the key
-    const prefix = `video:${normalizedPath}:`;
+    // Note: We need a base key without the trailing colon to match the exact path
+    const prefix = `video:${normalizedPath}`;
     
     // List all keys with this prefix
     const keys = await namespace.list({ prefix });
@@ -338,10 +339,14 @@ export async function listVariants(
     const variants: { key: string; metadata: TransformationMetadata }[] = [];
     
     for (const key of keys.keys) {
-      const { metadata } = await namespace.getWithMetadata<TransformationMetadata>(key.name);
-      
-      if (metadata) {
-        variants.push({ key: key.name, metadata });
+      // Only process keys that are exact variants of this source path
+      // They should either be exactly the base key or have a parameter section
+      if (key.name === prefix || key.name.startsWith(`${prefix}:`)) {
+        const { metadata } = await namespace.getWithMetadata<TransformationMetadata>(key.name);
+        
+        if (metadata) {
+          variants.push({ key: key.name, metadata });
+        }
       }
     }
     
