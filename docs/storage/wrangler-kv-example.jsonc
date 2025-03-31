@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "video-resizer",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "account_id": "your-account-id",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+      "id": "your-kv-namespace-id",
+      "preview_id": "your-preview-kv-namespace-id"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "DEBUG_ENABLED": "true",
+    "DEBUG_VERBOSE": "true",
+    "DEBUG_INCLUDE_HEADERS": "true",
+    "CACHE_METHOD": "cf",
+    "CACHE_DEBUG": "true",
+    "CACHE_ENABLE_KV": "true",
+    "CACHE_KV_TTL_OK": "86400",
+    "CACHE_KV_TTL_REDIRECTS": "3600",
+    "CACHE_KV_TTL_CLIENT_ERROR": "60",
+    "CACHE_KV_TTL_SERVER_ERROR": "10",
+    "PATH_PATTERNS": [
+      {
+        "name": "videos",
+        "matcher": "^/videos/",
+        "processPath": true,
+        "baseUrl": null,
+        "originUrl": null,
+        "ttl": {
+          "ok": 3600,
+          "redirects": 360,
+          "clientError": 60,
+          "serverError": 10
+        },
+        "useTtlByStatus": true,
+        "captureGroups": [
+          "videoId"
+        ],
+        "quality": "high"
+      },
+      {
+        "name": "popular",
+        "matcher": "^/popular/(.*\\.mp4)",
+        "processPath": true,
+        "baseUrl": null,
+        "originUrl": "https://videos.example.com",
+        "ttl": {
+          "ok": 86400,
+          "redirects": 3600,
+          "clientError": 60,
+          "serverError": 10
+        },
+        "useTtlByStatus": true,
+        "captureGroups": [
+          "videoId"
+        ]
+      },
+      {
+        "name": "shorts",
+        "matcher": "^/shorts/(.*\\.mp4)",
+        "processPath": true,
+        "baseUrl": null,
+        "originUrl": "https://videos.example.com",
+        "ttl": {
+          "ok": 43200,
+          "redirects": 3600,
+          "clientError": 60,
+          "serverError": 10
+        },
+        "useTtlByStatus": true,
+        "captureGroups": [
+          "videoId"
+        ],
+        "quality": "medium"
+      }
+    ]
+  },
+  "env": {
+    "production": {
+      "vars": {
+        "ENVIRONMENT": "production",
+        "DEBUG_ENABLED": "false",
+        "DEBUG_VERBOSE": "false",
+        "DEBUG_INCLUDE_HEADERS": "false",
+        "CACHE_ENABLE_KV": "true"
+      }
+    },
+    "staging": {
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "DEBUG_ENABLED": "true",
+        "DEBUG_VERBOSE": "true",
+        "DEBUG_INCLUDE_HEADERS": "true",
+        "CACHE_ENABLE_KV": "true"
+      }
+    }
+  }
+}

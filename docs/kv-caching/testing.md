@@ -1,4 +1,4 @@
-# KV Caching System Testing Guide
+# KV Caching Testing Guide
 
 This guide will help you verify that the KV caching system is working correctly in your video-resizer deployment.
 
@@ -31,41 +31,23 @@ First, ensure your `wrangler.jsonc` has the correct KV configuration:
    "CACHE_KV_TTL_SERVER_ERROR": "10"
    ```
 
-## Operational Notes
+## Debugging and Bypassing Cache
 
-The KV caching system is designed to be configuration-controlled:
+You can bypass the KV cache in various ways:
 
-1. **Completely Separate from Edge Cache**: KV caching operates independently from client cache headers, Cloudflare edge cache, and debug mode settings.
-
-2. **Configuration Toggle**: The only way to disable KV caching is through `CACHE_ENABLE_KV` setting in wrangler.jsonc.
-
-3. **Diagnostics API**: A diagnostic endpoint at `/api/kv-diagnostics` is available for monitoring cache operations.
+1. Add `?debug=true` to the URL to bypass all caching layers
+2. Add `?no-kv-cache=true` to bypass only the KV cache layer
+3. Set the `debugEnabled` flag in the request context
 
 ## KV Diagnostics API
 
 The system includes a KV diagnostics API endpoint that lists all entries in the KV namespace:
 
 ```
-https://cdn.example.com/api/kv-diagnostics
+https://your-domain.com/api/kv-diagnostics
 ```
 
 This endpoint is only accessible when debug mode is enabled.
-
-## Troubleshooting KV Caching Issues
-
-If KV caching isn't working as expected, check:
-
-1. **KV Namespace Binding**:
-   - Ensure the KV namespace ID in wrangler.jsonc is correct
-   - Verify the binding name matches what's expected in the code (VIDEO_TRANSFORMATIONS_CACHE or VIDEO_TRANSFORMS_KV)
-
-2. **Config Settings**:
-   - Check that CACHE_ENABLE_KV is set to "true"
-   - Verify TTL settings are appropriate
-
-3. **Cache Key Generation**:
-   - The system generates keys based on source path and transformation options
-   - If options change between requests, different cache keys are generated
 
 ## Common Log Messages
 
@@ -76,8 +58,28 @@ Look for these log messages to understand KV caching behavior:
 - `KV cache hit` - Successfully retrieved content from KV cache
 - `KV cache miss` - Content not found in KV cache
 - `Attempting to store in KV cache` - Storing content in KV cache
-- `Successfully stored in KV cache` - Content stored successfully in KV cache
-- `Error storing in KV cache` - Error occurred while storing in KV cache
+- `Successfully stored in KV cache` - Content stored successfully
+- `Error storing in KV cache` - Error occurred while storing
+
+## Verification Tests
+
+To confirm your KV caching is working correctly:
+
+1. Make an initial request to a video with specific transformation parameters:
+   ```
+   https://your-domain.com/videos/sample.mp4?width=640&height=360
+   ```
+
+2. Check the logs for "KV cache miss" and "Storing in KV cache" messages
+
+3. Make the same request again and look for "KV cache hit" message
+
+4. Access the KV diagnostics API to see the stored entry:
+   ```
+   https://your-domain.com/api/kv-diagnostics?debug=true
+   ```
+
+5. Verify that the response times improve for the second request
 
 ## Analyzing KV Storage Performance
 
@@ -90,13 +92,22 @@ The KV diagnostics API provides information to analyze KV performance:
 
 This information can help tune TTL settings and understand memory usage patterns.
 
-## Next Steps
+## Troubleshooting
 
-If KV caching is working correctly, you should see:
+If KV caching isn't working as expected, check:
 
-1. First request to a video shows cache miss in logs
-2. Subsequent requests show cache hits from KV
-3. KV diagnostics API shows stored entries
-4. Response times improve for cached videos
+1. **KV Namespace Binding**:
+   - Ensure the KV namespace ID in wrangler.jsonc is correct
+   - Verify the binding name matches what's expected in the code
 
-If the system is correctly storing and retrieving from KV, consider adjusting TTL settings based on your traffic patterns to optimize performance and KV storage costs.
+2. **Config Settings**:
+   - Check that CACHE_ENABLE_KV is set to "true"
+   - Verify TTL settings are appropriate
+
+3. **Cache Key Generation**:
+   - The system generates keys based on source path and transformation options
+   - If options change between requests, different cache keys are generated
+
+4. **Size Limitations**:
+   - KV has a 25MB per-key size limitation
+   - Large videos may exceed this limit and won't be cached
