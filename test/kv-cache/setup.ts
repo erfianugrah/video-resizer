@@ -18,7 +18,16 @@ vi.mock('../../src/config', () => ({
       ttl: 86400,
       cacheTag: 'video'
     }
-  ])
+  ]),
+  CacheConfigurationManager: {
+    getInstance: vi.fn(() => ({
+      getConfig: vi.fn(() => ({ 
+        defaultMaxAge: 86400,
+        method: 'cf',
+        enableCacheTags: true
+      }))
+    }))
+  }
 }));
 
 // Mock Pino logger

@@ -155,7 +155,7 @@ describe('KV Caching Integration', () => {
     async function withCaching(
       request: Request, 
       env: any, 
-      handler: (req: Request, env: any) => Promise<Response>, 
+      handler: () => Promise<Response>, 
       options: any
     ) {
       // Step 1: Check Cloudflare Cache API
