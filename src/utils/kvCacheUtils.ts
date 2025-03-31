@@ -194,24 +194,90 @@ export async function storeInKVCache(
       return false;
     }
     
+    // Check if this is likely a video response and if it's large
+    const contentType = responseClone.headers.get('content-type') || '';
+    const contentLength = parseInt(responseClone.headers.get('content-length') || '0', 10);
+    const isLargeVideo = contentType.includes('video') && contentLength > 1000000; // >1MB
+    
+    // For videos larger than Cloudflare's KV size limit (25MiB), skip KV storage entirely
+    const KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB in bytes
+    const exceedsKVLimit = contentLength > KV_SIZE_LIMIT;
+    
+    // Skip KV storage for videos exceeding the 25MiB KV size limit
+    if (exceedsKVLimit && contentType.includes('video')) {
+      logDebug('Skipping KV storage for video exceeding 25MiB size limit', {
+        contentType,
+        contentLength,
+        maxSizeBytes: KV_SIZE_LIMIT,
+        sourcePath
+      });
+      return false;
+    }
+    
     // Enhanced logging before storage
     logDebug('Attempting to store in KV cache', {
       sourcePath,
       derivative: options.derivative,
       ttl,
-      contentType: responseClone.headers.get('content-type'),
-      contentLength: responseClone.headers.get('content-length'),
+      contentType,
+      contentLength,
+      isLargeVideo,
       namespaceBinding: env.VIDEO_TRANSFORMATIONS_CACHE ? 'VIDEO_TRANSFORMATIONS_CACHE' : 'VIDEO_TRANSFORMS_KV'
     });
     
-    // Store in KV
-    const success = await storeTransformedVideo(
-      kvNamespace,
-      sourcePath,
-      responseClone,
-      options,
-      ttl
-    );
+    // Store in KV using a non-blocking operation to avoid worker timeouts
+    // We'll schedule the storage operation using waitUntil when it's available
+    let success = false;
+    try {
+      // Get the execution context if it exists in the request context
+      const requestContext = getCurrentContext();
+      const ctx = requestContext?.executionContext;
+      
+      // For large videos or when explicitly configured, always prefer waitUntil to avoid timeouts
+      const shouldUseWaitUntil = isLargeVideo || (ctx?.waitUntil != null);
+      
+      if (ctx?.waitUntil && shouldUseWaitUntil) {
+        // Use waitUntil to make the KV storage non-blocking
+        ctx.waitUntil(
+          storeTransformedVideo(
+            kvNamespace,
+            sourcePath,
+            responseClone,
+            options,
+            ttl
+          ).then(result => {
+            if (result) {
+              logDebug('Async KV storage completed successfully', {
+                sourcePath,
+                derivative: options.derivative
+              });
+            }
+            return result;
+          })
+        );
+        
+        // Since we're using waitUntil, consider it a success even though it's running in the background
+        success = true;
+        logDebug('Started async KV storage operation', {
+          sourcePath, 
+          derivative: options.derivative
+        });
+      } else {
+        // Fall back to blocking operation if waitUntil isn't available
+        success = await storeTransformedVideo(
+          kvNamespace,
+          sourcePath,
+          responseClone,
+          options,
+          ttl
+        );
+      }
+    } catch (err) {
+      logDebug('Error scheduling KV storage', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+      success = false;
+    }
     
     if (success) {
       const requestContext = getCurrentContext();

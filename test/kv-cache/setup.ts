@@ -19,7 +19,7 @@ vi.mock('../../src/config', () => {
       console.debug('Mock getCacheConfig called with env:', env);
       
       // Return based on environment
-      if (env && env.CACHE_ENABLE_KV === "true") {
+      if (env && env.CACHE_ENABLE_KV === 'true') {
         return {
           ...cacheConfig,
           enableKVCache: true

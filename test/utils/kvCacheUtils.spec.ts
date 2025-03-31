@@ -48,7 +48,7 @@ describe('KV Cache Utils', () => {
   const mockEnv = {
     VIDEO_TRANSFORMATIONS_CACHE: {} as KVNamespace,
     VIDEO_TRANSFORMS_KV: null,
-    CACHE_ENABLE_KV: "true"
+    CACHE_ENABLE_KV: 'true'
   };
 
   const mockOptions = {

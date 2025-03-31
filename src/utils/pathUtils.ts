@@ -46,6 +46,33 @@ export function isCdnCgiMediaPath(path: string): boolean {
  * @returns The matching pattern or null if none match
  */
 export function findMatchingPathPattern(path: string, patterns: PathPattern[]): PathPattern | null {
+  // Import logger utilities in case they're available
+  let logDebug: (message: string, data?: Record<string, unknown>) => void;
+  let console_debug = console.debug;
+  
+  try {
+    // Define a fallback debug function to capture debug info during execution
+    // since we might not have access to the proper logging system
+    logDebug = (message: string, data?: Record<string, unknown>) => {
+      console_debug(`[PathUtils] ${message}`, data || {});
+    };
+  } catch (err) {
+    logDebug = (message: string, data?: Record<string, unknown>) => {
+      console_debug(`[PathUtils] ${message}`, data || {});
+    };
+  }
+
+  if (!patterns || patterns.length === 0) {
+    logDebug('No patterns provided to findMatchingPathPattern', { path });
+    return null;
+  }
+
+  logDebug('Finding matching path pattern', { 
+    path, 
+    patternCount: patterns.length,
+    patternNames: patterns.map(p => p.name),
+  });
+
   // Sort patterns by priority if specified (higher values first)
   const sortedPatterns = [...patterns].sort((a, b) => {
     const priorityA = a.priority ?? 0;
@@ -53,13 +80,50 @@ export function findMatchingPathPattern(path: string, patterns: PathPattern[]): 
     return priorityB - priorityA;
   });
 
-  for (const pattern of sortedPatterns) {
-    const regex = new RegExp(pattern.matcher);
-    if (regex.test(path)) {
-      return pattern;
+  logDebug('Sorted patterns by priority', { 
+    patternNames: sortedPatterns.map(p => p.name),
+    patternPriorities: sortedPatterns.map(p => p.priority ?? 0),
+  });
+
+  for (let i = 0; i < sortedPatterns.length; i++) {
+    const pattern = sortedPatterns[i];
+    
+    try {
+      // Log pattern details before testing
+      logDebug(`Testing pattern #${i}: ${pattern.name}`, {
+        matcher: pattern.matcher,
+        path: path
+      });
+      
+      const regex = new RegExp(pattern.matcher);
+      const isMatch = regex.test(path);
+      
+      // Log result of test
+      logDebug(`Pattern #${i} test result: ${isMatch ? 'MATCH' : 'NO MATCH'}`, {
+        pattern: pattern.name,
+        matcher: pattern.matcher,
+        regexObj: regex.toString(),
+        path: path
+      });
+      
+      if (isMatch) {
+        logDebug(`Found matching pattern: ${pattern.name}`, {
+          matcher: pattern.matcher,
+          path: path,
+          processPath: pattern.processPath
+        });
+        return pattern;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      logDebug(`Error testing pattern #${i}: ${pattern.name}`, {
+        matcher: pattern.matcher,
+        error: errorMessage
+      });
     }
   }
 
+  logDebug('No matching pattern found for path', { path });
   return null;
 }
 

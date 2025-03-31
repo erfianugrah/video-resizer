@@ -412,28 +412,101 @@ export class TransformVideoCommand {
       });
       
       // Test each pattern individually to identify which one should match
-      for (let i = 0; i < (pathPatterns?.length || 0); i++) {
+      for (let i = 0; i < pathPatterns.length; i++) {
         const pattern = pathPatterns[i];
+        let regex;
+        let matches = false;
+        let error = null;
+        let matchResult = null;
+        let alternateMatches = false;
+        
         try {
-          const regex = new RegExp(pattern.matcher);
-          const matches = regex.test(path);
+          // Create regex from the pattern matcher
+          regex = new RegExp(pattern.matcher);
+          matches = regex.test(path);
           
-          await logDebug('TransformVideoCommand', `Pattern test #${i}`, {
+          // Test with .match() to see capture groups
+          matchResult = path.match(regex);
+          
+          // Try without anchors to see if that's the issue
+          let regexNoAnchors = pattern.matcher;
+          if (regexNoAnchors.startsWith('^')) {
+            regexNoAnchors = regexNoAnchors.substring(1);
+          }
+          if (regexNoAnchors.endsWith('$')) {
+            regexNoAnchors = regexNoAnchors.substring(0, regexNoAnchors.length - 1);
+          }
+          const alternateRegex = new RegExp(regexNoAnchors);
+          alternateMatches = alternateRegex.test(path);
+          
+          // Log character-by-character comparison
+          await logDebug('TransformVideoCommand', `Pattern #${i} character analysis`, {
             patternName: pattern.name,
-            matcher: pattern.matcher,
+            patternMatcher: pattern.matcher,
             path: path,
-            matches: matches
+            pathChars: Array.from(path),
+            matcherChars: Array.from(pattern.matcher),
+            pathLength: path.length,
+            matcherLength: pattern.matcher.length
           });
         } catch (err) {
-          await logDebug('TransformVideoCommand', `Error testing pattern #${i}`, {
-            patternName: pattern.name,
-            matcher: pattern.matcher,
-            error: err instanceof Error ? err.message : String(err)
-          });
+          error = err instanceof Error ? err.message : 'Invalid regex';
         }
+        
+        // Log the overall test results
+        await logDebug('TransformVideoCommand', `Pattern #${i} test results`, {
+          patternName: pattern.name,
+          patternMatcher: pattern.matcher,
+          path: path,
+          matches: matches,
+          alternateMatches: alternateMatches,
+          matchResult: matchResult ? Array.from(matchResult) : null,
+          regexString: regex ? regex.toString() : 'invalid',
+          error: error,
+          isMP4: path.toLowerCase().endsWith('.mp4'),
+          patternIncludesMP4: pattern.matcher.includes('\\.mp4')
+        });
+      }
+          
+          // Log detailed comparison of the path and pattern
+          await logDebug('TransformVideoCommand', `Testing pattern #${i} - Character comparison`, {
+            patternName: pattern.name,
+            patternMatcher: pattern.matcher,
+            path: path,
+            pathCharCodes: Array.from(path).map(c => c.charCodeAt(0)),
+            matcherCharCodes: Array.from(pattern.matcher).map(c => c.charCodeAt(0)),
+            pathLength: path.length,
+            matcherLength: pattern.matcher.length
+          });
+        } catch (err) {
+          error = err instanceof Error ? err.message : 'Invalid regex';
+        }
+        
+        await logDebug('TransformVideoCommand', `Testing pattern #${i}`, {
+          patternName: pattern.name,
+          patternMatcher: pattern.matcher,
+          path: path,
+          matches: matches,
+          matchResult: matchResult ? Array.from(matchResult) : null,
+          regex: regex ? regex.toString() : 'error',
+          error: error,
+          // Also try direct string.match with the pattern string
+          directStringMatch: error ? false : (path.match(pattern.matcher) !== null),
+          // Try comparing just the extensions as a basic sanity check
+          isMP4: path.toLowerCase().endsWith('.mp4'),
+          patternIncludesMP4: pattern.matcher.includes('\\.mp4')
+        });
       }
       
       const pathPattern = findMatchingPathPattern(path, pathPatterns);
+      
+      // Log the overall matching result
+      await logDebug('TransformVideoCommand', 'Path pattern matching result', {
+        path,
+        matchFound: !!pathPattern,
+        matchedPattern: pathPattern ? { name: pathPattern.name, matcher: pathPattern.matcher } : null,
+        shouldProcess: pathPattern?.processPath
+      });
       
       // If no matching pattern found or if the pattern is set to not process, pass through
       if (!pathPattern || !pathPattern.processPath) {
@@ -443,6 +516,7 @@ export class TransformVideoCommand {
           url: url.toString(),
           hasPattern: !!pathPattern,
           shouldProcess: pathPattern?.processPath,
+          matchResult: { path, matched: false }
         });
         
         // Add breadcrumb

@@ -45,6 +45,14 @@ The configuration system is made up of several specialized managers:
 3. [Debug Configuration](./debug-configuration.md) - Controls debugging features
 4. [Logging Configuration](./logging-configuration.md) - Configures logging behavior
 
+## Advanced Configuration Topics
+
+1. [Configuration Loading Process](./configuration-loading.md) - How configurations are loaded and applied
+2. [Path Pattern Troubleshooting](./path-pattern-troubleshooting.md) - Debugging path pattern matching issues
+3. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
+4. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
+5. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
+
 ## Environment Variables
 
 Environment variables can be used to override configuration values at runtime:
@@ -76,15 +84,25 @@ const isValidOption = configManager.isValidOption('fit', 'contain');
 
 ## Basic Configuration Flow
 
-1. Default configuration values are defined in each manager
-2. Values from wrangler.jsonc are applied as overrides
-3. Environment variables (if present) override wrangler.jsonc and defaults
-4. The final configuration is validated against Zod schemas
-5. Manager singletons provide access to validated configuration
+1. **Default Configuration**: Initial values are defined in each manager (e.g., `videoConfig.ts`)
+2. **Static Configuration**: Values from wrangler.jsonc are applied as the first level of overrides
+3. **Environment Variables**: Environment variables override both wrangler.jsonc and defaults
+4. **KV Configuration**: On first request, configuration is loaded from KV storage (if available)
+5. **Validation**: All configuration is validated against Zod schemas to ensure type safety
+6. **Configuration Application**: Valid configuration is applied to the appropriate managers
+7. **Runtime Access**: Manager singletons provide typed access to the validated configuration
+
+This multi-layered approach allows for flexibility in how configuration is managed, from hardcoded defaults to dynamically updated values via KV storage.
 
 ## Recommended Practices
 
-1. Use environment-specific configurations for different deployment targets
-2. Keep sensitive configuration in environment variables or Worker secrets
-3. Validate configuration changes before deployment
-4. Use the manager interfaces rather than accessing raw configuration
+1. **Environment-Specific Configurations**: Use different configurations for development, staging, and production
+2. **Secure Sensitive Information**: Keep API keys and secrets in environment variables or Worker secrets
+3. **Validate Before Deployment**: Test configuration changes in development or staging before production
+4. **Use Manager Interfaces**: Access configuration through manager methods rather than raw objects
+5. **Monitor Configuration Loading**: Enable logging during configuration updates to verify successful loading
+6. **Debug Configuration Issues**: Use the `?debug=true` parameter to troubleshoot configuration-related problems
+7. **Regular Expression Testing**: Carefully test path pattern regular expressions before deployment
+8. **Include Fallback Patterns**: Always include a catch-all pattern with lowest priority as a fallback
+9. **Proper Escaping**: Remember to properly escape special characters in regex patterns (e.g., `\\.` for literal periods)
+10. **Respect Initialization Order**: Be aware that configuration may not be fully loaded on the first few requests

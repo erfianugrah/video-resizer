@@ -16,6 +16,30 @@ Preset configurations for different use cases:
 | `preview`  | Short preview clip | Hover previews, loading animations |
 | `animation`| GIF-like animation | Short animated preview |
 
+## Non-MP4 File Passthrough
+
+The video-resizer includes a configurable passthrough capability for non-MP4 video files. This is important because Cloudflare Media Transformation primarily supports MP4 files with H.264 encoded video and AAC or MP3 encoded audio. Attempting to process other formats may result in errors (such as 522 timeout errors).
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `passthrough.enabled` | boolean | true | Enable passthrough for non-MP4 files |
+| `passthrough.whitelistedFormats` | string[] | [] | File extensions to process even if not MP4 |
+
+Example configuration:
+
+```json
+{
+  "passthrough": {
+    "enabled": true,
+    "whitelistedFormats": [".webm"]
+  }
+}
+```
+
+When a request is received for a non-MP4 file (e.g., `.webm`, `.mov`, `.avi`), and passthrough is enabled, the request will be passed directly to the origin server without any transformation. This prevents timeouts and errors when processing unsupported formats.
+
+If you want to allow certain non-MP4 formats to be processed despite the risks, you can add them to the `whitelistedFormats` array.
+
 ## Video Default Options
 
 | Option | Type | Default | Description |
@@ -47,11 +71,34 @@ Configuration for URL path matching and processing:
 | `baseUrl` | string | Base URL for transformations |
 | `originUrl` | string | Origin URL for fetching content |
 | `quality` | string | Quality preset for this pattern |
-| `cacheTtl` | number | Cache TTL in seconds |
-| `priority` | number | Processing priority |
+| `ttl` | object | TTL settings object (replaces deprecated `cacheTtl`) |
+| `useTtlByStatus` | boolean | Whether to use status-specific TTL values |
+| `priority` | number | Processing priority (higher values are evaluated first) |
 | `captureGroups` | string[] | Named capture groups in the matcher |
+| `transformationOverrides` | object | Override default transformation parameters |
 
-### Example Path Pattern
+### Example Path Patterns
+
+Standard pattern to match all MP4 files at the root:
+
+```json
+{
+  "name": "standard",
+  "matcher": "^/(.*\\.mp4)",
+  "processPath": true,
+  "baseUrl": null,
+  "originUrl": "https://videos.example.com",
+  "ttl": {
+    "ok": 86400,
+    "redirects": 3600,
+    "clientError": 60,
+    "serverError": 10
+  },
+  "useTtlByStatus": true
+}
+```
+
+Pattern with path prefix and named capture groups:
 
 ```json
 {
@@ -60,7 +107,12 @@ Configuration for URL path matching and processing:
   "processPath": true,
   "baseUrl": null,
   "originUrl": "https://media.example.com",
-  "cacheTtl": 3600,
+  "ttl": {
+    "ok": 3600,
+    "redirects": 300,
+    "clientError": 60,
+    "serverError": 10
+  },
   "captureGroups": ["videoId"],
   "quality": "high",
   "transformationOverrides": {
@@ -68,6 +120,15 @@ Configuration for URL path matching and processing:
     "compression": "low"
   }
 }
+```
+
+> **Important:** When writing path patterns, ensure that regular expressions in the `matcher` property are properly escaped. For example, to match a literal period in a file extension, use `\\.` in the pattern string. For example, `^/(.*\\.mp4)` will match paths like `/example.mp4`.
+
+### Pattern Matching Behavior
+
+Path patterns are evaluated in order of their `priority` value (highest first). If no priority is specified, patterns are evaluated in the order they appear in the configuration. The first pattern that matches the request path will be used.
+
+If the matching pattern has `processPath: true`, the video will be transformed according to the pattern and derivative settings. If `processPath: false` or no matching pattern is found, the request will be passed through to the origin without transformation.
 ```
 
 ## Configuration Methods

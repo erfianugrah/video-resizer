@@ -9,6 +9,7 @@
  */
 
 import { handleVideoRequest } from './handlers/videoHandler';
+import { handleConfigUpload, handleConfigGet } from './handlers/configHandler';
 import { getEnvironmentConfig, EnvironmentConfig, EnvVariables } from './config/environmentConfig';
 import { initializeConfiguration } from './config';
 import { initializeLogging } from './utils/loggingManager';
@@ -65,9 +66,9 @@ let runtimeConfig: EnvironmentConfig | null = null;
 let hasInitialized = false;
 
 export default {
-  async fetch(request: Request, env: EnvVariables, _ctx: ExecutionContext): Promise<Response> {
-    // Create request context and logger at the entry point
-    const context = createRequestContext(request);
+  async fetch(request: Request, env: EnvVariables, ctx: ExecutionContext): Promise<Response> {
+    // Create request context and logger at the entry point, passing execution context for waitUntil
+    const context = createRequestContext(request, ctx);
     const logger = createLogger(context);
     
     // Initialize legacy logger for backward compatibility
@@ -89,6 +90,120 @@ export default {
           const loggingConfig = LoggingConfigurationManager.getInstance();
           const breadcrumbConfig = loggingConfig.getBreadcrumbConfig();
           updateBreadcrumbConfig(breadcrumbConfig);
+          
+          // Try to load dynamic configuration from KV if available
+          if (env.VIDEO_CONFIGURATION_STORE) {
+            try {
+              // Import the ConfigurationService (dynamic import to avoid circular deps)
+              const { ConfigurationService } = await import('./services/configurationService');
+              const configService = ConfigurationService.getInstance();
+              
+              // Attempt to load configuration from KV
+              logInfo(context, 'Attempting to load configuration from KV');
+              const kvConfig = await configService.loadConfiguration(env);
+              
+              if (kvConfig) {
+                logInfo(context, 'Successfully loaded configuration from KV', {
+                  version: kvConfig.version,
+                  lastUpdated: kvConfig.lastUpdated
+                });
+                
+                // Apply KV configuration to all config managers
+                try {
+                  const { updateAllConfigFromKV } = await import('./config');
+                  
+                  // Log configuration details before applying
+                  logInfo(context, 'About to apply KV configuration', {
+                    hasVideoConfig: !!kvConfig.video,
+                    hasCacheConfig: !!kvConfig.cache,
+                    hasDebugConfig: !!kvConfig.debug,
+                    hasLoggingConfig: !!kvConfig.logging,
+                    hasPassthrough: !!kvConfig.video?.passthrough,
+                    passthroughEnabled: kvConfig.video?.passthrough?.enabled,
+                    version: kvConfig.version,
+                    lastUpdated: kvConfig.lastUpdated
+                  });
+                  
+                  // Add breadcrumb for debugging
+                  if (context) {
+                    const { addBreadcrumb } = await import('./utils/requestContext');
+                    addBreadcrumb(context, 'Configuration', 'Applying KV configuration', {
+                      hasVideoConfig: !!kvConfig.video,
+                      hasPassthrough: !!kvConfig.video?.passthrough,
+                      passthroughEnabled: kvConfig.video?.passthrough?.enabled,
+                      hasBindings: !!env.VIDEOS_BUCKET
+                    });
+                  }
+                  
+                  updateAllConfigFromKV(kvConfig);
+                  
+                  // Log detailed information about the path patterns after loading from KV
+                  try {
+                    const { VideoConfigurationManager } = await import('./config/VideoConfigurationManager');
+                    const videoConfig = VideoConfigurationManager.getInstance();
+                    const pathPatterns = videoConfig.getPathPatterns();
+                    
+                    // Do a quick test of the standard pattern matcher
+                    const testPath = '/erfi.mp4';
+                    for (const pattern of pathPatterns) {
+                      try {
+                        const regex = new RegExp(pattern.matcher);
+                        const matches = regex.test(testPath);
+                        
+                        logInfo(context, `Testing pattern ${pattern.name} against ${testPath}`, {
+                          matcher: pattern.matcher,
+                          matches: matches,
+                          regex: regex.toString()
+                        });
+                      } catch (err) {
+                        logError(context, `Error testing pattern ${pattern.name}`, {
+                          error: err instanceof Error ? err.message : String(err),
+                          matcher: pattern.matcher
+                        });
+                      }
+                    }
+                    
+                    logInfo(context, 'Path patterns after loading from KV', {
+                      patternCount: pathPatterns.length,
+                      patterns: pathPatterns.map(p => ({
+                        name: p.name,
+                        matcher: p.matcher,
+                        processPath: p.processPath
+                      }))
+                    });
+                    
+                    // Add breadcrumb for path patterns
+                    if (context) {
+                      const { addBreadcrumb } = await import('./utils/requestContext');
+                      addBreadcrumb(context, 'Configuration', 'Loaded path patterns from KV', {
+                        patternCount: pathPatterns.length,
+                        // Include just names for breadcrumb to keep it lightweight
+                        patternNames: pathPatterns.map(p => p.name)
+                      });
+                    }
+                  } catch (patternErr) {
+                    logError(context, 'Error logging path patterns after KV load', {
+                      error: patternErr instanceof Error ? patternErr.message : String(patternErr)
+                    });
+                  }
+                  
+                  logInfo(context, 'Applied KV configuration to all config managers');
+                } catch (updateErr) {
+                  logError(context, 'Error applying KV configuration', {
+                    error: updateErr instanceof Error ? updateErr.message : String(updateErr)
+                  });
+                }
+              } else {
+                logInfo(context, 'No configuration found in KV, using environment defaults');
+              }
+            } catch (configErr) {
+              // Log error but continue with environment config
+              logError(context, 'Error loading configuration from KV', {
+                error: configErr instanceof Error ? configErr.message : String(configErr),
+                stack: configErr instanceof Error ? configErr.stack : undefined
+              });
+            }
+          }
           
           // Log initialization
           logInfo(context, 'Initialized configuration from environment', { 
@@ -126,22 +241,158 @@ export default {
       }
 
       // Log incoming request
-      const url = new URL(request.url);
+      const requestUrl = new URL(request.url);
       logInfo(context, 'Incoming request', {
         method: request.method,
-        url: url.toString(),
-        pathname: url.pathname,
-        search: url.search
+        url: requestUrl.toString(),
+        pathname: requestUrl.pathname,
+        search: requestUrl.search
       });
       
       // Define patterns to skip resizing
       const skipPatterns = [(headers: Headers) => /video-resizing/.test(headers.get('via') || '')];
 
+      // Check if this is a configuration API request
+      
+      if (requestUrl.pathname === '/admin/config') {
+        logInfo(context, 'Handling configuration request', {
+          method: request.method
+        });
+        
+        if (request.method === 'POST') {
+          return handleConfigUpload(request, env);
+        } else if (request.method === 'GET') {
+          return handleConfigGet(request, env);
+        } else {
+          return new Response('Method not allowed', { status: 405 });
+        }
+      }
+      
+      // Lightweight handling for static assets and favicon to reduce CPU time
+      if (requestUrl.pathname === '/favicon.ico' || 
+          requestUrl.pathname.endsWith('.png') || 
+          requestUrl.pathname.endsWith('.jpg') || 
+          requestUrl.pathname.endsWith('.svg') ||
+          requestUrl.pathname.endsWith('.css') ||
+          requestUrl.pathname.endsWith('.js')) {
+        
+        logInfo(context, 'Static asset request - bypassing video processing', {
+          path: requestUrl.pathname
+        });
+        
+        // Create a fast-path response that bypasses all the video transformation logic
+        return fetch(request);
+      }
+      
+      // Handle file format passthrough for non-MP4 videos
+      // Import dynamically to avoid circular dependencies
+      try {
+        // Get the file extension
+        const pathExtension = requestUrl.pathname.split('.').pop()?.toLowerCase();
+        
+        // Log file extension detection for debugging
+        logDebug(context, 'Checking file extension for passthrough', {
+          path: requestUrl.pathname,
+          extension: pathExtension || 'none',
+          hasExtension: !!pathExtension,
+          isMP4: pathExtension === 'mp4'
+        });
+        
+        // Add breadcrumb for file detection
+        if (context) {
+          const { addBreadcrumb } = await import('./utils/requestContext');
+          addBreadcrumb(context, 'Passthrough', 'Detected file extension', {
+            path: requestUrl.pathname,
+            extension: pathExtension || 'none',
+            isMP4: pathExtension === 'mp4'
+          });
+        }
+        
+        if (pathExtension && pathExtension !== 'mp4') {
+          // Dynamic import to avoid circular dependencies
+          const { VideoConfigurationManager } = await import('./config/VideoConfigurationManager');
+          const videoConfig = VideoConfigurationManager.getInstance();
+          const passthroughConfig = videoConfig.getPassthroughConfig();
+          
+          // Log configuration access
+          logInfo(context, 'Retrieved passthrough configuration', {
+            enabled: passthroughConfig.enabled,
+            whitelistedFormatsCount: passthroughConfig.whitelistedFormats.length,
+            whitelistedFormats: passthroughConfig.whitelistedFormats.join(', '),
+            extension: pathExtension,
+            isWhitelisted: passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)
+          });
+          
+          // Add breadcrumb for config retrieval
+          if (context) {
+            const { addBreadcrumb } = await import('./utils/requestContext');
+            addBreadcrumb(context, 'Passthrough', 'Retrieved passthrough configuration', {
+              enabled: passthroughConfig.enabled,
+              whitelistedFormatsCount: passthroughConfig.whitelistedFormats.length,
+              extension: pathExtension,
+              isWhitelisted: passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)
+            });
+          }
+          
+          // Check storage bindings for diagnostics
+          let hasR2 = false;
+          if (env && env.VIDEOS_BUCKET) {
+            hasR2 = true;
+            logDebug(context, 'R2 binding detected', {
+              binding: 'VIDEOS_BUCKET',
+              available: true
+            });
+          }
+          
+          // Check if passthrough is enabled and this format is not explicitly whitelisted
+          if (passthroughConfig.enabled && 
+              !passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)) {
+            
+            logInfo(context, 'Non-MP4 video request - bypassing video processing', {
+              path: requestUrl.pathname,
+              extension: pathExtension,
+              reason: 'unsupported-format',
+              passthroughEnabled: true,
+              hasR2: hasR2
+            });
+            
+            // Add breadcrumb for passthrough decision
+            if (context) {
+              const { addBreadcrumb } = await import('./utils/requestContext');
+              addBreadcrumb(context, 'Passthrough', 'Bypassing video processing', {
+                path: requestUrl.pathname,
+                extension: pathExtension,
+                reason: 'unsupported-format'
+              });
+            }
+            
+            // Pass through non-MP4 videos directly
+            return fetch(request);
+          }
+        }
+      } catch (err) {
+        // Log error but continue with normal processing
+        logDebug(context, 'Error checking file extension for passthrough, continuing with normal processing', {
+          path: requestUrl.pathname,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        });
+        
+        // Add breadcrumb for error
+        if (context) {
+          const { addBreadcrumb } = await import('./utils/requestContext');
+          addBreadcrumb(context, 'Passthrough', 'Error in passthrough check', {
+            error: err instanceof Error ? err.message : String(err),
+            path: requestUrl.pathname
+          });
+        }
+      }
+      
       // Check if we should skip resizing
       const shouldSkip = skipPatterns.some((pattern) => pattern(request.headers));
 
       if (!shouldSkip && runtimeConfig) {
-        return handleVideoRequest(request, runtimeConfig, env, _ctx);
+        return handleVideoRequest(request, runtimeConfig, env, ctx);
       }
 
       logInfo(context, 'Skipping video processing, passing through request');

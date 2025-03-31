@@ -30,8 +30,8 @@ export async function handleVideoRequest(
   if (env && ctx) {
     (env as unknown as EnvWithExecutionContext).executionCtx = ctx;
   }
-  // Create request context and logger
-  const context = createRequestContext(request);
+  // Create request context and logger, pass execution context for waitUntil operations
+  const context = createRequestContext(request, ctx);
   const logger = createLogger(context);
   
   // Log environment variables received for debugging
@@ -155,8 +155,52 @@ export async function handleVideoRequest(
     
     endTimedOperation(context, 'cache-lookup');
 
-    // Get path patterns from config or use defaults
-    const pathPatterns = config.pathPatterns || videoConfig.pathPatterns;
+    // Get path patterns from config or use defaults - use let instead of const
+    let pathPatterns = config.pathPatterns || videoConfig.pathPatterns;
+    
+    // Log the path patterns to see what we have at this point
+    debug(context, logger, 'VideoHandler', 'Path patterns from config', {
+      source: config.pathPatterns ? 'environment-config' : 'default-config',
+      patternCount: pathPatterns.length,
+      patterns: pathPatterns.map(p => ({
+        name: p.name,
+        matcher: p.matcher,
+        processPath: p.processPath
+      }))
+    });
+    
+    // Also check VideoConfigurationManager to see what patterns it has
+    try {
+      const { VideoConfigurationManager } = await import('../config/VideoConfigurationManager');
+      const videoConfigManager = VideoConfigurationManager.getInstance();
+      const managerPatterns = videoConfigManager.getPathPatterns();
+      
+      debug(context, logger, 'VideoHandler', 'Path patterns from VideoConfigurationManager', {
+        patternCount: managerPatterns.length,
+        patterns: managerPatterns.map(p => ({
+          name: p.name,
+          matcher: p.matcher,
+          processPath: p.processPath
+        }))
+      });
+      
+      // Use the patterns from VideoConfigurationManager if available
+      if (managerPatterns.length > 0) {
+        pathPatterns = managerPatterns;
+        debug(context, logger, 'VideoHandler', 'Using path patterns from VideoConfigurationManager');
+      }
+      
+      // Add breadcrumb for path patterns
+      addBreadcrumb(context, 'Configuration', 'Path patterns for request', {
+        patternCount: pathPatterns.length,
+        patternNames: pathPatterns.map(p => p.name)
+      });
+    } catch (err) {
+      error(context, logger, 'VideoHandler', 'Error getting path patterns from VideoConfigurationManager', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    }
 
     // Get URL parameters
     const urlParams = url.searchParams;

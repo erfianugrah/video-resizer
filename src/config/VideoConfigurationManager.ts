@@ -123,6 +123,10 @@ export const VideoConfigSchema = z.object({
   cdnCgi: z.object({
     basePath: z.string(),
   }),
+  passthrough: z.object({
+    enabled: z.boolean(),
+    whitelistedFormats: z.array(z.string())
+  }).optional(),
   pathPatterns: z.array(PathPatternSchema),
   caching: z.object({
     method: z.enum(['cf', 'cacheApi']),
@@ -363,6 +367,18 @@ export class VideoConfigurationManager {
    */
   public getCachingConfig() {
     return this.config.caching;
+  }
+  
+  /**
+   * Get passthrough configuration for non-MP4 files
+   * @returns The passthrough configuration with defaults if not explicitly set
+   */
+  public getPassthroughConfig() {
+    // Return configuration with defaults
+    return this.config.passthrough || {
+      enabled: true,
+      whitelistedFormats: []
+    };
   }
 
   /**

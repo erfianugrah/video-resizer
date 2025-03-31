@@ -65,7 +65,7 @@ describe.skip('Cache Orchestrator', () => {
       getWithMetadata: vi.fn(),
       list: vi.fn()
     },
-    CACHE_ENABLE_KV: "true"
+    CACHE_ENABLE_KV: 'true'
   };
   const mockOptions = {
     derivative: 'mobile',
@@ -91,7 +91,7 @@ describe.skip('Cache Orchestrator', () => {
     executionCtx: {
       waitUntil: mockWaitUntil
     },
-    CACHE_ENABLE_KV: "true"
+    CACHE_ENABLE_KV: 'true'
   };
 
   describe('Cache flow', () => {

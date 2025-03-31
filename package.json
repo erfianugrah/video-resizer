@@ -6,9 +6,11 @@
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"deploy:prod": "wrangler deploy --env production",
+		"deploy:dev": "wrangler deploy --env development",
 		"deploy:staging": "wrangler deploy --env staging",
 		"deploy:full": "npm run typecheck && npm run lint && wrangler deploy",
 		"deploy:full:prod": "npm run typecheck && npm run lint && wrangler deploy --env production",
+		"deploy:full:dev": "npm run typecheck && npm run lint && wrangler deploy --env development",
 		"deploy:full:staging": "npm run typecheck && npm run lint && wrangler deploy --env staging",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
@@ -35,7 +37,11 @@
 		"clean:debug-ui": "cd debug-ui && npm run clean",
 		"clean:all": "npm run clean:debug-ui && rm -rf public/assets",
 		"copy:debug-ui": "mkdir -p public && cd debug-ui && npm run copy-to-worker",
-		"dev:debug-ui": "cd debug-ui && npm run dev"
+		"dev:debug-ui": "cd debug-ui && npm run dev",
+		"config:upload": "node tools/config-upload.js",
+		"config:upload:dev": "node tools/config-upload.js --env development --token",
+		"config:upload:staging": "node tools/config-upload.js --env staging --token",
+		"config:upload:prod": "node tools/config-upload.js --env production --token"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.0",
@@ -52,10 +58,12 @@
 		"typescript": "^5.5.2",
 		"typescript-eslint": "^8.26.1",
 		"vitest": "^3.0.8",
-		"wrangler": "^4.4.0"
+		"wrangler": "^4.6.0"
 	},
 	"dependencies": {
 		"aws4fetch": "^1.0.20",
+		"commander": "^13.1.0",
+		"node-fetch": "^3.3.2",
 		"pino": "^9.6.0",
 		"pino-pretty": "^13.0.0",
 		"uuid": "^11.1.0",

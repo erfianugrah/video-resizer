@@ -15,3 +15,10 @@ export interface ExecutionContextExt extends ExecutionContext {
 export interface EnvWithExecutionContext {
   executionCtx?: ExecutionContextExt;
 }
+
+/**
+ * Extended environment variables with VIDEO_CONFIGURATION_STORE KV binding
+ */
+export interface EnvWithConfigStore {
+  VIDEO_CONFIGURATION_STORE?: KVNamespace;
+}

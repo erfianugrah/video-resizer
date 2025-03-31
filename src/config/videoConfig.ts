@@ -180,6 +180,14 @@ export const videoConfig = {
   cdnCgi: {
     basePath: '/cdn-cgi/media',
   },
+  
+  // Non-MP4 file handling
+  passthrough: {
+    // Whether to enable pass-through for non-MP4 files
+    enabled: true,
+    // Option to whitelist specific formats for processing (empty means all non-MP4 are passed through)
+    whitelistedFormats: [],
+  },
 
   // Default empty path patterns
   // These will be populated from environment configuration

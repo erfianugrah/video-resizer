@@ -74,6 +74,43 @@ const isValidOption = configManager.isValidOption('fit', 'contain');
 
 The `VideoConfigurationManager` handles all video transformation settings and options.
 
+### Non-MP4 File Passthrough
+
+The video-resizer includes a configurable passthrough capability for non-MP4 video files:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `passthrough.enabled` | boolean | true | Enable passthrough for non-MP4 files |
+| `passthrough.whitelistedFormats` | string[] | [] | File extensions to process even if not MP4 |
+
+Example configuration in wrangler.jsonc:
+
+```jsonc
+{
+  "video": {
+    "passthrough": {
+      "enabled": true,
+      "whitelistedFormats": [".webm"]
+    }
+  }
+}
+```
+
+Or when using the Configuration API:
+
+```json
+{
+  "video": {
+    "passthrough": {
+      "enabled": true,
+      "whitelistedFormats": [".webm"]
+    }
+  }
+}
+```
+
+**Note**: Cloudflare Media Transformation only fully supports MP4 files with H.264 encoded video and AAC or MP3 encoded audio. Attempting to process other formats may result in errors.
+
 ### Video Derivatives
 
 Preset configurations for different use cases:

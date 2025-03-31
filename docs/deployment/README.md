@@ -36,6 +36,7 @@ flowchart TD
 - Node.js 18+ and npm 9+
 - Cloudflare account with Workers access
 - Wrangler CLI configured with authentication
+- Authentication secrets set up for configuration API (see [Auth Setup Guide](./auth-setup.md))
 
 ## Deployment Commands
 
@@ -134,3 +135,32 @@ If the debug UI shows a "Loading diagnostic data..." message:
 - The Debug UI is only accessible when the `debug=view` parameter is included in the URL
 - Debug mode affects cache behavior (while CF caching is still enabled, debug responses use max-age=0)
 - For security, consider restricting debug access in production using the DebugConfigurationManager settings
+
+## Configuration and Secrets
+
+### Wrangler Secrets
+
+Before deployment, set up the authentication secrets for each environment:
+
+```bash
+# Set authentication token for configuration API
+wrangler secret put CONFIG_API_TOKEN --env development
+wrangler secret put CONFIG_API_TOKEN --env staging
+wrangler secret put CONFIG_API_TOKEN --env production
+```
+
+For more details on authentication setup, see the [Auth Setup Guide](./auth-setup.md).
+
+### Dynamic Configuration
+
+After deployment, you can update the worker's configuration without redeploying using the configuration API and the provided upload tool:
+
+```bash
+# Upload configuration to development environment
+node tools/config-upload.js --env development --token YOUR_DEV_TOKEN
+
+# Upload configuration to production (with confirmation prompt)
+node tools/config-upload.js --env production --token YOUR_PROD_TOKEN
+```
+
+For more information on the dynamic configuration system, see [Dynamic Configuration](../configuration/dynamic-configuration.md).

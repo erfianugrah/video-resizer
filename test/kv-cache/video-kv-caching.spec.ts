@@ -56,8 +56,8 @@ describe('Video Handler with KV Caching - Integration Test', () => {
       executionCtx: {
         waitUntil: vi.fn((promise) => promise)
       },
-      CACHE_ENABLE_KV: "true",
-      ENVIRONMENT: "testing" 
+      CACHE_ENABLE_KV: 'true',
+      ENVIRONMENT: 'testing' 
     };
     
     vi.clearAllMocks();

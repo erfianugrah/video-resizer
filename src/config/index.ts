@@ -11,7 +11,7 @@ import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
 
 // Import from our own logger module
-import { error as pinoError } from '../utils/pinoLogger';
+import { error as pinoError, debug as pinoDebug, info as pinoInfo, warn as pinoWarn } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createLogger } from '../utils/pinoLogger';
 
@@ -27,6 +27,51 @@ function logError(message: string, data?: Record<string, unknown>): void {
   } else {
     // Direct console.error is appropriate only during initialization
     console.error(`Config: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log a debug message - helper for config module
+ * Falls back to console.log during initialization before logging system is available
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'Config', message, data);
+  } else {
+    // Direct console.log is appropriate only during initialization
+    console.log(`Config DEBUG: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an info message - helper for config module
+ * Falls back to console.info during initialization before logging system is available
+ */
+function logInfo(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoInfo(requestContext, logger, 'Config', message, data);
+  } else {
+    // Direct console.info is appropriate only during initialization
+    console.info(`Config INFO: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log a warning message - helper for config module
+ * Falls back to console.warn during initialization before logging system is available
+ */
+function logWarn(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoWarn(requestContext, logger, 'Config', message, data);
+  } else {
+    // Direct console.warn is appropriate only during initialization
+    console.warn(`Config WARN: ${message}`, data || {});
   }
 }
 
@@ -195,6 +240,124 @@ export function getVideoPathPatterns() {
 // This will be populated from the Worker environment at runtime
 const config = initializeConfiguration();
 
+/**
+ * Update all configuration managers from KV configuration
+ * @param kvConfig Configuration loaded from KV
+ */
+export function updateAllConfigFromKV(kvConfig: any) {
+  if (!kvConfig) {
+    logWarn('No KV configuration provided to updateAllConfigFromKV');
+    return;
+  }
+  
+  // Log the overall KV configuration structure for debugging
+  logInfo('Processing KV configuration update', {
+    hasVideoConfig: !!kvConfig.video,
+    hasCacheConfig: !!kvConfig.cache,
+    hasLoggingConfig: !!kvConfig.logging,
+    hasDebugConfig: !!kvConfig.debug,
+    hasStorageConfig: !!kvConfig.storage,
+    configVersion: kvConfig.version,
+    lastUpdated: kvConfig.lastUpdated
+  });
+  
+  // Update video configuration if available
+  if (kvConfig.video) {
+    try {
+      // Log video configuration details for debugging
+      logInfo('Processing video configuration from KV', {
+        hasPassthrough: !!kvConfig.video.passthrough,
+        passthroughEnabled: kvConfig.video.passthrough?.enabled,
+        hasDerivatives: !!kvConfig.video.derivatives,
+        hasCdnCgi: !!kvConfig.video.cdnCgi,
+        hasPathPatterns: Array.isArray(kvConfig.video.pathPatterns) ? kvConfig.video.pathPatterns.length : 0
+      });
+      
+      const videoManager = VideoConfigurationManager.getInstance();
+      videoManager.updateConfig(kvConfig.video);
+      
+      // Verify the update was successful by checking if passthrough config was applied
+      const updatedConfig = videoManager.getConfig();
+      logInfo('Updated video configuration from KV', {
+        hasPassthrough: !!updatedConfig.passthrough,
+        passthroughEnabled: updatedConfig.passthrough?.enabled,
+        whitelistedFormats: updatedConfig.passthrough?.whitelistedFormats?.length || 0
+      });
+    } catch (err) {
+      logError('Failed to update video configuration from KV', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    }
+  } else {
+    logWarn('No video configuration in KV data');
+  }
+  
+  // Update cache configuration if available
+  if (kvConfig.cache) {
+    try {
+      // Log cache configuration details
+      logInfo('Processing cache configuration from KV', {
+        method: kvConfig.cache.method,
+        debug: kvConfig.cache.debug,
+        hasFallback: !!kvConfig.cache.fallback,
+        profileCount: Object.keys(kvConfig.cache.cache || {}).length
+      });
+      
+      const cacheManager = CacheConfigurationManager.getInstance();
+      cacheManager.updateConfig(kvConfig.cache);
+      logInfo('Updated cache configuration from KV');
+    } catch (err) {
+      logError('Failed to update cache configuration from KV', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    }
+  }
+  
+  // Update logging configuration if available
+  if (kvConfig.logging) {
+    try {
+      const loggingManager = LoggingConfigurationManager.getInstance();
+      loggingManager.updateConfig(kvConfig.logging);
+      logInfo('Updated logging configuration from KV', {
+        level: kvConfig.logging.level,
+        format: kvConfig.logging.format
+      });
+    } catch (err) {
+      logError('Failed to update logging configuration from KV', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    }
+  }
+  
+  // Update debug configuration if available
+  if (kvConfig.debug) {
+    try {
+      const debugManager = DebugConfigurationManager.getInstance();
+      debugManager.updateConfig(kvConfig.debug);
+      logInfo('Updated debug configuration from KV', {
+        enabled: kvConfig.debug.enabled,
+        verbose: kvConfig.debug.verbose
+      });
+    } catch (err) {
+      logError('Failed to update debug configuration from KV', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+    }
+  }
+  
+  // Log completion of configuration update
+  logInfo('Completed KV configuration update', {
+    hasVideoConfig: !!kvConfig.video,
+    hasCacheConfig: !!kvConfig.cache,
+    hasLoggingConfig: !!kvConfig.logging,
+    hasDebugConfig: !!kvConfig.debug
+  });
+}
+
 export default config;
 
 /**
@@ -206,7 +369,7 @@ export function getCacheConfig(envVars?: EnvVariables) {
   const envConfig = getEnvironmentConfig(envVars);
   
   // Log the KV cache configuration details for debugging
-  logError('KV cache configuration from environment', { 
+  logDebug('KV cache configuration from environment', { 
     enableKVCache: envConfig.cache.enableKVCache,
     ttl: envConfig.cache.kvTtl,
     isProduction: envConfig.isProduction,

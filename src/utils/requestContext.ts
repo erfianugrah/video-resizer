@@ -64,6 +64,9 @@ export interface RequestContext {
   // Feature flags
   debugEnabled: boolean;  // Whether debug mode is enabled
   verboseEnabled: boolean; // Whether verbose logging is enabled
+  
+  // For waitUntil operations
+  executionContext?: ExecutionContext; // Worker execution context for waitUntil
 }
 
 /**
@@ -79,9 +82,10 @@ export interface TimedOperation {
 /**
  * Create a new request context
  * @param request The HTTP request
+ * @param ctx Optional execution context for waitUntil operations
  * @returns A new RequestContext object
  */
-export function createRequestContext(request: Request): RequestContext {
+export function createRequestContext(request: Request, ctx?: ExecutionContext): RequestContext {
   const url = new URL(request.url);
   
   // Get debug configuration from DebugConfigurationManager
@@ -124,7 +128,7 @@ export function createRequestContext(request: Request): RequestContext {
                          envVerboseEnabled);
   
   // Create the context
-  return {
+  const context: RequestContext = {
     requestId: request.headers.get('X-Request-ID') || uuidv4(),
     url: request.url,
     startTime: performance.now(),
@@ -136,6 +140,13 @@ export function createRequestContext(request: Request): RequestContext {
     debugEnabled,
     verboseEnabled
   };
+  
+  // Store the execution context if provided, for waitUntil operations
+  if (ctx) {
+    context.executionContext = ctx;
+  }
+  
+  return context;
 }
 
 /**

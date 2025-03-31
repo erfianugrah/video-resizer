@@ -31,6 +31,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - **Video Derivatives** - Pre-configured transformation presets for common use cases
 - **Multi-Source Storage** - Fetch videos from R2 buckets, remote URLs, or fallback sources
 - **Authentication Support** - Configure auth for remote video sources with multiple auth methods
+- **Dynamic Configuration** - Update configuration without redeploying using KV storage
 
 ### Architecture
 - **Service-Oriented Design** - Modular services with separation of concerns
@@ -42,6 +43,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 - [Documentation Home](./docs/README.md)
 - [Configuration Reference](./docs/configuration/README.md)
+- [Dynamic Configuration](./docs/configuration/dynamic-configuration.md)
 - [Deployment Guide](./docs/deployment/README.md)
 - [KV Caching System](./docs/kv-caching/README.md)
 - [Storage System](./docs/storage/README.md)
