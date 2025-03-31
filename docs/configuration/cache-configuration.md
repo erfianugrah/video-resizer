@@ -2,6 +2,16 @@
 
 The `CacheConfigurationManager` handles caching behavior and cache profiles. It provides methods to control how content is cached, including cache methods, TTLs, and profiles for different content types.
 
+## Multi-Level Caching Strategy
+
+The video-resizer implements a multi-level caching strategy to optimize performance and reduce costs:
+
+1. **Cloudflare Cache API** (Edge Cache): First level of cache, checked for all requests
+2. **KV Storage Cache** (Global Persistent Cache): Second level cache, checked on Cloudflare cache misses
+3. **Origin + Transformation**: Only executed if both caches miss
+
+For examples of cache hit logging and a detailed request flow, see [KV Cache Logging Example](./kv-cache-logging-example.md).
+
 ## Cache Method Options
 
 | Option | Description | Default |

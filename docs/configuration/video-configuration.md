@@ -38,6 +38,8 @@ Example configuration:
 
 When a request is received for a non-MP4 file (e.g., `.webm`, `.mov`, `.avi`), and passthrough is enabled, the request will be passed directly to the origin server without any transformation. This prevents timeouts and errors when processing unsupported formats.
 
+All static assets (`.png`, `.jpg`, `.svg`, `.css`, `.js`, `.ico`, etc.) are also automatically handled by this passthrough mechanism, as they are identified as non-MP4 files. This provides an efficient fast-path for all non-video content.
+
 If you want to allow certain non-MP4 formats to be processed despite the risks, you can add them to the `whitelistedFormats` array.
 
 ## Video Default Options

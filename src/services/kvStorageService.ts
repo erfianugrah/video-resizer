@@ -250,8 +250,8 @@ export async function getTransformedVideo(
     headers.set('Content-Length', metadata.contentLength.toString());
     
     // Add Cache-Control header if expiresAt is set
+    const now = Date.now();
     if (metadata.expiresAt) {
-      const now = Date.now();
       const remainingTtl = Math.max(0, Math.floor((metadata.expiresAt - now) / 1000));
       headers.set('Cache-Control', `public, max-age=${remainingTtl}`);
     } else {
@@ -264,6 +264,24 @@ export async function getTransformedVideo(
     // Add Cache-Tag header with the cache tags from metadata
     if (metadata.cacheTags && metadata.cacheTags.length > 0) {
       headers.set('Cache-Tag', metadata.cacheTags.join(','));
+    }
+    
+    // Add detailed KV cache headers for debugging and monitoring
+    const cacheAge = Math.floor((now - metadata.createdAt) / 1000);
+    const cacheTtl = metadata.expiresAt ? Math.floor((metadata.expiresAt - now) / 1000) : 86400; // Default 24h
+    
+    headers.set('X-KV-Cache-Age', `${cacheAge}s`);
+    headers.set('X-KV-Cache-TTL', `${cacheTtl}s`);
+    headers.set('X-KV-Cache-Key', key);
+    headers.set('X-Cache-Status', 'HIT');
+    headers.set('X-Cache-Source', 'KV');
+    
+    // Add derivative and other option information for analytics
+    if (options.derivative) {
+      headers.set('X-Video-Derivative', options.derivative);
+    }
+    if (options.quality) {
+      headers.set('X-Video-Quality', options.quality);
     }
     
     // Create a new response with the video data

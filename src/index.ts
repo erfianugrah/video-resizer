@@ -268,21 +268,8 @@ export default {
         }
       }
       
-      // Lightweight handling for static assets and favicon to reduce CPU time
-      if (requestUrl.pathname === '/favicon.ico' || 
-          requestUrl.pathname.endsWith('.png') || 
-          requestUrl.pathname.endsWith('.jpg') || 
-          requestUrl.pathname.endsWith('.svg') ||
-          requestUrl.pathname.endsWith('.css') ||
-          requestUrl.pathname.endsWith('.js')) {
-        
-        logInfo(context, 'Static asset request - bypassing video processing', {
-          path: requestUrl.pathname
-        });
-        
-        // Create a fast-path response that bypasses all the video transformation logic
-        return fetch(request);
-      }
+      // Note: We've removed the specific static asset bypass since non-MP4 file passthrough
+      // already handles this. All non-MP4 files are automatically passed through to origin.
       
       // Handle file format passthrough for non-MP4 videos
       // Import dynamically to avoid circular dependencies

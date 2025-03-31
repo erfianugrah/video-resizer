@@ -93,12 +93,43 @@ export async function handleVideoRequest(
     const skipCfCache = context.debugEnabled || url.searchParams.has('debug');
     let cachedResponse = null;
     
+    // Start a separate timed operation for CF cache check
+    startTimedOperation(context, 'cf-cache-lookup', 'Cache');
+    
     if (!skipCfCache) {
+      addBreadcrumb(context, 'Cache', 'Checking CF cache', {
+        url: request.url,
+        method: 'cache-api'
+      });
+      
       cachedResponse = await getCachedResponse(request);
+      
+      // End CF cache lookup timing
+      endTimedOperation(context, 'cf-cache-lookup');
+      
       if (cachedResponse) {
+        // Get cache details from headers if available
+        const cacheControl = cachedResponse.headers.get('Cache-Control') || 'unknown';
+        const cacheStatus = cachedResponse.headers.get('CF-Cache-Status') || 'unknown';
+        const cfRay = cachedResponse.headers.get('CF-Ray') || 'unknown';
+        const contentType = cachedResponse.headers.get('Content-Type') || 'unknown';
+        const contentLength = cachedResponse.headers.get('Content-Length') || 'unknown';
+        
         info(context, logger, 'VideoHandler', 'Serving from CF cache', {
           url: url.toString(),
-          cacheControl: cachedResponse.headers.get('Cache-Control'),
+          cacheControl: cacheControl,
+          cacheStatus: cacheStatus,
+          cfRay: cfRay,
+          contentType: contentType,
+          contentLength: contentLength,
+          fromCfCache: true // Explicit flag to indicate CF cache hit
+        });
+        
+        addBreadcrumb(context, 'Cache', 'CF cache hit', {
+          url: url.toString(),
+          cacheStatus: cacheStatus,
+          contentType: contentType,
+          contentLength: contentLength
         });
         
         endTimedOperation(context, 'cache-lookup');
@@ -106,8 +137,21 @@ export async function handleVideoRequest(
         // Use ResponseBuilder for consistent response handling including range requests
         const responseBuilder = new ResponseBuilder(cachedResponse, context);
         return await responseBuilder.build();
+      } else {
+        // Log CF cache miss
+        addBreadcrumb(context, 'CacheManagementService', 'CF cache miss', {
+          url: url.toString(),
+          duration: endTimedOperation(context, 'cf-cache-lookup')
+        });
+        
+        debug(context, logger, 'VideoHandler', 'CF cache miss', {
+          url: url.toString()
+        });
       }
     } else {
+      // Skip CF cache due to debug mode
+      endTimedOperation(context, 'cf-cache-lookup');
+      
       debug(context, logger, 'VideoHandler', 'Skipping CF cache due to debug mode', {
         debugEnabled: context.debugEnabled,
         hasDebugParam: url.searchParams.has('debug')
@@ -122,24 +166,56 @@ export async function handleVideoRequest(
       // Get video options first to use as cache key
       const videoOptions = determineVideoOptions(request, url.searchParams, path);
         
+      // Start a separate timed operation for KV cache check
+      startTimedOperation(context, 'kv-cache-lookup', 'KVCache');
+      
       addBreadcrumb(context, 'Cache', 'Checking KV cache', {
         url: request.url,
-        path: sourcePath
+        path: sourcePath,
+        options: JSON.stringify(videoOptions)
+      });
+      
+      debug(context, logger, 'KVCacheUtils', 'Checking KV cache for video', {
+        sourcePath: sourcePath,
+        derivative: videoOptions.derivative,
+        hasQuery: url.search.length > 0
       });
       
       // Use type assertion to fix interface compatibility issues
       const kvResponse = await getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions);
       
       if (kvResponse) {
+        // End KV cache lookup timing
+        endTimedOperation(context, 'kv-cache-lookup');
+        
+        // Get cache details from headers if available
+        const cacheAge = kvResponse.headers.get('X-KV-Cache-Age') || 'unknown';
+        const cacheTtl = kvResponse.headers.get('X-KV-Cache-TTL') || 'unknown';
+        const cacheKey = kvResponse.headers.get('X-KV-Cache-Key') || sourcePath;
+        const contentLength = kvResponse.headers.get('Content-Length') || 'unknown';
+        const contentType = kvResponse.headers.get('Content-Type') || 'unknown';
+        
+        // Log detailed information about the cache hit
         info(context, logger, 'VideoHandler', 'Serving from KV cache', {
           url: url.toString(),
           path: sourcePath,
+          cacheAge: cacheAge,
+          cacheTtl: cacheTtl,
+          cacheKey: cacheKey,
+          contentType: contentType,
+          contentLength: contentLength,
+          derivative: videoOptions.derivative,
+          fromKvCache: true // Explicit flag to indicate KV cache hit
         });
         
         addBreadcrumb(context, 'Cache', 'KV cache hit', {
-          path: sourcePath
+          path: sourcePath,
+          cacheAge: cacheAge,
+          contentType: contentType,
+          size: contentLength
         });
         
+        // End overall cache lookup timing
         endTimedOperation(context, 'cache-lookup');
         
         // Use ResponseBuilder for consistent response handling
@@ -147,9 +223,20 @@ export async function handleVideoRequest(
         return await responseBuilder.build();
       }
       
+      // End KV cache lookup timing
+      endTimedOperation(context, 'kv-cache-lookup');
+      
+      addBreadcrumb(context, 'KVCache', 'KV cache miss', {
+        sourcePath: sourcePath,
+        derivative: videoOptions.derivative
+      });
+      
       debug(context, logger, 'VideoHandler', 'KV cache miss', {
         path: sourcePath,
-        options: videoOptions
+        url: url.toString(),
+        derivative: videoOptions.derivative,
+        quality: videoOptions.quality,
+        noCache: true // Explicit flag to indicate cache miss
       });
     }
     
