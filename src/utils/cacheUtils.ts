@@ -1,7 +1,22 @@
 /**
  * Utilities for managing cache configuration for videos
  */
-import { videoConfig } from '../config/videoConfig';
+import { CacheConfigurationManager, cacheConfig } from '../config/CacheConfigurationManager';
+import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+
+/**
+ * Helper for logging debug messages
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'CacheUtils', message, data);
+  } else {
+    console.debug(`CacheUtils: ${message}`, data || {});
+  }
+}
 
 /**
  * Cache configuration interface
@@ -23,12 +38,12 @@ export interface CacheConfig {
 }
 
 /**
- * Determine cache configuration based on URL
+ * Determine cache configuration based on URL by matching against configured profiles
  * @param url - The full URL to check
  * @returns Cache configuration object
  */
 export function determineCacheConfig(url: string): CacheConfig {
-  // Default empty cache config
+  // Default empty cache config - only used if no profiles match and no fallback is available
   const defaultCacheConfig: CacheConfig = {
     cacheability: false,
     videoCompression: 'off',
@@ -40,44 +55,72 @@ export function determineCacheConfig(url: string): CacheConfig {
     },
   };
 
-  // Prioritize specific patterns first
-  // 1. Check for high traffic videos (popular)
-  if (url.includes('/popular/') && url.endsWith('.mp4')) {
-    return {
-      cacheability: videoConfig.cache.highTraffic.cacheability,
-      videoCompression: videoConfig.cache.highTraffic.videoCompression,
-      ttl: videoConfig.cache.highTraffic.ttl,
-    };
-  }
-  
-  // 2. Check for short-form videos
-  if (url.includes('/shorts/') && url.endsWith('.mp4')) {
-    return {
-      cacheability: videoConfig.cache.shortForm.cacheability,
-      videoCompression: videoConfig.cache.shortForm.videoCompression,
-      ttl: videoConfig.cache.shortForm.ttl,
-    };
-  }
-  
-  // 3. Check for live videos
-  if (url.includes('/live/') && url.endsWith('.mp4')) {
-    return {
-      cacheability: videoConfig.cache.dynamic.cacheability,
-      videoCompression: videoConfig.cache.dynamic.videoCompression,
-      ttl: videoConfig.cache.dynamic.ttl,
-    };
-  }
-  
-  // 4. Default for any other video
-  if (url.endsWith('.mp4') || url.endsWith('.mov') || url.endsWith('.webm')) {
-    return {
-      cacheability: videoConfig.cache.default.cacheability,
-      videoCompression: videoConfig.cache.default.videoCompression,
-      ttl: videoConfig.cache.default.ttl,
-    };
+  try {
+    // Get cache profiles from configuration manager
+    const cacheSettings = cacheConfig.getConfig();
+    const profiles = cacheSettings.profiles;
+    
+    if (!profiles) {
+      logDebug('No cache profiles found in configuration, using default empty config');
+      return defaultCacheConfig;
+    }
+    
+    // Extract the path from the URL for pattern matching
+    const path = new URL(url).pathname;
+    
+    // Try to match against each profile using regex patterns
+    for (const [profileName, profile] of Object.entries(profiles)) {
+      if (profileName === 'default') continue; // Skip default for now, we'll use it as fallback
+      
+      try {
+        if (profile.regex) {
+          const regex = new RegExp(profile.regex);
+          if (regex.test(path)) {
+            // Convert profile to CacheConfig format
+            const config: CacheConfig = {
+              cacheability: profile.cacheability,
+              videoCompression: profile.videoCompression,
+              useTtlByStatus: profile.useTtlByStatus,
+              ttl: profile.ttl
+            };
+            
+            logDebug(`Matched cache profile: ${profileName}`, {
+              path,
+              regex: profile.regex,
+              cacheability: profile.cacheability
+            });
+            
+            return config;
+          }
+        }
+      } catch (error) {
+        // Log but continue trying other profiles
+        logDebug(`Error matching regex for profile ${profileName}`, {
+          error: error instanceof Error ? error.message : String(error),
+          regex: profile.regex
+        });
+      }
+    }
+    
+    // If we didn't match any specific profile, use the default profile if available
+    if (profiles.default) {
+      logDebug('Using default cache profile for path', { path });
+      
+      return {
+        cacheability: profiles.default.cacheability,
+        videoCompression: profiles.default.videoCompression,
+        useTtlByStatus: profiles.default.useTtlByStatus,
+        ttl: profiles.default.ttl
+      };
+    }
+  } catch (error) {
+    logDebug('Error determining cache configuration from profiles', {
+      error: error instanceof Error ? error.message : String(error),
+      url
+    });
   }
 
-  // Return default empty config for non-video URLs
+  // Return empty config as last resort if nothing matched
   return defaultCacheConfig;
 }
 

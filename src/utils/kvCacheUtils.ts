@@ -3,6 +3,7 @@
  */
 
 import { getCacheConfig } from '../config';
+import { cacheConfig } from '../config/CacheConfigurationManager';
 import { EnvVariables } from '../config/environmentConfig';
 import { getTransformedVideo, storeTransformedVideo } from '../services/kvStorageService';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
@@ -202,8 +203,8 @@ export async function storeInKVCache(
     // Check content type to determine if response is video
     const contentType = responseClone.headers.get('content-type') || '';
     
-    // Comprehensive list of supported MIME types
-    const videoMimeTypes = [
+    // Default MIME types
+    const DEFAULT_VIDEO_MIME_TYPES = [
       'video/mp4',
       'video/webm',
       'video/ogg',
@@ -218,7 +219,7 @@ export async function storeInKVCache(
       'application/dash+xml'   // DASH
     ];
     
-    const imageMimeTypes = [
+    const DEFAULT_IMAGE_MIME_TYPES = [
       'image/jpeg',
       'image/jpg',
       'image/png',
@@ -226,6 +227,27 @@ export async function storeInKVCache(
       'image/gif',
       'image/avif'
     ];
+    
+    // Initialize with defaults
+    let videoMimeTypes = DEFAULT_VIDEO_MIME_TYPES;
+    let imageMimeTypes = DEFAULT_IMAGE_MIME_TYPES;
+    
+    try {
+      // Get MIME types from cache configuration
+      const cacheSettings = cacheConfig.getConfig();
+      if (cacheSettings.mimeTypes) {
+        if (cacheSettings.mimeTypes.video && cacheSettings.mimeTypes.video.length > 0) {
+          videoMimeTypes = cacheSettings.mimeTypes.video;
+        }
+        if (cacheSettings.mimeTypes.image && cacheSettings.mimeTypes.image.length > 0) {
+          imageMimeTypes = cacheSettings.mimeTypes.image;
+        }
+      }
+    } catch (err) {
+      logDebug('Error getting MIME types from configuration, using defaults', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
     
     const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
     const isImageResponse = imageMimeTypes.some(mimeType => contentType.startsWith(mimeType));
@@ -280,16 +302,37 @@ export async function storeInKVCache(
       sizeMB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024) * 100) / 100 : 0
     });
     
-    // For content larger than Cloudflare's KV size limit (25MiB), skip KV storage entirely
-    const KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB in bytes
+    // Get storage limits from configuration - use cacheConfig manager for consistent access
+    let KV_SIZE_LIMIT: number;
+    
+    try {
+      // Get the limit from cache configuration
+      const cacheSettings = cacheConfig.getConfig();
+      KV_SIZE_LIMIT = cacheSettings.maxSizeBytes;
+      
+      logDebug('Using configured KV size limit', {
+        maxSizeBytes: KV_SIZE_LIMIT,
+        source: 'cache-configuration'
+      });
+    } catch (err) {
+      // Default KV size limit if configuration isn't available
+      KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB default
+      
+      logDebug('Error getting KV size limit from configuration, using default', {
+        defaultLimit: KV_SIZE_LIMIT,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    
     const exceedsKVLimit = contentLength > KV_SIZE_LIMIT;
     
-    // Skip KV storage for content exceeding the 25MiB KV size limit
+    // Skip KV storage for content exceeding the configured KV size limit
     if (exceedsKVLimit) {
-      logDebug('Skipping KV storage for content exceeding 25MiB size limit', {
+      logDebug(`Skipping KV storage for content exceeding size limit (${Math.round(KV_SIZE_LIMIT / (1024 * 1024))}MiB)`, {
         contentType,
         contentLength,
         maxSizeBytes: KV_SIZE_LIMIT,
+        sizeLimitMiB: Math.round(KV_SIZE_LIMIT / (1024 * 1024)),
         sourcePath,
         mode: options.mode || 'video'
       });
@@ -450,22 +493,44 @@ export async function storeInKVCache(
  * @returns TTL in seconds
  */
 function determineTTL(response: Response, config: any): number {
-  // Default TTL based on response status
+  // Get status and category
   const status = response.status;
   const statusCategory = Math.floor(status / 100);
   
-  // Determine TTL based on status code
+  // Try to get global defaults from cache configuration
+  let defaultTTLs = {
+    ok: 86400,        // 24 hours
+    redirects: 3600,  // 1 hour
+    clientError: 60,  // 1 minute
+    serverError: 10   // 10 seconds
+  };
+  
+  try {
+    // Get global TTL defaults from cache configuration
+    const cacheSettings = cacheConfig.getConfig();
+    // Use the default profile as the source of TTL defaults
+    if (cacheSettings.profiles?.default?.ttl) {
+      defaultTTLs = { ...defaultTTLs, ...cacheSettings.profiles.default.ttl };
+    }
+  } catch (err) {
+    // Continue with hardcoded defaults
+    logDebug('Error getting TTL defaults from configuration', {
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+  
+  // Determine TTL based on status code, using provided config first, then global defaults
   switch (statusCategory) {
     case 2: // Success
-      return config.ttl?.ok || 86400; // 24 hours
+      return config.ttl?.ok || defaultTTLs.ok;
     case 3: // Redirect
-      return config.ttl?.redirects || 3600; // 1 hour
+      return config.ttl?.redirects || defaultTTLs.redirects;
     case 4: // Client error
-      return config.ttl?.clientError || 60; // 1 minute
+      return config.ttl?.clientError || defaultTTLs.clientError;
     case 5: // Server error
-      return config.ttl?.serverError || 10; // 10 seconds
+      return config.ttl?.serverError || defaultTTLs.serverError;
     default:
-      return 60; // 1 minute default
+      return config.ttl?.clientError || defaultTTLs.clientError;
   }
 }
 
@@ -483,16 +548,48 @@ async function shouldBypassKVCache(sourcePath: string): Promise<boolean> {
   if (requestContext?.url) {
     const url = new URL(requestContext.url);
     
-    // Check for debug mode first (simple check)
-    if (url.searchParams.has('debug')) {
-      logDebug('Bypassing KV cache due to debug mode', { sourcePath });
-      return true;
+    // Get bypass parameters exclusively from configuration
+    let bypassParams: string[] = [];
+    
+    try {
+      // Get bypass parameters from the cache configuration we already imported
+      const cacheSettings = cacheConfig.getConfig();
+      
+      // Use the bypass parameters directly from configuration
+      if (cacheSettings.bypassQueryParameters && cacheSettings.bypassQueryParameters.length > 0) {
+        bypassParams = [...cacheSettings.bypassQueryParameters];
+        
+        // Ensure 'debug' is always included for compatibility
+        if (!bypassParams.includes('debug')) {
+          bypassParams.push('debug');
+        }
+        
+        logDebug('Using configured bypass parameters', {
+          params: bypassParams.join(', '),
+          source: 'cache-configuration'
+        });
+      } else {
+        // Fall back to default bypass parameters if none are configured
+        bypassParams = ['debug', 'nocache', 'bypass'];
+        logDebug('No bypass parameters found in configuration, using defaults', {
+          params: bypassParams.join(', ')
+        });
+      }
+    } catch (err) {
+      // If we can't get the configuration, use safe defaults
+      bypassParams = ['debug', 'nocache', 'bypass'];
+      logDebug('Error getting bypass parameters from configuration, using defaults', {
+        params: bypassParams.join(', '),
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
     
-    // Check for nocache or bypass parameters (simple check)
-    if (url.searchParams.has('nocache') || url.searchParams.has('bypass')) {
-      logDebug('Bypassing KV cache due to bypass parameters', { sourcePath });
-      return true;
+    // Check for any configured bypass parameters
+    for (const param of bypassParams) {
+      if (url.searchParams.has(param)) {
+        logDebug(`Bypassing KV cache due to ${param} parameter`, { sourcePath });
+        return true;
+      }
     }
   }
   

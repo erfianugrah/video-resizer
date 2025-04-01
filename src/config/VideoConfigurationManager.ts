@@ -46,6 +46,12 @@ const NetworkQualityConfigSchema = z.object({
   maxBitrate: z.number().positive(),
 });
 
+// Browser Capabilities Schema
+const BrowserCapabilitySchema = z.object({
+  patterns: z.array(z.string()),
+  exclusions: z.array(z.string()).optional(),
+});
+
 // Path Pattern Schema
 export const PathPatternSchema = z.object({
   name: z.string(),
@@ -118,6 +124,7 @@ export const VideoConfigSchema = z.object({
     availableQualities: z.array(z.number().positive()),
     deviceWidths: z.record(z.number().positive()),
     networkQuality: z.record(NetworkQualityConfigSchema),
+    browserCapabilities: z.record(BrowserCapabilitySchema).optional(),
   }),
   paramMapping: z.record(z.string()),
   cdnCgi: z.object({
@@ -136,8 +143,8 @@ export const VideoConfigSchema = z.object({
       badRequestOnly: z.boolean(),
       preserveHeaders: z.array(z.string()).optional()
     }),
-  }),
-  cache: z.record(CacheConfigSchema),
+  }).optional(), // Make caching optional
+  cache: z.record(CacheConfigSchema).optional(), // Make cache optional
 });
 
 // Type exported from the schema
@@ -350,9 +357,11 @@ export class VideoConfigurationManager {
 
   /**
    * Get cache configuration
+   * Supports both legacy structure (video.cache) and new structure (root-level cache)
    */
   public getCacheConfig() {
-    return this.config.cache;
+    // Support for both configurations
+    return this.config.cache || {}; 
   }
 
   /**
@@ -364,9 +373,38 @@ export class VideoConfigurationManager {
 
   /**
    * Get caching method configuration
+   * Supports both legacy structure (video.caching) and new structure (root-level cache.method etc.)
    */
   public getCachingConfig() {
-    return this.config.caching;
+    // Support for both configurations
+    if (this.config.caching) {
+      return this.config.caching;
+    }
+    
+    // Create a compatible structure from the root-level cache settings if available
+    const rootCache = this.getConfig() as any;
+    if (rootCache.cache && rootCache.cache.method) {
+      return {
+        method: rootCache.cache.method,
+        debug: rootCache.cache.debug || false,
+        fallback: rootCache.cache.fallback || { 
+          enabled: true, 
+          badRequestOnly: true,
+          preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag']
+        }
+      };
+    }
+    
+    // Default caching fallback
+    return {
+      method: 'cacheApi',
+      debug: false,
+      fallback: {
+        enabled: true,
+        badRequestOnly: true,
+        preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag']
+      }
+    };
   }
   
   /**

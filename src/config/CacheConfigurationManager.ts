@@ -29,6 +29,32 @@ export const CacheProfileSchema = z.object({
   }),
 });
 
+// Define schema for MIME types
+export const MimeTypesSchema = z.object({
+  video: z.array(z.string()).default([
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+    'video/x-msvideo',
+    'video/quicktime',
+    'video/x-matroska',
+    'video/x-flv',
+    'video/3gpp',
+    'video/3gpp2',
+    'video/mpeg',
+    'application/x-mpegURL',
+    'application/dash+xml'
+  ]),
+  image: z.array(z.string()).default([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif'
+  ])
+});
+
 // Define schema for cache configuration
 export const CacheConfigSchema = z.object({
   // Caching method: 'cf' for Cloudflare-managed cache, 'cacheApi' for Cache API
@@ -49,6 +75,12 @@ export const CacheConfigSchema = z.object({
   // Bypass settings
   bypassQueryParameters: z.array(z.string()).default(['nocache', 'bypass']),
   bypassHeaderValue: z.string().default('no-cache'),
+  
+  // Storage limits
+  maxSizeBytes: z.number().nonnegative().default(25 * 1024 * 1024), // Default 25MiB
+  
+  // MIME type settings
+  mimeTypes: MimeTypesSchema.optional(),
   
   // Cache profiles for different content types
   profiles: z.record(CacheProfileSchema).default({
@@ -82,6 +114,31 @@ const defaultCacheConfig: CacheConfiguration = {
   purgeOnUpdate: false,
   bypassQueryParameters: ['nocache', 'bypass'],
   bypassHeaderValue: 'no-cache',
+  maxSizeBytes: 25 * 1024 * 1024, // 25MiB default
+  mimeTypes: {
+    video: [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo',
+      'video/quicktime',
+      'video/x-matroska',
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL',
+      'application/dash+xml'
+    ],
+    image: [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/avif'
+    ]
+  },
   profiles: {
     default: {
       regex: '.*',

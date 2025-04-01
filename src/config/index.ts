@@ -301,7 +301,8 @@ export function updateAllConfigFromKV(kvConfig: any) {
         method: kvConfig.cache.method,
         debug: kvConfig.cache.debug,
         hasFallback: !!kvConfig.cache.fallback,
-        profileCount: Object.keys(kvConfig.cache.cache || {}).length
+        profileCount: Object.keys(kvConfig.cache.profiles || {}).length,
+        hasMimeTypes: !!kvConfig.cache.mimeTypes
       });
       
       const cacheManager = CacheConfigurationManager.getInstance();

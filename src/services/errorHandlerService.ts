@@ -129,7 +129,7 @@ export async function fetchOriginalContentFallback(
       ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'];
     
     // Copy preserved headers from original response
-    preserveHeaders.forEach(headerName => {
+    preserveHeaders.forEach((headerName: string) => {
       const headerValue = response.headers.get(headerName);
       if (headerValue) {
         headers.set(headerName, headerValue);
