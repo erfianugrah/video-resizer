@@ -8,6 +8,8 @@ import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/tr
 import { getResponsiveVideoSize } from '../utils/responsiveWidthUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
+import { hasIMQueryParams, convertImQueryToClientHints, parseImQueryRef, validateAkamaiParams, findClosestDerivative } from '../utils/imqueryUtils';
+import { debug, info, warn } from '../utils/loggerUtils';
 
 /**
  * Type for video derivatives
@@ -36,6 +38,151 @@ export function determineVideoOptions(
   // Get the request context for breadcrumbs
   const requestContext = getCurrentContext();
   
+  // Check for IMQuery parameters
+  const usingIMQuery = hasIMQueryParams(params);
+  
+  // Store original parameters for diagnostics if IMQuery is present
+  if (usingIMQuery && requestContext) {
+    // Extract parameters and convert to object for diagnostics
+    const originalParams: Record<string, string> = {};
+    params.forEach((value, key) => {
+      originalParams[key] = value;
+    });
+    
+    // Validate IMQuery parameters
+    const validationResult = validateAkamaiParams(originalParams);
+    if (!validationResult.isValid && validationResult.warnings.length > 0) {
+      warn('IMQuery', 'IMQuery parameter validation warnings', { 
+        warnings: validationResult.warnings 
+      });
+      
+      // Store warnings in request context for debug UI
+      if (requestContext.diagnostics) {
+        requestContext.diagnostics.translationWarnings = validationResult.warnings;
+      }
+    }
+    
+    // Store in request context for debug UI
+    if (requestContext.diagnostics) {
+      requestContext.diagnostics.originalAkamaiParams = originalParams;
+      requestContext.diagnostics.usingIMQuery = true;
+    }
+    
+    // Look for IMQuery dimensions
+    const imwidth = parseIntOrNull(params.get('imwidth'));
+    const imheight = parseIntOrNull(params.get('imheight'));
+    
+    // Find closest derivative match
+    if (imwidth || imheight) {
+      const matchedDerivative = findClosestDerivative(imwidth, imheight);
+      
+      if (matchedDerivative && isValidDerivative(matchedDerivative)) {
+        // Apply derivative configuration
+        Object.assign(options, videoConfig.derivatives[matchedDerivative]);
+        options.derivative = matchedDerivative;
+        options.source = 'imquery-derivative';
+        
+        // IMPORTANT: Log derivative configuration to understand caching issues
+        debug('IMQuery', 'Applied derivative configuration for caching', {
+          derivative: matchedDerivative,
+          // The derivative configurations don't have cacheability directly, so just log the derivative
+          originalQueryParams: Object.fromEntries(params.entries())
+        });
+        
+        // Store diagnostics
+        if (requestContext.diagnostics) {
+          requestContext.diagnostics.imqueryMatching = {
+            requestedWidth: imwidth,
+            requestedHeight: imheight,
+            matchedDerivative: matchedDerivative,
+            derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
+            derivativeHeight: videoConfig.derivatives[matchedDerivative].height
+          };
+        }
+        
+        // Add breadcrumb for derivative selection
+        addBreadcrumb(requestContext, 'Client', 'Matched IMQuery dimensions to derivative', {
+          imwidth,
+          imheight,
+          derivative: matchedDerivative,
+          derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
+          derivativeHeight: videoConfig.derivatives[matchedDerivative].height,
+          source: 'imquery-derivative'
+        });
+        
+        info('IMQuery', 'Applied derivative based on IMQuery dimensions', {
+          imwidth,
+          imheight,
+          derivative: matchedDerivative,
+          source: 'imquery-derivative'
+        });
+      } else {
+        // No matching derivative, fall back to direct dimensions
+        debug('IMQuery', 'No matching derivative for IMQuery dimensions', {
+          imwidth,
+          imheight
+        });
+        
+        // Apply IMQuery dimensions directly
+        if (imwidth) options.width = imwidth;
+        if (imheight) options.height = imheight;
+      }
+    }
+    
+    // Process imref parameter if present
+    if (params.has('imref')) {
+      const imrefValue = params.get('imref') || '';
+      const imrefParams = parseImQueryRef(imrefValue);
+      
+      debug('IMQuery', 'Parsed IMQuery reference', { 
+        imref: imrefValue, 
+        params: imrefParams 
+      });
+      
+      // Add breadcrumb for IMQuery reference
+      addBreadcrumb(requestContext, 'Client', 'Processed IMQuery reference', {
+        imref: imrefValue,
+        paramCount: Object.keys(imrefParams).length
+      });
+    }
+    
+    // Convert IMQuery to client hints if present
+    const clientHints = convertImQueryToClientHints(params);
+    if (Object.keys(clientHints).length > 0) {
+      // Create enhanced request with client hints
+      const headers = new Headers(request.headers);
+      
+      // Add client hints headers
+      for (const [key, value] of Object.entries(clientHints)) {
+        headers.set(key, value);
+      }
+      
+      // Create new request with enhanced headers
+      const enhancedRequest = new Request(request.url, {
+        method: request.method,
+        headers,
+        body: request.body,
+        redirect: request.redirect,
+        integrity: request.integrity,
+        signal: request.signal
+      });
+      
+      // Use the enhanced request for further processing
+      request = enhancedRequest;
+      
+      info('IMQuery', 'Enhanced request with IMQuery client hints', { 
+        addedHeaders: clientHints 
+      });
+      
+      // Add breadcrumb for client hints conversion
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Client', 'Converted IMQuery to client hints', {
+          headers: clientHints
+        });
+      }
+    }
+  }
+  
   // Check if a derivative was specified
   const derivative = params.get('derivative');
   if (derivative && isValidDerivative(derivative)) {
@@ -61,10 +208,26 @@ export function determineVideoOptions(
   let explicitHeight: number | null = null;
   let autoQuality = false;
   
+  // Extract parameters for translation
+  const paramObject: Record<string, string | boolean | number> = {};
+  params.forEach((value, key) => {
+    paramObject[key] = value;
+  });
+  
+  // Translate parameters and store for debug UI
+  const translatedParams: Record<string, string | boolean | number> = {};
+  
   params.forEach((value, key) => {
     // Check if this is an Akamai format parameter
     const translatedKey = translateAkamaiParamName(key);
     const paramKey = translatedKey || key;
+    
+    // Store in translated parameters object for debugging
+    if (translatedKey) {
+      let translatedValue: string | boolean | number = value;
+      translatedValue = translateAkamaiParamValue(key, value);
+      translatedParams[translatedKey] = translatedValue;
+    }
 
     // Handle parameters based on their proper name
     switch (paramKey) {
@@ -161,11 +324,42 @@ export function determineVideoOptions(
         }
         break;
         
+      // Handle additional video parameters
+      case 'fps':
+        const fpsValue = parseFloat(value);
+        if (!isNaN(fpsValue) && fpsValue > 0) {
+          options.fps = fpsValue;
+        }
+        break;
+        
+      case 'speed':
+        const speedValue = parseFloat(value);
+        if (!isNaN(speedValue) && speedValue > 0) {
+          options.speed = speedValue;
+        }
+        break;
+        
+      case 'rotate':
+        const rotateValue = parseFloat(value);
+        if (!isNaN(rotateValue)) {
+          options.rotate = rotateValue;
+        }
+        break;
+        
+      case 'crop':
+        options.crop = value;
+        break;
+        
       default:
         // Ignore parameters that don't match our known ones
         break;
     }
   });
+  
+  // Store translated parameters for debugging
+  if (Object.keys(translatedParams).length > 0 && requestContext && requestContext.diagnostics) {
+    requestContext.diagnostics.translatedCloudflareParams = translatedParams;
+  }
 
   // Check if dimensions are already set by derivative
   const hasDerivativeDimensions = options.derivative && 
@@ -187,6 +381,9 @@ export function determineVideoOptions(
     
     // Add responsive source information to options
     options.source = options.source || responsiveSize.method;
+    if (usingIMQuery) {
+      options.source = 'imquery';
+    }
     
     // Add breadcrumb for responsive sizing
     if (requestContext) {
@@ -199,7 +396,8 @@ export function determineVideoOptions(
         viewportWidth: responsiveSize.viewportWidth,
         explicitDimensions: !!(explicitWidth || explicitHeight),
         derivativeDimensions: hasDerivativeDimensions,
-        derivative: options.derivative
+        derivative: options.derivative,
+        usingIMQuery
       });
     }
   }
@@ -207,6 +405,8 @@ export function determineVideoOptions(
   else {
     if (hasDerivativeDimensions) {
       options.source = 'derivative';
+    } else if (usingIMQuery) {
+      options.source = 'imquery';
     } else {
       options.source = derivative ? 'derivative' : 'params';
     }
@@ -218,7 +418,8 @@ export function determineVideoOptions(
         height: options.height,
         source: options.source,
         hasDerivativeDimensions: hasDerivativeDimensions,
-        derivative: options.derivative
+        derivative: options.derivative,
+        usingIMQuery
       });
     }
   }

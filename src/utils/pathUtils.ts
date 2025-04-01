@@ -48,7 +48,7 @@ export function isCdnCgiMediaPath(path: string): boolean {
 export function findMatchingPathPattern(path: string, patterns: PathPattern[]): PathPattern | null {
   // Import logger utilities in case they're available
   let logDebug: (message: string, data?: Record<string, unknown>) => void;
-  let console_debug = console.debug;
+  const console_debug = console.debug;
   
   try {
     // Define a fallback debug function to capture debug info during execution
@@ -268,7 +268,7 @@ export function buildCdnCgiMediaUrl(
 
   // Try to get the request context for logging
   let logDebug: (message: string, data?: Record<string, unknown>) => void;
-  let console_debug = console.debug;
+  const console_debug = console.debug;
   
   try {
     // Define a fallback debug function to capture debug info during execution

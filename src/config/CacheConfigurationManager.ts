@@ -210,8 +210,11 @@ export class CacheConfigurationManager {
 
   /**
    * Determine if cache should be bypassed based on query parameters
+   * This only checks for specific bypass parameters, not all query parameters
    */
   public shouldBypassCache(url: URL): boolean {
+    // Only check for specific bypass parameters (nocache, bypass, debug)
+    // Do NOT treat all query parameters (like imwidth) as bypass triggers
     for (const param of this.config.bypassQueryParameters) {
       if (url.searchParams.has(param)) {
         return true;
@@ -322,3 +325,8 @@ export class CacheConfigurationManager {
 
 // Export a default instance for easy access
 export const cacheConfig = CacheConfigurationManager.getInstance();
+
+// Add this to ensure module gets picked up properly in tests
+if (typeof cacheConfig === 'undefined') {
+  console.warn('CacheConfigurationManager failed to initialize default instance');
+}

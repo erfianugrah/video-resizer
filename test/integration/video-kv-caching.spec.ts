@@ -313,29 +313,39 @@ describe('Video Handler with KV Caching - Integration Test', () => {
     expect(result2.metadata.derivative).toBe('high');
   });
   
-  // Note: This test is skipped because it has a race condition with other tests
-  // when run in parallel. It works fine when run individually.
-  it.skip('should handle errors gracefully and fall back to transformation', async () => {
-    // Create KV namespace that throws on get
-    const mockKVWithError = {
+  // Now using isolated mock that won't interfere with other tests
+  it('should handle errors gracefully and fall back to transformation', async () => {
+    // Create isolated mocks for this test
+    const isolatedMockKV = {
       getWithMetadata: vi.fn().mockRejectedValue(new Error('KV error')),
-      put: vi.fn()
+      put: vi.fn(),
+      get: vi.fn().mockRejectedValue(new Error('KV error')),
+      delete: vi.fn(),
+      list: vi.fn()
     } as unknown as KVNamespace;
     
-    const mockEnvWithError = {
-      ...mockEnv,
-      VIDEO_TRANSFORMATIONS_CACHE: mockKVWithError
+    const isolatedExecCtx = {
+      waitUntil: vi.fn((promise) => promise)
+    };
+    
+    const isolatedEnv = {
+      VIDEO_TRANSFORMATIONS_CACHE: isolatedMockKV,
+      executionCtx: isolatedExecCtx
     };
     
     const request = createRequest({
       derivative: 'mobile'
     });
     
-    const response = await handleRequestWithCaching(request, mockEnvWithError, mockEnv.executionCtx);
+    const response = await handleRequestWithCaching(request, isolatedEnv, isolatedExecCtx);
     
     // Should still get a successful response despite KV errors
     expect(response.status).toBe(200);
-    const content = await response.clone().text();
+    const content = await response.text();
     expect(content).toBe('transformed video data');
+    
+    // Verify the transformation service was called
+    // We're not checking the mock directly since it's imported early in the file
+    // and may have state from other tests. Instead, we verify the response content.
   });
 });

@@ -77,6 +77,7 @@ export function generateKVKey(
     quality?: string | null;
     compression?: string | null;
     derivative?: string | null;
+    customData?: Record<string, unknown>;
   }
 ): string {
   // Remove leading slashes for consistency
@@ -85,8 +86,19 @@ export function generateKVKey(
   // Create a base key from the path
   let key = `video:${normalizedPath}`;
   
+  // Check for IMQuery parameters in customData
+  const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
+  
   // Add transformation parameters to the key - always use = as delimiter for consistency
-  if (options.derivative) {
+  if (hasIMQuery) {
+    // Use IMQuery parameters for the key if they exist
+    if (options.customData?.imwidth) key += `:imwidth=${options.customData.imwidth}`;
+    if (options.customData?.imheight) key += `:imheight=${options.customData.imheight}`;
+    
+    // Add derivative as metadata but not as primary key
+    if (options.derivative) key += `:via=${options.derivative}`;
+  } else if (options.derivative) {
+    // Normal case - use derivative as key
     key += `:derivative=${options.derivative}`;
   } else {
     // Only add individual parameters if no derivative specified

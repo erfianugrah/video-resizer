@@ -378,15 +378,41 @@ export async function handleVideoRequest(
         const sourcePath = url.pathname;
         const responseClone = response.clone();
         
+        // Check if this is an IMQuery request and capture parameters
+        const imwidth = url.searchParams.get('imwidth');
+        const imheight = url.searchParams.get('imheight');
+        
+        // Create customData to store the IMQuery parameters for use in the cache key
+        const customData: Record<string, unknown> = {};
+        if (imwidth) customData.imwidth = imwidth;
+        if (imheight) customData.imheight = imheight;
+        
+        // Add IMQuery detection to videoOptions custom data
+        const videoOptionsWithIMQuery: TransformOptions = {
+          ...videoOptions,
+          customData: Object.keys(customData).length > 0 ? customData : undefined
+        };
+        
+        // Log the IMQuery detection for debugging
+        if (Object.keys(customData).length > 0) {
+          debug(context, logger, 'VideoHandler', 'Including IMQuery parameters in cache key', {
+            imwidth,
+            imheight,
+            derivative: videoOptions.derivative
+          });
+        }
+        
         // Use waitUntil if available to store in KV without blocking response
         const envWithCtx = env as unknown as EnvWithExecutionContext;
         if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
           envWithCtx.executionCtx.waitUntil(
-            storeInKVCache(env, sourcePath, responseClone, videoOptions as unknown as TransformOptions)
+            storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery)
               .then(success => {
                 if (success) {
                   debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
-                    path: sourcePath
+                    path: sourcePath,
+                    hasIMQuery: Object.keys(customData).length > 0,
+                    derivative: videoOptions.derivative
                   });
                 } else {
                   debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
@@ -406,11 +432,13 @@ export async function handleVideoRequest(
           );
         } else {
           // No waitUntil available, try to store directly
-          storeInKVCache(env, sourcePath, responseClone, videoOptions as unknown as TransformOptions)
+          storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery)
             .then(success => {
               if (success) {
                 debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
-                  path: sourcePath
+                  path: sourcePath,
+                  hasIMQuery: Object.keys(customData).length > 0,
+                  derivative: videoOptions.derivative
                 });
               } else {
                 debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {

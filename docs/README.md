@@ -8,9 +8,13 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
   - [Video Configuration](./configuration/video-configuration.md)
   - [Cache Configuration](./configuration/cache-configuration.md)
   - [Debug Configuration](./configuration/debug-configuration.md)
-  - [Logging Configuration](./configuration/logging-configuration.md)
+  - [Configuration Loading](./configuration/configuration-loading.md)
+  - [Dynamic Configuration](./configuration/dynamic-configuration.md)
+  - [Path Pattern Troubleshooting](./configuration/path-pattern-troubleshooting.md)
+  - [Updating Configuration](./configuration/updating-configuration.md)
 
 - **[Deployment Guide](./deployment/README.md)**: How to deploy Video Resizer to Cloudflare Workers
+  - [Authentication Setup](./deployment/auth-setup.md)
 
 - **[KV Caching System](./kv-caching/README.md)**: Documentation on the KV caching implementation
   - [Implementation Details](./kv-caching/implementation.md)
@@ -20,6 +24,15 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 
 - **[Storage System](./storage/README.md)**: Documentation on storage backends and origins
   - [Origin Consolidation](./storage/origin-consolidation.md)
+
+## Features Documentation
+
+- **[Features Overview](./features/README.md)**: Documentation for specific features
+  - **Akamai Integration**: Compatibility with Akamai image format
+  - **Client Detection**: Improved client device and capability detection
+  - **Debug UI**: Debugging interface for troubleshooting
+  - **IMQuery Support**: Support for IMQuery responsive image parameters
+  - **Logging**: Advanced logging and monitoring capabilities
 
 ## Architecture Documentation
 

@@ -293,6 +293,31 @@ export async function prepareVideoTransformation(
       
     // Get cache configuration for the video URL
     let cacheConfig = determineCacheConfig(videoUrl);
+    
+    // IMPORTANT: Special handling for IMQuery - ensure it's cacheable
+    // If this is an IMQuery request with derivative, log and ensure cacheability
+    const isIMQuery = url.searchParams.has('imwidth') || url.searchParams.has('imheight');
+    const hasDerivative = !!options.derivative;
+    
+    if (isIMQuery && hasDerivative) {
+      logDebug('IMQuery with derivative found - checking cache config', {
+        url: url.toString(),
+        derivative: options.derivative,
+        cacheability: cacheConfig.cacheability,
+        hasIMQuery: isIMQuery,
+        imwidth: url.searchParams.get('imwidth'),
+        imheight: url.searchParams.get('imheight')
+      });
+      
+      // Ensure cacheability is set to true for IMQuery derivatives
+      if (!cacheConfig.cacheability) {
+        logDebug('Forcing cacheability for IMQuery derivative', {
+          derivative: options.derivative,
+          originalCacheability: cacheConfig.cacheability
+        });
+        cacheConfig.cacheability = true;
+      }
+    }
       
     // Comprehensive logging for the complete transformation process
     logDebug('Transformed URL - COMPLETE DETAILS', {

@@ -94,6 +94,18 @@ export interface VideoTransformOptions {
   muted?: boolean | null;
   source?: string;
   derivative?: string | null;
+  
+  // Additional video parameters
+  fps?: number | null;
+  speed?: number | null;
+  crop?: string | null;
+  rotate?: number | null;
+  
+  // IMQuery reference parameter
+  imref?: string | null;
+  
+  // Custom data for additional metadata (like IMQuery parameters)
+  customData?: Record<string, unknown>;
 }
 
 export interface VideoTransformContext {

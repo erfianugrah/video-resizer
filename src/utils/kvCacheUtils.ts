@@ -37,6 +37,7 @@ export interface TransformOptions {
   loop?: boolean | null;
   autoplay?: boolean | null;
   muted?: boolean | null;
+  customData?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -76,7 +77,8 @@ export async function getFromKVCache(
   }
   
   // Check if we should bypass cache for this request
-  if (shouldBypassKVCache(sourcePath)) {
+  const shouldBypass = await shouldBypassKVCache(sourcePath);
+  if (shouldBypass) {
     logDebug('Bypassing KV cache by configuration', { sourcePath });
     return null;
   }
@@ -313,12 +315,34 @@ export async function storeInKVCache(
             ttl
           ).then(result => {
             const endTime = new Date();
+            // Generate a log-friendly representation of the storage key
+            let storageKeyLog;
+            const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
+            
+            if (hasIMQuery) {
+              // IMQuery-based key format for logging
+              storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
+                options.customData?.imwidth ? `imwidth=${options.customData.imwidth}` : ''
+              }${
+                options.customData?.imheight ? `:imheight=${options.customData.imheight}` : ''
+              }${
+                options.derivative ? `:via=${options.derivative}` : ''
+              }`;
+            } else {
+              // Standard derivative-based key format for logging
+              storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
+                options.derivative ? `derivative=${options.derivative}` : 'default'
+              }`;
+            }
+            
             logDebug('Async KV storage operation completed', {
               sourcePath,
               derivative: options.derivative,
+              hasIMQuery: !!hasIMQuery,
+              imwidth: options.customData?.imwidth,
               success: !!result,
               endTime: endTime.toISOString(),
-              storageKey: `video:${sourcePath.replace(/^\//g, '')}:${options.derivative ? `derivative=${options.derivative}` : 'default'}`
+              storageKey: storageKeyLog
             });
             
             // Add breadcrumb for successful storage
@@ -436,15 +460,23 @@ function determineTTL(response: Response, config: any): number {
  * @param sourcePath - The source path being requested
  * @returns Boolean indicating if cache should be bypassed
  */
-function shouldBypassKVCache(sourcePath: string): boolean {
+async function shouldBypassKVCache(sourcePath: string): Promise<boolean> {
   // Get current request context if available
   const requestContext = getCurrentContext();
   
   // Check for debug mode in current request
   if (requestContext?.url) {
     const url = new URL(requestContext.url);
+    
+    // Check for debug mode first (simple check)
     if (url.searchParams.has('debug')) {
       logDebug('Bypassing KV cache due to debug mode', { sourcePath });
+      return true;
+    }
+    
+    // Check for nocache or bypass parameters (simple check)
+    if (url.searchParams.has('nocache') || url.searchParams.has('bypass')) {
+      logDebug('Bypassing KV cache due to bypass parameters', { sourcePath });
       return true;
     }
   }

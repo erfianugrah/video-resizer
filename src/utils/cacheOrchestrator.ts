@@ -45,15 +45,25 @@ export async function withCaching(
     }
   };
 
-  // Skip CF cache for non-GET requests or debug mode, also skip KV for these requests
+  // Skip CF cache for non-GET requests or based on cache configuration
   const url = new URL(request.url);
-  const isDebugMode = url.searchParams.has('debug');
-  const skipCache = request.method !== 'GET' || isDebugMode;
+  
+  // Get cache configuration to check bypass parameters properly
+  // Import at the function level to avoid circular dependencies
+  const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
+  const cacheConfig = CacheConfigurationManager.getInstance();
+  
+  // Use the centralized shouldBypassCache method to determine if cache should be skipped
+  // This only checks for specific bypass parameters, not all query parameters
+  const shouldBypass = cacheConfig.shouldBypassCache(url);
+  const isNotGet = request.method !== 'GET';
+  const skipCache = isNotGet || shouldBypass;
   
   if (skipCache) {
     logDebug('Bypassing cache', { 
       method: request.method, 
-      hasDebug: isDebugMode
+      shouldBypass,
+      url: request.url
     });
   }
 
@@ -80,14 +90,44 @@ export async function withCaching(
     // Step 2: Check KV cache if options provided and not skipping cache
     if (options && env && !skipCache) {
       const sourcePath = url.pathname;
-      const kvResponse = await getFromKVCache(env, sourcePath, options);
+      
+      // Check if this is an IMQuery request for lookup
+      const imwidth = url.searchParams.get('imwidth');
+      const imheight = url.searchParams.get('imheight');
+      
+      // Create customData for lookup to match the storage format
+      const customData: Record<string, unknown> = {};
+      if (imwidth) customData.imwidth = imwidth;
+      if (imheight) customData.imheight = imheight;
+      
+      // Add IMQuery parameters to options for cache key generation during lookup
+      const lookupOptions: typeof options = {
+        ...options,
+        customData: Object.keys(customData).length > 0 ? customData : undefined
+      };
+      
+      // Log if using IMQuery parameters
+      if (Object.keys(customData).length > 0) {
+        logDebug('Looking up with IMQuery parameters', {
+          imwidth,
+          imheight,
+          derivative: options.derivative
+        });
+      }
+      
+      const kvResponse = await getFromKVCache(env, sourcePath, lookupOptions);
       
       if (kvResponse) {
-        logDebug('KV cache hit', { sourcePath });
+        logDebug('KV cache hit', { 
+          sourcePath,
+          hasIMQuery: Object.keys(customData).length > 0,
+          derivative: options.derivative 
+        });
         
         if (requestContext) {
           addBreadcrumb(requestContext, 'Cache', 'KV cache hit', {
-            url: request.url
+            url: request.url,
+            hasIMQuery: Object.keys(customData).length > 0
           });
         }
         
@@ -126,17 +166,47 @@ export async function withCaching(
       const sourcePath = url.pathname;
       const responseClone = response.clone();
       
+      // Check if this is an IMQuery request
+      const imwidth = url.searchParams.get('imwidth');
+      const imheight = url.searchParams.get('imheight');
+      
+      // Create customData to store the IMQuery parameters for use in the cache key
+      const customData: Record<string, unknown> = {};
+      if (imwidth) customData.imwidth = imwidth;
+      if (imheight) customData.imheight = imheight;
+      
+      // Add IMQuery detection to videoOptions custom data
+      const optionsWithIMQuery: typeof options = {
+        ...options,
+        customData: Object.keys(customData).length > 0 ? customData : undefined
+      };
+      
+      // Log the IMQuery detection for debugging
+      if (Object.keys(customData).length > 0) {
+        logDebug('Including IMQuery parameters in cache key', {
+          imwidth,
+          imheight,
+          derivative: options.derivative
+        });
+      }
+      
       // Get execution context if available (from Cloudflare Worker environment)
       const ctx = (env as any).executionCtx || (env as any).ctx;
       
       if (ctx && typeof ctx.waitUntil === 'function') {
         // Store in background with waitUntil
-        logDebug('Storing in KV using waitUntil', { sourcePath, contentType });
+        logDebug('Storing in KV using waitUntil', { 
+          sourcePath, 
+          contentType,
+          hasIMQuery: Object.keys(customData).length > 0 
+        });
+        
         ctx.waitUntil(
-          storeInKVCache(env, sourcePath, responseClone, options)
+          storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery)
             .then((success: boolean) => {
               logDebug(success ? 'Stored in KV cache' : 'Failed to store in KV cache', {
-                sourcePath
+                sourcePath,
+                hasIMQuery: Object.keys(customData).length > 0
               });
             })
             .catch((err) => {
@@ -147,9 +217,13 @@ export async function withCaching(
         );
       } else {
         // No execution context, try to store directly
-        logDebug('No execution context, storing directly', { sourcePath });
+        logDebug('No execution context, storing directly', { 
+          sourcePath,
+          hasIMQuery: Object.keys(customData).length > 0
+        });
+        
         try {
-          await storeInKVCache(env, sourcePath, responseClone, options);
+          await storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery);
         } catch (err) {
           logDebug('Error storing in KV cache', {
             error: err instanceof Error ? err.message : String(err)
@@ -161,7 +235,7 @@ export async function withCaching(
       logDebug('Skipped KV storage', {
         method: request.method,
         isOk: response.ok,
-        hasDebug: isDebugMode,
+        hasDebug: url.searchParams.has('debug'),
         isVideoResponse,
         isError,
         statusCode: response.status,

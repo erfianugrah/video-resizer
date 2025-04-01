@@ -319,16 +319,25 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
     return null;
   }
   
-  // Check if we should bypass cache
-  if (shouldBypassCache(request)) {
-    logDebug('Bypassing cache based on request', {
-      url: request.url
+  // Check if we should bypass cache based on specific cache-control headers or bypass parameters
+  const url = new URL(request.url);
+  
+  // Get cache configuration to check bypass parameters properly
+  // Only bypass for specific parameters (debug, nocache, bypass), not for IMQuery parameters
+  const cacheConfig = CacheConfigurationManager.getInstance();
+  const shouldBypass = cacheConfig.shouldBypassCache(url);
+  
+  if (shouldBypass) {
+    logDebug('Bypassing cache based on specific bypass parameters', {
+      url: request.url,
+      hasDebugParam: url.searchParams.has('debug'),
+      hasBypassParam: url.searchParams.has('bypass'),
+      hasNoCacheParam: url.searchParams.has('nocache')
     });
     return null;
   }
   
-  // Get the cache configuration manager
-  const cacheConfig = CacheConfigurationManager.getInstance();
+  // Use the cache configuration for method determination
   const cacheMethod = cacheConfig.getConfig().method;
   
   // When using cf object caching, we don't use explicit cache.match

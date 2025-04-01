@@ -40,7 +40,21 @@ const AKAMAI_TO_CLOUDFLARE_MAPPING = {
   'loop': 'loop',
   'preload': 'preload',
   'autoplay': 'autoplay',
-  'muted': 'muted'
+  'muted': 'muted',
+  
+  // IMQuery responsive image parameters
+  'imwidth': 'width',
+  'imheight': 'height',
+  'imref': 'imref',
+  'im-viewwidth': 'viewwidth',
+  'im-viewheight': 'viewheight',
+  'im-density': 'dpr',
+  
+  // Additional video parameters
+  'fps': 'fps',
+  'speed': 'speed',
+  'crop': 'crop',
+  'rotate': 'rotate'
 };
 
 /**

@@ -89,6 +89,20 @@ export interface DiagnosticsInfo {
   originalRequestHadRange?: boolean;
   cachingMethod?: string;
   
+  // Akamai translation info
+  originalAkamaiParams?: Record<string, string>;
+  translatedCloudflareParams?: Record<string, string | boolean | number>;
+  translationWarnings?: string[];
+  usingIMQuery?: boolean;
+  imqueryMatching?: {
+    requestedWidth?: number | null;
+    requestedHeight?: number | null;
+    matchedDerivative?: string;
+    derivativeWidth?: number | null;
+    derivativeHeight?: number | null;
+    percentDifference?: string;
+  };
+  
   // Additional data
   [key: string]: unknown;
 }

@@ -1035,15 +1035,13 @@ export function shouldBypassCache(request: Request): boolean {
     return true;
   }
   
-  // Check for cache bypass in query params
+  // Check for cache bypass in query params using centralized configuration
   const url = new URL(request.url);
   
-  // Get cache configuration to check bypass parameters
+  // Use the centralized shouldBypassCache method from CacheConfigurationManager
+  // This only checks for specific bypass parameters, not all query parameters
   const cacheConfig = CacheConfigurationManager.getInstance();
-  const bypassParams = cacheConfig.getConfig().bypassQueryParameters || ['nocache', 'bypass'];
-  
-  // Check if any of the bypass parameters exist in the URL
-  return bypassParams.some(param => url.searchParams.has(param));
+  return cacheConfig.shouldBypassCache(url);
 }
 
 /**
@@ -1135,6 +1133,24 @@ export function generateCacheTags(
   // Add combined dimensions tag if both width and height are specified
   if (options.width && options.height) {
     tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
+  }
+  
+  // Add IMQuery-specific tags if present
+  if (options.customData && typeof options.customData === 'object') {
+    const customData = options.customData as Record<string, unknown>;
+    
+    if (customData.imwidth) {
+      tags.push(`${prefix}imwidth-${customData.imwidth}`);
+    }
+    
+    if (customData.imheight) {
+      tags.push(`${prefix}imheight-${customData.imheight}`);
+    }
+    
+    // Add a tag to identify IMQuery sourced transformations
+    if (customData.imwidth || customData.imheight) {
+      tags.push(`${prefix}source-imquery`);
+    }
   }
   
   // Add a tag for quality if available

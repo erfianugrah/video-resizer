@@ -20,7 +20,7 @@ export interface TransformationContext {
   };
 }
 
-export type TransformParamValue = string | number | boolean | null;
+export type TransformParamValue = string | number | boolean | null | Record<string, unknown>;
 export type TransformParams = Record<string, TransformParamValue>;
 
 /**

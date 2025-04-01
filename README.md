@@ -17,7 +17,10 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - Support for transforming video dimensions, quality, format and more
 - Extract thumbnails from videos
 - Generate spritesheets from videos
-- **Compatibility with Akamai parameters** - automatically translates Akamai-style parameters to Cloudflare format
+- **Akamai Compatibility**:
+  - Automatically translates Akamai-style parameters to Cloudflare format
+  - Support for IMQuery responsive image parameters with derivative matching
+  - Client hints generation from IMQuery metadata
 
 ### Advanced Features
 - **Device Detection** - Adapts video quality based on device capabilities
@@ -47,6 +50,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - [Deployment Guide](./docs/deployment/README.md)
 - [KV Caching System](./docs/kv-caching/README.md)
 - [Storage System](./docs/storage/README.md)
+- [IMQuery Matching](./docs/configuration/imquery-matching.md)
 
 ## Quick Start
 
@@ -141,6 +145,7 @@ But the client never sees this - they just get back the transformed video with t
 - **Video Clip**: `/videos/sample.mp4?time=5s&duration=5s`
 - **Video Thumbnail**: `/videos/sample.mp4?mode=frame&time=5s&width=640&height=360`
 - **Using a Derivative**: `/videos/sample.mp4?derivative=mobile`
+- **Using IMQuery**: `/videos/sample.mp4?imwidth=800&imheight=450` (matches closest derivative)
 - **Debug View**: `/videos/sample.mp4?width=720&height=480&debug=view`
 
 ## Supported Parameters
@@ -162,6 +167,19 @@ But the client never sees this - they just get back the transformed video with t
 | `autoplay` | Enable autoplay | `true`, `false` | - | May require muted=true |
 | `muted` | Mute audio | `true`, `false` | - | |
 | `derivative` | Preset configuration | See derivatives below | - | Overrides individual parameters |
+
+### IMQuery Parameters
+
+These parameters are specific to Akamai's IMQuery system and are automatically translated:
+
+| Parameter | Description | Translated To | Notes |
+|-----------|-------------|---------------|-------|
+| `imwidth` | Requested image width | Matched to closest derivative | Used for derivative matching |
+| `imheight` | Requested image height | Matched to closest derivative | Used for derivative matching |
+| `imref` | Reference parameters | Parsed for additional options | Key-value pairs format |
+| `im-viewwidth` | Client viewport width | Sec-CH-Viewport-Width client hint | Used for responsive sizing |
+| `im-viewheight` | Client viewport height | Viewport-Height client hint | Used for responsive sizing |
+| `im-density` | Device pixel ratio | Sec-CH-DPR client hint | Used for responsive sizing |
 
 ### Video Derivatives
 

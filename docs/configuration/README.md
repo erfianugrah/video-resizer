@@ -52,6 +52,7 @@ The configuration system is made up of several specialized managers:
 3. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
 4. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
 5. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
+6. [IMQuery Support](./imquery-support.md) - Support for responsive image parameters and caching
 
 ## Environment Variables
 

@@ -387,12 +387,12 @@ describe('ConfigurationService', () => {
   });
 
   // Test for adding lastUpdated to config
-  it.skip('should add lastUpdated if missing', async () => {
-    // Create service with mocked implementation
+  it('should add lastUpdated if missing', async () => {
+    // Create service with mocked implementation that captures the data for inspection
+    let capturedData: string | null = null;
+    
     const mockStoreImpl = vi.fn((key, data, options) => {
-      const parsed = JSON.parse(data);
-      expect(parsed).toHaveProperty('lastUpdated');
-      expect(new Date(parsed.lastUpdated)).toBeInstanceOf(Date);
+      capturedData = data;
       return Promise.resolve(undefined);
     });
     
@@ -410,6 +410,7 @@ describe('ConfigurationService', () => {
       ...sampleConfig,
       lastUpdated: undefined
     };
+    delete configWithoutTimestamp.lastUpdated; // Ensure it's truly undefined
     
     // Reset and get fresh instance
     ConfigurationService.resetInstance();
@@ -423,5 +424,17 @@ describe('ConfigurationService', () => {
     
     // Verify the mock was called
     expect(mockStoreImpl).toHaveBeenCalled();
+    
+    // Check that the captured data has a lastUpdated property
+    expect(capturedData).not.toBeNull();
+    if (capturedData) {
+      const parsed = JSON.parse(capturedData);
+      expect(parsed).toHaveProperty('lastUpdated');
+      
+      // Verify it's a valid date string
+      const lastUpdatedDate = new Date(parsed.lastUpdated);
+      expect(lastUpdatedDate).toBeInstanceOf(Date);
+      expect(isNaN(lastUpdatedDate.getTime())).toBe(false);
+    }
   });
 });
