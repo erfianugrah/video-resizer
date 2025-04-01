@@ -3,7 +3,7 @@
   "lastUpdated": "2025-03-31T16:00:00Z",
   "video": {
     "derivatives": {
-      "high_quality": {
+      "desktop": {
         "width": 1920,
         "height": 1080,
         "mode": "video",
@@ -11,9 +11,9 @@
         "audio": true,
         "quality": "high",
         "compression": "low",
-        "description": "The video plays in high-definition"
+        "description": "1920x1080 pixels. The video plays in high-definition."
       },
-      "medium_quality": {
+      "tablet": {
         "width": 1280,
         "height": 720,
         "mode": "video",
@@ -21,17 +21,17 @@
         "audio": true,
         "quality": "medium",
         "compression": "medium",
-        "description": "The video plays at medium resolution"
+        "description": "1280x720 pixels. The video plays at medium resolution."
       },
-      "low_quality": {
-        "width": 854,
+      "mobile": {
+        "width": 854, 
         "height": 640,
         "mode": "video",
         "fit": "contain",
         "audio": true,
         "quality": "low",
         "compression": "high",
-        "description": "The video plays at the lowest resolution and is also smaller in size"
+        "description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
       }
     },
     "passthrough": {
@@ -187,6 +187,26 @@
             "Opera"
           ]
         }
+      }
+    },
+    "responsiveBreakpoints": {
+      "small": {
+        "max": 640,
+        "derivative": "mobile"
+      },
+      "medium": {
+        "min": 641,
+        "max": 1024,
+        "derivative": "tablet"
+      },
+      "large": {
+        "min": 1025,
+        "max": 1440,
+        "derivative": "tablet"
+      },
+      "extra-large": {
+        "min": 1441,
+        "derivative": "desktop"
       }
     },
     "paramMapping": {

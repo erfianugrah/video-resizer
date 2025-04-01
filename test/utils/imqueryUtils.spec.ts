@@ -4,7 +4,8 @@ import {
   convertImQueryToClientHints,
   hasIMQueryParams,
   validateAkamaiParams,
-  findClosestDerivative
+  findClosestDerivative,
+  findClosestDerivativePercentage
 } from '../../src/utils/imqueryUtils';
 
 describe('IMQuery Utils', () => {
@@ -140,34 +141,61 @@ describe('IMQuery Utils', () => {
   });
 
   describe('findClosestDerivative', () => {
-    // Mock videoConfig
+    // Mock VideoConfigurationManager and videoConfig
+    vi.mock('../../src/config/VideoConfigurationManager', () => ({
+      VideoConfigurationManager: {
+        getInstance: vi.fn().mockReturnValue({
+          getConfig: vi.fn().mockReturnValue({
+            derivatives: {
+              mobile: { width: 854, height: 640, quality: 'low' },
+              tablet: { width: 1280, height: 720, quality: 'medium' },
+              desktop: { width: 1920, height: 1080, quality: 'high' }
+            },
+            responsiveBreakpoints: {
+              small: { max: 640, derivative: 'mobile' },
+              medium: { min: 641, max: 1024, derivative: 'tablet' },
+              large: { min: 1025, max: 1440, derivative: 'tablet' },
+              "extra-large": { min: 1441, derivative: 'desktop' }
+            }
+          }),
+          getResponsiveBreakpoints: vi.fn().mockReturnValue({
+            small: { max: 640, derivative: 'mobile' },
+            medium: { min: 641, max: 1024, derivative: 'tablet' },
+            large: { min: 1025, max: 1440, derivative: 'tablet' },
+            "extra-large": { min: 1441, derivative: 'desktop' }
+          })
+        })
+      }
+    }));
+    
+    // Mock videoConfig as a fallback
     vi.mock('../../src/config/videoConfig', () => ({
       videoConfig: {
         derivatives: {
-          mobile: { width: 480, height: 270, quality: 'low' },
-          medium: { width: 854, height: 480, quality: 'medium' },
-          high: { width: 1280, height: 720, quality: 'high' }
+          mobile: { width: 854, height: 640, quality: 'low' },
+          tablet: { width: 1280, height: 720, quality: 'medium' },
+          desktop: { width: 1920, height: 1080, quality: 'high' }
         }
       }
     }));
 
     it('should match dimensions to the closest derivative within threshold', () => {
-      // Should match to medium derivative (854x480)
-      expect(findClosestDerivative(800, 450)).toBe('medium');
+      // Should match to mobile derivative (854x640)
+      expect(findClosestDerivative(800, 600)).toBe('mobile');
       
-      // Should match to mobile derivative (480x270)
-      expect(findClosestDerivative(500, 280)).toBe('mobile');
+      // Should match to tablet derivative (1280x720)
+      expect(findClosestDerivative(1200, 700)).toBe('tablet');
       
-      // Should match to high derivative (1280x720)
-      expect(findClosestDerivative(1200, 700)).toBe('high');
+      // Should match to desktop derivative (1920x1080)
+      expect(findClosestDerivative(1800, 1000)).toBe('desktop');
     });
     
     it('should handle single dimension matching', () => {
-      // Width only - should match to medium (854)
-      expect(findClosestDerivative(800, null)).toBe('medium');
+      // Width only - should match to tablet via breakpoints (800 is in 641-1024 range)
+      expect(findClosestDerivative(800, null)).toBe('tablet');
       
-      // Height only - should match to high (720)
-      expect(findClosestDerivative(null, 700)).toBe('high');
+      // Height only - should match to tablet (720 is this height)
+      expect(findClosestDerivative(null, 700)).toBe('tablet');
     });
     
     it('should return null when no dimensions are provided', () => {
@@ -175,12 +203,13 @@ describe('IMQuery Utils', () => {
       expect(findClosestDerivative(undefined, undefined)).toBeNull();
     });
     
-    it('should return null when no derivative is within threshold', () => {
-      // Far outside the ranges of any derivative
-      expect(findClosestDerivative(2000, 1500)).toBeNull();
+    it('should apply the threshold correctly for percentage-based matching', () => {
+      // With our new breakpoint logic, 2000 will match to 'hd' via the 'extra-large' breakpoint
+      // But with a very strict threshold, percentage-based matching should fail
+      expect(findClosestDerivative(800, 450, 0.01)).toBeNull(); // 1% threshold - too strict
       
-      // Using a stricter threshold
-      expect(findClosestDerivative(800, 450, 0.05)).toBeNull(); // 5% threshold
+      // For very strict thresholds that no derivative meets
+      expect(findClosestDerivativePercentage(800, 450, 0.01)).toBeNull();
     });
   });
 });

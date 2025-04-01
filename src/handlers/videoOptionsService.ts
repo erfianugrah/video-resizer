@@ -74,6 +74,8 @@ export function determineVideoOptions(
     
     // Find closest derivative match
     if (imwidth || imheight) {
+      // The method is determined inside findClosestDerivative
+      // If only width is provided, it will try breakpoint-based matching first
       const matchedDerivative = findClosestDerivative(imwidth, imheight);
       
       if (matchedDerivative && isValidDerivative(matchedDerivative)) {
@@ -82,9 +84,15 @@ export function determineVideoOptions(
         options.derivative = matchedDerivative;
         options.source = 'imquery-derivative';
         
+        // Determine mapping method used for diagnostics
+        const mappingMethod = (imwidth && !imheight) 
+          ? 'breakpoint' 
+          : 'percentage';
+        
         // IMPORTANT: Log derivative configuration to understand caching issues
         debug('IMQuery', 'Applied derivative configuration for caching', {
           derivative: matchedDerivative,
+          mappingMethod,
           // The derivative configurations don't have cacheability directly, so just log the derivative
           originalQueryParams: Object.fromEntries(params.entries())
         });
@@ -96,7 +104,8 @@ export function determineVideoOptions(
             requestedHeight: imheight,
             matchedDerivative: matchedDerivative,
             derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
-            derivativeHeight: videoConfig.derivatives[matchedDerivative].height
+            derivativeHeight: videoConfig.derivatives[matchedDerivative].height,
+            mappingMethod
           };
         }
         
@@ -107,6 +116,7 @@ export function determineVideoOptions(
           derivative: matchedDerivative,
           derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
           derivativeHeight: videoConfig.derivatives[matchedDerivative].height,
+          mappingMethod,
           source: 'imquery-derivative'
         });
         
@@ -114,6 +124,7 @@ export function determineVideoOptions(
           imwidth,
           imheight,
           derivative: matchedDerivative,
+          mappingMethod,
           source: 'imquery-derivative'
         });
       } else {

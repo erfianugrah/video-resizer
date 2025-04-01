@@ -88,6 +88,13 @@ const DerivativeSchema = z.record(z.object({
   muted: z.boolean().nullable().optional(),
 }));
 
+// Define ResponsiveBreakpoint Schema
+const ResponsiveBreakpointSchema = z.object({
+  min: z.number().positive().optional(),
+  max: z.number().positive().optional(),
+  derivative: z.string()
+});
+
 // Complete Video Configuration Schema
 export const VideoConfigSchema = z.object({
   derivatives: DerivativeSchema,
@@ -126,6 +133,8 @@ export const VideoConfigSchema = z.object({
     networkQuality: z.record(NetworkQualityConfigSchema),
     browserCapabilities: z.record(BrowserCapabilitySchema).optional(),
   }),
+  // New field for responsive breakpoint mapping to derivatives
+  responsiveBreakpoints: z.record(ResponsiveBreakpointSchema).optional(),
   paramMapping: z.record(z.string()),
   cdnCgi: z.object({
     basePath: z.string(),
@@ -369,6 +378,16 @@ export class VideoConfigurationManager {
    */
   public getResponsiveConfig() {
     return this.config.responsive;
+  }
+
+  /**
+   * Get responsive breakpoints mapping
+   * Returns the configured responsive breakpoints that map width ranges to derivatives
+   * 
+   * @returns Responsive breakpoints mapping object or empty object if not configured
+   */
+  public getResponsiveBreakpoints() {
+    return this.config.responsiveBreakpoints || {};
   }
 
   /**

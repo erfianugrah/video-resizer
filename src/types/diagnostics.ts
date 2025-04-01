@@ -101,6 +101,7 @@ export interface DiagnosticsInfo {
     derivativeWidth?: number | null;
     derivativeHeight?: number | null;
     percentDifference?: string;
+    mappingMethod?: string;
   };
   
   // Additional data

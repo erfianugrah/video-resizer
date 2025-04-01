@@ -1,86 +1,28 @@
 /**
- * Configuration for video resizing and transformation
+ * Default configuration for video resizing and transformation
+ * 
+ * This file provides minimal default values that will be overridden
+ * by configuration from worker-config.json or KV store at runtime.
  */
-
 export const videoConfig = {
-  // Define video derivatives - preset configurations
+  // Define minimal default derivatives - these will be populated from config
   derivatives: {
-    // High-quality derivative
-    high: {
+    // Default derivatives with minimal settings
+    // These are placeholders that will be overridden by configuration
+    desktop: {
       width: 1920,
       height: 1080,
-      mode: 'video',
-      fit: 'contain',
-      audio: true,
-      quality: 'high',
-      compression: 'low',
+      quality: "high",
     },
-
-    // Medium-quality derivative
-    medium: {
-      width: 1280,
+    tablet: {
+      width: 1280, 
       height: 720,
-      mode: 'video',
-      fit: 'contain',
-      audio: true,
-      quality: 'medium',
-      compression: 'medium',
+      quality: "medium",
     },
-
-    // Low-quality derivative
-    low: {
-      width: 854,
-      height: 480,
-      mode: 'video',
-      fit: 'contain',
-      audio: true,
-      quality: 'low',
-      compression: 'high',
-    },
-
-    // Mobile-optimized derivative
     mobile: {
-      width: 640,
-      height: 360,
-      mode: 'video',
-      fit: 'contain',
-      audio: true,
-      quality: 'low',
-      compression: 'high',
-      preload: 'metadata',
-    },
-
-    // Thumbnail derivative
-    thumbnail: {
-      width: 320,
-      height: 180,
-      mode: 'frame',
-      fit: 'contain',
-      format: 'jpg',
-    },
-    
-    // Animation derivative - for GIF-like video clips
-    animation: {
-      width: 480,
-      height: 270,
-      mode: 'video',
-      fit: 'contain',
-      audio: false,
-      loop: true,
-      preload: 'auto',
-    },
-    
-    // Preview derivative - short, low-res preview with no audio
-    preview: {
-      width: 480,
-      height: 270,
-      mode: 'video',
-      fit: 'contain',
-      audio: false,
-      duration: '5s',
-      quality: 'low',
-      compression: 'high',
-      preload: 'auto',
+      width: 854,
+      height: 640,
+      quality: "low",
     },
   },
 
@@ -88,12 +30,12 @@ export const videoConfig = {
   defaults: {
     width: null,
     height: null,
-    mode: 'video',
-    fit: 'contain',
+    mode: "video",
+    fit: "contain",
     audio: true,
     format: null,
     time: null,
-    duration: '5m', // Default to 5 minutes for video playback
+    duration: null,
     quality: null,
     compression: null,
     loop: null,
@@ -102,21 +44,21 @@ export const videoConfig = {
     muted: null,
   },
 
-  // Valid options
+  // Default valid options
   validOptions: {
-    mode: ['video', 'frame', 'spritesheet'],
-    fit: ['contain', 'scale-down', 'cover'],
-    format: ['jpg', 'png'],
+    mode: ["video", "frame", "spritesheet"],
+    fit: ["contain", "scale-down", "cover"],
+    format: ["jpg", "png"],
     audio: [true, false],
-    quality: ['low', 'medium', 'high', 'auto'],
-    compression: ['low', 'medium', 'high', 'auto'],
-    preload: ['none', 'metadata', 'auto'],
+    quality: ["low", "medium", "high", "auto"],
+    compression: ["low", "medium", "high", "auto"],
+    preload: ["none", "metadata", "auto"],
     loop: [true, false],
     autoplay: [true, false],
     muted: [true, false],
   },
 
-  // Responsive sizing breakpoints
+  // Minimal responsive sizing defaults
   responsive: {
     breakpoints: {
       xs: 640,
@@ -125,15 +67,12 @@ export const videoConfig = {
       lg: 1280,
       xl: 1920,
     },
-    // Available video quality settings
-    availableQualities: [360, 480, 720, 1080, 1440, 2160],
-    // Device-specific width mapping
+    availableQualities: [360, 480, 720, 1080],
     deviceWidths: {
       mobile: 480,
       tablet: 720,
       desktop: 1080,
     },
-    // Network condition-based quality adjustments
     networkQuality: {
       slow: {
         maxWidth: 480,
@@ -141,7 +80,7 @@ export const videoConfig = {
         maxBitrate: 800,
       },
       medium: {
-        maxWidth: 854, 
+        maxWidth: 854,
         maxHeight: 480,
         maxBitrate: 1500,
       },
@@ -150,120 +89,67 @@ export const videoConfig = {
         maxHeight: 720,
         maxBitrate: 3000,
       },
-      ultrafast: {
-        maxWidth: 1920,
-        maxHeight: 1080,
-        maxBitrate: 6000,
-      },
     },
   },
 
-  // Parameter mapping
+  // Empty responsive breakpoints - will be populated from config
+  responsiveBreakpoints: {},
+
+  // Basic parameter mapping
   paramMapping: {
-    width: 'width',
-    height: 'height',
-    mode: 'mode',
-    fit: 'fit',
-    audio: 'audio',
-    format: 'format',
-    time: 'time',
-    duration: 'duration',
-    quality: 'quality',
-    compression: 'compression',
-    loop: 'loop',
-    preload: 'preload',
-    autoplay: 'autoplay',
-    muted: 'muted',
+    width: "width",
+    height: "height",
+    mode: "mode",
+    fit: "fit",
+    audio: "audio",
+    format: "format",
+    time: "time",
+    duration: "duration",
+    quality: "quality",
+    compression: "compression",
+    loop: "loop",
+    preload: "preload",
+    autoplay: "autoplay",
+    muted: "muted",
   },
 
   // CDN-CGI path configuration
   cdnCgi: {
-    basePath: '/cdn-cgi/media',
+    basePath: "/cdn-cgi/media",
   },
-  
-  // Non-MP4 file handling
+
+  // Default passthrough settings
   passthrough: {
-    // Whether to enable pass-through for non-MP4 files
     enabled: true,
-    // Option to whitelist specific formats for processing (empty means all non-MP4 are passed through)
     whitelistedFormats: [],
   },
 
-  // Default empty path patterns
-  // These will be populated from environment configuration
+  // Default empty path patterns - populated from config
   pathPatterns: [],
-  
-  // Caching configuration
-  // These values will be updated from environment configuration at runtime
+
+  // Default caching configuration - overridden at runtime
   caching: {
-    // Which caching method to use: 'cf' or 'cacheApi'
-    method: 'cacheApi', 
-    // Whether to enable debug logging for cache operations
+    method: "cacheApi",
     debug: false,
-    // Fallback configuration for transformation errors
     fallback: {
-      // Whether to enable fallback to original content
-      // Set to true to ensure this is enabled by default
       enabled: true,
-      // Whether to only apply fallback for 400 Bad Request errors
       badRequestOnly: true,
-      // Headers to preserve from the original response when applying fallback
-      preserveHeaders: ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']
+      preserveHeaders: ["Content-Type", "Cache-Control", "Etag"],
     },
   },
-  
-  // Cache configuration for different video types
+
+  // Default cache profiles - overridden at runtime
   cache: {
-    // Default cache configuration for all videos
     default: {
-      regex: '.*',
+      regex: ".*",
       cacheability: true,
-      videoCompression: 'auto',
-      useTtlByStatus: true, // Use status-based TTLs by default
-      ttl: {
-        ok: 86400, // 24 hours for successful responses
-        redirects: 3600, // 1 hour for redirects
-        clientError: 60, // 1 minute for client errors
-        serverError: 10, // 10 seconds for server errors
-      },
-    },
-    // High-traffic videos with longer cache time
-    highTraffic: {
-      regex: '.*\/popular\/.*\\.mp4',
-      cacheability: true,
-      videoCompression: 'auto',
+      videoCompression: "auto",
       useTtlByStatus: true,
       ttl: {
-        ok: 604800, // 7 days for successful responses
-        redirects: 3600, // 1 hour for redirects
-        clientError: 60, // 1 minute for client errors
-        serverError: 10, // 10 seconds for server errors
-      },
-    },
-    // Short-form videos with medium cache time
-    shortForm: {
-      regex: '.*\/shorts\/.*\\.mp4',
-      cacheability: true,
-      videoCompression: 'auto',
-      useTtlByStatus: true,
-      ttl: {
-        ok: 172800, // 2 days for successful responses
-        redirects: 3600, // 1 hour for redirects
-        clientError: 60, // 1 minute for client errors
-        serverError: 10, // 10 seconds for server errors
-      },
-    },
-    // Live content or frequently updated videos with shorter cache time
-    dynamic: {
-      regex: '.*\/live\/.*\\.mp4',
-      cacheability: true,
-      videoCompression: 'auto',
-      useTtlByStatus: true,
-      ttl: {
-        ok: 300, // 5 minutes for successful responses
-        redirects: 60, // 1 minute for redirects
-        clientError: 30, // 30 seconds for client errors
-        serverError: 10, // 10 seconds for server errors
+        ok: 86400,
+        redirects: 3600,
+        clientError: 60,
+        serverError: 10,
       },
     },
   },

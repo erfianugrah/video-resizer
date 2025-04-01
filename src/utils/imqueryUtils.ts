@@ -3,6 +3,7 @@
  */
 import { debug, info } from './loggerUtils';
 import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 
 /**
  * Parse IMQuery reference parameter
@@ -87,6 +88,86 @@ export function hasIMQueryParams(params: URLSearchParams): boolean {
 }
 
 /**
+ * Maps a width value to a derivative using configured breakpoints
+ * Uses explicit min/max ranges to find the appropriate derivative
+ * 
+ * @param width - Requested width (from IMQuery)
+ * @returns Name of the matched derivative or null if no match
+ */
+export function mapWidthToDerivative(width: number | null): string | null {
+  // Skip invalid width
+  if (!width || width <= 0) {
+    debug('IMQuery', 'Invalid width for breakpoint mapping', { width });
+    return null;
+  }
+  
+  // Get the config manager instance to access configuration
+  const configManager = VideoConfigurationManager.getInstance();
+  
+  // Get breakpoint mappings from configuration
+  const breakpoints = configManager.getResponsiveBreakpoints();
+  
+  // If no breakpoints configured, fall back to old percentage-based method
+  if (!breakpoints || Object.keys(breakpoints).length === 0) {
+    debug('IMQuery', 'No responsive breakpoints configured, falling back to percentage method', {
+      width
+    });
+    return findClosestDerivativePercentage(width, null);
+  }
+  
+  // Sort breakpoints by max value for consistent matching
+  const sortedBreakpoints = Object.entries(breakpoints)
+    .sort((a, b) => (a[1].max || Infinity) - (b[1].max || Infinity));
+  
+  // Find matching breakpoint
+  for (const [name, range] of sortedBreakpoints) {
+    // Check min bound if specified
+    if (range.min && width < range.min) {
+      continue;
+    }
+    
+    // Check if within max bound (or if this is the last breakpoint with no max)
+    if (range.max === undefined || width <= range.max) {
+      // Verify the derivative exists in configuration
+      if (configManager.getConfig().derivatives[range.derivative]) {
+        info('IMQuery', 'Matched width to breakpoint', { 
+          width, 
+          breakpoint: name, 
+          derivative: range.derivative,
+          min: range.min || 'none',
+          max: range.max || 'none'
+        });
+        return range.derivative;
+      } else {
+        debug('IMQuery', 'Breakpoint references non-existent derivative', {
+          width,
+          breakpoint: name,
+          derivative: range.derivative
+        });
+      }
+    }
+  }
+  
+  // If no match found through breakpoints, log and use highest breakpoint derivative
+  if (sortedBreakpoints.length > 0) {
+    const lastBreakpoint = sortedBreakpoints[sortedBreakpoints.length - 1];
+    const fallbackDerivative = lastBreakpoint[1].derivative;
+    
+    debug('IMQuery', 'No matching breakpoint found, using highest breakpoint derivative', {
+      width,
+      derivative: fallbackDerivative,
+      breakpoint: lastBreakpoint[0]
+    });
+    
+    return fallbackDerivative;
+  }
+  
+  // If we get here, no mapping was found, fall back to percentage-based method
+  debug('IMQuery', 'Falling back to percentage-based derivative matching', { width });
+  return findClosestDerivativePercentage(width, null);
+}
+
+/**
  * Finds the closest derivative matching the requested dimensions
  * Uses Euclidean distance formula for matching when both dimensions are provided,
  * or single dimension distance when only one is provided
@@ -96,7 +177,7 @@ export function hasIMQueryParams(params: URLSearchParams): boolean {
  * @param maxDifferenceThreshold - Maximum percentage difference allowed (0.25 = 25%)
  * @returns Name of the closest derivative or null if no good match
  */
-export function findClosestDerivative(
+export function findClosestDerivativePercentage(
   targetWidth?: number | null,
   targetHeight?: number | null,
   maxDifferenceThreshold: number = 0.25
@@ -201,6 +282,38 @@ export function findClosestDerivative(
   }
   
   return null;
+}
+
+/**
+ * Finds the closest derivative matching the requested dimensions
+ * This is a wrapper function that first tries the new breakpoint method,
+ * then falls back to the percentage-based method for backward compatibility
+ * 
+ * @param targetWidth - Requested width (from IMQuery)
+ * @param targetHeight - Requested height (from IMQuery)
+ * @param maxDifferenceThreshold - Maximum percentage difference allowed (0.25 = 25%)
+ * @returns Name of the closest derivative or null if no good match
+ */
+export function findClosestDerivative(
+  targetWidth?: number | null,
+  targetHeight?: number | null,
+  maxDifferenceThreshold: number = 0.25
+): string | null {
+  // If only width is specified, use the new breakpoint-based mapping
+  if (targetWidth && !targetHeight) {
+    const derivative = mapWidthToDerivative(targetWidth);
+    if (derivative) {
+      return derivative;
+    }
+  }
+  
+  // For width+height or height-only, or if breakpoint mapping fails,
+  // fall back to the original percentage-based method
+  return findClosestDerivativePercentage(
+    targetWidth,
+    targetHeight,
+    maxDifferenceThreshold
+  );
 }
 
 /**
