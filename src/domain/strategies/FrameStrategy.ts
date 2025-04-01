@@ -33,8 +33,11 @@ export class FrameStrategy implements TransformationStrategy {
     // For frame mode, ensure these parameters are set
     params['mode'] = 'frame';
     
-    // Default to jpg format if not specified
+    // Default to jpg format if not specified - Cloudflare API only accepts 'jpg' (not 'jpeg')
     if (!params['format']) {
+      params['format'] = 'jpg';
+    } else if (typeof params['format'] === 'string' && params['format'].toLowerCase() === 'jpeg') {
+      // Normalize jpeg to jpg for Cloudflare Media Transformation API
       params['format'] = 'jpg';
     }
     
@@ -93,12 +96,26 @@ export class FrameStrategy implements TransformationStrategy {
     }
     
     // Validate format
-    if (options.format && !configManager.isValidOption('format', options.format)) {
-      throw ValidationError.invalidFormat(
-        options.format,
-        configManager.getValidOptions('format') as string[],
-        context
-      );
+    if (options.format) {
+      const formatLower = options.format.toLowerCase();
+      
+      // Normalize jpg/jpeg format values
+      if (formatLower === 'jpg' || formatLower === 'jpeg') {
+        // Use 'jpg' format as Cloudflare API only accepts 'jpg' (not 'jpeg')
+        options.format = 'jpg';
+      } else {
+        // For other formats, just normalize case to match valid options
+        options.format = formatLower;
+      }
+      
+      // Validate format
+      if (!configManager.isValidOption('format', options.format)) {
+        throw ValidationError.invalidFormat(
+          options.format,
+          configManager.getValidOptions('format') as string[],
+          context
+        );
+      }
     }
     
     // Validate if video-specific parameters are used, which is not allowed for frame mode

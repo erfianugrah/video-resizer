@@ -26,6 +26,7 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
  * Interface for transformation options
  */
 export interface TransformOptions {
+  mode?: string | null;
   width?: number | null;
   height?: number | null;
   format?: string | null;
@@ -37,6 +38,12 @@ export interface TransformOptions {
   loop?: boolean | null;
   autoplay?: boolean | null;
   muted?: boolean | null;
+  // Frame-specific options
+  time?: string | null;
+  // Spritesheet-specific options
+  columns?: number | null;
+  rows?: number | null;
+  interval?: string | null;
   customData?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -195,7 +202,7 @@ export async function storeInKVCache(
     // Check content type to determine if response is video
     const contentType = responseClone.headers.get('content-type') || '';
     
-    // Comprehensive list of video MIME types
+    // Comprehensive list of supported MIME types
     const videoMimeTypes = [
       'video/mp4',
       'video/webm',
@@ -211,15 +218,29 @@ export async function storeInKVCache(
       'application/dash+xml'   // DASH
     ];
     
-    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const imageMimeTypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/avif'
+    ];
     
-    // Skip KV storage for errors or non-video responses
-    if (isError || !isVideoResponse) {
-      logDebug('Skipping KV storage for error or non-video response', {
+    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isImageResponse = imageMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isCachableResponse = isVideoResponse || isImageResponse;
+    
+    // Skip KV storage for errors or non-cacheable responses
+    if (isError || !isCachableResponse) {
+      logDebug('Skipping KV storage for error or non-cacheable response', {
         statusCode,
         contentType,
         isError,
-        isVideoResponse
+        isVideoResponse,
+        isImageResponse,
+        isCachableResponse,
+        mode: options.mode || 'video'
       });
       return false;
     }
@@ -234,7 +255,9 @@ export async function storeInKVCache(
       responseStatus: responseClone.status,
       statusCategory: Math.floor(responseClone.status / 100),
       configuredTTLOk: config.ttl?.ok,
-      isVideo: isVideoResponse
+      mode: options.mode || 'video',
+      isVideo: isVideoResponse,
+      isImage: isImageResponse
     });
     
     // Ensure namespace is defined before using
@@ -242,33 +265,33 @@ export async function storeInKVCache(
       return false;
     }
     
-    // Check if this is a large video response
+    // Check content length for KV storage limits
     const contentLength = parseInt(responseClone.headers.get('content-length') || '0', 10);
-    const isLargeVideo = isVideoResponse && contentLength > 1000000; // >1MB
     
     // Log content length discovery
     logDebug('Determined content length for KV storage calculation', {
       contentLength,
       contentType, 
       sourcePath,
-      isLargeVideo,
+      mode: options.mode || 'video',
       sizeCategory: contentLength > 10000000 ? 'very large' : 
                    contentLength > 1000000 ? 'large' : 
                    contentLength > 100000 ? 'medium' : 'small',
       sizeMB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024) * 100) / 100 : 0
     });
     
-    // For videos larger than Cloudflare's KV size limit (25MiB), skip KV storage entirely
+    // For content larger than Cloudflare's KV size limit (25MiB), skip KV storage entirely
     const KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB in bytes
     const exceedsKVLimit = contentLength > KV_SIZE_LIMIT;
     
-    // Skip KV storage for videos exceeding the 25MiB KV size limit
-    if (exceedsKVLimit && isVideoResponse) {
-      logDebug('Skipping KV storage for video exceeding 25MiB size limit', {
+    // Skip KV storage for content exceeding the 25MiB KV size limit
+    if (exceedsKVLimit) {
+      logDebug('Skipping KV storage for content exceeding 25MiB size limit', {
         contentType,
         contentLength,
         maxSizeBytes: KV_SIZE_LIMIT,
-        sourcePath
+        sourcePath,
+        mode: options.mode || 'video'
       });
       return false;
     }
@@ -276,11 +299,11 @@ export async function storeInKVCache(
     // Enhanced logging before storage
     logDebug('Attempting to store in KV cache', {
       sourcePath,
+      mode: options.mode || 'video',
       derivative: options.derivative,
       ttl,
       contentType,
       contentLength,
-      isLargeVideo,
       namespaceBinding: env.VIDEO_TRANSFORMATIONS_CACHE ? 'VIDEO_TRANSFORMATIONS_CACHE' : 'VIDEO_TRANSFORMS_KV'
     });
     
@@ -292,14 +315,12 @@ export async function storeInKVCache(
       const requestContext = getCurrentContext();
       const ctx = requestContext?.executionContext;
       
-      // For large videos or when explicitly configured, always prefer waitUntil to avoid timeouts
-      const shouldUseWaitUntil = isLargeVideo || (ctx?.waitUntil != null);
-      
-      if (ctx?.waitUntil && shouldUseWaitUntil) {
+      // Always use waitUntil when available to avoid timeouts with any content type
+      if (ctx?.waitUntil) {
         // Log waitUntil decision
         logDebug('Using waitUntil for non-blocking KV storage', {
           sourcePath,
-          isLargeVideo,
+          mode: options.mode || 'video',
           contentLength,
           ttl,
           startTime: new Date().toISOString()
@@ -316,21 +337,22 @@ export async function storeInKVCache(
           ).then(result => {
             const endTime = new Date();
             // Generate a log-friendly representation of the storage key
-            // Always use derivative-based key format for consistency and better caching
+            // Include mode in the key format for consistency
             const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
-            const storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
+            const mode = options.mode || 'video';
+            const storageKeyLog = `${mode}:${sourcePath.replace(/^\//g, '')}:${
               options.derivative ? `derivative=${options.derivative}` : 'default'
             }`;
             
             logDebug('Async KV storage operation completed', {
               sourcePath,
+              mode,
               derivative: options.derivative,
               hasIMQuery: !!hasIMQuery,
               imwidth: options.customData?.imwidth,
               success: !!result,
               endTime: endTime.toISOString(),
-              storageKey: storageKeyLog,
-              usingDerivativeKey: true
+              storageKey: storageKeyLog
             });
             
             // Add breadcrumb for successful storage
@@ -338,6 +360,7 @@ export async function storeInKVCache(
             if (reqContext && result) {
               addBreadcrumb(reqContext, 'KVCache', 'Async KV storage completed', {
                 sourcePath,
+                mode,
                 success: !!result,
                 derivative: options.derivative
               });
@@ -359,6 +382,7 @@ export async function storeInKVCache(
         success = true;
         logDebug('Started async KV storage operation', {
           sourcePath, 
+          mode: options.mode || 'video',
           derivative: options.derivative,
           contentLength,
           timestamp: new Date().toISOString()
@@ -385,6 +409,7 @@ export async function storeInKVCache(
       if (requestContext) {
         addBreadcrumb(requestContext, 'KVCache', 'Stored in KV cache', {
           sourcePath,
+          mode: options.mode || 'video',
           derivative: options.derivative,
           ttl,
           timestamp: new Date().toISOString()
@@ -393,6 +418,7 @@ export async function storeInKVCache(
       
       logDebug('Successfully stored in KV cache', {
         sourcePath,
+        mode: options.mode || 'video',
         derivative: options.derivative,
         ttl,
         expiresAt: new Date(Date.now() + (ttl * 1000)).toISOString()
@@ -400,6 +426,7 @@ export async function storeInKVCache(
     } else {
       logDebug('Failed to store in KV cache', {
         sourcePath,
+        mode: options.mode || 'video',
         derivative: options.derivative
       });
     }

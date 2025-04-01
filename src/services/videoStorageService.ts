@@ -1048,12 +1048,17 @@ export function shouldBypassCache(request: Request): boolean {
  * Interface for video options
  */
 interface VideoOptions {
+  mode?: string | null;
   derivative?: string | null;
   format?: string | null;
   width?: number | null;
   height?: number | null;
   quality?: string | null;
   compression?: string | null;
+  time?: string | null;
+  columns?: number | null;
+  rows?: number | null;
+  interval?: string | null;
   [key: string]: unknown;
 }
 
@@ -1119,6 +1124,23 @@ export function generateCacheTags(
   // Add a tag for video format if available
   if (options.format) {
     tags.push(`${prefix}format-${options.format}`);
+  }
+  
+  // Add mode-specific tags
+  if (options.mode) {
+    tags.push(`${prefix}mode-${options.mode}`);
+    
+    // Add frame-specific tags
+    if (options.mode === 'frame' && options.time) {
+      tags.push(`${prefix}time-${options.time.replace('s', '')}`);
+    }
+    
+    // Add spritesheet-specific tags
+    if (options.mode === 'spritesheet') {
+      if (options.columns) tags.push(`${prefix}columns-${options.columns}`);
+      if (options.rows) tags.push(`${prefix}rows-${options.rows}`);
+      if (options.interval) tags.push(`${prefix}interval-${options.interval.replace('s', '')}`);
+    }
   }
   
   // Add tags for dimensions if available

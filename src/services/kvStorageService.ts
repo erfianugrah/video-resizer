@@ -40,6 +40,8 @@ function logError(message: string, data?: Record<string, unknown>): void {
 export interface TransformationMetadata {
   // Original source path
   sourcePath: string;
+  // Transformation mode
+  mode?: string;
   // Transformation parameters
   width?: number | null;
   height?: number | null;
@@ -58,6 +60,12 @@ export interface TransformationMetadata {
   // Additional metadata
   duration?: number | string | null;  // Support both number and string for duration
   fps?: number | null;
+  // Frame-specific metadata
+  time?: string | null;
+  // Spritesheet-specific metadata
+  columns?: number | null;
+  rows?: number | null;
+  interval?: string | null;
   customData?: Record<string, unknown>;
 }
 
@@ -71,20 +79,28 @@ export interface TransformationMetadata {
 export function generateKVKey(
   sourcePath: string,
   options: {
+    mode?: string | null;
     width?: number | null;
     height?: number | null;
     format?: string | null;
     quality?: string | null;
     compression?: string | null;
     derivative?: string | null;
+    time?: string | null;
+    columns?: number | null;
+    rows?: number | null;
+    interval?: string | null;
     customData?: Record<string, unknown>;
   }
 ): string {
   // Remove leading slashes for consistency
   const normalizedPath = sourcePath.replace(/^\/+/, '');
   
-  // Create a base key from the path
-  let key = `video:${normalizedPath}`;
+  // Set default mode to 'video' if not specified
+  const mode = options.mode || 'video';
+  
+  // Create a base key from the mode and path
+  let key = `${mode}:${normalizedPath}`;
   
   // Always prefer derivative-based caching for better cache efficiency
   if (options.derivative) {
@@ -94,9 +110,21 @@ export function generateKVKey(
     // Only use individual parameters if no derivative specified
     if (options.width) key += `:w=${options.width}`;
     if (options.height) key += `:h=${options.height}`;
-    if (options.format) key += `:f=${options.format}`;
-    if (options.quality) key += `:q=${options.quality}`;
-    if (options.compression) key += `:c=${options.compression}`;
+    
+    // Add mode-specific parameters
+    if (mode === 'frame') {
+      if (options.time) key += `:t=${options.time}`;
+      if (options.format) key += `:f=${options.format}`;
+    } else if (mode === 'spritesheet') {
+      if (options.columns) key += `:cols=${options.columns}`;
+      if (options.rows) key += `:rows=${options.rows}`;
+      if (options.interval) key += `:interval=${options.interval}`;
+    } else {
+      // Video-specific parameters
+      if (options.format) key += `:f=${options.format}`;
+      if (options.quality) key += `:q=${options.quality}`;
+      if (options.compression) key += `:c=${options.compression}`;
+    }
   }
   
   // Store IMQuery information in metadata but not in the cache key
@@ -121,6 +149,7 @@ export async function storeTransformedVideo(
   sourcePath: string,
   response: Response,
   options: {
+    mode?: string | null;
     width?: number | null;
     height?: number | null;
     format?: string | null;
@@ -129,6 +158,10 @@ export async function storeTransformedVideo(
     derivative?: string | null;
     duration?: number | string | null;
     fps?: number | null;
+    time?: string | null;
+    columns?: number | null;
+    rows?: number | null;
+    interval?: string | null;
     customData?: Record<string, unknown>;
   },
   ttl?: number
@@ -152,6 +185,7 @@ export async function storeTransformedVideo(
     // Create metadata object
     const metadata: TransformationMetadata = {
       sourcePath,
+      mode: options.mode || 'video',
       width: options.width,
       height: options.height,
       format: options.format,
@@ -164,6 +198,11 @@ export async function storeTransformedVideo(
       createdAt: Date.now(),
       duration: options.duration,
       fps: options.fps,
+      // Add mode-specific metadata
+      time: options.time,
+      columns: options.columns,
+      rows: options.rows,
+      interval: options.interval,
       customData: options.customData
     };
     
@@ -238,12 +277,17 @@ export async function getTransformedVideo(
   namespace: KVNamespace,
   sourcePath: string,
   options: {
+    mode?: string | null;
     width?: number | null;
     height?: number | null;
     format?: string | null;
     quality?: string | null;
     compression?: string | null;
     derivative?: string | null;
+    time?: string | null;
+    columns?: number | null;
+    rows?: number | null;
+    interval?: string | null;
   }
 ): Promise<{ response: Response; metadata: TransformationMetadata } | null> {
   try {
@@ -370,8 +414,9 @@ export async function listVariants(
     const normalizedPath = sourcePath.replace(/^\/+/, '');
     
     // Create a prefix for the key
-    // Note: We need a base key without the trailing colon to match the exact path
-    const prefix = `video:${normalizedPath}`;
+    // We'll only use the path part to match all transformation modes (video, frame, spritesheet)
+    // This allows listing all variants regardless of transformation type
+    const prefix = normalizedPath;
     
     // List all keys with this prefix
     const keys = await namespace.list({ prefix });
@@ -380,9 +425,10 @@ export async function listVariants(
     const variants: { key: string; metadata: TransformationMetadata }[] = [];
     
     for (const key of keys.keys) {
-      // Only process keys that are exact variants of this source path
-      // They should either be exactly the base key or have a parameter section
-      if (key.name === prefix || key.name.startsWith(`${prefix}:`)) {
+      // Process any key that contains this normalized path
+      // This will include all transformation modes (video, frame, spritesheet)
+      // The key format will be [mode]:[path]:[params]
+      if (key.name.includes(`:${normalizedPath}:`)) {
         const { metadata } = await namespace.getWithMetadata<TransformationMetadata>(key.name);
         
         if (metadata) {

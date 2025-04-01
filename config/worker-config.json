@@ -11,17 +11,7 @@
 				"audio": true,
 				"quality": "high",
 				"compression": "low",
-				"description": "Highest visual quality, smallest byte size reduction"
-			},
-			"medium_high_quality": {
-				"width": 1920,
-				"height": 1080,
-				"mode": "video",
-				"fit": "contain",
-				"audio": true,
-				"quality": "high",
-				"compression": "medium",
-				"description": "High visual quality with small byte size reduction"
+				"description": "The video plays in high-definition"
 			},
 			"medium_quality": {
 				"width": 1280,
@@ -31,60 +21,17 @@
 				"audio": true,
 				"quality": "medium",
 				"compression": "medium",
-				"description": "Medium visual quality with moderate byte savings"
-			},
-			"medium_low_quality": {
-				"width": 1280,
-				"height": 720,
-				"mode": "video",
-				"fit": "contain",
-				"audio": true,
-				"quality": "low",
-				"compression": "high",
-				"description": "Low visual quality with large byte size reduction"
+				"description": "The video plays at medium resolution"
 			},
 			"low_quality": {
 				"width": 854,
-				"height": 480,
+				"height": 640,
 				"mode": "video",
 				"fit": "contain",
 				"audio": true,
 				"quality": "low",
 				"compression": "high",
-				"description": "Lowest visual quality with largest byte size reduction"
-			},
-			"mobile": {
-				"width": 854,
-				"height": 480,
-				"mode": "video",
-				"fit": "contain",
-				"audio": true,
-				"quality": "low",
-				"compression": "high",
-				"preload": "metadata",
-				"description": "Optimized for mobile devices"
-			},
-			"thumbnail": {
-				"width": 320,
-				"height": 180,
-				"mode": "frame",
-				"fit": "contain",
-				"audio": false,
-				"format": "jpg",
-				"time": "0s",
-				"description": "Static thumbnail image"
-			},
-			"preview": {
-				"width": 480,
-				"height": 270,
-				"mode": "video",
-				"fit": "contain",
-				"audio": false,
-				"duration": "5s",
-				"quality": "low",
-				"compression": "high",
-				"preload": "auto",
-				"description": "Short preview clip with low bandwidth usage"
+				"description": "The video plays at the lowest resolution and is also smaller in size"
 			}
 		},
 		"defaults": {
@@ -118,7 +65,7 @@
 				"mp4",
 				"webm",
 				"gif",
-				"jpeg",
+				"jpg",
 				"webp",
 				"png"
 			],
