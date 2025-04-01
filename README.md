@@ -19,7 +19,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - Generate spritesheets from videos
 - **Akamai Compatibility**:
   - Automatically translates Akamai-style parameters to Cloudflare format
-  - Support for IMQuery responsive image parameters with derivative matching
+  - Support for IMQuery responsive image parameters with breakpoint-based derivative mapping
   - Client hints generation from IMQuery metadata
 
 ### Advanced Features
@@ -50,7 +50,8 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - [Deployment Guide](./docs/deployment/README.md)
 - [KV Caching System](./docs/kv-caching/README.md)
 - [Storage System](./docs/storage/README.md)
-- [IMQuery Matching](./docs/configuration/imquery-matching.md)
+- [IMQuery Support](./docs/features/imquery/README.md)
+- [Breakpoint-Based Mapping](./docs/features/imquery/breakpoint-based-derivative-mapping.md)
 
 ## Quick Start
 
@@ -145,7 +146,7 @@ But the client never sees this - they just get back the transformed video with t
 - **Video Clip**: `/videos/sample.mp4?time=5s&duration=5s`
 - **Video Thumbnail**: `/videos/sample.mp4?mode=frame&time=5s&width=640&height=360`
 - **Using a Derivative**: `/videos/sample.mp4?derivative=mobile`
-- **Using IMQuery**: `/videos/sample.mp4?imwidth=800&imheight=450` (matches closest derivative)
+- **Using IMQuery**: `/videos/sample.mp4?imwidth=800` (maps to tablet derivative via breakpoint)
 - **Debug View**: `/videos/sample.mp4?width=720&height=480&debug=view`
 
 ## Supported Parameters
@@ -187,13 +188,23 @@ Derivatives are preset configurations for common use cases:
 
 | Derivative | Description | Settings |
 |------------|-------------|----------|
-| `high` | High quality video | 1080p, high quality, low compression |
-| `medium` | Medium quality video | 720p, medium quality, medium compression |
-| `low` | Low quality video | 480p, low quality, high compression |
-| `mobile` | Mobile-optimized video | 360p, low quality, high compression, preload=metadata |
+| `desktop` | High quality video | 1920x1080, high quality, low compression |
+| `tablet` | Medium quality video | 1280x720, medium quality, medium compression |
+| `mobile` | Low quality video | 854x640, low quality, high compression |
 | `thumbnail` | Static thumbnail | frame mode, 320x180, jpg format |
 | `animation` | Looping video clip | 480x270, no audio, loop=true, preload=auto |
 | `preview` | Short preview | 480x270, 5s duration, no audio, low quality |
+
+### Responsive Breakpoints
+
+When using IMQuery with `imwidth` parameters, widths automatically map to derivatives:
+
+| Width Range | Maps To | Resolution | Quality |
+|------------|---------|------------|---------|
+| ≤ 640px    | mobile  | 854x640    | low     |
+| 641-1024px | tablet  | 1280x720   | medium  |
+| 1025-1440px| tablet  | 1280x720   | medium  |
+| ≥ 1441px   | desktop | 1920x1080  | high    |
 
 ## License
 

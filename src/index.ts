@@ -143,25 +143,8 @@ export default {
                     const videoConfig = VideoConfigurationManager.getInstance();
                     const pathPatterns = videoConfig.getPathPatterns();
                     
-                    // Do a quick test of the standard pattern matcher
-                    const testPath = '/erfi.mp4';
-                    for (const pattern of pathPatterns) {
-                      try {
-                        const regex = new RegExp(pattern.matcher);
-                        const matches = regex.test(testPath);
-                        
-                        logInfo(context, `Testing pattern ${pattern.name} against ${testPath}`, {
-                          matcher: pattern.matcher,
-                          matches: matches,
-                          regex: regex.toString()
-                        });
-                      } catch (err) {
-                        logError(context, `Error testing pattern ${pattern.name}`, {
-                          error: err instanceof Error ? err.message : String(err),
-                          matcher: pattern.matcher
-                        });
-                      }
-                    }
+                    // Log pattern information without testing specific paths
+                    // This avoids hardcoding example paths in the logs
                     
                     logInfo(context, 'Path patterns after loading from KV', {
                       patternCount: pathPatterns.length,
