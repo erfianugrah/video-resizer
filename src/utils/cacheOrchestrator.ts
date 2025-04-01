@@ -47,12 +47,13 @@ export async function withCaching(
 
   // Skip CF cache for non-GET requests or debug mode, also skip KV for these requests
   const url = new URL(request.url);
-  const skipCache = request.method !== 'GET' || url.searchParams.has('debug');
+  const isDebugMode = url.searchParams.has('debug');
+  const skipCache = request.method !== 'GET' || isDebugMode;
   
   if (skipCache) {
     logDebug('Bypassing cache', { 
       method: request.method, 
-      hasDebug: url.searchParams.has('debug')
+      hasDebug: isDebugMode
     });
   }
 
@@ -98,8 +99,30 @@ export async function withCaching(
     logDebug('All caches missed, executing handler');
     const response = await handler();
     
-    // Step 4: Store result in KV if it was successful and not skipping cache
-    if (options && env && response.ok && request.method === 'GET' && !skipCache) {
+    // Step 4: Store result in KV if conditions are met
+    // Check if it's a video response and not an error
+    const contentType = response.headers.get('content-type') || '';
+    const isError = response.status >= 400;
+    
+    // Comprehensive list of video MIME types
+    const videoMimeTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo', // AVI
+      'video/quicktime', // MOV
+      'video/x-matroska', // MKV
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL', // HLS
+      'application/dash+xml'   // DASH
+    ];
+    
+    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    
+    if (options && env && response.ok && request.method === 'GET' && !skipCache && isVideoResponse && !isError) {
       const sourcePath = url.pathname;
       const responseClone = response.clone();
       
@@ -108,7 +131,7 @@ export async function withCaching(
       
       if (ctx && typeof ctx.waitUntil === 'function') {
         // Store in background with waitUntil
-        logDebug('Storing in KV using waitUntil', { sourcePath });
+        logDebug('Storing in KV using waitUntil', { sourcePath, contentType });
         ctx.waitUntil(
           storeInKVCache(env, sourcePath, responseClone, options)
             .then((success: boolean) => {
@@ -133,10 +156,16 @@ export async function withCaching(
           });
         }
       }
-    } else if (options && env && response.ok && request.method === 'GET') {
-      logDebug('Skipped KV storage due to request parameters', {
+    } else if (options && env && request.method === 'GET') {
+      // Log reasons for skipping storage
+      logDebug('Skipped KV storage', {
         method: request.method,
-        hasDebug: url.searchParams.has('debug')
+        isOk: response.ok,
+        hasDebug: isDebugMode,
+        isVideoResponse,
+        isError,
+        statusCode: response.status,
+        contentType
       });
     }
     

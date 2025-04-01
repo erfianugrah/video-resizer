@@ -186,8 +186,43 @@ export async function storeInKVCache(
     // Clone the response to avoid consuming it
     const responseClone = response.clone();
     
-    // Determine TTL based on the content type and cache configuration
+    // Check if response is an error (4xx, 5xx)
+    const statusCode = responseClone.status;
+    const isError = statusCode >= 400;
+    
+    // Check content type to determine if response is video
     const contentType = responseClone.headers.get('content-type') || '';
+    
+    // Comprehensive list of video MIME types
+    const videoMimeTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo', // AVI
+      'video/quicktime', // MOV
+      'video/x-matroska', // MKV
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL', // HLS
+      'application/dash+xml'   // DASH
+    ];
+    
+    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    
+    // Skip KV storage for errors or non-video responses
+    if (isError || !isVideoResponse) {
+      logDebug('Skipping KV storage for error or non-video response', {
+        statusCode,
+        contentType,
+        isError,
+        isVideoResponse
+      });
+      return false;
+    }
+    
+    // Determine TTL based on the content type and cache configuration
     const ttl = determineTTL(responseClone, config);
     
     // Log TTL determination
@@ -197,7 +232,7 @@ export async function storeInKVCache(
       responseStatus: responseClone.status,
       statusCategory: Math.floor(responseClone.status / 100),
       configuredTTLOk: config.ttl?.ok,
-      isVideo: contentType.includes('video')
+      isVideo: isVideoResponse
     });
     
     // Ensure namespace is defined before using
@@ -205,10 +240,9 @@ export async function storeInKVCache(
       return false;
     }
     
-    // Check if this is likely a video response and if it's large
-    // We already got contentType earlier
+    // Check if this is a large video response
     const contentLength = parseInt(responseClone.headers.get('content-length') || '0', 10);
-    const isLargeVideo = contentType.includes('video') && contentLength > 1000000; // >1MB
+    const isLargeVideo = isVideoResponse && contentLength > 1000000; // >1MB
     
     // Log content length discovery
     logDebug('Determined content length for KV storage calculation', {
@@ -227,7 +261,7 @@ export async function storeInKVCache(
     const exceedsKVLimit = contentLength > KV_SIZE_LIMIT;
     
     // Skip KV storage for videos exceeding the 25MiB KV size limit
-    if (exceedsKVLimit && contentType.includes('video')) {
+    if (exceedsKVLimit && isVideoResponse) {
       logDebug('Skipping KV storage for video exceeding 25MiB size limit', {
         contentType,
         contentLength,
@@ -399,10 +433,21 @@ function determineTTL(response: Response, config: any): number {
 /**
  * Check if KV cache should be bypassed based on configuration settings
  * 
+ * @param sourcePath - The source path being requested
  * @returns Boolean indicating if cache should be bypassed
  */
 function shouldBypassKVCache(sourcePath: string): boolean {
-  // No URL parameters or special debug flags should bypass KV storage
-  // KV caching should be controlled only by configuration
+  // Get current request context if available
+  const requestContext = getCurrentContext();
+  
+  // Check for debug mode in current request
+  if (requestContext?.url) {
+    const url = new URL(requestContext.url);
+    if (url.searchParams.has('debug')) {
+      logDebug('Bypassing KV cache due to debug mode', { sourcePath });
+      return true;
+    }
+  }
+  
   return false;
 }

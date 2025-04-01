@@ -12,12 +12,14 @@
    - Handles TTL determination
    - Provides cache bypass functions
    - Manages cache headers
+   - Implements bypass for debug mode and non-video responses
 
 3. **cacheOrchestrator.ts**
    - Coordinates the caching workflow
    - Determines which cache layer to check
    - Handles background storage with waitUntil
    - Manages error handling and fallbacks
+   - Skips caching for error responses (4xx, 5xx)
 
 4. **videoHandlerWithCache.ts**
    - Integration point with the video processing handler
@@ -104,6 +106,77 @@ Cache tags are stored with each video variant, allowing for coordinated purging:
 Example usage: 
 - Purge all "mobile" derivatives: purge tag `video-derivative-mobile`
 - Purge all WebM videos: purge tag `video-format-webm`
+
+## Cache Bypass Rules
+
+Several conditions trigger cache bypass to ensure optimal behavior:
+
+### 1. Debug Mode
+
+Requests with the `debug` query parameter bypass KV caching:
+
+```typescript
+// In shouldBypassKVCache function
+if (requestContext?.url) {
+  const url = new URL(requestContext.url);
+  if (url.searchParams.has('debug')) {
+    logDebug('Bypassing KV cache due to debug mode', { sourcePath });
+    return true;
+  }
+}
+```
+
+This allows users to see the latest version of the video during debugging without cache interference.
+
+### 2. Error Responses
+
+Error responses (4xx, 5xx) are not stored in KV:
+
+```typescript
+// Check if response is an error (4xx, 5xx)
+const statusCode = responseClone.status;
+const isError = statusCode >= 400;
+
+// Skip KV storage for errors
+if (isError) {
+  logDebug('Skipping KV storage for error response', { statusCode });
+  return false;
+}
+```
+
+This prevents caching error responses that might be temporary or request-specific.
+
+### 3. Non-Video Content
+
+Only responses with standard video MIME types are stored in KV cache:
+
+```typescript
+// Comprehensive list of video MIME types
+const videoMimeTypes = [
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'video/x-msvideo', // AVI
+  'video/quicktime', // MOV
+  'video/x-matroska', // MKV
+  'video/x-flv',
+  'video/3gpp',
+  'video/3gpp2',
+  'video/mpeg',
+  'application/x-mpegURL', // HLS
+  'application/dash+xml'   // DASH
+];
+
+const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+
+// Skip KV storage for non-video responses
+if (!isVideoResponse) {
+  logDebug('Skipping KV storage for non-video response', { contentType });
+  return false;
+}
+```
+
+This ensures the cache is used only for its intended purpose - storing transformed videos - and prevents accidental caching of HTML error pages or JSON responses that might have the word "video" in their content type.
 
 ## Basic Usage
 
