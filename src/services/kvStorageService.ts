@@ -86,28 +86,21 @@ export function generateKVKey(
   // Create a base key from the path
   let key = `video:${normalizedPath}`;
   
-  // Check for IMQuery parameters in customData
-  const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
-  
-  // Add transformation parameters to the key - always use = as delimiter for consistency
-  if (hasIMQuery) {
-    // Use IMQuery parameters for the key if they exist
-    if (options.customData?.imwidth) key += `:imwidth=${options.customData.imwidth}`;
-    if (options.customData?.imheight) key += `:imheight=${options.customData.imheight}`;
-    
-    // Add derivative as metadata but not as primary key
-    if (options.derivative) key += `:via=${options.derivative}`;
-  } else if (options.derivative) {
-    // Normal case - use derivative as key
+  // Always prefer derivative-based caching for better cache efficiency
+  if (options.derivative) {
+    // Derivative-based caching is the primary method for better cache utilization
     key += `:derivative=${options.derivative}`;
   } else {
-    // Only add individual parameters if no derivative specified
+    // Only use individual parameters if no derivative specified
     if (options.width) key += `:w=${options.width}`;
     if (options.height) key += `:h=${options.height}`;
     if (options.format) key += `:f=${options.format}`;
     if (options.quality) key += `:q=${options.quality}`;
     if (options.compression) key += `:c=${options.compression}`;
   }
+  
+  // Store IMQuery information in metadata but not in the cache key
+  // This allows requests with different imwidth values but same derivative to share cache
   
   // Only replace spaces and other truly invalid characters, preserving slashes and equals signs
   return key.replace(/[^\w:/=.*-]/g, '-');

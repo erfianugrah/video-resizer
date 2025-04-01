@@ -316,24 +316,11 @@ export async function storeInKVCache(
           ).then(result => {
             const endTime = new Date();
             // Generate a log-friendly representation of the storage key
-            let storageKeyLog;
+            // Always use derivative-based key format for consistency and better caching
             const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
-            
-            if (hasIMQuery) {
-              // IMQuery-based key format for logging
-              storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
-                options.customData?.imwidth ? `imwidth=${options.customData.imwidth}` : ''
-              }${
-                options.customData?.imheight ? `:imheight=${options.customData.imheight}` : ''
-              }${
-                options.derivative ? `:via=${options.derivative}` : ''
-              }`;
-            } else {
-              // Standard derivative-based key format for logging
-              storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
-                options.derivative ? `derivative=${options.derivative}` : 'default'
-              }`;
-            }
+            const storageKeyLog = `video:${sourcePath.replace(/^\//g, '')}:${
+              options.derivative ? `derivative=${options.derivative}` : 'default'
+            }`;
             
             logDebug('Async KV storage operation completed', {
               sourcePath,
@@ -342,7 +329,8 @@ export async function storeInKVCache(
               imwidth: options.customData?.imwidth,
               success: !!result,
               endTime: endTime.toISOString(),
-              storageKey: storageKeyLog
+              storageKey: storageKeyLog,
+              usingDerivativeKey: true
             });
             
             // Add breadcrumb for successful storage

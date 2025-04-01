@@ -378,24 +378,21 @@ export async function handleVideoRequest(
         const sourcePath = url.pathname;
         const responseClone = response.clone();
         
-        // Check if this is an IMQuery request and capture parameters
+        // Use derivative-based caching instead of specific IMQuery dimensions
+        // This ensures better cache reuse when multiple imwidth/imheight values map to the same derivative
+        
+        // Add IMQuery detection to logs but don't use for cache key
         const imwidth = url.searchParams.get('imwidth');
         const imheight = url.searchParams.get('imheight');
         
-        // Create customData to store the IMQuery parameters for use in the cache key
-        const customData: Record<string, unknown> = {};
-        if (imwidth) customData.imwidth = imwidth;
-        if (imheight) customData.imheight = imheight;
-        
-        // Add IMQuery detection to videoOptions custom data
+        // Use the derivative from videoOptions without adding IMQuery dimensions to the cache key
         const videoOptionsWithIMQuery: TransformOptions = {
-          ...videoOptions,
-          customData: Object.keys(customData).length > 0 ? customData : undefined
+          ...videoOptions
         };
         
-        // Log the IMQuery detection for debugging
-        if (Object.keys(customData).length > 0) {
-          debug(context, logger, 'VideoHandler', 'Including IMQuery parameters in cache key', {
+        // Log the IMQuery detection for debugging but note we're using derivative-based caching
+        if (imwidth || imheight) {
+          debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
             imwidth,
             imheight,
             derivative: videoOptions.derivative
@@ -411,7 +408,7 @@ export async function handleVideoRequest(
                 if (success) {
                   debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
                     path: sourcePath,
-                    hasIMQuery: Object.keys(customData).length > 0,
+                    hasIMQuery: !!(imwidth || imheight),
                     derivative: videoOptions.derivative
                   });
                 } else {
@@ -437,7 +434,7 @@ export async function handleVideoRequest(
               if (success) {
                 debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
                   path: sourcePath,
-                  hasIMQuery: Object.keys(customData).length > 0,
+                  hasIMQuery: !!(imwidth || imheight),
                   derivative: videoOptions.derivative
                 });
               } else {
