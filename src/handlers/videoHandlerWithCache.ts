@@ -53,24 +53,58 @@ export async function handleRequestWithCaching(
     fps: url.searchParams.has('fps') ? parseInt(url.searchParams.get('fps') || '', 10) : undefined
   };
   
-  // Log the request parameters
-  const requestContext = getCurrentContext();
-  if (requestContext) {
+  // Import dynamically to avoid circular references
+  try {
+    // Use dynamic import to access the context modules
+    const { createRequestContext, setCurrentContext, addBreadcrumb, getCurrentContext } = 
+      await import('../utils/requestContext');
+    
+    // Create a request context if one doesn't exist
+    let requestContext = getCurrentContext();
+    
+    if (!requestContext) {
+      // Create a new context and set it as the current one
+      requestContext = createRequestContext(request, ctx);
+      setCurrentContext(requestContext);
+      
+      console.debug('videoHandlerWithCache: Created and set new request context', {
+        requestId: requestContext.requestId,
+        url: request.url
+      });
+    }
+    
+    // Now we should have a valid request context
     const logger = createLogger(requestContext);
+    
+    // Log detailed request information
     logger.info('Video transformation request with caching', {
       path: url.pathname,
-      options: videoOptions
+      requestId: requestContext.requestId,
+      method: request.method,
+      hasOptions: Object.values(videoOptions).some(v => v !== undefined),
+      options: {
+        ...videoOptions,
+        // Only include non-sensitive options in logs
+        width: videoOptions.width,
+        height: videoOptions.height,
+        derivative: videoOptions.derivative,
+        format: videoOptions.format
+      }
     });
     
+    // Add detailed breadcrumb for request tracing
     addBreadcrumb(requestContext, 'VideoHandler', 'Processing video request with caching', {
       url: request.url,
-      options: videoOptions
-    });
-  } else {
-    // Fallback logging when request context isn't available
-    console.info('Video transformation request with caching', {
       path: url.pathname,
-      options: videoOptions
+      options: videoOptions,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    // Fallback logging when request context initialization fails
+    console.info('Video transformation request with caching (fallback logging)', {
+      path: url.pathname,
+      options: videoOptions,
+      error: err instanceof Error ? err.message : String(err)
     });
   }
   

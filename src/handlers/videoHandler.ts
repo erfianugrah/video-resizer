@@ -32,6 +32,13 @@ export async function handleVideoRequest(
   }
   // Create request context and logger, pass execution context for waitUntil operations
   const context = createRequestContext(request, ctx);
+  
+  // Import performance tracking functions and context management
+  const { startTimedOperation, endTimedOperation, setCurrentContext } = await import('../utils/requestContext');
+  
+  // Set the current request context for the global context manager
+  setCurrentContext(context);
+  
   const logger = createLogger(context);
   
   // Log environment variables received for debugging
@@ -43,9 +50,6 @@ export async function handleVideoRequest(
       ENVIRONMENT: env.ENVIRONMENT || 'not set'
     });
   }
-  
-  // Import performance tracking functions
-  const { startTimedOperation, endTimedOperation } = await import('../utils/requestContext');
   
   // Start timing the entire request processing
   startTimedOperation(context, 'total-request-processing', 'Request');

@@ -266,6 +266,21 @@ export function buildCdnCgiMediaUrl(
 ): string {
   const { basePath } = videoConfig.cdnCgi;
 
+  // Try to get the request context for logging
+  let logDebug: (message: string, data?: Record<string, unknown>) => void;
+  let console_debug = console.debug;
+  
+  try {
+    // Define a fallback debug function to capture debug info during execution
+    logDebug = (message: string, data?: Record<string, unknown>) => {
+      console_debug(`[PathUtils] ${message}`, data || {});
+    };
+  } catch (err) {
+    logDebug = (message: string, data?: Record<string, unknown>) => {
+      console_debug(`[PathUtils] ${message}`, data || {});
+    };
+  }
+
   // Filter out null/undefined options
   const validOptions = Object.entries(options)
     .filter(([_, value]) => value !== null && value !== undefined)
@@ -288,5 +303,58 @@ export function buildCdnCgiMediaUrl(
 
   // Build the CDN-CGI media URL with the full video URL (including protocol)
   // Prepend the current host to the cdn-cgi path
-  return `${baseUrl}${basePath}/${optionsString}/${videoUrl}`;
+  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${videoUrl}`;
+  
+  // Log the transformation details (critical for debugging)
+  logDebug('Building CDN-CGI media URL', {
+    cdnCgiBasePath: basePath,
+    transformParams: validOptions,
+    parameterString: optionsString,
+    originalUrl: videoUrl,
+    transformedUrl: cdnCgiUrl,
+    paramCount: Object.keys(validOptions).length,
+    keyParams: {
+      width: validOptions.width,
+      height: validOptions.height,
+      format: validOptions.format,
+      quality: validOptions.quality,
+      mode: validOptions.mode,
+      fit: validOptions.fit,
+      compression: validOptions.compression
+    }
+  });
+  
+  // Try to add a breadcrumb to the request context if it exists
+  try {
+    // Using dynamic import to avoid circular dependencies
+    import('../utils/requestContext').then(({ getCurrentContext, addBreadcrumb }) => {
+      const context = getCurrentContext();
+      if (context) {
+        addBreadcrumb(context, 'CDN-CGI', 'Built media transformation URL', {
+          // Include the full parameters for debugging
+          params: validOptions,
+          paramCount: Object.keys(validOptions).length,
+          // Include key parameters individually for easier filtering
+          width: validOptions.width,
+          height: validOptions.height,
+          format: validOptions.format,
+          quality: validOptions.quality,
+          mode: validOptions.mode,
+          fit: validOptions.fit,
+          compression: validOptions.compression,
+          // Include URL details (safe version)
+          basePath,
+          baseUrl,
+          // Include the complete URL for debugging (essential for troubleshooting)
+          completeUrl: cdnCgiUrl
+        });
+      }
+    }).catch(() => {
+      // Silent fail if we can't add the breadcrumb
+    });
+  } catch (err) {
+    // Silent fail if requestContext isn't available
+  }
+
+  return cdnCgiUrl;
 }

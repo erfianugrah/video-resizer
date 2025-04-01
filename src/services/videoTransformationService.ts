@@ -11,17 +11,34 @@ import { createLogger, debug as pinoDebug, error as pinoError, warn as pinoWarn 
 /**
  * Helper functions for consistent logging throughout this file
  * These helpers handle context availability and fallback gracefully
+ * 
+ * These use dynamic imports to prevent circular dependency issues
+ * and properly access the most up-to-date request context.
  */
 
 /**
  * Log a debug message with proper context handling
  */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'VideoTransformationService', message, data);
-  } else {
+async function logDebug(message: string, data?: Record<string, unknown>): Promise<void> {
+  try {
+    // Use requestContext.ts getCurrentContext which is more reliable
+    const { getCurrentContext } = await import('../utils/requestContext');
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, 'VideoTransformationService', message, data);
+      return;
+    }
+  } catch (err) {
+    // Silent fail and continue to fallbacks
+  }
+
+  // Fall back to legacy adapter
+  try {
+    const { debug } = await import('../utils/legacyLoggerAdapter');
+    debug('VideoTransformationService', message, data || {});
+  } catch {
     // Fall back to console as a last resort
     console.debug(`VideoTransformationService: ${message}`, data || {});
   }
@@ -30,12 +47,26 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
 /**
  * Log a warning message with proper context handling
  */
-function logWarn(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoWarn(requestContext, logger, 'VideoTransformationService', message, data);
-  } else {
+async function logWarn(message: string, data?: Record<string, unknown>): Promise<void> {
+  try {
+    // Use requestContext.ts getCurrentContext which is more reliable
+    const { getCurrentContext } = await import('../utils/requestContext');
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoWarn(requestContext, logger, 'VideoTransformationService', message, data);
+      return;
+    }
+  } catch (err) {
+    // Silent fail and continue to fallbacks
+  }
+
+  // Fall back to legacy adapter
+  try {
+    const { warn } = await import('../utils/legacyLoggerAdapter');
+    warn('VideoTransformationService', message, data || {});
+  } catch {
     // Fall back to console as a last resort
     console.warn(`VideoTransformationService: ${message}`, data || {});
   }
@@ -44,12 +75,26 @@ function logWarn(message: string, data?: Record<string, unknown>): void {
 /**
  * Log an error message with proper context handling
  */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'VideoTransformationService', message, data);
-  } else {
+async function logError(message: string, data?: Record<string, unknown>): Promise<void> {
+  try {
+    // Use requestContext.ts getCurrentContext which is more reliable
+    const { getCurrentContext } = await import('../utils/requestContext');
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoError(requestContext, logger, 'VideoTransformationService', message, data);
+      return;
+    }
+  } catch (err) {
+    // Silent fail and continue to fallbacks
+  }
+
+  // Fall back to legacy adapter
+  try {
+    const { error } = await import('../utils/legacyLoggerAdapter');
+    error('VideoTransformationService', message, data || {});
+  } catch {
     // Fall back to console as a last resort
     console.error(`VideoTransformationService: ${message}`, data || {});
   }
@@ -76,26 +121,47 @@ export async function transformVideo(
   }
 ): Promise<Response> {
   try {
+    // Use dynamic import to get the context modules
+    const { getCurrentContext } = await import('../utils/requestContext');
+    
     // Get the current request context - should be available from the handler
-    const requestContext = getCurrentContext() || undefined;
+    const requestContext = getCurrentContext();
     let logger;
+    
+    // Create a detailed options object for logging that doesn't include sensitive information
+    const logOptions = {
+      width: options.width,
+      height: options.height,
+      format: options.format,
+      quality: options.quality,
+      derivative: options.derivative,
+      hasLoop: options.loop !== undefined,
+      hasAutoplay: options.autoplay !== undefined,
+      hasMuted: options.muted !== undefined,
+      hasAudio: options.audio !== undefined
+    };
+    
+    // Start a timer to measure performance
+    const startTime = performance.now();
+    
+    // Log the transformation request
+    await logDebug('Transforming video', {
+      url: request.url,
+      options: logOptions,
+      timestamp: new Date().toISOString(),
+      hasRequestContext: !!requestContext
+    });
     
     // Create logger if we have a context
     if (requestContext) {
       logger = createLogger(requestContext);
+      const { addBreadcrumb } = await import('../utils/requestContext');
       
-      // Log with helper function
-      logDebug('Transforming video', {
-        url: request.url
-      });
-    } else {
-      // Request context not available - use direct warning and then 
-      // dynamically import logger to avoid circular dependencies
-      logWarn('No request context available');
-      const { debug } = await import('../utils/legacyLoggerAdapter');
-      debug('VideoTransformationService', 'Transforming video', {
-        url: request.url,
-        options,
+      // Add breadcrumb for the transformation
+      addBreadcrumb(requestContext, 'VideoTransformationService', 'Starting video transformation', {
+        options: logOptions,
+        pathPatternCount: pathPatterns.length,
+        debugEnabled: debugInfo?.isEnabled
       });
     }
 
@@ -113,27 +179,63 @@ export async function transformVideo(
       logger
     });
 
-    return await command.execute();
+    // Execute the command
+    const result = await command.execute();
+    
+    // Calculate and log performance metrics
+    const duration = Math.round(performance.now() - startTime);
+    
+    // Log the successful transformation
+    await logDebug('Video transformation successful', {
+      url: request.url,
+      status: result.status,
+      contentType: result.headers.get('Content-Type'),
+      contentLength: result.headers.get('Content-Length'),
+      durationMs: duration,
+      cacheStatus: result.headers.get('CF-Cache-Status') || 'unknown'
+    });
+    
+    // Add a performance breadcrumb if we have a context
+    if (requestContext) {
+      const { addBreadcrumb } = await import('../utils/requestContext');
+      addBreadcrumb(requestContext, 'Performance', 'Video transformation completed', {
+        operation: 'transformVideo',
+        durationMs: duration,
+        status: result.status
+      });
+    }
+
+    return result;
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    const errorStack = err instanceof Error ? err.stack : undefined;
     
-    // Get the request context and log the error using the new system if available
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      logError('Error transforming video', {
-        error: errorMessage,
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-    } else {
-      // Request context not available - use direct warning and then 
-      // dynamically import logger to avoid circular dependencies
-      logWarn('No request context available for error');
-      const { error } = await import('../utils/legacyLoggerAdapter');
-      error('VideoTransformationService', 'Error transforming video', {
-        error: errorMessage,
-        stack: err instanceof Error ? err.stack : undefined,
-      });
+    // Log the error with our async log utility
+    await logError('Error transforming video', {
+      error: errorMessage,
+      stack: errorStack,
+      url: request.url,
+      options: {
+        width: options.width,
+        height: options.height,
+        format: options.format
+      }
+    });
+    
+    // Add an error breadcrumb if we have a context
+    try {
+      const { getCurrentContext, addBreadcrumb } = await import('../utils/requestContext');
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Error', 'Video transformation failed', {
+          error: errorMessage,
+          errorType: err instanceof Error ? err.constructor.name : 'Unknown',
+          url: request.url
+        });
+      }
+    } catch (breadcrumbErr) {
+      // Silently fail if we can't add the breadcrumb
     }
 
     throw err; // Rethrow to be handled by the caller
@@ -149,6 +251,13 @@ export async function transformVideo(
 export function getBestVideoFormat(request: Request): string {
   // Get Accept header
   const accept = request.headers.get('Accept') || '';
+  
+  // Log the format determination
+  logDebug('Determining best video format', {
+    accept,
+    url: request.url,
+    hasAcceptHeader: !!request.headers.get('Accept')
+  }).catch(() => {});
   
   // Check for specific video formats in Accept header
   if (accept.includes('video/webm')) {
@@ -177,16 +286,24 @@ export function estimateOptimalBitrate(
   // Base bitrate calculation based on resolution
   const pixels = width * height;
   let baseBitrate = 0;
+  let resolutionCategory = '';
+  
+  // Start time for performance measurement
+  const startTime = performance.now();
   
   // Adjust base bitrate based on resolution
   if (pixels <= 230400) { // 480p (640x360)
     baseBitrate = 1000; // 1 Mbps
+    resolutionCategory = '480p';
   } else if (pixels <= 921600) { // 720p (1280x720)
     baseBitrate = 2500; // 2.5 Mbps
+    resolutionCategory = '720p';
   } else if (pixels <= 2073600) { // 1080p (1920x1080)
     baseBitrate = 5000; // 5 Mbps
+    resolutionCategory = '1080p';
   } else {
     baseBitrate = 8000; // 8+ Mbps for higher resolutions
+    resolutionCategory = '4K+';
   }
   
   // Apply network quality adjustments
@@ -198,5 +315,40 @@ export function estimateOptimalBitrate(
   };
   
   const multiplier = qualityMultipliers[networkQuality] || 0.8;
-  return Math.round(baseBitrate * multiplier);
+  const finalBitrate = Math.round(baseBitrate * multiplier);
+  
+  // Log the bitrate calculation
+  logDebug('Estimated optimal bitrate', {
+    width,
+    height,
+    pixels,
+    resolutionCategory,
+    networkQuality,
+    baseBitrate,
+    multiplier,
+    finalBitrate,
+    durationMs: Math.round(performance.now() - startTime)
+  }).catch(() => {});
+  
+  // Add a breadcrumb if the context is available
+  Promise.resolve().then(async () => {
+    try {
+      const { getCurrentContext, addBreadcrumb } = await import('../utils/requestContext');
+      const requestContext = getCurrentContext();
+      
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'VideoTransformationService', 'Bitrate calculation', {
+          width,
+          height,
+          resolutionCategory,
+          networkQuality,
+          bitrate: finalBitrate
+        });
+      }
+    } catch {
+      // Silently fail if we can't access the context
+    }
+  });
+  
+  return finalBitrate;
 }

@@ -13,7 +13,6 @@ import {
   extractRequestHeaders
 } from '../../utils/debugHeadersUtils';
 import { RequestContext } from '../../utils/requestContext';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
 import type { Logger } from 'pino';
 
@@ -26,19 +25,27 @@ import type { Logger } from 'pino';
  * Log a debug message with proper context handling
  */
 async function logDebug(category: string, message: string, data?: Record<string, unknown>) {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, category, message, data);
-  } else {
-    // Fall back to legacy adapter as first fallback
-    try {
-      const { debug } = await import('../../utils/legacyLoggerAdapter');
-      debug(category, message, data || {});
-    } catch {
-      // Fall back to console as a last resort
-      console.debug(`[${category}] ${message}`, data || {});
+  try {
+    // Use requestContext.ts getCurrentContext which is more reliable
+    const { getCurrentContext } = await import('../../utils/requestContext');
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoDebug(requestContext, logger, category, message, data);
+      return;
     }
+  } catch (err) {
+    // Silent fail and continue to fallbacks
+  }
+
+  // Fall back to legacy adapter
+  try {
+    const { debug } = await import('../../utils/legacyLoggerAdapter');
+    debug(category, message, data || {});
+  } catch {
+    // Fall back to console as a last resort
+    console.debug(`[${category}] ${message}`, data || {});
   }
 }
 
@@ -46,19 +53,27 @@ async function logDebug(category: string, message: string, data?: Record<string,
  * Log an error message with proper context handling
  */
 async function logError(category: string, message: string, data?: Record<string, unknown>) {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, category, message, data);
-  } else {
-    // Fall back to legacy adapter as first fallback
-    try {
-      const { error } = await import('../../utils/legacyLoggerAdapter');
-      error(category, message, data || {});
-    } catch {
-      // Fall back to console as a last resort
-      console.error(`[${category}] ${message}`, data || {});
+  try {
+    // Use requestContext.ts getCurrentContext which is more reliable
+    const { getCurrentContext } = await import('../../utils/requestContext');
+    const requestContext = getCurrentContext();
+    
+    if (requestContext) {
+      const logger = createLogger(requestContext);
+      pinoError(requestContext, logger, category, message, data);
+      return;
     }
+  } catch (err) {
+    // Silent fail and continue to fallbacks
+  }
+
+  // Fall back to legacy adapter
+  try {
+    const { error } = await import('../../utils/legacyLoggerAdapter');
+    error(category, message, data || {});
+  } catch {
+    // Fall back to console as a last resort
+    console.error(`[${category}] ${message}`, data || {});
   }
 }
 
@@ -107,26 +122,53 @@ export class TransformVideoCommand {
   constructor(context: VideoTransformContext) {
     this.context = context;
     
-    // Get request context - use provided context, or get from legacy adapter
-    this.requestContext = context.requestContext || getCurrentContext() || undefined;
-    
-    // Make sure we have a logger
-    this.logger = context.logger || undefined;
-    
-    // Log this operation if we have a context
-    if (this.requestContext) {
-      // Import dynamically to avoid circular references
-      import('../../utils/requestContext').then(({ addBreadcrumb }) => {
+    // Use dynamic import to get the latest context
+    import('../../utils/requestContext').then(async ({ getCurrentContext, addBreadcrumb }) => {
+      try {
+        // First try to use the context from the parameter
+        if (context.requestContext) {
+          this.requestContext = context.requestContext;
+        } else {
+          // If not provided, get the current context from the global store
+          this.requestContext = getCurrentContext();
+        }
+        
+        // Initialize the logger if we have a context
         if (this.requestContext) {
+          this.logger = context.logger || createLogger(this.requestContext);
+          
+          // Log initialization with breadcrumb
           addBreadcrumb(this.requestContext, 'Transform', 'Command initialized', {
             hasOptions: !!this.context.options,
             hasRequestContext: true,
             hasPathPatterns: Array.isArray(this.context.pathPatterns) && this.context.pathPatterns.length > 0,
-            debugEnabled: !!this.context.debugInfo?.isEnabled
+            debugEnabled: !!this.context.debugInfo?.isEnabled,
+            requestId: this.requestContext.requestId,
+            url: this.requestContext.url
           });
+          
+          // Log additional diagnostics if in verbose mode
+          if (this.requestContext.verboseEnabled) {
+            await logDebug('TransformVideoCommand', 'Command initialized with context', {
+              requestId: this.requestContext.requestId,
+              breadcrumbCount: this.requestContext.breadcrumbs.length,
+              options: {
+                ...this.context.options,
+                source: this.context.options?.source ? '[source url omitted]' : undefined
+              }
+            });
+          }
+        } else {
+          // If we still don't have a context, log a warning and proceed
+          console.warn('TransformVideoCommand initialized without request context');
         }
-      });
-    }
+      } catch (err) {
+        // Log the error without propagating it
+        console.error('Error initializing TransformVideoCommand context', err);
+      }
+    }).catch(err => {
+      console.error('Error importing requestContext in TransformVideoCommand', err);
+    });
   }
 
   /**

@@ -261,11 +261,26 @@ function parseStringArray(value?: string, defaultValue: string[] = []): string[]
  * @returns {EnvironmentConfig} - Configuration object
  */
 export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig {
+  // Log environment config initialization
+  logDebug('Initializing environment configuration', {
+    environment: env.ENVIRONMENT || 'development',
+    version: env.VERSION || '1.0.0',
+    hasLoggingConfig: !!env.LOGGING_CONFIG
+  });
+  
   // Determine if we're in production, staging, or development
   const mode = (env.ENVIRONMENT || 'development').toLowerCase();
   const isProduction = mode === 'production';
   const isStaging = mode === 'staging';
   const isDevelopment = mode === 'development';
+  
+  // Log environment determination
+  logDebug('Environment determined', {
+    mode,
+    isProduction,
+    isStaging,
+    isDevelopment
+  });
   
   // Debug log environment variables
   logDebug('Environment configuration parsing', { 
@@ -355,23 +370,44 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
   
   // Handle path patterns - can be either object or JSON string
   if (env.PATH_PATTERNS) {
+    logDebug('Processing PATH_PATTERNS configuration', {
+      type: typeof env.PATH_PATTERNS,
+      isString: typeof env.PATH_PATTERNS === 'string',
+      isArray: Array.isArray(env.PATH_PATTERNS)
+    });
+    
     if (typeof env.PATH_PATTERNS === 'string') {
       try {
         config.pathPatterns = JSON.parse(env.PATH_PATTERNS);
+        logDebug('Successfully parsed PATH_PATTERNS JSON', {
+          patternCount: config.pathPatterns?.length || 0
+        });
       } catch (err) {
-        // Can't use logger here as this is during init
         const errMessage = err instanceof Error ? err.message : String(err);
         const errStack = err instanceof Error ? err.stack : undefined;
         logError('Error parsing PATH_PATTERNS environment variable', { 
           error: errMessage, 
-          stack: errStack 
+          stack: errStack,
+          rawValue: env.PATH_PATTERNS.substring(0, 100) + '...' // Log first 100 chars for debugging
         });
       }
     } else {
       // Already an object array
       config.pathPatterns = env.PATH_PATTERNS;
+      logDebug('Using PATH_PATTERNS as object', {
+        patternCount: config.pathPatterns?.length || 0
+      });
     }
+  } else {
+    logDebug('No PATH_PATTERNS configuration provided');
   }
+  
+  logDebug('Environment configuration completed', {
+    mode: config.mode,
+    hasPathPatterns: !!config.pathPatterns,
+    cacheMethod: config.cache.method,
+    logLevel: config.logging.level
+  });
   
   return config;
 }

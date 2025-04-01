@@ -745,6 +745,17 @@ export async function fetchVideo(
   env: EnvVariables,
   request?: Request
 ): Promise<StorageResult> {
+  // Create a request ID or tag for tracing this fetch operation
+  const requestId = Math.random().toString(36).substring(2, 10);
+  const startTime = Date.now();
+  
+  logDebug('VideoStorageService', `[${requestId}] Starting video fetch operation`, {
+    path,
+    hasRequest: !!request,
+    url: request?.url,
+    storageOptions: config.storage?.priority ?? [],
+    timestamp: new Date().toISOString()
+  });
   logDebug('VideoStorageService', 'Starting video fetch', {
     path,
     hasRequest: !!request,
@@ -979,17 +990,28 @@ export async function fetchVideo(
     
     // If we found the video, return it
     if (result) {
-      logDebug('VideoStorageService', 'Found video in storage', { 
+      const elapsedTime = Date.now() - startTime;
+      logDebug('VideoStorageService', `[${requestId}] Successfully found video in storage`, { 
         sourceType: result.sourceType, 
         contentType: result.contentType, 
-        size: result.size 
+        size: result.size,
+        storage: storageType,
+        elapsedMs: elapsedTime,
+        success: true,
+        timestamp: new Date().toISOString()
       });
       return result;
     }
   }
   
   // If we couldn't find the video anywhere, return an error
-  logDebug('VideoStorageService', 'Video not found in any storage location', { path });
+  const elapsedTime = Date.now() - startTime;
+  logError('VideoStorageService', `[${requestId}] Video not found in any storage location`, { 
+    path, 
+    elapsedMs: elapsedTime,
+    storageOptions: config.storage?.priority ?? [],
+    timestamp: new Date().toISOString()
+  });
   
   return {
     response: new Response('Video not found', { status: 404 }),

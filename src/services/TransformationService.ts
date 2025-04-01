@@ -74,6 +74,14 @@ export async function prepareVideoTransformation(
   diagnosticsInfo: DiagnosticsInfo;
 }> {
   try {
+    // Log transformation startup
+    logDebug('Starting video transformation preparation', {
+      url: request.url,
+      options: { ...options },
+      hasPathPatterns: Array.isArray(pathPatterns) && pathPatterns.length > 0,
+      debugEnabled: !!debugInfo?.isEnabled
+    });
+    
     // Initialize diagnostics
     const diagnosticsInfo: DiagnosticsInfo = {
       errors: [],
@@ -83,6 +91,13 @@ export async function prepareVideoTransformation(
     // Extract path and URL information
     const url = new URL(request.url);
     const path = url.pathname;
+    
+    // Log URL information
+    logDebug('Processing URL information', {
+      url: url.toString(),
+      path,
+      search: url.search || ''
+    });
 
     // Find matching path pattern for the URL
     const pathPattern = findMatchingPathPattern(path, pathPatterns);
@@ -116,6 +131,16 @@ export async function prepareVideoTransformation(
 
     // Get the appropriate strategy for the transformation type
     const strategy = createTransformationStrategy(options);
+    
+    // Log strategy creation
+    logDebug('Created transformation strategy', {
+      strategyType: options.mode || 'video',
+      derivative: options.derivative,
+      format: options.format,
+      width: options.width,
+      height: options.height,
+      quality: options.quality
+    });
     
     // Add breadcrumb for strategy creation
     if (requestContext) {
@@ -161,19 +186,39 @@ export async function prepareVideoTransformation(
 
     // Update diagnostics with strategy-specific information
     strategy.updateDiagnostics(context);
+    logDebug('Strategy updated diagnostics');
 
     // Map options to CDN-CGI parameters
     const cdnParams = strategy.prepareTransformParams(context);
     diagnosticsInfo.transformParams = cdnParams;
     
-    // Add breadcrumb for CDN parameters
+    // Log the transformation parameters (comprehensive for debugging)
+    logDebug('Prepared transformation parameters', {
+      hasParams: Object.keys(cdnParams).length > 0,
+      params: cdnParams,
+      paramCount: Object.keys(cdnParams).length,
+      strategy: options.mode || 'video',
+      derivative: options.derivative
+    });
+    
+    // Add breadcrumb for CDN parameters - include ALL parameters for complete debug information
     if (requestContext) {
       addBreadcrumb(requestContext, 'Transform', 'Prepared CDN-CGI parameters', {
-        hasParams: Object.keys(cdnParams).length > 0,
-        format: cdnParams.format,
+        // All core parameters for detailed debugging
+        params: cdnParams,
+        paramCount: Object.keys(cdnParams).length,
+        // Common parameters as individual fields for easier filtering
         width: cdnParams.width,
         height: cdnParams.height,
-        quality: cdnParams.quality
+        format: cdnParams.format,
+        quality: cdnParams.quality,
+        mode: cdnParams.mode,
+        fit: cdnParams.fit,
+        // Performance metrics
+        paramGenerationTimeMs: Math.round(performance.now() - requestContext.startTime),
+        // Request info
+        hasQuery: url.search.length > 0,
+        derivative: options.derivative
       });
     }
 
@@ -213,27 +258,65 @@ export async function prepareVideoTransformation(
     // Add timing information for transformation operation
     const transformationTime = performance.now() - (requestContext?.startTime || 0);
     
-    // Add breadcrumb for URL transformation
+    // Add detailed breadcrumb for URL transformation
     if (requestContext) {
+      // Timer for URL construction performance
+      const urlConstructionTime = performance.now() - (requestContext.startTime + transformationTime);
+      
       addBreadcrumb(requestContext, 'Transform', 'Transformed URL', {
+        // Original URL info
         original: url.toString(),
-        transformed: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
-        videoUrl: videoUrl.split('?')[0], // Don't include query parameters for security
+        // Include FULL URL for debugging - essential for troubleshooting
+        transformed: cdnCgiUrl,
+        transformedWithoutParams: cdnCgiUrl.split('?')[0],
+        videoUrl: videoUrl,
+        videoUrlSafe: videoUrl.split('?')[0],
+        // Parameters info
         hasTransformParams: Object.keys(cdnParams).length > 0,
+        paramCount: Object.keys(cdnParams).length,
+        // Performance metrics
+        transformationTimeMs: Math.round(transformationTime),
+        urlConstructionTimeMs: Math.round(urlConstructionTime),
+        totalTimeMs: Math.round(performance.now() - requestContext.startTime),
+        // Other useful details
         patternName: pathPattern.name,
-        transformationTimeMs: Math.round(transformationTime)
+        videoId: diagnosticsInfo.videoId,
+        derivative: options.derivative,
+        hasOriginUrl: !!pathPattern.originUrl
       });
     }
     
-    logDebug('Transformed URL', {
-      original: url.toString(),
-      transformed: cdnCgiUrl,
-      options,
-      pattern: pathPattern.name,
-    });
-
+    // Format params for logging
+    const cdnParamsFormatted = Object.entries(cdnParams)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',');
+      
     // Get cache configuration for the video URL
     let cacheConfig = determineCacheConfig(videoUrl);
+      
+    // Comprehensive logging for the complete transformation process
+    logDebug('Transformed URL - COMPLETE DETAILS', {
+      // Original request details
+      original: url.toString(),
+      path: path,
+      // Complete transformation details - IMPORTANT FOR DEBUGGING
+      transformed: cdnCgiUrl,
+      transformedParams: cdnParamsFormatted,
+      // Video parameters
+      options: {
+        ...options,
+        source: options.source ? '[source url omitted]' : undefined
+      },
+      // Pattern details
+      pattern: pathPattern.name,
+      patternMatcher: pathPattern.matcher,
+      // Cache config
+      cacheablility: !!cacheConfig?.cacheability,
+      cacheTtl: cacheConfig?.ttl?.ok,
+      // Performance and tracking
+      transformationTimeMs: Math.round(transformationTime),
+      timestamp: new Date().toISOString()
+    });
     
     // If the path pattern has a specific cache TTL, override the config
     if (pathPattern.cacheTtl && cacheConfig) {
@@ -297,6 +380,14 @@ function constructVideoUrl(
   pattern: PathPattern,
   options: VideoTransformOptions
 ): string {
+  // Log start of URL construction
+  logDebug('Constructing video URL', {
+    path,
+    url: url.toString(),
+    patternName: pattern.name,
+    hasOriginUrl: !!pattern.originUrl,
+    hasCaptureGroups: !!pattern.captureGroups
+  });
   // Create a new URL using the originUrl from the pattern
   if (!pattern.originUrl) {
     throw new Error('Origin URL is required for path transformation');
@@ -387,5 +478,15 @@ function constructVideoUrl(
     }
   });
 
-  return videoUrl.toString();
+  // Get final URL string
+  const finalUrl = videoUrl.toString();
+  
+  // Log the constructed URL
+  logDebug('Video URL constructed', {
+    originalPath: path,
+    constructedUrl: finalUrl,
+    transformedParams: options !== undefined
+  });
+  
+  return finalUrl;
 }

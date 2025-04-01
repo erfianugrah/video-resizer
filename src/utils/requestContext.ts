@@ -382,14 +382,33 @@ export function getBreadcrumbs(context: RequestContext): Breadcrumb[] {
   return context.breadcrumbs;
 }
 
+// Global store for the current request context
+// In a real worker environment, we'd use something like continuation-local-storage or AsyncLocalStorage
+// But for our simplified implementation, we'll use a global variable
+let currentRequestContext: RequestContext | undefined;
+
 /**
- * Get the current request context from thread local storage
- * This is a convenience function for the KV caching components
+ * Set the current request context
+ * This is called at the start of request processing to establish the context
+ * @param context The request context to set as current
+ */
+export function setCurrentContext(context: RequestContext): void {
+  currentRequestContext = context;
+  logDebug('Set current request context', { 
+    requestId: context.requestId,
+    url: context.url,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * Get the current request context
+ * This is a convenience function for logging and accessing request-scoped data
  * @returns The current request context or undefined if not available
  */
 export function getCurrentContext(): RequestContext | undefined {
-  // For now we're returning undefined as this is just a stub to fix compilation errors
-  // In the actual implementation, we would need to access the thread local storage
-  // or use a context store to retrieve the current request context
-  return undefined;
+  if (!currentRequestContext) {
+    logDebug('getCurrentContext called but no context is set');
+  }
+  return currentRequestContext;
 }

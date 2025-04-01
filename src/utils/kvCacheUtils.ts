@@ -187,7 +187,18 @@ export async function storeInKVCache(
     const responseClone = response.clone();
     
     // Determine TTL based on the content type and cache configuration
+    const contentType = responseClone.headers.get('content-type') || '';
     const ttl = determineTTL(responseClone, config);
+    
+    // Log TTL determination
+    logDebug('Determined TTL for caching based on content type', {
+      contentType,
+      ttl,
+      responseStatus: responseClone.status,
+      statusCategory: Math.floor(responseClone.status / 100),
+      configuredTTLOk: config.ttl?.ok,
+      isVideo: contentType.includes('video')
+    });
     
     // Ensure namespace is defined before using
     if (!kvNamespace) {
@@ -195,9 +206,21 @@ export async function storeInKVCache(
     }
     
     // Check if this is likely a video response and if it's large
-    const contentType = responseClone.headers.get('content-type') || '';
+    // We already got contentType earlier
     const contentLength = parseInt(responseClone.headers.get('content-length') || '0', 10);
     const isLargeVideo = contentType.includes('video') && contentLength > 1000000; // >1MB
+    
+    // Log content length discovery
+    logDebug('Determined content length for KV storage calculation', {
+      contentLength,
+      contentType, 
+      sourcePath,
+      isLargeVideo,
+      sizeCategory: contentLength > 10000000 ? 'very large' : 
+                   contentLength > 1000000 ? 'large' : 
+                   contentLength > 100000 ? 'medium' : 'small',
+      sizeMB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024) * 100) / 100 : 0
+    });
     
     // For videos larger than Cloudflare's KV size limit (25MiB), skip KV storage entirely
     const KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB in bytes
@@ -237,6 +260,15 @@ export async function storeInKVCache(
       const shouldUseWaitUntil = isLargeVideo || (ctx?.waitUntil != null);
       
       if (ctx?.waitUntil && shouldUseWaitUntil) {
+        // Log waitUntil decision
+        logDebug('Using waitUntil for non-blocking KV storage', {
+          sourcePath,
+          isLargeVideo,
+          contentLength,
+          ttl,
+          startTime: new Date().toISOString()
+        });
+        
         // Use waitUntil to make the KV storage non-blocking
         ctx.waitUntil(
           storeTransformedVideo(
@@ -246,13 +278,34 @@ export async function storeInKVCache(
             options,
             ttl
           ).then(result => {
-            if (result) {
-              logDebug('Async KV storage completed successfully', {
+            const endTime = new Date();
+            logDebug('Async KV storage operation completed', {
+              sourcePath,
+              derivative: options.derivative,
+              success: !!result,
+              endTime: endTime.toISOString(),
+              storageKey: `video:${sourcePath.replace(/^\//g, '')}:${options.derivative ? `derivative=${options.derivative}` : 'default'}`
+            });
+            
+            // Add breadcrumb for successful storage
+            const reqContext = getCurrentContext();
+            if (reqContext && result) {
+              addBreadcrumb(reqContext, 'KVCache', 'Async KV storage completed', {
                 sourcePath,
+                success: !!result,
                 derivative: options.derivative
               });
             }
+            
             return result;
+          }).catch(err => {
+            // Log any errors in the waitUntil promise
+            logDebug('Error in waitUntil KV storage operation', {
+              sourcePath,
+              error: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined
+            });
+            return false;
           })
         );
         
@@ -260,7 +313,9 @@ export async function storeInKVCache(
         success = true;
         logDebug('Started async KV storage operation', {
           sourcePath, 
-          derivative: options.derivative
+          derivative: options.derivative,
+          contentLength,
+          timestamp: new Date().toISOString()
         });
       } else {
         // Fall back to blocking operation if waitUntil isn't available

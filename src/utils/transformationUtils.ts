@@ -138,6 +138,21 @@ const transformationLimits: Record<string, Record<string, number>> = {
  * @param value - The limit value
  */
 export function storeTransformationLimit(type: string, key: string, value: number): void {
+  // Import logger dynamically to avoid circular dependencies
+  import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+    debug('TransformationUtils', `Discovered new ${type} limit`, {
+      type,
+      key,
+      value,
+      isNewLimitType: !transformationLimits[type],
+      previousValue: transformationLimits[type]?.[key]
+    });
+  }).catch(err => {
+    // Fallback to console if import fails
+    console.debug(`[TransformationUtils] Discovered new ${type} limit: ${key}=${value}`);
+  });
+
+  // Initialize the limit type object if it doesn't exist
   if (!transformationLimits[type]) {
     transformationLimits[type] = {};
   }
@@ -192,14 +207,39 @@ export function isDurationWithinLimits(durationStr: string | null): boolean {
   
   // If we don't have learned limits yet, we can't check
   if (!haveDurationLimits()) {
+    // Log that we're skipping limit check due to missing limits
+    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+      debug('TransformationUtils', 'Skipping duration limit check', {
+        reason: 'No known limits available',
+        duration: durationStr,
+        seconds
+      });
+    }).catch(() => {});
     return true;
   }
   
   const minDuration = transformationLimits.duration.min;
   const maxDuration = transformationLimits.duration.max;
   
+  // Check if duration is outside limits
+  const isWithinLimits = seconds >= minDuration && seconds <= maxDuration;
+  
+  // Log result if duration exceeds limits
+  if (!isWithinLimits) {
+    import('../utils/legacyLoggerAdapter').then(({ warn }) => {
+      warn('TransformationUtils', 'Duration exceeds known limits', {
+        duration: durationStr,
+        seconds,
+        minDuration,
+        maxDuration,
+        exceedsMin: seconds < minDuration,
+        exceedsMax: seconds > maxDuration
+      });
+    }).catch(() => {});
+  }
+  
   // Use our learned limits for validation
-  return seconds >= minDuration && seconds <= maxDuration;
+  return isWithinLimits;
 }
 
 /**
@@ -212,10 +252,27 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
   if (!durationStr) return durationStr;
   
   const seconds = parseTimeString(durationStr);
-  if (seconds === null) return durationStr;
+  if (seconds === null) {
+    // Log invalid duration format
+    import('../utils/legacyLoggerAdapter').then(({ warn }) => {
+      warn('TransformationUtils', 'Invalid duration format', {
+        durationStr,
+        reason: 'Failed to parse time string'
+      });
+    }).catch(() => {});
+    return durationStr;
+  }
   
   // If we don't have learned limits yet, return the original
   if (!haveDurationLimits()) {
+    // Log that we're skipping adjustment due to missing limits
+    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+      debug('TransformationUtils', 'Skipping duration adjustment', {
+        reason: 'No known limits available',
+        duration: durationStr,
+        seconds
+      });
+    }).catch(() => {});
     return durationStr;
   }
   
@@ -224,13 +281,45 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
   
   // Adjust duration if outside limits
   if (seconds < minDuration) {
-    return formatTimeString(minDuration);
+    const adjusted = formatTimeString(minDuration);
+    import('../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Adjusted duration to minimum limit', {
+        original: durationStr,
+        originalSeconds: seconds,
+        adjusted,
+        adjustedSeconds: minDuration,
+        reason: 'Below minimum limit'
+      });
+    }).catch(() => {});
+    return adjusted;
   } else if (seconds > maxDuration) {
     // Use the integer value (floor) of the maximum value from the API response
     // This gives us a clean, stable value that's safely below the limit
     const safeMax = Math.floor(maxDuration);
-    return formatTimeString(safeMax);
+    const adjusted = formatTimeString(safeMax);
+    import('../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Adjusted duration to maximum limit', {
+        original: durationStr,
+        originalSeconds: seconds,
+        adjusted,
+        adjustedSeconds: safeMax,
+        maxDuration,
+        reason: 'Above maximum limit',
+        usedSafeMax: true
+      });
+    }).catch(() => {});
+    return adjusted;
   }
+  
+  // Log no adjustment needed
+  import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+    debug('TransformationUtils', 'No duration adjustment needed', {
+      duration: durationStr,
+      seconds,
+      minDuration,
+      maxDuration
+    });
+  }).catch(() => {});
   
   return durationStr;
 }
@@ -241,7 +330,19 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
  * @returns Boolean indicating if it's a duration limit error
  */
 export function isDurationLimitError(errorText: string): boolean {
-  return errorText.includes('duration: attribute must be between');
+  const isDurationError = errorText.includes('duration: attribute must be between');
+  
+  // Log duration limit detection
+  if (isDurationError) {
+    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+      debug('TransformationUtils', 'Detected duration limit error', {
+        errorText: errorText.substring(0, 100), // Truncate for safety
+        pattern: 'duration: attribute must be between'
+      });
+    }).catch(() => {});
+  }
+  
+  return isDurationError;
 }
 
 /**
@@ -358,12 +459,32 @@ export function parseErrorMessage(errorText: string): {
   const result = {
     originalMessage: errorText,
   };
+  
+  // Log the start of parsing
+  import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+    debug('TransformationUtils', 'Parsing API error message', {
+      errorText: errorText.substring(0, 100) // Truncate for safety
+    });
+  }).catch(() => {
+    console.debug(`[TransformationUtils] Parsing API error: ${errorText.substring(0, 50)}...`);
+  });
 
   // Check for duration validation errors
   const durationMatch = errorText.match(/duration: attribute must be between (\d+)ms and ([\d.]+)s/i);
   if (durationMatch) {
     const minMs = parseInt(durationMatch[1], 10);
     const maxS = parseFloat(durationMatch[2]);
+    
+    // Log the discovered limits
+    import('../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Discovered duration limits from API error', {
+        minMs,
+        maxSeconds: maxS,
+        convertedMinSeconds: minMs / 1000,
+        errorType: 'duration_limit',
+        pattern: 'duration validation error'
+      });
+    }).catch(() => {});
     
     // Store the discovered limits
     storeTransformationLimit('duration', 'min', minMs / 1000); // Convert ms to seconds
@@ -384,6 +505,16 @@ export function parseErrorMessage(errorText: string): {
     const maxBytes = parseInt(fileSizeMatch[1], 10);
     const maxMB = Math.round(maxBytes / (1024 * 1024) * 10) / 10; // Convert to MB with 1 decimal
     
+    // Log the discovered limit
+    import('../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Discovered file size limit from API error', {
+        maxBytes,
+        maxMB,
+        errorType: 'file_size_limit',
+        pattern: 'file size validation error'
+      });
+    }).catch(() => {});
+    
     // Store the discovered limit
     storeTransformationLimit('fileSize', 'max', maxBytes);
     
@@ -395,6 +526,13 @@ export function parseErrorMessage(errorText: string): {
       parameter: 'fileSize'
     };
   }
+  
+  // Log that no specific error pattern was matched
+  import('../utils/legacyLoggerAdapter').then(({ debug }) => {
+    debug('TransformationUtils', 'No specific error pattern matched', {
+      errorText: errorText.substring(0, 100) // Truncate for safety
+    });
+  }).catch(() => {});
   
   // Add more error patterns as they are discovered
   
