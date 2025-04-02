@@ -14,6 +14,7 @@ import {
 } from '../../utils/debugHeadersUtils';
 import { RequestContext } from '../../utils/requestContext';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
+import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import type { Logger } from 'pino';
 
 /**
@@ -46,34 +47,6 @@ async function logDebug(category: string, message: string, data?: Record<string,
   } catch {
     // Fall back to console as a last resort
     console.debug(`[${category}] ${message}`, data || {});
-  }
-}
-
-/**
- * Log an error message with proper context handling
- */
-async function logError(category: string, message: string, data?: Record<string, unknown>) {
-  try {
-    // Use requestContext.ts getCurrentContext which is more reliable
-    const { getCurrentContext } = await import('../../utils/requestContext');
-    const requestContext = getCurrentContext();
-    
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, category, message, data);
-      return;
-    }
-  } catch (err) {
-    // Silent fail and continue to fallbacks
-  }
-
-  // Fall back to legacy adapter
-  try {
-    const { error } = await import('../../utils/legacyLoggerAdapter');
-    error(category, message, data || {});
-  } catch {
-    // Fall back to console as a last resort
-    console.error(`[${category}] ${message}`, data || {});
   }
 }
 
@@ -175,11 +148,17 @@ export class TransformVideoCommand {
           console.warn('TransformVideoCommand initialized without request context');
         }
       } catch (err) {
-        // Log the error without propagating it
-        console.error('Error initializing TransformVideoCommand context', err);
+        // Use standardized error handling
+        logErrorWithContext('Error initializing TransformVideoCommand context', err, {
+          contextAvailable: !!context,
+          hasRequestContext: !!context.requestContext,
+          hasOptions: !!context.options
+        }, 'TransformVideoCommand');
       }
     }).catch(err => {
-      console.error('Error importing requestContext in TransformVideoCommand', err);
+      logErrorWithContext('Error importing requestContext module', err, {
+        context: 'TransformVideoCommand.constructor'
+      }, 'TransformVideoCommand');
     });
   }
 
@@ -283,18 +262,7 @@ export class TransformVideoCommand {
         diagnosticsInfo.originalUrl = this.context.request.url;
       }
       
-      // Add standard warning about video length limitations
-      if (diagnosticsInfo.videoId) {
-        if (!diagnosticsInfo.warnings) {
-          diagnosticsInfo.warnings = [];
-        }
-        
-        if (Array.isArray(diagnosticsInfo.warnings)) {
-          diagnosticsInfo.warnings.push(
-            "Note: The 'time' parameter in Cloudflare Media Transformation API is limited to 0-30 seconds. Additionally, some videos may be truncated around 30 seconds when previewed."
-          );
-        }
-      }
+      // The videoId is available in diagnostics for reference
       
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
@@ -364,7 +332,13 @@ export class TransformVideoCommand {
         }
       });
     } catch (err) {
-      // Handle any errors during fetch or HTML processing
+      // Use standardized error handling
+      logErrorWithContext('Error generating debug UI', err, {
+        isError,
+        diagnosticsInfoAvailable: !!diagnosticsInfo,
+        requestUrl: this.context.request.url
+      }, 'TransformVideoCommand');
+      
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       
       if (this.requestContext) {
@@ -392,6 +366,10 @@ export class TransformVideoCommand {
    * @returns A response with the transformed video
    */
   async execute(): Promise<Response> {
+    // Variables that need to be accessible in the catch block
+    let source: string | undefined;
+    let derivative: string | undefined;
+    
     // Add breadcrumb for execution start
     if (this.requestContext) {
       const { addBreadcrumb } = await import('../../utils/requestContext');
@@ -665,13 +643,16 @@ export class TransformVideoCommand {
         
         // Always use cf object when configured, even if cacheability is false
         // createCfObjectParams will handle cacheability internally
-        fetchOptions.cf = createCfObjectParams(
+        const cfParams = createCfObjectParams(
           200, // Assuming OK status for initial fetch parameters
           cacheConfig,
           source,
           derivative,
           expectedContentType
         );
+        
+        // Only assign cf params if we got a valid object back (convert null to {})
+        fetchOptions.cf = cfParams || {};
         
         // Log caching configuration
         await logDebug('TransformVideoCommand', 'Using cf object for caching', {
@@ -726,11 +707,11 @@ export class TransformVideoCommand {
         const { parseErrorMessage, isDurationLimitError, adjustDuration } = await import('../../utils/transformationUtils');
         const parsedError = parseErrorMessage(errorText);
         
-        await logError('TransformVideoCommand', 'Transformation proxy returned 400 Bad Request', {
+        logErrorWithContext('Transformation proxy returned 400 Bad Request', { message: errorText }, {
           url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
           error: errorText,
           parsedError
-        });
+        }, 'TransformVideoCommand');
         
         // Check if this is a duration limit error and we can retry with adjusted duration
         if (isDurationLimitError(errorText) && this.context.options?.duration) {
@@ -810,10 +791,10 @@ export class TransformVideoCommand {
             }
             
             // If retry failed, log the error and continue with normal fallback
-            await logError('TransformVideoCommand', 'Retry with adjusted duration failed', {
+            logErrorWithContext('Retry with adjusted duration failed', new Error(`Status: ${retryResponse.status}`), {
               adjustedCdnCgiUrl: adjustedCdnCgiUrl.split('?')[0],
               retryStatus: retryResponse.status
-            });
+            }, 'TransformVideoCommand');
           }
         }
         
@@ -871,10 +852,10 @@ export class TransformVideoCommand {
         // Check if we successfully got a fallback video
         if (storageResult.sourceType === 'error') {
           // If we couldn't get the video, log the error
-          await logError('TransformVideoCommand', 'Failed to get fallback content', {
+          logErrorWithContext('Failed to get fallback content', storageResult.error || new Error('Unknown error'), {
             path,
-            error: storageResult.error?.message
-          });
+            errorDetails: storageResult.error?.message
+          }, 'TransformVideoCommand');
           
           // Let the original error propagate
           throw new Error(`Unable to get fallback content: ${errorText}`);
@@ -934,7 +915,8 @@ export class TransformVideoCommand {
         addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Applying cache headers');
       }
       
-      let enhancedResponse = applyCacheHeaders(
+      // Apply cache headers and await the result
+      let enhancedResponse = await applyCacheHeaders(
         response,
         response.status,
         cacheConfig,
@@ -1002,46 +984,47 @@ export class TransformVideoCommand {
         const responseBuilder = new ResponseBuilder(enhancedResponse, this.requestContext);
         
         // Convert the cacheConfig to a Record<string, unknown> to satisfy the type checker
-        const cacheConfigObj = cacheConfig ? { ...cacheConfig } : undefined;
+        const cacheConfigObj = cacheConfig ? { ...cacheConfig } as Record<string, unknown> : undefined;
         
-        return await responseBuilder
-          .withCaching(enhancedResponse.status, cacheConfigObj, source, derivative)
-          .withDebugInfo(this.context.debugInfo)
-          .build();
+        // Call the methods directly to avoid Promise issues
+        responseBuilder.withCaching(enhancedResponse.status, cacheConfigObj, source, derivative);
+        responseBuilder.withDebugInfo(this.context.debugInfo);
+        return await responseBuilder.build();
       }
       
       // Add debug headers if debug is enabled (legacy method)
       if (this.context.debugInfo?.isEnabled) {
         const { addDebugHeaders } = await import('../../services/debugService');
-        enhancedResponse = addDebugHeaders(
-          enhancedResponse, 
+        // Ensure we're working with an actual Response object, not a Promise
+        const addDebugHeadersResult = await addDebugHeaders(
+          await enhancedResponse, 
           this.context.debugInfo, 
           diagnosticsInfo
         );
+        enhancedResponse = addDebugHeadersResult;
       }
       
       // Return the enhanced response
       return enhancedResponse;
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      const errorStack = err instanceof Error ? err.stack : undefined;
-      
-      // Log the error through consistent helper
-      await logError('TransformVideoCommand', 'Error transforming video', {
-        error: errorMessage,
-        stack: errorStack,
-      });
+      // Use standardized error handling utility
+      logErrorWithContext('Error transforming video', err, {
+        service: 'TransformVideoCommand',
+        diagnosticsInfo,
+        requestUrl: this.context.request.url
+      }, 'TransformVideoCommand');
       
       // Add breadcrumb for error
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
         addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Transformation error', {
-          error: errorMessage
+          error: err instanceof Error ? err.message : 'Unknown error'
         });
       }
       
       // Add error to diagnostics
       diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       diagnosticsInfo.errors.push(errorMessage);
 
       // Create error response
@@ -1053,7 +1036,7 @@ export class TransformVideoCommand {
       // Apply error cache headers (using status 500)
       // Import services dynamically to avoid circular dependencies
       const { applyCacheHeaders } = await import('../../services/cacheManagementService');
-      errorResponse = applyCacheHeaders(errorResponse, 500);
+      errorResponse = await applyCacheHeaders(errorResponse, 500, null, source, derivative);
       
       // Check if this is a debug view request
       const url = new URL(this.context.request.url);

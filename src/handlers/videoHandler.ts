@@ -13,6 +13,7 @@ import { createLogger, info, debug, error } from '../utils/pinoLogger';
 import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
 import { TransformOptions } from '../utils/kvCacheUtils';
 import { ResponseBuilder } from '../utils/responseBuilder';
+import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 
 /**
  * Main handler for video requests
@@ -20,12 +21,16 @@ import { ResponseBuilder } from '../utils/responseBuilder';
  * @param config Environment configuration
  * @returns A response with the processed video
  */
-export async function handleVideoRequest(
-  request: Request, 
-  config: EnvironmentConfig, 
-  env?: EnvVariables,
-  ctx?: ExecutionContext
-): Promise<Response> {
+export const handleVideoRequest = withErrorHandling<
+  [Request, EnvironmentConfig, EnvVariables | undefined, ExecutionContext | undefined],
+  Response
+>(
+  async function handleVideoRequestImpl(
+    request: Request, 
+    config: EnvironmentConfig, 
+    env?: EnvVariables,
+    ctx?: ExecutionContext
+  ): Promise<Response> {
   // Pass execution context to environment for waitUntil usage in caching
   if (env && ctx) {
     (env as unknown as EnvWithExecutionContext).executionCtx = ctx;
@@ -363,7 +368,7 @@ export async function handleVideoRequest(
       startTimedOperation(context, 'cache-storage', 'Cache');
       
       // Store in Cloudflare Cache API (edge cache)
-      cacheResponse(request, response.clone())
+      cacheResponse(request, response.clone(), context.executionContext)
         .then(() => {
           debug(context, logger, 'VideoHandler', 'Stored in CF cache');
         })
@@ -472,22 +477,21 @@ export async function handleVideoRequest(
     // Record error timing
     startTimedOperation(context, 'error-handling', 'Error');
     
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    const errorStack = err instanceof Error ? err.stack : undefined;
-    
-    error(context, logger, 'VideoHandler', 'Error handling video request', {
-      error: errorMessage,
-      stack: errorStack,
-    });
+    // Use standardized error handling
+    logErrorWithContext('Error handling video request', err, {
+      url: request.url,
+      path: new URL(request.url).pathname,
+      requestId: context.requestId
+    }, 'VideoHandler');
 
     // Add error to diagnostics
     if (!context.diagnostics.errors) {
       context.diagnostics.errors = [];
     }
-    context.diagnostics.errors.push(errorMessage);
+    context.diagnostics.errors.push(err instanceof Error ? err.message : 'Unknown error');
     
     // Create error response with ResponseBuilder
-    const errorResponse = new Response(`Error processing video: ${errorMessage}`, {
+    const errorResponse = new Response(`Error processing video: ${err instanceof Error ? err.message : 'Unknown error'}`, {
       status: 500,
       headers: {
         'Content-Type': 'text/plain',
@@ -506,4 +510,9 @@ export async function handleVideoRequest(
     
     return result;
   }
-}
+},
+{
+  functionName: 'handleVideoRequest',
+  component: 'VideoHandler',
+  logErrors: true
+});

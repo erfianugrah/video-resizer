@@ -145,11 +145,9 @@ export class SpritesheetStrategy implements TransformationStrategy {
       diagnosticsInfo.duration = '10s'; // Default duration
     }
     
-    // Add spritesheet specific warnings
+    // Add spritesheet configuration info to diagnostics
     if (!diagnosticsInfo.warnings) {
       diagnosticsInfo.warnings = [];
     }
-    
-    diagnosticsInfo.warnings.push('Spritesheet generation may be limited for videos longer than 30 seconds due to Cloudflare Media API constraints.');
   }
 }

@@ -258,12 +258,14 @@ export function createQualityPath(originalPath: string, quality: string): string
 /**
  * Builds a CDN-CGI media transformation URL
  * @param options Transformation options
- * @param videoUrl Full URL to the video
+ * @param originUrl Full URL to the origin video (content source URL)
+ * @param requestUrl The original request URL (host will be used for the CDN-CGI path)
  * @returns A CDN-CGI media transformation URL
  */
 export function buildCdnCgiMediaUrl(
   options: TransformParams,
-  videoUrl: string
+  originUrl: string,
+  requestUrl?: string
 ): string {
   const configManager = VideoConfigurationManager.getInstance();
   const { basePath } = configManager.getCdnCgiConfig();
@@ -302,20 +304,25 @@ export function buildCdnCgiMediaUrl(
     .map(([key, value]) => `${key}=${value}`)
     .join(',');
 
-  // Get the current host from the request URL
-  const currentUrl = new URL(videoUrl);
-  const baseUrl = `${currentUrl.protocol}//${currentUrl.host}`;
+  // Get the base URL from the request URL (if provided) or fall back to origin URL
+  // This ensures the CDN-CGI URL is constructed with the request's host
+  const baseUrlSource = requestUrl || originUrl;
+  const baseUrlObj = new URL(baseUrlSource);
+  const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
-  // Build the CDN-CGI media URL with the full video URL (including protocol)
-  // Prepend the current host to the cdn-cgi path
-  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${videoUrl}`;
+  // Build the CDN-CGI media URL with the correct URLs:
+  // - Use request host for the base part
+  // - Use origin URL for the content source
+  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${originUrl}`;
   
   // Log the transformation details (critical for debugging)
   logDebug('Building CDN-CGI media URL', {
     cdnCgiBasePath: basePath,
     transformParams: validOptions,
     parameterString: optionsString,
-    originalUrl: videoUrl,
+    originUrl: originUrl,
+    requestUrl: requestUrl || 'not provided',
+    baseUrl: baseUrl,
     transformedUrl: cdnCgiUrl,
     paramCount: Object.keys(validOptions).length,
     keyParams: {
@@ -356,6 +363,10 @@ export function buildCdnCgiMediaUrl(
           // Include URL details (safe version)
           basePath,
           baseUrl,
+          // Include source and transformation URLs
+          originUrl: originUrl,
+          requestUrl: requestUrl || 'not provided',
+          baseUrlSource: baseUrlSource,
           // Include the complete URL for debugging (essential for troubleshooting)
           completeUrl: cdnCgiUrl
         });

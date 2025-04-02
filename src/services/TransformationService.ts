@@ -6,9 +6,10 @@ import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand'
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
+import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
+import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -28,20 +29,6 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
     console.debug(`TransformationService: ${message}`, data || {});
   }
 }
-
-/**
- * Log an error message with proper context handling
- */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'TransformationService', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.error(`TransformationService: ${message}`, data || {});
-  }
-}
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
 import { createTransformationStrategy } from '../domain/strategies/StrategyFactory';
 import { videoConfig } from '../config/videoConfig';
@@ -56,31 +43,39 @@ import { videoConfig } from '../config/videoConfig';
  * @param env Environment variables
  * @returns Transformation result with URL and cache configuration
  */
-export async function prepareVideoTransformation(
-  request: Request,
-  options: VideoTransformOptions,
-  pathPatterns: PathPattern[],
-  debugInfo?: DebugInfo,
-  env?: { 
-    ASSETS?: { 
-      fetch: (request: Request) => Promise<Response> 
-    } 
+export const prepareVideoTransformation = withErrorHandling<
+  [Request, VideoTransformOptions, PathPattern[], DebugInfo | undefined, { ASSETS?: { fetch: (request: Request) => Promise<Response> } } | undefined],
+  {
+    cdnCgiUrl: string;
+    cacheConfig: CacheConfig;
+    source: string;
+    derivative: string;
+    diagnosticsInfo: DiagnosticsInfo;
   }
-): Promise<{
-  cdnCgiUrl: string;
-  cacheConfig: CacheConfig;
-  source: string;
-  derivative: string;
-  diagnosticsInfo: DiagnosticsInfo;
-}> {
-  try {
-    // Log transformation startup
-    logDebug('Starting video transformation preparation', {
-      url: request.url,
-      options: { ...options },
-      hasPathPatterns: Array.isArray(pathPatterns) && pathPatterns.length > 0,
-      debugEnabled: !!debugInfo?.isEnabled
-    });
+>(async function prepareVideoTransformationImpl(
+    request: Request,
+    options: VideoTransformOptions,
+    pathPatterns: PathPattern[],
+    debugInfo?: DebugInfo,
+    env?: { 
+      ASSETS?: { 
+        fetch: (request: Request) => Promise<Response> 
+      } 
+    }
+  ): Promise<{
+    cdnCgiUrl: string;
+    cacheConfig: CacheConfig;
+    source: string;
+    derivative: string;
+    diagnosticsInfo: DiagnosticsInfo;
+  }> {
+  // Log transformation startup
+  logDebug('Starting video transformation preparation', {
+    url: request.url,
+    options: { ...options },
+    hasPathPatterns: Array.isArray(pathPatterns) && pathPatterns.length > 0,
+    debugEnabled: !!debugInfo?.isEnabled
+  });
     
     // Initialize diagnostics
     const diagnosticsInfo: DiagnosticsInfo = {
@@ -167,7 +162,14 @@ export async function prepareVideoTransformation(
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Validation error';
       
-      // Log validation failure
+      // Log validation failure with context
+      logErrorWithContext('Transformation options validation failed', error, {
+        strategyType: options.mode || 'video',
+        errorType: 'ValidationError',
+        severity: 'high'
+      });
+      
+      // Add breadcrumb for tracking
       if (requestContext) {
         addBreadcrumb(requestContext, 'Error', 'Transformation options validation failed', {
           error: message,
@@ -225,7 +227,11 @@ export async function prepareVideoTransformation(
     // Construct the video URL
     let videoUrl: string;
     if (pathPattern.originUrl) {
-      videoUrl = constructVideoUrl(path, url, pathPattern, options);
+      const constructedUrl = constructVideoUrl(path, url, pathPattern, options);
+      if (constructedUrl === null) {
+        throw new Error('Failed to construct video URL');
+      }
+      videoUrl = constructedUrl;
       
       // Add breadcrumb for URL construction
       if (requestContext) {
@@ -253,7 +259,9 @@ export async function prepareVideoTransformation(
     diagnosticsInfo.videoId = extractedVideoId || undefined;
 
     // Build the CDN-CGI media URL
-    const cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl);
+    // Pass parameters: transformation options, origin URL, and request URL
+    // This ensures we use the request host while accessing content from origin URL
+    const cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
 
     // Add timing information for transformation operation
     const transformationTime = performance.now() - (requestContext?.startTime || 0);
@@ -386,25 +394,25 @@ export async function prepareVideoTransformation(
       derivative,
       diagnosticsInfo
     };
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    logError('Error preparing video transformation', {
-      error: errorMessage,
-      stack: err instanceof Error ? err.stack : undefined
-    });
-    throw err;
-  }
-}
+},
+{
+  functionName: 'prepareVideoTransformation',
+  component: 'TransformationService',
+  logErrors: true
+});
 
 /**
  * Construct the video URL using the path pattern
  */
-function constructVideoUrl(
-  path: string, 
-  url: URL, 
-  pattern: PathPattern,
-  options: VideoTransformOptions
-): string {
+const constructVideoUrl = tryOrNull<
+  [string, URL, PathPattern, VideoTransformOptions],
+  string
+>(function constructVideoUrlImpl(
+    path: string, 
+    url: URL, 
+    pattern: PathPattern,
+    options: VideoTransformOptions
+  ): string {
   // Log start of URL construction
   logDebug('Constructing video URL', {
     path,
@@ -514,4 +522,10 @@ function constructVideoUrl(
   });
   
   return finalUrl;
-}
+  },
+  {
+    functionName: 'constructVideoUrl',
+    component: 'TransformationService'
+  },
+  null // default return value when error occurs
+);

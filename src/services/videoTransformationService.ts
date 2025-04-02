@@ -7,6 +7,7 @@ import { PathPattern } from '../utils/pathUtils';
 import { DebugInfo } from '../utils/debugHeadersUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createLogger, debug as pinoDebug, error as pinoError, warn as pinoWarn } from '../utils/pinoLogger';
+import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -72,33 +73,7 @@ async function logWarn(message: string, data?: Record<string, unknown>): Promise
   }
 }
 
-/**
- * Log an error message with proper context handling
- */
-async function logError(message: string, data?: Record<string, unknown>): Promise<void> {
-  try {
-    // Use requestContext.ts getCurrentContext which is more reliable
-    const { getCurrentContext } = await import('../utils/requestContext');
-    const requestContext = getCurrentContext();
-    
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoError(requestContext, logger, 'VideoTransformationService', message, data);
-      return;
-    }
-  } catch (err) {
-    // Silent fail and continue to fallbacks
-  }
-
-  // Fall back to legacy adapter
-  try {
-    const { error } = await import('../utils/legacyLoggerAdapter');
-    error('VideoTransformationService', message, data || {});
-  } catch {
-    // Fall back to console as a last resort
-    console.error(`VideoTransformationService: ${message}`, data || {});
-  }
-}
+// This function is replaced by logErrorWithContext from errorHandlingUtils
 
 /**
  * Transform a video using CDN-CGI media format
@@ -109,17 +84,21 @@ async function logError(message: string, data?: Record<string, unknown>): Promis
  * @param debugInfo - Debug information settings
  * @returns A response containing the transformed video
  */
-export async function transformVideo(
-  request: Request,
-  options: VideoTransformOptions,
-  pathPatterns: PathPattern[],
-  debugInfo?: DebugInfo,
-  env?: { 
-    ASSETS?: { 
-      fetch: (request: Request) => Promise<Response> 
-    } 
-  }
-): Promise<Response> {
+export const transformVideo = withErrorHandling<
+  [Request, VideoTransformOptions, PathPattern[], DebugInfo | undefined, { ASSETS?: { fetch: (request: Request) => Promise<Response> } } | undefined],
+  Response
+>(
+  async function transformVideoImpl(
+    request: Request,
+    options: VideoTransformOptions,
+    pathPatterns: PathPattern[],
+    debugInfo?: DebugInfo,
+    env?: { 
+      ASSETS?: { 
+        fetch: (request: Request) => Promise<Response> 
+      } 
+    }
+  ): Promise<Response> {
   try {
     // Use dynamic import to get the context modules
     const { getCurrentContext } = await import('../utils/requestContext');
@@ -207,20 +186,15 @@ export async function transformVideo(
 
     return result;
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    const errorStack = err instanceof Error ? err.stack : undefined;
-    
-    // Log the error with our async log utility
-    await logError('Error transforming video', {
-      error: errorMessage,
-      stack: errorStack,
+    // Use standardized error handling
+    logErrorWithContext('Error transforming video', err, {
       url: request.url,
       options: {
         width: options.width,
         height: options.height,
         format: options.format
       }
-    });
+    }, 'VideoTransformationService');
     
     // Add an error breadcrumb if we have a context
     try {
@@ -229,7 +203,7 @@ export async function transformVideo(
       
       if (requestContext) {
         addBreadcrumb(requestContext, 'Error', 'Video transformation failed', {
-          error: errorMessage,
+          error: err instanceof Error ? err.message : 'Unknown error',
           errorType: err instanceof Error ? err.constructor.name : 'Unknown',
           url: request.url
         });
@@ -240,7 +214,12 @@ export async function transformVideo(
 
     throw err; // Rethrow to be handled by the caller
   }
-}
+},
+{
+  functionName: 'transformVideo',
+  component: 'VideoTransformationService',
+  logErrors: true
+});
 
 /**
  * Get the format to use for the transformed video

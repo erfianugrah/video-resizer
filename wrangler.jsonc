@@ -22,7 +22,7 @@
 		"development": {
 			"workers_dev": true,
 			"assets": {
-				"directory": "./public",
+				"directory": "./debug-ui/dist",
 				"binding": "ASSETS"
 			},
 			"kv_namespaces": [
@@ -44,7 +44,7 @@
 		"staging": {
 			"workers_dev": false,
 			"assets": {
-				"directory": "./public",
+				"directory": "./debug-ui/dist",
 				"binding": "ASSETS"
 			},
 			"kv_namespaces": [
@@ -76,7 +76,7 @@
 		"production": {
 			"workers_dev": false,
 			"assets": {
-				"directory": "./public",
+				"directory": "./debug-ui/dist",
 				"binding": "ASSETS"
 			},
 			"kv_namespaces": [

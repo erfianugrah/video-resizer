@@ -9,6 +9,7 @@ import { ConfigurationError } from '../errors';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createRequestContext } from '../utils/requestContext';
+import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { z } from 'zod';
 
 // Environment interface with KV binding and secret
@@ -31,18 +32,7 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
   }
 }
 
-/**
- * Helper for logging error messages
- */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'ConfigHandler', message, data);
-  } else {
-    console.error(`ConfigHandler: ${message}`, data || {});
-  }
-}
+// logError function has been replaced with direct use of logErrorWithContext
 
 /**
  * Authentication schema for config upload requests
@@ -59,7 +49,8 @@ const AuthHeaderSchema = z.string().refine(
  * @param env Environment with KV bindings
  * @returns Response
  */
-export async function handleConfigUpload(request: Request, env: Env): Promise<Response> {
+export const handleConfigUpload = withErrorHandling<[Request, Env], Response>(
+  async function handleConfigUploadImpl(request: Request, env: Env): Promise<Response> {
   try {
     // Initialize request context
     const context = createRequestContext(request);
@@ -82,7 +73,7 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
 
     // Check if KV namespace exists
     if (!env.VIDEO_CONFIGURATION_STORE) {
-      logError('No VIDEO_CONFIGURATION_STORE KV namespace binding found');
+      logErrorWithContext('No VIDEO_CONFIGURATION_STORE KV namespace binding found', new Error('KV namespace not found'), {}, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'KV namespace missing', {
         error: 'VIDEO_CONFIGURATION_STORE binding not found'
       });
@@ -122,9 +113,9 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       
       // Check if environment token is configured
       if (!env.CONFIG_API_TOKEN) {
-        logError('CONFIG_API_TOKEN not set in environment', {
+        logErrorWithContext('CONFIG_API_TOKEN not set in environment', new Error('API token not configured'), {
           environment: env.ENVIRONMENT || 'unknown'
-        });
+        }, 'ConfigHandler');
         addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
           reason: 'CONFIG_API_TOKEN not set in environment',
           environment: env.ENVIRONMENT || 'unknown'
@@ -134,11 +125,11 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       
       // Validate against the secure token from environment
       if (token !== env.CONFIG_API_TOKEN) {
-        logError('Invalid API token provided', { 
+        logErrorWithContext('Invalid API token provided', new Error('Invalid API token'), { 
           tokenProvided: !!token,
           tokenLength: token?.length || 0,
           expectedLength: env.CONFIG_API_TOKEN?.length || 0
-        });
+        }, 'ConfigHandler');
         addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
           reason: 'Invalid token',
           tokenProvided: !!token
@@ -151,9 +142,9 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       addBreadcrumb(context, 'ConfigHandler', 'Authentication successful');
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
-      logError('Authorization header validation failed', {
+      logErrorWithContext('Authorization header validation failed', error, {
         error: errMessage
-      });
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
         reason: 'Invalid header format',
         error: errMessage
@@ -181,10 +172,10 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       });
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
-      logError('Failed to parse request JSON', {
+      logErrorWithContext('Failed to parse request JSON', error, {
         error: errMessage,
         contentType: request.headers.get('Content-Type') || 'unknown'
-      });
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'JSON parsing failed', {
         error: errMessage,
         contentType: request.headers.get('Content-Type') || 'unknown'
@@ -231,9 +222,9 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
           }
         });
       } else {
-        logError('Failed to store configuration in KV', {
+        logErrorWithContext('Failed to store configuration in KV', new Error('KV storage operation failed'), {
           duration: `${duration}ms`
-        });
+        }, 'ConfigHandler');
         addBreadcrumb(context, 'ConfigHandler', 'Configuration storage failed', {
           duration,
           error: 'Unknown error during storage operation'
@@ -254,10 +245,10 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       const errMessage = error instanceof Error ? error.message : String(error);
       const errStack = error instanceof Error ? error.stack : undefined;
       
-      logError('Exception during configuration storage', {
+      logErrorWithContext('Exception during configuration storage', error, {
         error: errMessage,
         stack: errStack
-      });
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'Exception during configuration storage', {
         error: errMessage
       });
@@ -279,12 +270,12 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
     const errMessage = error instanceof Error ? error.message : String(error);
     const errStack = error instanceof Error ? error.stack : undefined;
     
-    logError('Unhandled error in configuration upload handler', {
+    logErrorWithContext('Unhandled error in configuration upload handler', error, {
       error: errMessage,
       stack: errStack,
       url: request.url,
       method: request.method
-    });
+    }, 'ConfigHandler');
     
     // Try to add a breadcrumb if the context is available
     try {
@@ -296,9 +287,9 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       });
     } catch (breadcrumbError) {
       // If we can't add a breadcrumb, just log it
-      logError('Failed to add breadcrumb for unhandled error', {
+      logErrorWithContext('Failed to add breadcrumb for unhandled error', breadcrumbError, {
         error: breadcrumbError instanceof Error ? breadcrumbError.message : String(breadcrumbError)
-      });
+      }, 'ConfigHandler');
     }
 
     return new Response(JSON.stringify({
@@ -313,7 +304,12 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
       }
     });
   }
-}
+},
+{
+  functionName: 'handleConfigUpload',
+  component: 'ConfigHandler',
+  logErrors: true
+});
 
 /**
  * Handle configuration retrieval request
@@ -322,7 +318,8 @@ export async function handleConfigUpload(request: Request, env: Env): Promise<Re
  * @param env Environment with KV bindings
  * @returns Response with the current configuration
  */
-export async function handleConfigGet(request: Request, env: Env): Promise<Response> {
+export const handleConfigGet = withErrorHandling<[Request, Env], Response>(
+  async function handleConfigGetImpl(request: Request, env: Env): Promise<Response> {
   try {
     // Initialize request context
     const context = createRequestContext(request);
@@ -345,7 +342,7 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
 
     // Check if KV namespace exists
     if (!env.VIDEO_CONFIGURATION_STORE) {
-      logError('No VIDEO_CONFIGURATION_STORE KV namespace binding found');
+      logErrorWithContext('No VIDEO_CONFIGURATION_STORE KV namespace binding found', new Error('KV namespace not found'), {}, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'KV namespace missing', {
         error: 'VIDEO_CONFIGURATION_STORE binding not found'
       });
@@ -385,9 +382,9 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       
       // Check if environment token is configured
       if (!env.CONFIG_API_TOKEN) {
-        logError('CONFIG_API_TOKEN not set in environment', {
+        logErrorWithContext('CONFIG_API_TOKEN not set in environment', new Error('API token not configured'), {
           environment: env.ENVIRONMENT || 'unknown'
-        });
+        }, 'ConfigHandler');
         addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
           reason: 'CONFIG_API_TOKEN not set in environment',
           environment: env.ENVIRONMENT || 'unknown'
@@ -397,11 +394,11 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       
       // Validate against the secure token from environment
       if (token !== env.CONFIG_API_TOKEN) {
-        logError('Invalid API token provided', { 
+        logErrorWithContext('Invalid API token provided', new Error('Invalid API token'), { 
           tokenProvided: !!token,
           tokenLength: token?.length || 0,
           expectedLength: env.CONFIG_API_TOKEN?.length || 0
-        });
+        }, 'ConfigHandler');
         addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
           reason: 'Invalid token',
           tokenProvided: !!token
@@ -414,9 +411,9 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       addBreadcrumb(context, 'ConfigHandler', 'Authentication successful');
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
-      logError('Authorization header validation failed', {
+      logErrorWithContext('Authorization header validation failed', error, {
         error: errMessage
-      });
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'Authorization failed', {
         reason: 'Invalid header format',
         error: errMessage
@@ -481,10 +478,10 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       const errMessage = error instanceof Error ? error.message : String(error);
       const errStack = error instanceof Error ? error.stack : undefined;
       
-      logError('Exception during configuration retrieval', {
+      logErrorWithContext('Exception during configuration retrieval', error, {
         error: errMessage,
         stack: errStack
-      });
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'Exception during configuration retrieval', {
         error: errMessage
       });
@@ -506,12 +503,12 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
     const errMessage = error instanceof Error ? error.message : String(error);
     const errStack = error instanceof Error ? error.stack : undefined;
     
-    logError('Unhandled error in configuration retrieval handler', {
+    logErrorWithContext('Unhandled error in configuration retrieval handler', error, {
       error: errMessage,
       stack: errStack,
       url: request.url,
       method: request.method
-    });
+    }, 'ConfigHandler');
     
     // Try to add a breadcrumb if the context is available
     try {
@@ -523,9 +520,9 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       });
     } catch (breadcrumbError) {
       // If we can't add a breadcrumb, just log it
-      logError('Failed to add breadcrumb for unhandled error', {
+      logErrorWithContext('Failed to add breadcrumb for unhandled error', breadcrumbError, {
         error: breadcrumbError instanceof Error ? breadcrumbError.message : String(breadcrumbError)
-      });
+      }, 'ConfigHandler');
     }
 
     return new Response(JSON.stringify({
@@ -540,4 +537,9 @@ export async function handleConfigGet(request: Request, env: Env): Promise<Respo
       }
     });
   }
-}
+},
+{
+  functionName: 'handleConfigGet',
+  component: 'ConfigHandler',
+  logErrors: true
+});

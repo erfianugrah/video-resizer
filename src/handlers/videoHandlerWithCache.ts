@@ -8,6 +8,7 @@ import { transformVideo } from '../services/videoTransformationService';
 import { getVideoPathPatterns } from '../config';
 import { createLogger } from '../utils/pinoLogger';
 import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
+import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 
 /**
  * Handle video transformation requests with integrated caching
@@ -20,11 +21,15 @@ import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
  * @param ctx - Execution context
  * @returns The response with the transformed video
  */
-export async function handleRequestWithCaching(
-  request: Request, 
-  env: EnvVariables, 
-  ctx: ExecutionContext
-): Promise<Response> {
+export const handleRequestWithCaching = withErrorHandling<
+  [Request, EnvVariables, ExecutionContext],
+  Response
+>(
+  async function handleRequestWithCachingImpl(
+    request: Request, 
+    env: EnvVariables, 
+    ctx: ExecutionContext
+  ): Promise<Response> {
   // Pass execution context to environment for waitUntil usage in caching
   (env as any).executionCtx = ctx;
   const url = new URL(request.url);
@@ -100,12 +105,16 @@ export async function handleRequestWithCaching(
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    // Fallback logging when request context initialization fails
-    console.info('Video transformation request with caching (fallback logging)', {
+    // Use standardized error handling
+    logErrorWithContext('Failed to initialize request context', err, {
+      url: request.url,
       path: url.pathname,
-      options: videoOptions,
-      error: err instanceof Error ? err.message : String(err)
-    });
+      options: {
+        width: videoOptions.width,
+        height: videoOptions.height,
+        derivative: videoOptions.derivative
+      }
+    }, 'VideoHandlerWithCache');
   }
   
   // Wrap with caching middleware
@@ -115,4 +124,9 @@ export async function handleRequestWithCaching(
     () => transformVideo(request, videoOptions, pathPatterns, debugInfo, env),
     videoOptions
   );
-}
+},
+{
+  functionName: 'handleRequestWithCaching',
+  component: 'VideoHandlerWithCache',
+  logErrors: true
+});

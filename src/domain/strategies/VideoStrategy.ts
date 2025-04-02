@@ -15,6 +15,7 @@ import {
 } from '../../utils/transformationUtils';
 import { debug } from '../../utils/loggerUtils';
 import { ValidationError } from '../../errors';
+import { logErrorWithContext, tryOrNull } from '../../utils/errorHandlingUtils';
 
 export class VideoStrategy implements TransformationStrategy {
   /**
@@ -32,7 +33,12 @@ export class VideoStrategy implements TransformationStrategy {
         derivatives: Object.keys(configManager.getConfig().derivatives || {}),
         defaults: configManager.getDefaults()
       });
-    }).catch(() => {
+    }).catch((err) => {
+      // Use standardized error handling
+      logErrorWithContext('Error importing legacyLoggerAdapter for info logging', err, {
+        fallback: 'using debug from loggerUtils'
+      }, 'VideoStrategy');
+      
       // Fallback only if import fails
       debug('VideoStrategy', 'Preparing transformation params', {
         options: JSON.stringify(options),
@@ -50,25 +56,32 @@ export class VideoStrategy implements TransformationStrategy {
         // Apply it synchronously first
         adjustedOptions.duration = configDuration;
         
-        // Log it asynchronously
-        try {
-          import('../../utils/legacyLoggerAdapter').then(({ info }) => {
-            info('VideoStrategy', 'Applied default duration from config', {
-              defaultDuration: configDuration,
-              hadExistingDuration: !!options.duration
+        // Log it asynchronously using tryOrNull for safety
+        tryOrNull<[], void>(
+          function logDefaultDurationApplication() {
+            import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+              info('VideoStrategy', 'Applied default duration from config', {
+                defaultDuration: configDuration,
+                hadExistingDuration: !!options.duration
+              });
+            }).catch((err) => {
+              // Use standardized error handling
+              logErrorWithContext('Error importing legacyLoggerAdapter for duration logging', err, {
+                fallback: 'using debug from loggerUtils',
+                defaultDuration: configDuration
+              }, 'VideoStrategy');
+              
+              // Use debug from loggerUtils as a fallback
+              debug('VideoStrategy', 'Applied default duration from config', {
+                defaultDuration: configDuration
+              });
             });
-          }).catch(() => {
-            // Use debug from loggerUtils as a fallback
-            debug('VideoStrategy', 'Applied default duration from config', {
-              defaultDuration: configDuration
-            });
-          });
-        } catch (err) {
-          // Use debug from loggerUtils as a fallback
-          debug('VideoStrategy', 'Applied default duration from config', {
-            defaultDuration: configDuration
-          });
-        }
+          },
+          {
+            functionName: 'logDefaultDurationApplication',
+            component: 'VideoStrategy'
+          }
+        )();
       }
     }
     
