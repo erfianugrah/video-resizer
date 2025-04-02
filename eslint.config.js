@@ -3,7 +3,14 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default [
   {
-    ignores: ['node_modules/', 'dist/', 'build/', 'debug-ui/dist/', 'public/'],
+    ignores: [
+      'node_modules/',
+      'dist/',
+      'build/',
+      'debug-ui/dist/',
+      'public/',
+      'debug-ui/src/env.d.ts',
+    ],
   },
   ...tseslint.configs.recommended,
   prettierConfig,
