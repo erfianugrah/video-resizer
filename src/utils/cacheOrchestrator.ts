@@ -68,71 +68,107 @@ export async function withCaching(
   }
 
   try {
-    // Step 1: Check Cloudflare Cache API first (if not skipping)
-    let cachedResponse = null;
+    // Step 1: Check both caches in parallel (if not skipping)
     if (!skipCache) {
-      cachedResponse = await getCachedResponse(request);
-      if (cachedResponse) {
-        logDebug('Cache API hit');
+      // Add breadcrumb for tracing
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Cache', 'Started parallel cache lookup', {
+          url: request.url
+        });
+      }
+      
+      // Create promises for both cache checks
+      const cfCachePromise = getCachedResponse(request).catch(err => {
+        logDebug('Error checking CF cache', { 
+          error: err instanceof Error ? err.message : String(err) 
+        });
+        return null;
+      });
+      
+      let kvCachePromise: Promise<Response | null> = Promise.resolve(null);
+      
+      // Only check KV if options and env are provided
+      if (options && env) {
+        const sourcePath = url.pathname;
+        
+        // Check if this is an IMQuery request for lookup
+        const imwidth = url.searchParams.get('imwidth');
+        const imheight = url.searchParams.get('imheight');
+        
+        // Create customData for lookup to match the storage format
+        const customData: Record<string, unknown> = {};
+        if (imwidth) customData.imwidth = imwidth;
+        if (imheight) customData.imheight = imheight;
+        
+        // Add IMQuery parameters to options for cache key generation during lookup
+        const lookupOptions: typeof options = {
+          ...options,
+          customData: Object.keys(customData).length > 0 ? customData : undefined
+        };
+        
+        // Log if using IMQuery parameters
+        if (Object.keys(customData).length > 0) {
+          logDebug('Looking up with IMQuery parameters', {
+            imwidth,
+            imheight,
+            derivative: options.derivative
+          });
+        }
+        
+        kvCachePromise = getFromKVCache(env, sourcePath, lookupOptions).catch(err => {
+          logDebug('Error checking KV cache', { 
+            error: err instanceof Error ? err.message : String(err) 
+          });
+          return null;
+        });
+      }
+      
+      // Wait for both cache checks to complete
+      const [cfResponse, kvResponse] = await Promise.all([cfCachePromise, kvCachePromise]);
+      
+      // Prefer CF cache over KV cache as it's typically faster to access
+      if (cfResponse) {
+        logDebug('CF Cache API hit');
         
         if (requestContext) {
-          addBreadcrumb(requestContext, 'Cache', 'Cache API hit', {
+          addBreadcrumb(requestContext, 'Cache', 'CF Cache API hit', {
             url: request.url
           });
         }
         
-        return cachedResponse;
+        return cfResponse;
       }
-    } else {
-      logDebug('Skipped CF cache check due to request parameters');
-    }
-    
-    // Step 2: Check KV cache if options provided and not skipping cache
-    if (options && env && !skipCache) {
-      const sourcePath = url.pathname;
-      
-      // Check if this is an IMQuery request for lookup
-      const imwidth = url.searchParams.get('imwidth');
-      const imheight = url.searchParams.get('imheight');
-      
-      // Create customData for lookup to match the storage format
-      const customData: Record<string, unknown> = {};
-      if (imwidth) customData.imwidth = imwidth;
-      if (imheight) customData.imheight = imheight;
-      
-      // Add IMQuery parameters to options for cache key generation during lookup
-      const lookupOptions: typeof options = {
-        ...options,
-        customData: Object.keys(customData).length > 0 ? customData : undefined
-      };
-      
-      // Log if using IMQuery parameters
-      if (Object.keys(customData).length > 0) {
-        logDebug('Looking up with IMQuery parameters', {
-          imwidth,
-          imheight,
-          derivative: options.derivative
-        });
-      }
-      
-      const kvResponse = await getFromKVCache(env, sourcePath, lookupOptions);
       
       if (kvResponse) {
+        const sourcePath = url.pathname;
+        const imwidth = url.searchParams.get('imwidth');
+        const imheight = url.searchParams.get('imheight');
+        const hasIMQuery = !!(imwidth || imheight);
+        
         logDebug('KV cache hit', { 
           sourcePath,
-          hasIMQuery: Object.keys(customData).length > 0,
-          derivative: options.derivative 
+          hasIMQuery,
+          derivative: options?.derivative 
         });
         
         if (requestContext) {
           addBreadcrumb(requestContext, 'Cache', 'KV cache hit', {
             url: request.url,
-            hasIMQuery: Object.keys(customData).length > 0
+            hasIMQuery
           });
         }
         
         return kvResponse;
       }
+      
+      // Add breadcrumb for both caches missing
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Cache', 'Both CF and KV cache missed', {
+          url: request.url
+        });
+      }
+    } else {
+      logDebug('Skipped cache checks due to request parameters');
     }
     
     // Step 3: Both caches missed, execute handler

@@ -1,7 +1,7 @@
 /**
  * Transforms a request URL based on deployment mode and configuration
  */
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { EnvironmentConfig } from '../config/environmentConfig';
 
 /**
@@ -106,8 +106,11 @@ function getDerivativeForPath(
   path: string, 
   config: DeploymentConfig
 ): string | null {
-  // Get known derivatives from videoConfig instead of hardcoding
-  const knownDerivatives = Object.keys(videoConfig.derivatives);
+  // Get configuration manager instance
+  const configManager = VideoConfigurationManager.getInstance();
+  
+  // Get known derivatives from configuration manager instead of hardcoding
+  const knownDerivatives = Object.keys(configManager.getConfig().derivatives);
 
   // Check first segment if it's a known derivative
   if (segments.length > 0 && knownDerivatives.includes(segments[0])) {
@@ -145,8 +148,11 @@ function transformPathForRemote(
 ): string {
   let transformedPath = path;
 
-  // Get known derivatives from videoConfig instead of hardcoding
-  const knownDerivatives = Object.keys(videoConfig.derivatives);
+  // Get configuration manager instance
+  const configManager = VideoConfigurationManager.getInstance();
+  
+  // Get known derivatives from configuration manager instead of hardcoding
+  const knownDerivatives = Object.keys(configManager.getConfig().derivatives);
 
   // Remove derivative prefix if present
   if (segments.length > 0 && knownDerivatives.includes(segments[0])) {

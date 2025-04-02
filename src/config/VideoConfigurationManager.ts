@@ -443,6 +443,51 @@ export class VideoConfigurationManager {
    */
   public updateConfig(newConfig: Partial<VideoConfiguration>): VideoConfiguration {
     try {
+      // Check for duration settings in the update
+      const oldDefaultDuration = this.config.defaults.duration;
+      const newDefaultDuration = newConfig.defaults?.duration;
+      
+      // Capture duration changes for debugging
+      const durationChanges = {
+        hasNewDefaultDuration: !!newDefaultDuration,
+        oldDefaultDuration,
+        newDefaultDuration: newDefaultDuration !== undefined ? newDefaultDuration : 'not changed',
+        derivativeChanges: {} as Record<string, {old: string | null, new: string | null}>
+      };
+      
+      // Check derivative durations if they're being updated
+      if (newConfig.derivatives) {
+        const oldDerivatives = this.config.derivatives;
+        Object.entries(newConfig.derivatives).forEach(([name, newDeriv]) => {
+          const oldDeriv = oldDerivatives[name];
+          if (oldDeriv && newDeriv && oldDeriv.duration !== newDeriv.duration) {
+            durationChanges.derivativeChanges[name] = {
+              old: oldDeriv.duration ?? null,
+              new: newDeriv.duration ?? null
+            };
+          }
+        });
+      }
+      
+      // Log duration changes
+      try {
+        // Dynamically import to avoid circular dependencies
+        import('../utils/legacyLoggerAdapter').then(({ info }) => {
+          const hasDurationChanges = 
+            newDefaultDuration !== undefined || 
+            Object.keys(durationChanges.derivativeChanges).length > 0;
+          
+          if (hasDurationChanges) {
+            info('VideoConfigurationManager', 'Duration settings being updated', durationChanges);
+          }
+        }).catch(() => {
+          console.info('[VideoConfigurationManager] Duration settings update:', 
+            JSON.stringify(durationChanges));
+        });
+      } catch (loggingError) {
+        // Ignore logging errors - don't want to fail config updates
+      }
+      
       // Merge the new config with the existing one
       const mergedConfig = {
         ...this.config,
@@ -451,6 +496,20 @@ export class VideoConfigurationManager {
       
       // Validate the merged configuration
       this.config = VideoConfigSchema.parse(mergedConfig);
+      
+      // Log the final duration settings after update
+      try {
+        import('../utils/legacyLoggerAdapter').then(({ info }) => {
+          info('VideoConfigurationManager', 'Updated configuration duration settings', {
+            defaultDuration: this.config.defaults.duration,
+            mobileDerivativeDuration: this.config.derivatives.mobile?.duration || 'not set',
+            desktopDerivativeDuration: this.config.derivatives.desktop?.duration || 'not set'
+          });
+        }).catch(() => {});
+      } catch (loggingError) {
+        // Ignore logging errors
+      }
+      
       return this.config;
     } catch (error) {
       if (error instanceof z.ZodError) {

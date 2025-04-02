@@ -17,6 +17,23 @@ vi.mock('../../src/utils/loggerUtils', () => ({
   warn: vi.fn(),
 }));
 
+// Mock VideoConfigurationManager
+vi.mock('../../src/config/VideoConfigurationManager', () => {
+  const mockConfig = {
+    responsive: {
+      availableQualities: [240, 360, 480, 720, 1080, 1440, 2160]
+    }
+  };
+  
+  return {
+    VideoConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        getResponsiveConfig: vi.fn().mockReturnValue(mockConfig.responsive)
+      })
+    }
+  };
+});
+
 // Mock client hints functions
 vi.mock('../../src/utils/clientHints', () => ({
   hasClientHints: vi.fn(),

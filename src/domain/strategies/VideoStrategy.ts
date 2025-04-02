@@ -10,7 +10,8 @@ import {
   isValidDuration, 
   adjustDuration,
   haveDurationLimits,
-  getTransformationLimit
+  getTransformationLimit,
+  storeTransformationLimit
 } from '../../utils/transformationUtils';
 import { debug } from '../../utils/loggerUtils';
 import { ValidationError } from '../../errors';
@@ -24,36 +25,237 @@ export class VideoStrategy implements TransformationStrategy {
     const params: TransformParams = {};
     const configManager = VideoConfigurationManager.getInstance();
     
+    // Log initial parameters received and config
+    import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('VideoStrategy', 'Preparing transformation params', {
+        options: JSON.stringify(options),
+        derivatives: Object.keys(configManager.getConfig().derivatives || {}),
+        defaults: configManager.getDefaults()
+      });
+    }).catch(() => {
+      // Fallback only if import fails
+      debug('VideoStrategy', 'Preparing transformation params', {
+        options: JSON.stringify(options),
+        derivatives: Object.keys(configManager.getConfig().derivatives || {})
+      });
+    });
+    
     // Create a copy of options that we can modify if needed
     const adjustedOptions = { ...options };
     
-    // Adjust duration if needed and if we have learned limits
-    if (adjustedOptions.duration && haveDurationLimits()) {
-      const maxDuration = getTransformationLimit('duration', 'max');
-      
-      // Only adjust if we've learned limits from previous API responses
-      if (maxDuration) {
-        const originalDuration = adjustedOptions.duration;
+    // Apply default duration from config if not specified in options
+    if (adjustedOptions.duration === null || adjustedOptions.duration === undefined) {
+      const configDuration = configManager.getDefaultOption('duration');
+      if (configDuration) {
+        // Apply it synchronously first
+        adjustedOptions.duration = configDuration;
         
-        // Adjust duration to fit within known limits
-        adjustedOptions.duration = adjustDuration(originalDuration);
-        
-        // If duration was adjusted, add info to diagnostics
-        if (adjustedOptions.duration !== originalDuration) {
-          context.diagnosticsInfo.warnings = context.diagnosticsInfo.warnings || [];
-          context.diagnosticsInfo.warnings.push(`Duration adjusted to ${adjustedOptions.duration} to fit within learned limit of ${maxDuration}s`);
-          
-          // Add to diagnostics
-          context.diagnosticsInfo.adjustedDuration = adjustedOptions.duration;
-          context.diagnosticsInfo.originalDuration = originalDuration;
+        // Log it asynchronously
+        try {
+          import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+            info('VideoStrategy', 'Applied default duration from config', {
+              defaultDuration: configDuration,
+              hadExistingDuration: !!options.duration
+            });
+          }).catch(() => {
+            // Use debug from loggerUtils as a fallback
+            debug('VideoStrategy', 'Applied default duration from config', {
+              defaultDuration: configDuration
+            });
+          });
+        } catch (err) {
+          // Use debug from loggerUtils as a fallback
+          debug('VideoStrategy', 'Applied default duration from config', {
+            defaultDuration: configDuration
+          });
         }
       }
     }
+    
+    // Check if we have duration limits, if not, extract from configuration
+    if (!haveDurationLimits()) {
+      // Use proper logging instead of console
+      import('../../utils/legacyLoggerAdapter').then(({ warn, info }) => {
+        warn('VideoStrategy', 'No duration limits found - checking configuration', {
+          configLoaded: !!configManager,
+          derivativesAvailable: configManager ? Object.keys(configManager.getConfig().derivatives || {}).length : 0,
+          configDefaultDuration: configManager.getDefaultOption('duration')
+        });
+        
+        // Try to get the duration from configuration first
+        const configDuration = configManager.getDefaultOption('duration');
+        if (configDuration) {
+          // Import duration parsing function
+          import('../../utils/transformationUtils').then(({ parseTimeString }) => {
+            const seconds = parseTimeString(configDuration);
+            if (seconds !== null) {
+              info('VideoStrategy', 'Setting duration limits from config', {
+                defaultDuration: configDuration,
+                parsedSeconds: seconds,
+                min: 0,
+                max: seconds
+              });
+              
+              storeTransformationLimit('duration', 'min', 0);
+              storeTransformationLimit('duration', 'max', seconds);
+              return;
+            }
+          });
+        } else {
+          // Fallback to default of 30s if no configuration is available
+          warn('VideoStrategy', 'No config duration found - applying defaults', {
+            settingMin: 0,
+            settingMax: 30,
+            reason: 'No configuration duration available'
+          });
+          
+          storeTransformationLimit('duration', 'min', 0);
+          storeTransformationLimit('duration', 'max', 30);
+        }
+      }).catch(() => {
+        // Use debug from loggerUtils as a fallback
+        debug('VideoStrategy', 'No duration limits found - applying defaults of 0-30s', {});
+        
+        // Get default duration from config if available
+        const configDuration = configManager.getDefaultOption('duration');
+        if (configDuration) {
+          debug('VideoStrategy', 'Found config duration', { configDuration });
+          
+          // Try to parse the duration from config
+          const durationMatch = configDuration.match(/^(\d+)([sm])$/);
+          if (durationMatch) {
+            const value = parseInt(durationMatch[1], 10);
+            const unit = durationMatch[2];
+            
+            // Convert to seconds
+            const seconds = unit === 'm' ? value * 60 : value;
+            debug('VideoStrategy', 'Setting duration limits from config', { 
+              min: 0, 
+              max: seconds,
+              configDuration
+            });
+            
+            storeTransformationLimit('duration', 'min', 0);
+            storeTransformationLimit('duration', 'max', seconds);
+            return;
+          }
+        }
+        
+        // Fallback to 30s default
+        debug('VideoStrategy', 'Using fallback 30s duration limit', {
+          reason: 'No valid configuration found'
+        });
+        storeTransformationLimit('duration', 'min', 0);
+        storeTransformationLimit('duration', 'max', 30);
+      });
+    }
+    
+    // Add details about where we're getting configuration
+    import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+      // Import transformation utils to get the current limits
+      import('../../utils/transformationUtils').then(({ getTransformationLimit }) => {
+        info('VideoStrategy', 'Configuration source details', {
+          configIsInitialized: !!configManager,
+          defaultDuration: configManager.getDefaultOption('duration'),
+          haveDurationLimits: haveDurationLimits(),
+          minDuration: getTransformationLimit('duration', 'min'),
+          maxDuration: getTransformationLimit('duration', 'max')
+        });
+      });
+    }).catch(() => {
+      debug('VideoStrategy', 'Configuration source details', { 
+        defaultDuration: configManager.getDefaultOption('duration'), 
+        haveDurationLimits: haveDurationLimits() 
+      });
+    });
+    
+    // Adjust duration if provided
+    if (adjustedOptions.duration) {
+      const maxDuration = getTransformationLimit('duration', 'max') || 30;
+      
+      import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+        info('VideoStrategy', 'Checking video duration', {
+          requestedDuration: adjustedOptions.duration,
+          maxDuration,
+          usingDefault: maxDuration === 30,
+          configDefaultDuration: configManager.getDefaultOption('duration')
+        });
+      }).catch(() => {
+        debug('VideoStrategy', 'Checking video duration', {
+          requestedDuration: adjustedOptions.duration,
+          maxDuration
+        });
+      });
+      
+      const originalDuration = adjustedOptions.duration;
+      
+      // Adjust duration to fit within known limits
+      adjustedOptions.duration = adjustDuration(originalDuration);
+      
+      // If duration was adjusted, add info to diagnostics
+      if (adjustedOptions.duration !== originalDuration) {
+        context.diagnosticsInfo.warnings = context.diagnosticsInfo.warnings || [];
+        context.diagnosticsInfo.warnings.push(`Duration adjusted to ${adjustedOptions.duration} to fit within limit of ${maxDuration}s`);
+        
+        // Add to diagnostics
+        context.diagnosticsInfo.adjustedDuration = adjustedOptions.duration;
+        context.diagnosticsInfo.originalDuration = originalDuration;
+        context.diagnosticsInfo.configDefaultDuration = configManager.getDefaultOption('duration');
+        
+        import('../../utils/legacyLoggerAdapter').then(({ warn }) => {
+          warn('VideoStrategy', 'Duration adjusted to fit limits', {
+            originalDuration,
+            adjustedDuration: adjustedOptions.duration,
+            maxDuration,
+            configDefault: configManager.getDefaultOption('duration')
+          });
+        }).catch(() => {
+          debug('VideoStrategy', 'Duration adjusted to fit limits', {
+            originalDuration,
+            adjustedDuration: adjustedOptions.duration,
+            maxDuration
+          });
+        });
+      }
+    }
+    
+    // Log the parameter mapping
+    import('../../utils/legacyLoggerAdapter').then(({ debug: logDebug }) => {
+      logDebug('VideoStrategy', 'Parameter mapping', {
+        mapping: configManager.getParamMapping(),
+        hasDurationMapping: 'duration' in configManager.getParamMapping(),
+        durationMapping: configManager.getParamMapping()['duration']
+      });
+    }).catch(() => {
+      debug('VideoStrategy', 'Parameter mapping', {
+        hasDurationMapping: 'duration' in configManager.getParamMapping(),
+        durationMapping: configManager.getParamMapping()['duration']
+      });
+    });
     
     // Map parameters using the defined mapping, but use our adjusted options
     for (const [ourParam, cdnParam] of Object.entries(configManager.getParamMapping())) {
       const optionKey = ourParam as keyof VideoTransformOptions;
       const optionValue = adjustedOptions[optionKey];
+      
+      // Log the parameter mapping if it's duration
+      if (ourParam === 'duration') {
+        import('../../utils/legacyLoggerAdapter').then(({ debug: logDebug }) => {
+          logDebug('VideoStrategy', 'Mapping duration parameter', {
+            ourParam,
+            cdnParam,
+            optionValue,
+            isNull: optionValue === null,
+            isUndefined: optionValue === undefined
+          });
+        }).catch(() => {
+          debug('VideoStrategy', 'Mapping duration parameter', {
+            ourParam,
+            cdnParam,
+            hasValue: optionValue !== null && optionValue !== undefined
+          });
+        });
+      }
       
       if (optionValue !== null && optionValue !== undefined) {
         params[cdnParam] = optionValue;
@@ -67,6 +269,25 @@ export class VideoStrategy implements TransformationStrategy {
     
     // Log the params for debugging
     debug('VideoStrategy', 'Prepared video transformation params', params);
+    
+    // Log detailed information about duration parameter
+    import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('VideoStrategy', 'Final transformation parameters', {
+        hasDurationInOptions: adjustedOptions.duration !== null && adjustedOptions.duration !== undefined,
+        hasDurationInParams: 'duration' in params,
+        durationValue: params['duration'],
+        originalDuration: options.duration,
+        adjustedDuration: adjustedOptions.duration,
+        allParams: Object.keys(params).join(',')
+      });
+    }).catch(() => {
+      debug('VideoStrategy', 'Final transformation parameters', {
+        hasDurationInOptions: adjustedOptions.duration !== null && adjustedOptions.duration !== undefined,
+        hasDurationInParams: 'duration' in params,
+        durationValue: params['duration'],
+        allParams: Object.keys(params).join(',')
+      });
+    });
     
     if (adjustedOptions.duration !== options.duration) {
       debug('VideoStrategy', 'Adjusted duration parameter', {

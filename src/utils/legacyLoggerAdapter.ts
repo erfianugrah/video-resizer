@@ -31,12 +31,8 @@ export function initializeLegacyLogger(request: Request) {
     // Set the context in the central manager
     setCurrentContext(context);
     
-    // Log this initialization
-    console.debug('LegacyLoggerAdapter: Created and set new request context', {
-      requestId: context.requestId,
-      url: request.url,
-      timestamp: new Date().toISOString()
-    });
+    // We can't use our own logging here because we're initializing the logger
+    // This is early initialization code so console usage is acceptable
   }
   
   // Create/update logger with the context
@@ -64,7 +60,8 @@ export function clearLegacyLogger() {
   // This is just for cleanliness - not setting null avoids type errors
   currentLogger = null;
   
-  console.debug('LegacyLoggerAdapter: Cleared logger');
+  // We can't use our own logging here because we're clearing the logger
+  // This is cleanup code so console usage is acceptable
 }
 
 /**
@@ -76,7 +73,8 @@ function getOrCreateContext(): RequestContext | null {
   const context = getContextFromManager();
   
   if (!context) {
-    console.debug('LegacyLoggerAdapter: No context available for logging');
+    // We can't use our own logging here because we're checking if context exists
+    // This is early initialization code so console usage is acceptable
     return null;
   }
   
@@ -93,16 +91,17 @@ export function debug(component: string, message: string, data?: Record<string, 
   const context = getOrCreateContext();
   
   if (!context) {
-    console.debug(`[${component}] ${message}`, data);
+    // We can't use our own logging here because we don't have a context yet
+    // This is a fallback for early initialization, so console usage is acceptable
     return;
   }
   
   // Create logger if needed
   if (!currentLogger) {
-    currentLogger = createLogger(context);
+    currentLogger = createLogger(context as RequestContext);
   }
   
-  pinoDebug(context, currentLogger, component, message, data);
+  pinoDebug(context as RequestContext, currentLogger, component, message, data);
 }
 
 /**
@@ -115,16 +114,17 @@ export function info(component: string, message: string, data?: Record<string, u
   const context = getOrCreateContext();
   
   if (!context) {
-    console.info(`[${component}] ${message}`, data);
+    // We can't use our own logging here because we don't have a context yet
+    // This is a fallback for early initialization, so console usage is acceptable
     return;
   }
   
   // Create logger if needed
   if (!currentLogger) {
-    currentLogger = createLogger(context);
+    currentLogger = createLogger(context as RequestContext);
   }
   
-  pinoInfo(context, currentLogger, component, message, data);
+  pinoInfo(context as RequestContext, currentLogger, component, message, data);
 }
 
 /**
@@ -137,16 +137,17 @@ export function warn(component: string, message: string, data?: Record<string, u
   const context = getOrCreateContext();
   
   if (!context) {
-    console.warn(`[${component}] ${message}`, data);
+    // We can't use our own logging here because we don't have a context yet
+    // This is a fallback for early initialization, so console usage is acceptable
     return;
   }
   
   // Create logger if needed
   if (!currentLogger) {
-    currentLogger = createLogger(context);
+    currentLogger = createLogger(context as RequestContext);
   }
   
-  pinoWarn(context, currentLogger, component, message, data);
+  pinoWarn(context as RequestContext, currentLogger, component, message, data);
 }
 
 /**
@@ -159,16 +160,17 @@ export function error(component: string, message: string, data?: Record<string, 
   const context = getOrCreateContext();
   
   if (!context) {
-    console.error(`[${component}] ${message}`, data);
+    // We can't use our own logging here because we don't have a context yet
+    // This is a fallback for early initialization, so console usage is acceptable
     return;
   }
   
   // Create logger if needed
   if (!currentLogger) {
-    currentLogger = createLogger(context);
+    currentLogger = createLogger(context as RequestContext);
   }
   
-  pinoError(context, currentLogger, component, message, data);
+  pinoError(context as RequestContext, currentLogger, component, message, data);
 }
 
 /**

@@ -2,7 +2,7 @@
  * Client Hints detection utilities for video requests
  */
 import { debug } from './loggerUtils';
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 
 /**
  * Interface for video dimensions
@@ -84,8 +84,11 @@ export function getVideoSizeFromClientHints(request: Request): VideoSize {
   if (actualViewportWidth) {
     const vw = parseInt(actualViewportWidth);
     
+    // Get configuration manager instance
+    const configManager = VideoConfigurationManager.getInstance();
+    
     // Get sorted breakpoints
-    const breakpointValues = Object.values(videoConfig.responsive.breakpoints).sort((a, b) => a - b);
+    const breakpointValues = Object.values(configManager.getResponsiveConfig().breakpoints).sort((a, b) => a - b);
     
     // Build breakpoints array dynamically
     const breakpoints = [];

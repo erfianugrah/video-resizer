@@ -180,6 +180,16 @@ export class ConfigurationService {
         this.lastFetchTimestamp = Date.now();
         const totalDuration = Date.now() - startTime;
         
+        // Extract important duration settings for monitoring the issue
+        const defaultDuration = this.config.video?.defaults?.duration || 'not set';
+        const derivativeDurations = Object.entries(this.config.video?.derivatives || {}).reduce(
+          (acc, [name, config]) => {
+            acc[name] = config.duration || 'not set';
+            return acc;
+          },
+          {} as Record<string, string | null>
+        );
+        
         logDebug('Successfully loaded configuration from KV', {
           version: this.config.version,
           lastUpdated: this.config.lastUpdated,
@@ -189,8 +199,13 @@ export class ConfigurationService {
           totalDurationMs: totalDuration,
           videoDerivativesCount: Object.keys(this.config.video?.derivatives || {}).length,
           hasCacheConfig: !!this.config.cache,
-          hasLoggingConfig: !!this.config.logging
+          hasLoggingConfig: !!this.config.logging,
+          defaultDuration,
+          derivativeDurations
         });
+        
+        // Set duration limits from configuration if available
+        this.setDurationLimitsFromConfig(this.config);
         
         return this.config;
       } catch (error) {
@@ -409,6 +424,80 @@ export class ConfigurationService {
   public async getDebugConfig(env: { VIDEO_CONFIGURATION_STORE?: KVNamespace; ENVIRONMENT?: string }) {
     const config = await this.loadConfiguration(env);
     return config?.debug || null;
+  }
+  
+  /**
+   * Extract and set duration limits from configuration
+   * 
+   * @param config The loaded configuration
+   */
+  private setDurationLimitsFromConfig(config: WorkerConfiguration | null): void {
+    if (!config || !config.video?.defaults?.duration) {
+      logDebug('No duration settings found in configuration');
+      return;
+    }
+    
+    try {
+      // Import the transformation utils dynamically to avoid circular dependencies
+      import('../utils/transformationUtils').then(({ 
+        haveDurationLimits, 
+        storeTransformationLimit,
+        parseTimeString 
+      }) => {
+        // If limits are already set, don't overwrite them
+        if (haveDurationLimits()) {
+          logDebug('Duration limits already set, not overwriting from config');
+          return;
+        }
+        
+        // Get default duration from config
+        const durationStr = config.video.defaults.duration;
+        
+        // Parse the duration string to seconds
+        // Check for null before parsing
+        if (durationStr === null) {
+          logDebug('Null duration value in config');
+          return;
+        }
+        
+        const seconds = parseTimeString(durationStr);
+        
+        if (seconds === null) {
+          logDebug('Could not parse duration from config', { durationStr });
+          return;
+        }
+        
+        // Store the duration limits
+        logDebug('Setting duration limits from config', {
+          defaultDuration: durationStr,
+          parsedSeconds: seconds,
+          min: 0,
+          max: seconds
+        });
+        
+        storeTransformationLimit('duration', 'min', 0);
+        storeTransformationLimit('duration', 'max', seconds);
+        
+        // Check and log individual derivative durations
+        Object.entries(config.video.derivatives || {}).forEach(([name, derivative]) => {
+          if (derivative.duration) {
+            const derivativeSeconds = parseTimeString(derivative.duration);
+            logDebug(`Derivative ${name} duration`, {
+              duration: derivative.duration,
+              seconds: derivativeSeconds
+            });
+          }
+        });
+      }).catch(err => {
+        logDebug('Error importing transformationUtils', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      logDebug('Error setting duration limits from config', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 }
 

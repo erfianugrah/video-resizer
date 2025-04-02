@@ -1,7 +1,7 @@
 /**
  * Utility functions for working with URL paths
  */
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { TransformParams, TransformParamValue } from '../domain/strategies/TransformationStrategy';
 
 /**
@@ -36,7 +36,8 @@ export interface PathMatchResult {
  * @returns True if the path is a CDN-CGI media path
  */
 export function isCdnCgiMediaPath(path: string): boolean {
-  return path.startsWith(videoConfig.cdnCgi.basePath);
+  const configManager = VideoConfigurationManager.getInstance();
+  return path.startsWith(configManager.getCdnCgiConfig().basePath);
 }
 
 /**
@@ -264,21 +265,25 @@ export function buildCdnCgiMediaUrl(
   options: TransformParams,
   videoUrl: string
 ): string {
-  const { basePath } = videoConfig.cdnCgi;
+  const configManager = VideoConfigurationManager.getInstance();
+  const { basePath } = configManager.getCdnCgiConfig();
 
-  // Try to get the request context for logging
-  let logDebug: (message: string, data?: Record<string, unknown>) => void;
-  const console_debug = console.debug;
+  // Initialize with a default fallback logger
+  let logDebug: (message: string, data?: Record<string, unknown>) => void = (message, data) => {
+    console.debug(`[PathUtils] ${message}`, data || {});
+  };
   
+  // Try to use the proper logger if possible
   try {
-    // Define a fallback debug function to capture debug info during execution
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils] ${message}`, data || {});
-    };
+    // We'll directly use the debug utility from loggerUtils
+    import('./loggerUtils').then(({ debug }) => {
+      // Update the logDebug function with the proper logger
+      logDebug = (message, data) => debug('PathUtils', message, data);
+    }).catch(() => {
+      // If import fails, we'll keep using the fallback logger
+    });
   } catch (err) {
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils] ${message}`, data || {});
-    };
+    // Already using fallback logger, so no action needed
   }
 
   // Filter out null/undefined options
@@ -320,8 +325,11 @@ export function buildCdnCgiMediaUrl(
       quality: validOptions.quality,
       mode: validOptions.mode,
       fit: validOptions.fit,
-      compression: validOptions.compression
-    }
+      compression: validOptions.compression,
+      duration: validOptions.duration,
+      time: validOptions.time
+    },
+    hasDuration: 'duration' in validOptions
   });
   
   // Try to add a breadcrumb to the request context if it exists
@@ -342,6 +350,9 @@ export function buildCdnCgiMediaUrl(
           mode: validOptions.mode,
           fit: validOptions.fit,
           compression: validOptions.compression,
+          duration: validOptions.duration,
+          time: validOptions.time,
+          hasDuration: 'duration' in validOptions,
           // Include URL details (safe version)
           basePath,
           baseUrl,

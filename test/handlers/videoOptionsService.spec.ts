@@ -56,9 +56,9 @@ vi.mock('../../src/utils/imqueryUtils', () => {
 import * as imqueryUtils from '../../src/utils/imqueryUtils';
 import * as requestContext from '../../src/utils/requestContext';
 
-// Mock the videoConfig
-vi.mock('../../src/config/videoConfig', () => ({
-  videoConfig: {
+// Mock the VideoConfigurationManager
+vi.mock('../../src/config/VideoConfigurationManager', () => {
+  const mockConfig = {
     defaults: {
       mode: 'video',
       fit: 'contain'
@@ -76,8 +76,22 @@ vi.mock('../../src/config/videoConfig', () => ({
       preload: ['none', 'metadata', 'auto'],
       format: ['jpg', 'png', 'avif', 'webp']
     }
-  }
-}));
+  };
+  
+  return {
+    VideoConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        getConfig: vi.fn().mockReturnValue(mockConfig),
+        getDefaults: vi.fn().mockReturnValue(mockConfig.defaults),
+        getValidOptions: vi.fn((param) => mockConfig.validOptions[param] || []),
+        isValidOption: vi.fn((param, value) => {
+          const options = mockConfig.validOptions[param];
+          return options ? options.includes(value) : false;
+        })
+      })
+    }
+  };
+});
 
 describe('VideoOptionsService', () => {
   beforeEach(() => {

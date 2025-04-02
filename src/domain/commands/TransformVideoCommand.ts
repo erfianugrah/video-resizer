@@ -640,13 +640,37 @@ export class TransformVideoCommand {
         // Import createCfObjectParams dynamically to avoid circular dependencies
         const { createCfObjectParams } = await import('../../services/cacheManagementService');
         
+        // Determine expected content type for caching decisions
+        let expectedContentType: string | undefined;
+        
+        // Use format or mode to guess the expected content type
+        if (options.format) {
+          // Map format to content type
+          const formatContentTypeMap: Record<string, string> = {
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'gif': 'image/gif'
+          };
+          expectedContentType = formatContentTypeMap[options.format] || 'video/mp4';
+        } else if (options.mode === 'frame') {
+          // Frame mode produces images
+          expectedContentType = 'image/jpeg';
+        } else if (options.mode === 'spritesheet') {
+          // Spritesheet mode produces images
+          expectedContentType = 'image/jpeg';
+        } else {
+          // Default to video/mp4 for video mode
+          expectedContentType = 'video/mp4';
+        }
+        
         // Always use cf object when configured, even if cacheability is false
         // createCfObjectParams will handle cacheability internally
         fetchOptions.cf = createCfObjectParams(
           200, // Assuming OK status for initial fetch parameters
           cacheConfig,
           source,
-          derivative
+          derivative,
+          expectedContentType
         );
         
         // Log caching configuration

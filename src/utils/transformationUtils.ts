@@ -265,6 +265,22 @@ export function isDurationWithinLimits(durationStr: string | null): boolean {
 export function adjustDuration(durationStr: string | null, useSafeMax: boolean = false): string | null {
   if (!durationStr) return durationStr;
   
+  // Dynamically import logger to avoid circular dependencies
+  import('../utils/legacyLoggerAdapter').then(({ info, warn }) => {
+    info('TransformationUtils', 'Adjusting duration', {
+      durationStr,
+      haveLimits: haveDurationLimits(),
+      currentLimits: transformationLimits.duration,
+      configLoaded: true, // Flag to track if config is loaded properly
+      requestedDuration: durationStr
+    });
+  }).catch((err) => {
+    // Fallback to console for logging
+    console.info(`[TransformationUtils] Adjusting duration: ${durationStr}`, {
+      error: err instanceof Error ? err.message : String(err)
+    });
+  });
+  
   const seconds = parseTimeString(durationStr);
   if (seconds === null) {
     // Log invalid duration format
@@ -273,55 +289,90 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         durationStr,
         reason: 'Failed to parse time string'
       });
-    }).catch(() => {});
+    }).catch(() => {
+      console.warn(`[TransformationUtils] Invalid duration format: ${durationStr}`);
+    });
     return durationStr;
   }
   
-  // If we don't have learned limits yet, return the original
+  // If we don't have learned limits yet, set default of 30s max duration
   if (!haveDurationLimits()) {
-    // Log that we're skipping adjustment due to missing limits
-    import('../utils/legacyLoggerAdapter').then(({ debug }) => {
-      debug('TransformationUtils', 'Skipping duration adjustment', {
-        reason: 'No known limits available',
-        duration: durationStr,
+    import('../utils/legacyLoggerAdapter').then(({ info, warn }) => {
+      // This is an important warning - configuration might not be loading properly
+      warn('TransformationUtils', 'No duration limits found from configuration', {
+        defaultsApplied: true,
+        settingMin: 0,
+        settingMax: 30,
+        reason: 'Configuration might not be loading correctly',
+        requestedDuration: durationStr,
+        parsedSeconds: seconds
+      });
+      
+      info('TransformationUtils', 'Setting default duration limits', {
+        min: 0,
+        max: 30,
+        originalDuration: durationStr,
         seconds
       });
-    }).catch(() => {});
-    return durationStr;
+    }).catch(() => {
+      console.warn(`[TransformationUtils] No duration limits found - setting defaults of 0-30s`);
+    });
+    
+    storeTransformationLimit('duration', 'min', 0);
+    storeTransformationLimit('duration', 'max', 30);
   }
   
   const minDuration = transformationLimits.duration.min;
   const maxDuration = transformationLimits.duration.max;
   
+  import('../utils/legacyLoggerAdapter').then(({ info, debug }) => {
+    info('TransformationUtils', 'Checking duration against limits', {
+      requestedDuration: durationStr,
+      requestedSeconds: seconds,
+      minDuration,
+      maxDuration,
+      shouldAdjustMin: seconds < minDuration,
+      shouldAdjustMax: seconds > maxDuration,
+      transformationLimits: JSON.stringify(transformationLimits)
+    });
+  }).catch(() => {
+    console.info(`[TransformationUtils] Checking duration ${durationStr} (${seconds}s) against limits min=${minDuration}, max=${maxDuration}`);
+  });
+  
   // Adjust duration if outside limits
   if (seconds < minDuration) {
     const adjusted = formatTimeString(minDuration);
-    import('../utils/legacyLoggerAdapter').then(({ info }) => {
-      info('TransformationUtils', 'Adjusted duration to minimum limit', {
+    import('../utils/legacyLoggerAdapter').then(({ info, warn }) => {
+      warn('TransformationUtils', 'Duration below minimum limit', {
         original: durationStr,
         originalSeconds: seconds,
         adjusted,
         adjustedSeconds: minDuration,
-        reason: 'Below minimum limit'
+        minDuration,
+        maxDuration
       });
-    }).catch(() => {});
+    }).catch(() => {
+      console.warn(`[TransformationUtils] Duration ${durationStr} below minimum limit of ${minDuration}s, adjusting to ${adjusted}`);
+    });
     return adjusted;
   } else if (seconds > maxDuration) {
     // Use the integer value (floor) of the maximum value from the API response
     // This gives us a clean, stable value that's safely below the limit
     const safeMax = Math.floor(maxDuration);
     const adjusted = formatTimeString(safeMax);
-    import('../utils/legacyLoggerAdapter').then(({ info }) => {
-      info('TransformationUtils', 'Adjusted duration to maximum limit', {
+    import('../utils/legacyLoggerAdapter').then(({ info, warn }) => {
+      warn('TransformationUtils', 'Duration exceeds maximum limit', {
         original: durationStr,
         originalSeconds: seconds,
         adjusted,
         adjustedSeconds: safeMax,
         maxDuration,
-        reason: 'Above maximum limit',
+        isDefault: maxDuration === 30, // Check if using default or learned limit
         usedSafeMax: true
       });
-    }).catch(() => {});
+    }).catch(() => {
+      console.warn(`[TransformationUtils] Duration ${durationStr} exceeds maximum limit of ${maxDuration}s, adjusting to ${adjusted}`);
+    });
     return adjusted;
   }
   
@@ -331,9 +382,12 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
       duration: durationStr,
       seconds,
       minDuration,
-      maxDuration
+      maxDuration,
+      isDefault: maxDuration === 30 // Check if using default or learned limit
     });
-  }).catch(() => {});
+  }).catch(() => {
+    console.debug(`[TransformationUtils] No duration adjustment needed for ${durationStr}`);
+  });
   
   return durationStr;
 }

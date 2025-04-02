@@ -8,6 +8,31 @@ import {
   findClosestDerivativePercentage
 } from '../../src/utils/imqueryUtils';
 
+// Mock the VideoConfigurationManager
+vi.mock('../../src/config/VideoConfigurationManager', () => {
+  const mockConfig = {
+    derivatives: {
+      mobile: { width: 480, height: 270, quality: 'low' },
+      medium: { width: 854, height: 480, quality: 'medium' },
+      high: { width: 1280, height: 720, quality: 'high' }
+    },
+    responsive: {
+      breakpoints: {},
+      availableQualities: [240, 360, 480, 720, 1080, 1440, 2160]
+    }
+  };
+  
+  return {
+    VideoConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        getConfig: vi.fn().mockReturnValue(mockConfig),
+        getResponsiveBreakpoints: vi.fn().mockReturnValue({}),
+        getResponsiveConfig: vi.fn().mockReturnValue(mockConfig.responsive)
+      })
+    }
+  };
+});
+
 describe('IMQuery Utils', () => {
   describe('parseImQueryRef', () => {
     it('should parse imref parameters correctly', () => {

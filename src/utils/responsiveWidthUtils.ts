@@ -1,7 +1,7 @@
 /**
  * Utilities for responsive video sizing
  */
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { hasClientHints, getVideoSizeFromClientHints } from './clientHints';
 import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from './deviceUtils';
 import { getCurrentContext } from './legacyLoggerAdapter';
@@ -183,7 +183,8 @@ export function calculateConstrainedDimensions(
  * @returns The closest standard quality level
  */
 export function findClosestQualityLevel(targetHeight: number): number {
-  const availableQualities = videoConfig.responsive.availableQualities;
+  const configManager = VideoConfigurationManager.getInstance();
+  const availableQualities = configManager.getResponsiveConfig().availableQualities;
   const sortedQualities = [...availableQualities].sort((a, b) => a - b);
   
   // Find the first quality that meets or exceeds the target,

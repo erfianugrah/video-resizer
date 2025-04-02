@@ -2,7 +2,6 @@
  * Utilities for handling Akamai IMQuery parameters
  */
 import { debug, info } from './loggerUtils';
-import { videoConfig } from '../config/videoConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 
 /**
@@ -191,8 +190,11 @@ export function findClosestDerivativePercentage(
     return null;
   }
   
+  // Get the config manager instance to access configuration
+  const configManager = VideoConfigurationManager.getInstance();
+  
   // Get derivatives with dimensions defined
-  const derivatives = Object.entries(videoConfig.derivatives)
+  const derivatives = Object.entries(configManager.getConfig().derivatives)
     .filter(([_, config]) => 
       (typeof config.width === 'number' && config.width > 0) || 
       (typeof config.height === 'number' && config.height > 0)
@@ -200,7 +202,7 @@ export function findClosestDerivativePercentage(
   
   if (derivatives.length === 0) {
     debug('IMQuery', 'No derivatives with dimensions found', {
-      totalDerivatives: Object.keys(videoConfig.derivatives).length
+      totalDerivatives: Object.keys(configManager.getConfig().derivatives).length
     });
     return null;
   }

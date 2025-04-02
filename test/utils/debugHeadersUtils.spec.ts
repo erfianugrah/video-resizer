@@ -118,4 +118,71 @@ describe('debugHeadersUtils', () => {
       expect(result['accept']).toBe('video/mp4');
     });
   });
+  
+  describe('cache tag headers', () => {
+    it('should add cache tags to headers when provided', () => {
+      // Arrange
+      const testTags = [
+        'video-path-videos-test-mp4',
+        'video-segment-0-videos',
+        'video-segment-1-test',
+        'video-derivative-mobile',
+        'video-quality-low'
+      ];
+      
+      const diagnosticsInfo: DiagnosticsInfo = {
+        cacheability: true,
+        cacheTtl: 86400,
+        cacheTags: testTags,
+        cachingMethod: 'cf-object'
+      };
+      
+      // Create a response without Cache-Tag
+      const response = new Response('Test response');
+      
+      // Act
+      const result = addDebugHeaders(
+        response,
+        { isEnabled: true },
+        diagnosticsInfo
+      );
+      
+      // Assert
+      expect(result.headers.get('X-Cache-Tags')).toBe(testTags.join(','));
+      
+      // Check that Cache-Tag is exposed when debug is enabled
+      expect(result.headers.get('Cache-Tag')).toBe(testTags.join(','));
+    });
+    
+    it('should not override existing Cache-Tag header', () => {
+      // Arrange
+      const testTags = [
+        'video-path-videos-test-mp4',
+        'video-segment-0-videos',
+        'video-segment-1-test'
+      ];
+      
+      const diagnosticsInfo: DiagnosticsInfo = {
+        cacheTags: testTags
+      };
+      
+      // Create a response with existing Cache-Tag
+      const headers = new Headers();
+      headers.set('Cache-Tag', 'existing-tag');
+      const response = new Response('Test response', { headers });
+      
+      // Act
+      const result = addDebugHeaders(
+        response,
+        { isEnabled: true },
+        diagnosticsInfo
+      );
+      
+      // Assert
+      expect(result.headers.get('X-Cache-Tags')).toBe(testTags.join(','));
+      
+      // Check that original Cache-Tag is preserved
+      expect(result.headers.get('Cache-Tag')).toBe('existing-tag');
+    });
+  });
 });

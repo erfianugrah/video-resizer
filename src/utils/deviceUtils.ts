@@ -2,7 +2,7 @@
  * Device detection utilities for video requests
  */
 import { debug } from './loggerUtils';
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { getDeviceTypeFromUserAgent, getVideoSizeForDeviceType } from './userAgentUtils';
 import { VideoSize } from './clientHints';
 
@@ -24,8 +24,11 @@ export function getVideoSizeFromCfDeviceType(request: Request): VideoSize {
   const cfDeviceType = request.headers.get('CF-Device-Type');
   debug('DeviceUtils', 'CF-Device-Type detection', { cfDeviceType });
 
+  // Get configuration manager instance
+  const configManager = VideoConfigurationManager.getInstance();
+  
   // Get device width mappings from config if available, or use defaults
-  const deviceWidthMap = videoConfig.responsive.deviceWidths || {
+  const deviceWidthMap = configManager.getResponsiveConfig().deviceWidths || {
     mobile: 480,
     tablet: 720,
     desktop: 1080,
@@ -61,8 +64,11 @@ export function getVideoSizeFromUserAgent(request: Request): VideoSize {
   const url = new URL(request.url);
   const isAutoRequested = url.searchParams.get('quality') === 'auto';
 
+  // Get configuration manager instance
+  const configManager = VideoConfigurationManager.getInstance();
+  
   // Get available qualities from config
-  const availableQualities = videoConfig.responsive.availableQualities;
+  const availableQualities = configManager.getResponsiveConfig().availableQualities;
 
   // Fallback: use specific size based on user agent detection
   return getVideoSizeForDeviceType(deviceType, isAutoRequested, availableQualities);

@@ -84,6 +84,19 @@ export function addDebugHeaders(
     headers.set('X-Cache-TTL', diagnosticsInfo.cacheTtl.toString());
   }
   
+  // Add cache tags info
+  if (diagnosticsInfo.cacheTags && diagnosticsInfo.cacheTags.length > 0) {
+    // Add as X-Cache-Tags header for debugging
+    headers.set('X-Cache-Tags', diagnosticsInfo.cacheTags.join(','));
+    
+    // Also expose the actual Cache-Tag to the client when debug is enabled
+    // This should match what Cloudflare uses internally
+    const cacheTagValue = diagnosticsInfo.cacheTags.join(',');
+    if (!headers.has('Cache-Tag')) {
+      headers.set('Cache-Tag', cacheTagValue);
+    }
+  }
+  
   // Add caching method info
   if (diagnosticsInfo.cachingMethod) {
     headers.set('X-Cache-Method', diagnosticsInfo.cachingMethod);

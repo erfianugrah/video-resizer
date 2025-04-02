@@ -2,7 +2,7 @@
  * Service for determining video processing options from request parameters
  * Part of the service architecture improvements to use a service-oriented approach
  */
-import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/transformationUtils';
 import { getResponsiveVideoSize } from '../utils/responsiveWidthUtils';
@@ -14,7 +14,7 @@ import { debug, info, warn } from '../utils/loggerUtils';
 /**
  * Type for video derivatives
  */
-type VideoDerivativeKey = keyof typeof videoConfig.derivatives;
+type VideoDerivativeKey = string;
 
 /**
  * Extract and normalize video processing options from URL parameters
@@ -28,9 +28,12 @@ export function determineVideoOptions(
   params: URLSearchParams,
   _path: string
 ): VideoTransformOptions {
+  // Get the configuration manager instance
+  const configManager = VideoConfigurationManager.getInstance();
+  
   // Start with default options
   const options: VideoTransformOptions = { 
-    ...videoConfig.defaults,
+    ...configManager.getDefaults(),
     source: undefined,
     derivative: null
   };
@@ -79,8 +82,11 @@ export function determineVideoOptions(
       const matchedDerivative = findClosestDerivative(imwidth, imheight);
       
       if (matchedDerivative && isValidDerivative(matchedDerivative)) {
+        // Get the configuration manager instance
+        const configManager = VideoConfigurationManager.getInstance();
+        
         // Apply derivative configuration
-        Object.assign(options, videoConfig.derivatives[matchedDerivative]);
+        Object.assign(options, configManager.getConfig().derivatives[matchedDerivative]);
         options.derivative = matchedDerivative;
         options.source = 'imquery-derivative';
         
@@ -103,8 +109,8 @@ export function determineVideoOptions(
             requestedWidth: imwidth,
             requestedHeight: imheight,
             matchedDerivative: matchedDerivative,
-            derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
-            derivativeHeight: videoConfig.derivatives[matchedDerivative].height,
+            derivativeWidth: configManager.getConfig().derivatives[matchedDerivative].width,
+            derivativeHeight: configManager.getConfig().derivatives[matchedDerivative].height,
             mappingMethod
           };
         }
@@ -114,8 +120,8 @@ export function determineVideoOptions(
           imwidth,
           imheight,
           derivative: matchedDerivative,
-          derivativeWidth: videoConfig.derivatives[matchedDerivative].width,
-          derivativeHeight: videoConfig.derivatives[matchedDerivative].height,
+          derivativeWidth: configManager.getConfig().derivatives[matchedDerivative].width,
+          derivativeHeight: configManager.getConfig().derivatives[matchedDerivative].height,
           mappingMethod,
           source: 'imquery-derivative'
         });
@@ -198,12 +204,12 @@ export function determineVideoOptions(
   const derivative = params.get('derivative');
   if (derivative && isValidDerivative(derivative)) {
     // Apply derivative configuration
-    Object.assign(options, videoConfig.derivatives[derivative]);
+    Object.assign(options, configManager.getConfig().derivatives[derivative]);
     options.derivative = derivative;
     
     // Add breadcrumb for derivative selection
     if (requestContext) {
-      const derivativeConfig = videoConfig.derivatives[derivative];
+      const derivativeConfig = configManager.getConfig().derivatives[derivative];
       addBreadcrumb(requestContext, 'Client', 'Applied video derivative', {
         derivative,
         width: derivativeConfig.width,
@@ -243,7 +249,7 @@ export function determineVideoOptions(
     // Handle parameters based on their proper name
     switch (paramKey) {
       case 'mode':
-        if (videoConfig.validOptions.mode.includes(value)) {
+        if (configManager.getValidOptions('mode').includes(value)) {
           options.mode = value;
         }
         break;
@@ -265,7 +271,7 @@ export function determineVideoOptions(
           fitValue = translateAkamaiParamValue(key, value) as string;
         }
         
-        if (videoConfig.validOptions.fit.includes(fitValue)) {
+        if (configManager.getValidOptions('fit').includes(fitValue)) {
           options.fit = fitValue;
         }
         break;
@@ -283,7 +289,7 @@ export function determineVideoOptions(
         break;
         
       case 'format':
-        if (videoConfig.validOptions.format.includes(value)) {
+        if (configManager.getValidOptions('format').includes(value)) {
           options.format = value;
         }
         break;
@@ -300,13 +306,13 @@ export function determineVideoOptions(
         // Check for auto-quality flag
         if (value === 'auto') {
           autoQuality = true;
-        } else if (videoConfig.validOptions.quality.includes(value)) {
+        } else if (configManager.getValidOptions('quality').includes(value)) {
           options.quality = value;
         }
         break;
         
       case 'compression':
-        if (videoConfig.validOptions.compression.includes(value)) {
+        if (configManager.getValidOptions('compression').includes(value)) {
           options.compression = value;
         }
         break;
@@ -318,7 +324,7 @@ export function determineVideoOptions(
         break;
         
       case 'preload':
-        if (videoConfig.validOptions.preload.includes(value)) {
+        if (configManager.getValidOptions('preload').includes(value)) {
           options.preload = value;
         }
         break;
@@ -456,5 +462,6 @@ function parseIntOrNull(value: string | null): number | null {
  * @returns True if derivative exists in config
  */
 function isValidDerivative(derivative: string): derivative is VideoDerivativeKey {
-  return derivative in videoConfig.derivatives;
+  const configManager = VideoConfigurationManager.getInstance();
+  return derivative in configManager.getConfig().derivatives;
 }

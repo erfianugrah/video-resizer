@@ -238,6 +238,7 @@ export function getVideoPathPatterns() {
 
 // Initialize default configuration system with environment variables
 // This will be populated from the Worker environment at runtime
+// Use initializeConfiguration to create the initial configuration
 const config = initializeConfiguration();
 
 /**
@@ -270,18 +271,39 @@ export function updateAllConfigFromKV(kvConfig: any) {
         passthroughEnabled: kvConfig.video.passthrough?.enabled,
         hasDerivatives: !!kvConfig.video.derivatives,
         hasCdnCgi: !!kvConfig.video.cdnCgi,
-        hasPathPatterns: Array.isArray(kvConfig.video.pathPatterns) ? kvConfig.video.pathPatterns.length : 0
+        hasPathPatterns: Array.isArray(kvConfig.video.pathPatterns) ? kvConfig.video.pathPatterns.length : 0,
+        defaultDuration: kvConfig.video.defaults?.duration || 'not set'
       });
+      
+      // Log details about derivatives if available
+      if (kvConfig.video.derivatives) {
+        const derivativeNames = Object.keys(kvConfig.video.derivatives);
+        const durations = derivativeNames.reduce((acc, name) => {
+          const derivative = kvConfig.video.derivatives[name];
+          if (derivative && derivative.duration) {
+            acc[name] = derivative.duration;
+          }
+          return acc;
+        }, {} as Record<string, string>);
+        
+        logInfo('Derivative durations from KV', { 
+          derivatives: derivativeNames,
+          durations 
+        });
+      }
       
       const videoManager = VideoConfigurationManager.getInstance();
       videoManager.updateConfig(kvConfig.video);
       
-      // Verify the update was successful by checking if passthrough config was applied
+      // Verify the update was successful and check critical values
       const updatedConfig = videoManager.getConfig();
       logInfo('Updated video configuration from KV', {
         hasPassthrough: !!updatedConfig.passthrough,
         passthroughEnabled: updatedConfig.passthrough?.enabled,
-        whitelistedFormats: updatedConfig.passthrough?.whitelistedFormats?.length || 0
+        whitelistedFormats: updatedConfig.passthrough?.whitelistedFormats?.length || 0,
+        defaultDuration: updatedConfig.defaults.duration,
+        hasDerivatives: !!updatedConfig.derivatives,
+        derivativeCount: Object.keys(updatedConfig.derivatives || {}).length
       });
     } catch (err) {
       logError('Failed to update video configuration from KV', {
@@ -363,6 +385,64 @@ export default config;
 
 /**
  * Get KV cache configuration from environment
+ * @returns KV cache configuration
+ */
+/**
+ * ConfigProvider singleton for centralized configuration management
+ */
+export class ConfigProvider {
+  private static instance: ConfigurationSystem;
+
+  /**
+   * Get the singleton instance of the ConfigProvider
+   * @param env Optional environment variables
+   * @returns Configuration system instance
+   */
+  static getInstance(env?: EnvVariables): ConfigurationSystem {
+    if (!ConfigProvider.instance) {
+      ConfigProvider.instance = initializeConfiguration(env);
+      
+      // Log detailed configuration information
+      const videoConfig = VideoConfigurationManager.getInstance();
+      const defaults = videoConfig.getDefaults();
+      
+      logInfo('Video configuration initialized with defaults', {
+        width: defaults.width,
+        height: defaults.height,
+        mode: defaults.mode,
+        fit: defaults.fit,
+        audio: defaults.audio,
+        duration: defaults.duration, // Important - check if this has the 5m value
+        quality: defaults.quality,
+        compression: defaults.compression
+      });
+      
+      // Log derivatives information
+      try {
+        const derivatives = Object.keys(videoConfig.getConfig().derivatives || {});
+        logInfo('Available video derivatives', { 
+          count: derivatives.length,
+          names: derivatives 
+        });
+      } catch (err) {
+        logWarn('Error accessing derivatives', { 
+          error: err instanceof Error ? err.message : String(err) 
+        });
+      }
+      
+      logDebug('Created ConfigProvider singleton instance');
+    } else if (env) {
+      // Update with new environment variables if provided
+      applyEnvironmentVariables(env);
+      logDebug('Updated ConfigProvider with new environment variables');
+    }
+
+    return ConfigProvider.instance;
+  }
+}
+
+/**
+ * Get the cache configuration from environment - cached for performance
  * @returns KV cache configuration
  */
 export function getCacheConfig(envVars?: EnvVariables) {

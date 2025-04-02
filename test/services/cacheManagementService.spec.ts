@@ -121,5 +121,80 @@ describe('cacheManagementService', () => {
       // Assert
       expect(cfParams.cacheTags).toBeUndefined();
     });
+    
+    it('should not cache error status codes (4xx)', () => {
+      // Arrange
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      
+      // Act with 404 status
+      const cfParams = createCfObjectParams(404, cacheable);
+      
+      // Assert
+      expect(cfParams.cacheEverything).toBe(false);
+      expect(cfParams.cacheTtl).toBe(0);
+    });
+    
+    it('should not cache error status codes (5xx)', () => {
+      // Arrange
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      
+      // Act with 500 status
+      const cfParams = createCfObjectParams(500, cacheable);
+      
+      // Assert
+      expect(cfParams.cacheEverything).toBe(false);
+      expect(cfParams.cacheTtl).toBe(0);
+    });
+    
+    it('should not cache non-video/image content types', () => {
+      // Arrange
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      
+      // Act with non-cacheable content type
+      const cfParams = createCfObjectParams(200, cacheable, 'video.mp4', 'mobile', 'text/html');
+      
+      // Assert
+      expect(cfParams.cacheEverything).toBe(false);
+      expect(cfParams.cacheTtl).toBe(0);
+    });
+    
+    it('should cache video content types', () => {
+      // Arrange
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      
+      // Act with video content type
+      const cfParams = createCfObjectParams(200, cacheable, 'video.mp4', 'mobile', 'video/mp4');
+      
+      // Assert
+      expect(cfParams.cacheEverything).toBe(true);
+      expect(cfParams.cacheTtlByStatus).toBeDefined();
+    });
+    
+    it('should cache image content types', () => {
+      // Arrange
+      const cacheable = {
+        cacheability: true,
+        ttl: { ok: 3600, redirects: 600, clientError: 60, serverError: 10 }
+      };
+      
+      // Act with image content type
+      const cfParams = createCfObjectParams(200, cacheable, 'thumbnail.jpg', 'mobile', 'image/jpeg');
+      
+      // Assert
+      expect(cfParams.cacheEverything).toBe(true);
+      expect(cfParams.cacheTtlByStatus).toBeDefined();
+    });
   });
 });

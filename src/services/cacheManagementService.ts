@@ -142,6 +142,14 @@ export function applyCacheHeaders(
       
       // Add breadcrumb for cache tags
       if (requestContext) {
+        // Store cache tags in the request context for diagnostics
+        if (!requestContext.diagnostics) {
+          requestContext.diagnostics = {};
+        }
+        
+        // Add cache tags to diagnostics info
+        requestContext.diagnostics.cacheTags = tags;
+        
         addBreadcrumb(requestContext, 'Cache', 'Generated cache tags', {
           tagCount: tags.length,
           source,
@@ -155,8 +163,16 @@ export function applyCacheHeaders(
       const fallbackTag = `video-resizer,source:${source}${derivative ? `,derivative:${derivative}` : ''}`;
       newHeaders.set('Cache-Tag', fallbackTag);
       
-      // Add breadcrumb for fallback cache tags
+      // Add fallback tag to diagnostics
       if (requestContext) {
+        // Store fallback cache tag in the request context for diagnostics
+        if (!requestContext.diagnostics) {
+          requestContext.diagnostics = {};
+        }
+        
+        // Add fallback cache tag as an array to diagnostics
+        requestContext.diagnostics.cacheTags = [fallbackTag];
+        
         addBreadcrumb(requestContext, 'Cache', 'Using fallback cache tags', {
           source,
           derivative: derivative || undefined,
@@ -190,6 +206,55 @@ export async function cacheResponse(
       return;
     }
     
+    // Check the content type
+    const contentType = response.headers.get('content-type') || '';
+    const isError = response.status >= 400;
+    
+    // Comprehensive list of video MIME types
+    const videoMimeTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo', // AVI
+      'video/quicktime', // MOV
+      'video/x-matroska', // MKV
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL', // HLS
+      'application/dash+xml'   // DASH
+    ];
+    
+    // Comprehensive list of image MIME types
+    const imageMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/avif',
+      'image/tiff',
+      'image/svg+xml',
+      'image/bmp'
+    ];
+    
+    // Check if content type is cacheable
+    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isImageResponse = imageMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isCacheableContent = isVideoResponse || isImageResponse;
+    
+    // Skip caching for 4xx, 5xx responses or non-video/image content
+    if (isError || !isCacheableContent) {
+      logDebug('Skipping cache.put for non-cacheable content', {
+        url: request.url,
+        status: response.status,
+        contentType,
+        isError,
+        isCacheableContent
+      });
+      return;
+    }
+    
     // Get the cache configuration manager
     const cacheConfig = CacheConfigurationManager.getInstance();
     const cacheMethod = cacheConfig.getConfig().method;
@@ -201,6 +266,7 @@ export async function cacheResponse(
         logDebug('Using cf object for caching, no explicit cache.put needed', {
           url: request.url,
           status: response.status,
+          contentType,
           cacheControl: response.headers.get('Cache-Control')
         });
       }
@@ -421,13 +487,15 @@ export async function getCachedResponse(request: Request): Promise<Response | nu
  * @param cacheConfig - Cache configuration
  * @param source - Content source for tagging
  * @param derivative - Optional derivative name for tagging
+ * @param contentType - Optional content type for content-based caching decisions
  * @returns Object with cf parameters for fetch
  */
 export function createCfObjectParams(
   status: number,
   cacheConfig?: CacheConfig | null,
   source?: string,
-  derivative?: string
+  derivative?: string,
+  contentType?: string
 ): Record<string, unknown> {
   // Default cf object - always include baseline parameters
   const cfObject: Record<string, unknown> = {};
@@ -444,6 +512,71 @@ export function createCfObjectParams(
     });
     
     return cfObject;
+  }
+  
+  // Skip caching for error status codes
+  const isError = status >= 400;
+  if (isError) {
+    cfObject.cacheEverything = false;
+    cfObject.cacheTtl = 0;
+    
+    logDebug('Created cf object with no caching (error status)', {
+      cacheEverything: false,
+      cacheTtl: 0,
+      status
+    });
+    
+    return cfObject;
+  }
+  
+  // Check content type restrictions if contentType is provided
+  if (contentType) {
+    // Comprehensive list of video MIME types
+    const videoMimeTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo', // AVI
+      'video/quicktime', // MOV
+      'video/x-matroska', // MKV
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL', // HLS
+      'application/dash+xml'   // DASH
+    ];
+    
+    // Comprehensive list of image MIME types
+    const imageMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/avif',
+      'image/tiff',
+      'image/svg+xml',
+      'image/bmp'
+    ];
+    
+    // Check if content type is cacheable
+    const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isImageResponse = imageMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+    const isCacheableContent = isVideoResponse || isImageResponse;
+    
+    // Skip caching for non-cacheable content
+    if (!isCacheableContent) {
+      cfObject.cacheEverything = false;
+      cfObject.cacheTtl = 0;
+      
+      logDebug('Created cf object with no caching (non-cacheable content type)', {
+        cacheEverything: false,
+        cacheTtl: 0,
+        contentType
+      });
+      
+      return cfObject;
+    }
   }
   
   // First, decide whether we should cache at all
@@ -510,6 +643,18 @@ export function createCfObjectParams(
       );
       
       cfObject.cacheTags = validTags;
+      
+      // Store cache tags in the diagnostics info
+      const requestContext = getCurrentContext();
+      if (requestContext) {
+        // Initialize diagnostics object if it doesn't exist
+        if (!requestContext.diagnostics) {
+          requestContext.diagnostics = {};
+        }
+        
+        // Add cache tags to diagnostics info
+        requestContext.diagnostics.cacheTags = validTags;
+      }
     }
   }
   
