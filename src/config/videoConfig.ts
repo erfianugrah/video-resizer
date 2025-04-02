@@ -12,17 +12,17 @@ export const videoConfig = {
     desktop: {
       width: 1920,
       height: 1080,
-      quality: "high",
+      quality: 'high',
     },
     tablet: {
       width: 1280, 
       height: 720,
-      quality: "medium",
+      quality: 'medium',
     },
     mobile: {
       width: 854,
       height: 640,
-      quality: "low",
+      quality: 'low',
     },
   },
 
@@ -30,8 +30,8 @@ export const videoConfig = {
   defaults: {
     width: null,
     height: null,
-    mode: "video",
-    fit: "contain",
+    mode: 'video',
+    fit: 'contain',
     audio: true,
     format: null,
     time: null,
@@ -46,13 +46,13 @@ export const videoConfig = {
 
   // Default valid options
   validOptions: {
-    mode: ["video", "frame", "spritesheet"],
-    fit: ["contain", "scale-down", "cover"],
-    format: ["jpg", "png"],
+    mode: ['video', 'frame', 'spritesheet'],
+    fit: ['contain', 'scale-down', 'cover'],
+    format: ['jpg', 'png'],
     audio: [true, false],
-    quality: ["low", "medium", "high", "auto"],
-    compression: ["low", "medium", "high", "auto"],
-    preload: ["none", "metadata", "auto"],
+    quality: ['low', 'medium', 'high', 'auto'],
+    compression: ['low', 'medium', 'high', 'auto'],
+    preload: ['none', 'metadata', 'auto'],
     loop: [true, false],
     autoplay: [true, false],
     muted: [true, false],
@@ -97,25 +97,25 @@ export const videoConfig = {
 
   // Basic parameter mapping
   paramMapping: {
-    width: "width",
-    height: "height",
-    mode: "mode",
-    fit: "fit",
-    audio: "audio",
-    format: "format",
-    time: "time",
-    duration: "duration",
-    quality: "quality",
-    compression: "compression",
-    loop: "loop",
-    preload: "preload",
-    autoplay: "autoplay",
-    muted: "muted",
+    width: 'width',
+    height: 'height',
+    mode: 'mode',
+    fit: 'fit',
+    audio: 'audio',
+    format: 'format',
+    time: 'time',
+    duration: 'duration',
+    quality: 'quality',
+    compression: 'compression',
+    loop: 'loop',
+    preload: 'preload',
+    autoplay: 'autoplay',
+    muted: 'muted',
   },
 
   // CDN-CGI path configuration
   cdnCgi: {
-    basePath: "/cdn-cgi/media",
+    basePath: '/cdn-cgi/media',
   },
 
   // Default passthrough settings
@@ -129,21 +129,21 @@ export const videoConfig = {
 
   // Default caching configuration - overridden at runtime
   caching: {
-    method: "cacheApi",
+    method: 'cacheApi',
     debug: false,
     fallback: {
       enabled: true,
       badRequestOnly: true,
-      preserveHeaders: ["Content-Type", "Cache-Control", "Etag"],
+      preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag'],
     },
   },
 
   // Default cache profiles - overridden at runtime
   cache: {
     default: {
-      regex: ".*",
+      regex: '.*',
       cacheability: true,
-      videoCompression: "auto",
+      videoCompression: 'auto',
       useTtlByStatus: true,
       ttl: {
         ok: 86400,

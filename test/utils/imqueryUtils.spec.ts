@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { 
   parseImQueryRef, 
   convertImQueryToClientHints,
@@ -180,14 +180,14 @@ describe('IMQuery Utils', () => {
               small: { max: 640, derivative: 'mobile' },
               medium: { min: 641, max: 1024, derivative: 'tablet' },
               large: { min: 1025, max: 1440, derivative: 'tablet' },
-              "extra-large": { min: 1441, derivative: 'desktop' }
+              'extra-large': { min: 1441, derivative: 'desktop' }
             }
           }),
           getResponsiveBreakpoints: vi.fn().mockReturnValue({
             small: { max: 640, derivative: 'mobile' },
             medium: { min: 641, max: 1024, derivative: 'tablet' },
             large: { min: 1025, max: 1440, derivative: 'tablet' },
-            "extra-large": { min: 1441, derivative: 'desktop' }
+            'extra-large': { min: 1441, derivative: 'desktop' }
           })
         })
       }

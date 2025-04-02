@@ -461,35 +461,96 @@ export function debug(
    - Better IDE support with proper typing
    - All configuration is now properly typed with TypeScript and validated with Zod
 
+## 7. Recent Improvements (April 2025)
+
+We've made several significant improvements to the codebase:
+
+### Unified Debug Headers System
+
+The debug headers system has been completely refactored and consolidated:
+
+1. **Centralized Debug Utilities**:
+   - Consolidated all debug header functionality in `src/utils/debugHeadersUtils.ts`
+   - Added proper logging throughout the utilities for consistent tracing
+   - Combined functionality from multiple files (debugHeadersUtils.ts, debugService.ts)
+   - Added helper functions for common tasks like chunking large JSON data into headers
+
+2. **Backward Compatibility**:
+   - Maintained the `src/services/debugService.ts` as a compatibility layer
+   - Used re-exports with aliasing to avoid breaking existing imports
+   - Added deprecation notices to encourage direct use of the centralized utilities
+
+3. **Enhanced Functionality**:
+   - Added performance metrics tracking from the ResponseBuilder
+   - Added breadcrumb header capabilities from the ResponseBuilder
+   - Improved error handling and logging
+   - Standardized the debugging experience across all code paths
+
+4. **Improved Helper Functions**:
+   - `addJsonChunkedHeader` for splitting large JSON objects into multiple headers
+   - `addBreadcrumbHeaders` for consistent breadcrumb header formatting
+   - Consolidated logging functions with proper fallbacks
+
+### Cache System Enhancements
+
+The caching implementation has been enhanced to be more selective:
+
+1. **Content-Type Filtering**:
+   - Added explicit filtering based on content types
+   - Only cache video and image MIME types
+   - Skip caching for other content types (HTML, JSON, etc.)
+
+2. **Status Code Filtering**:
+   - Improved filtering by HTTP status code
+   - Avoid caching 4xx and 5xx error responses
+   - Use appropriate TTLs based on status code ranges
+
+3. **Cloudflare Cache API Integration**:
+   - Enhanced integration with Cloudflare's Cache API
+   - Made Cache API logic consistent with KV caching rules
+   - Consolidated caching logic and conditions
+
+4. **Cache Tags Integration**:
+   - Improved cache tag generation
+   - Added debug header support for cache tags
+   - Made cache tags available in debug responses
+
+### Configuration Consistency
+
+1. **VideoConfigurationManager Usage**:
+   - Updated files to use the VideoConfigurationManager consistently
+   - Removed direct imports of videoConfig.ts
+   - Improved circular dependency handling
+
+2. **Proper Logging Implementation**:
+   - Enhanced logging throughout the application
+   - Used proper dynamic imports to avoid circular dependencies
+   - Eliminated console.log calls in favor of structured logging
+   - Added fallback mechanisms for logging when imports fail
+
 ## Next Steps
 
 1. **Further Strategy Refinements**:
-   - Add specialized cache strategies
-   - Implement content negotiation strategies
-   - Replace direct usage of videoConfig with ConfigurationManager
+   - Implement additional specialized transformation strategies
+   - Add more sophisticated content negotiation
+   - Continue refining cache strategies
 
 2. **Testing Improvements**:
-   - Add specific tests for each strategy implementation
-   - Update parametrized tests to cover all strategy types
-   - Add more comprehensive error handling tests
-   - Add more unit tests specific to configuration integration
-   - Add tests for edge cases in configuration loading
+   - Expand test coverage for the consolidated debug systems
+   - Add edge case testing for content type filtering in cache
+   - Update mocks to match newer architectural patterns
 
-3. **Performance Improvements**:
-   - Optimize imports to reduce cold start times
-   - Improve cache handling for better performance
+3. **Performance Optimizations**:
+   - Continue reducing cold start times
+   - Optimize header generation
+   - Improve cache hit rates with smarter key generation
    
 4. **Documentation Updates**:
-   - Add JSDoc comments to all public interfaces
-   - Create examples of common configuration patterns
-   - Document the schema validation approach
+   - Document the consolidated debug utility approach
+   - Create examples of debug header usage
+   - Update cache behavior documentation
 
-5. **Logging System Refinements**:
-   - Add more granular component filtering
-   - Implement log rotation for development environment
-   - Add correlation IDs for cross-service tracing
-   - Create dashboard visualizations for log analysis
-   - Standardize all code to use configuration managers consistently
-   - Remove any remaining direct access to environment variables
-   - Add monitoring for configuration issues
-   - Improve error reporting when configuration fails to load
+5. **System Integration**:
+   - Improve integration with monitoring systems
+   - Create better observability tools for cache performance
+   - Enhance debugging capabilities for production environments

@@ -315,7 +315,7 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         seconds
       });
     }).catch(() => {
-      console.warn(`[TransformationUtils] No duration limits found - setting defaults of 0-30s`);
+      console.warn('[TransformationUtils] No duration limits found - setting defaults of 0-30s');
     });
     
     storeTransformationLimit('duration', 'min', 0);

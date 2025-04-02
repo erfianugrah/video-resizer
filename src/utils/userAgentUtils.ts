@@ -164,7 +164,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(pattern);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex pattern for HEVC`, { pattern });
+            logError(COMPONENT_NAME, 'Invalid regex pattern for HEVC', { pattern });
             return false;
           }
         });
@@ -175,7 +175,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(exclusion);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex exclusion for HEVC`, { exclusion });
+            logError(COMPONENT_NAME, 'Invalid regex exclusion for HEVC', { exclusion });
             return false;
           }
         }) || false;
@@ -193,7 +193,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(pattern);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex pattern for AV1`, { pattern });
+            logError(COMPONENT_NAME, 'Invalid regex pattern for AV1', { pattern });
             return false;
           }
         });
@@ -204,7 +204,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(exclusion);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex exclusion for AV1`, { exclusion });
+            logError(COMPONENT_NAME, 'Invalid regex exclusion for AV1', { exclusion });
             return false;
           }
         }) || false;
@@ -222,7 +222,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(pattern);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex pattern for VP9`, { pattern });
+            logError(COMPONENT_NAME, 'Invalid regex pattern for VP9', { pattern });
             return false;
           }
         });
@@ -233,7 +233,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(exclusion);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex exclusion for VP9`, { exclusion });
+            logError(COMPONENT_NAME, 'Invalid regex exclusion for VP9', { exclusion });
             return false;
           }
         }) || false;
@@ -251,7 +251,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(pattern);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex pattern for WebM`, { pattern });
+            logError(COMPONENT_NAME, 'Invalid regex pattern for WebM', { pattern });
             return false;
           }
         });
@@ -262,7 +262,7 @@ export function detectBrowserVideoCapabilities(userAgent = ''): {
             const regex = new RegExp(exclusion);
             return regex.test(userAgent);
           } catch (err) {
-            logError(COMPONENT_NAME, `Invalid regex exclusion for WebM`, { exclusion });
+            logError(COMPONENT_NAME, 'Invalid regex exclusion for WebM', { exclusion });
             return false;
           }
         }) || false;

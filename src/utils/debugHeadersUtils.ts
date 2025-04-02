@@ -1,18 +1,13 @@
 /**
- * Utilities for adding debug information to response headers
+ * Unified debug header utilities for video-resizer
+ * 
+ * This file centralizes all debug functionality for adding headers, extracting diagnostics,
+ * and handling debug reports. This eliminates duplication between debugHeadersUtils.ts, 
+ * debugService.ts, and responseBuilder.ts.
  */
-import { TransformParams } from '../domain/strategies/TransformationStrategy';
-import { VideoSize } from './clientHints';
-
-/**
- * Interface for debug information
- */
-export interface DebugInfo {
-  isEnabled: boolean;
-  isVerbose?: boolean;
-  includeHeaders?: boolean;
-  includePerformance?: boolean;
-}
+import { getCurrentContext } from './legacyLoggerAdapter';
+import { createLogger, debug as pinoDebug, error as pinoError } from './pinoLogger';
+import { addBreadcrumb, getPerformanceMetrics } from './requestContext';
 
 // Import the shared DiagnosticsInfo from the types directory
 import { DiagnosticsInfo as SharedDiagnosticsInfo } from '../types/diagnostics';
@@ -23,7 +18,68 @@ import { DiagnosticsInfo as SharedDiagnosticsInfo } from '../types/diagnostics';
 export type DiagnosticsInfo = SharedDiagnosticsInfo;
 
 /**
+ * Interface for debug configuration
+ */
+export interface DebugInfo {
+  isEnabled: boolean;
+  isVerbose?: boolean;
+  includeHeaders?: boolean;
+  includePerformance?: boolean;
+}
+
+/**
+ * Helper functions for consistent logging throughout this file
+ * These helpers handle context availability and fallback gracefully
+ */
+
+/**
+ * Log a debug message with proper context handling
+ */
+function logDebug(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoDebug(requestContext, logger, 'DebugHeadersUtils', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.debug(`DebugHeadersUtils: ${message}`, data || {});
+  }
+}
+
+// Warning logging temporarily commented out as it's not currently used
+// /**
+//  * Log a warning message with proper context handling
+//  */
+// function logWarn(message: string, data?: Record<string, unknown>): void {
+//   const requestContext = getCurrentContext();
+//   if (requestContext) {
+//     const logger = createLogger(requestContext);
+//     pinoWarn(requestContext, logger, 'DebugHeadersUtils', message, data);
+//   } else {
+//     // Fall back to console as a last resort
+//     console.warn(`DebugHeadersUtils: ${message}`, data || {});
+//   }
+// }
+
+/**
+ * Log an error message with proper context handling
+ */
+function logError(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    pinoError(requestContext, logger, 'DebugHeadersUtils', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.error(`DebugHeadersUtils: ${message}`, data || {});
+  }
+}
+
+/**
  * Add debug headers to a Response
+ * This is the primary function for adding debug headers to a response,
+ * centralizing logic that was spread across multiple files.
+ * 
  * @param response The response to enhance
  * @param debugInfo Debug configuration
  * @param diagnosticsInfo Diagnostics information
@@ -39,6 +95,31 @@ export function addDebugHeaders(
     return response;
   }
 
+  // Log debug header addition
+  logDebug('Adding debug headers', {
+    isVerbose: debugInfo.isVerbose,
+    includeHeaders: debugInfo.includeHeaders,
+    includePerformance: debugInfo.includePerformance
+  });
+
+  // Get the request context for performance metrics if available
+  const requestContext = getCurrentContext();
+  let performanceMetrics;
+  
+  if (requestContext && diagnosticsInfo) {
+    // Get performance metrics synchronously to avoid timing issues
+    try {
+      performanceMetrics = getPerformanceMetrics(requestContext);
+      
+      // Add performance metrics to diagnostics
+      if (performanceMetrics) {
+        diagnosticsInfo.performanceMetrics = performanceMetrics;
+      }
+    } catch (err) {
+      logError('Error getting performance metrics', { error: String(err) });
+    }
+  }
+
   // Create a new response with the same body but new headers
   const headers = new Headers(response.headers);
   
@@ -46,9 +127,45 @@ export function addDebugHeaders(
   headers.set('X-Video-Resizer-Debug', 'true');
   headers.set('X-Video-Resizer-Version', '1.0.0');
   
+  // Add request ID if available from context
+  if (requestContext?.requestId) {
+    headers.set('X-Request-ID', requestContext.requestId);
+  }
+  
   // Add processing time if available
   if (diagnosticsInfo.processingTimeMs !== undefined) {
     headers.set('X-Processing-Time-Ms', diagnosticsInfo.processingTimeMs.toString());
+  } else if (requestContext) {
+    // If no explicit processing time is provided, calculate it from the context
+    const endTime = performance.now();
+    const processingTimeMs = Math.round(endTime - requestContext.startTime);
+    headers.set('X-Processing-Time-Ms', processingTimeMs.toString());
+    diagnosticsInfo.processingTimeMs = processingTimeMs;
+  }
+  
+  // Add breadcrumbs count if available
+  if (requestContext?.breadcrumbs) {
+    headers.set('X-Breadcrumbs-Count', requestContext.breadcrumbs.length.toString());
+  }
+  
+  // Add performance metrics if available and requested
+  if ((debugInfo.includePerformance || debugInfo.isVerbose) && performanceMetrics) {
+    headers.set('X-Total-Duration-Ms', performanceMetrics.totalElapsedMs.toString());
+    
+    // Add component timing as JSON if requested
+    if (performanceMetrics.componentTiming) {
+      headers.set('X-Component-Timing', JSON.stringify(performanceMetrics.componentTiming));
+      
+      // Add top components individually
+      const topComponents = Object.entries(performanceMetrics.componentTiming)
+        .sort(([, timeA], [, timeB]) => Number(timeB) - Number(timeA))
+        .slice(0, 3);
+      
+      topComponents.forEach(([component, time], index) => {
+        headers.set(`X-Component-${index+1}-Time`, 
+          `${component}=${(Number(time)).toFixed(2)}ms`);
+      });
+    }
   }
   
   // Add transformation source
@@ -123,9 +240,10 @@ export function addDebugHeaders(
         'width' in diagnosticsInfo.responsiveSize &&
         'height' in diagnosticsInfo.responsiveSize &&
         'source' in diagnosticsInfo.responsiveSize) {
-      const width = (diagnosticsInfo.responsiveSize as any).width;
-      const height = (diagnosticsInfo.responsiveSize as any).height;
-      const source = (diagnosticsInfo.responsiveSize as any).source;
+      const responsiveSize = diagnosticsInfo.responsiveSize as Record<string, unknown>;
+      const width = responsiveSize.width;
+      const height = responsiveSize.height;
+      const source = responsiveSize.source;
       headers.set('X-Responsive-Width', String(width));
       headers.set('X-Responsive-Height', String(height));
       headers.set('X-Responsive-Method', String(source));
@@ -158,22 +276,16 @@ export function addDebugHeaders(
     if (diagnosticsInfo.warnings && diagnosticsInfo.warnings.length > 0) {
       headers.set('X-Debug-Warnings', JSON.stringify(diagnosticsInfo.warnings));
     }
+    
+    // Include breadcrumbs data in verbose mode
+    if (requestContext?.breadcrumbs) {
+      addBreadcrumbHeaders(headers, requestContext.breadcrumbs);
+    }
   }
   
   // Include request headers if configured
   if (debugInfo.includeHeaders && diagnosticsInfo.requestHeaders) {
-    const requestHeadersJson = JSON.stringify(diagnosticsInfo.requestHeaders);
-    // Split long header values if needed (to avoid HTTP header size limits)
-    if (requestHeadersJson.length > 500) {
-      const chunks = Math.ceil(requestHeadersJson.length / 500);
-      for (let i = 0; i < chunks; i++) {
-        const chunk = requestHeadersJson.substr(i * 500, 500);
-        headers.set(`X-Request-Headers-${i+1}`, chunk);
-      }
-      headers.set('X-Request-Headers-Count', chunks.toString());
-    } else {
-      headers.set('X-Request-Headers', requestHeadersJson);
-    }
+    addJsonChunkedHeader(headers, 'X-Request-Headers', diagnosticsInfo.requestHeaders);
   }
   
   // Return a new response with the updated headers
@@ -182,6 +294,45 @@ export function addDebugHeaders(
     statusText: response.statusText,
     headers
   });
+}
+
+/**
+ * Helper function to add breadcrumb information as headers
+ * @param headers Headers object to modify
+ * @param breadcrumbs Breadcrumbs array
+ */
+function addBreadcrumbHeaders(headers: Headers, breadcrumbs: unknown[]): void {
+  // For large breadcrumb collections, we need to chunk the data
+  addJsonChunkedHeader(headers, 'X-Breadcrumbs', breadcrumbs);
+}
+
+/**
+ * Helper function to add a large JSON object as chunked headers
+ * @param headers Headers object to modify
+ * @param headerPrefix Prefix for the header name
+ * @param data Data to stringify and chunk
+ * @param chunkSize Maximum chunk size (default: 500)
+ */
+function addJsonChunkedHeader(
+  headers: Headers, 
+  headerPrefix: string, 
+  data: Record<string, unknown> | unknown[], 
+  chunkSize = 500
+): void {
+  const json = JSON.stringify(data);
+  
+  if (json.length <= chunkSize) {
+    // Small enough to include directly
+    headers.set(headerPrefix, json);
+  } else {
+    // Split into chunks
+    const chunks = Math.ceil(json.length / chunkSize);
+    for (let i = 0; i < chunks; i++) {
+      const chunk = json.substring(i * chunkSize, (i + 1) * chunkSize);
+      headers.set(`${headerPrefix}-${i + 1}`, chunk);
+    }
+    headers.set(`${headerPrefix}-Count`, chunks.toString());
+  }
 }
 
 /**
@@ -199,6 +350,107 @@ export function extractRequestHeaders(request: Request): Record<string, string> 
 
 /**
  * Create a debug report HTML page with detailed diagnostic information
+ * This is moved from debugService.ts to centralize all debug-related functionality
+ * 
  * @param diagnosticsInfo The diagnostics information
- * @returns HTML string with a formatted debug report
+ * @param env Environment with ASSETS binding (optional)
+ * @param isError Whether this is an error report (optional)
+ * @returns Response with the debug report
  */
+export async function createDebugReport(
+  diagnosticsInfo: DiagnosticsInfo, 
+  env?: { ASSETS?: { fetch: (request: Request) => Promise<Response> }},
+  isError: boolean = false
+): Promise<Response> {
+  // Add breadcrumb if we have a request context
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Response', 'Generating debug report', {
+      isError,
+      debugEnabled: true,
+      pageType: isError ? 'error' : 'standard',
+      hasDiagnostics: !!diagnosticsInfo,
+      diagnosticsSize: Object.keys(diagnosticsInfo || {}).length
+    });
+  }
+
+  // Check if we have the debug UI available via ASSETS binding
+  if (env?.ASSETS) {
+    // Create a new URL for the debug.html page
+    const debugUrl = new URL(diagnosticsInfo.originalUrl || 'https://example.com');
+    debugUrl.pathname = '/debug.html';
+    
+    // Fetch the debug HTML page
+    try {
+      const debugResponse = await env.ASSETS.fetch(
+        new Request(debugUrl.toString(), {
+          method: 'GET',
+          headers: new Headers({ 'Accept': 'text/html' })
+        })
+      );
+      
+      if (debugResponse.ok) {
+        const html = await debugResponse.text();
+        
+        // Safely serialize the diagnostics info
+        const safeJsonString = JSON.stringify(diagnosticsInfo)
+          .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
+          .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
+          .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
+        
+        // Insert diagnostic data into the HTML
+        let htmlWithData;
+        
+        // Try to insert in head (preferred) with fallback to body tag
+        if (html.includes('<head>')) {
+          htmlWithData = html.replace(
+            '<head>',
+            `<head>
+            <script type="text/javascript">
+              // Pre-load diagnostic data
+              window.DIAGNOSTICS_DATA = ${safeJsonString};
+              console.log('Debug data loaded from worker:', typeof window.DIAGNOSTICS_DATA);
+            </script>`
+          );
+        } else {
+          htmlWithData = html.replace(
+            '<body',
+            `<body data-debug="true"><script type="text/javascript">
+              // Pre-load diagnostic data
+              window.DIAGNOSTICS_DATA = ${safeJsonString};
+              console.log('Debug data loaded from worker:', typeof window.DIAGNOSTICS_DATA);
+            </script>`
+          );
+        }
+        
+        return new Response(htmlWithData, {
+          status: isError ? 500 : 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        });
+      }
+    } catch (error) {
+      logError('Error loading debug UI from assets', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
+    }
+  }
+  
+  // Fallback to a simple JSON response if assets aren't available
+  return new Response(
+    JSON.stringify({
+      message: 'Debug UI could not be loaded. Raw diagnostic data is provided below.',
+      diagnostics: diagnosticsInfo
+    }, null, 2),
+    {
+      status: isError ? 500 : 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+      }
+    }
+  );
+}
