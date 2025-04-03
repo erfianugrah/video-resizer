@@ -4,9 +4,11 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 > **⚠️ Important Note on Parameter Support:** While this documentation lists many parameters, only those officially supported by Cloudflare (`mode`, `width`, `height`, `fit`, `audio`, `format`, `time`, `duration`) are directly passed to Cloudflare's cdn-cgi service. Parameters like `quality`, `compression`, `loop`, `preload`, `autoplay`, `muted`, and `derivative` are implemented as convenience features through our worker but may not be fully supported by the underlying Cloudflare API.
 
-> **⚠️ Video Transformation Limitations:**
-> 1. The `time` parameter in Cloudflare's Media Transformation API is restricted to 0-30 seconds, limiting where you can start video playback or frame extraction.
-> 2. Some users have reported that videos longer than approximately 30 seconds may be truncated when processed through the transformation service. This appears to be a platform behavior rather than a configuration issue.
+> **⚠️ Video Transformation Requirements:**
+> - For optimal performance, always specify both `width` and `height` parameters
+> - When using derivatives, the pre-configured settings will override any individually specified parameters
+> - For best IMQuery integration, add breakpoint configuration in `worker-config.json`
+> - Check official Cloudflare documentation for the latest supported parameters
 
 ## Features
 
@@ -45,11 +47,12 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 ## Documentation
 
 - [Documentation Home](./docs/README.md)
+- [Architecture Overview](./docs/architecture/ARCHITECTURE_OVERVIEW.md) - High-level architecture and design patterns
+- [Architecture Roadmap](./ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
 - [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md)
 - [Configuration Guide](./docs/configuration/README.md)
 - [Deployment Guide](./docs/deployment/README.md)
-- [Error Handling Documentation](./docs/error-handling/README.md)
-- [URL Transformation Issues](./URL_TRANSFORMATION_ISSUES.md) - Known issues and solutions for URL transformation
+- [Error Handling](./docs/ERROR_HANDLING.md) - Error handling system and best practices
 - [KV Caching System](./docs/kv-caching/README.md)
 - [Storage System](./docs/storage/README.md)
 - [IMQuery Support](./docs/features/imquery/README.md)
