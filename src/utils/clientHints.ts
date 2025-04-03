@@ -1,8 +1,10 @@
 /**
  * Client Hints detection utilities for video requests
+ * Enhanced with standardized error handling for robustness
  */
 import { debug } from './loggerUtils';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
+import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 
 /**
  * Interface for video dimensions
@@ -17,11 +19,11 @@ export interface VideoSize {
 }
 
 /**
- * Check if client hints headers are present in the request
+ * Implementation of hasClientHints that might throw errors
  * @param request - The incoming request
  * @returns True if client hints are available
  */
-export function hasClientHints(request: Request): boolean {
+function hasClientHintsImpl(request: Request): boolean {
   // Define client hint headers to check
   const clientHintHeaders = [
     'Sec-CH-Viewport-Width',
@@ -50,11 +52,28 @@ export function hasClientHints(request: Request): boolean {
 }
 
 /**
- * Get responsive video size based on client hints headers
+ * Check if client hints headers are present in the request
+ * Uses tryOrDefault for safe client hints detection with proper error handling
+ * 
+ * @param request - The incoming request
+ * @returns True if client hints are available, false on error
+ */
+export const hasClientHints = tryOrDefault<[Request], boolean>(
+  hasClientHintsImpl,
+  {
+    functionName: 'hasClientHints',
+    component: 'ClientHints',
+    logErrors: true
+  },
+  false // Safe default is false if detection fails
+);
+
+/**
+ * Implementation of getVideoSizeFromClientHints that might throw errors
  * @param request - The incoming request
  * @returns Video size settings based on client hints
  */
-export function getVideoSizeFromClientHints(request: Request): VideoSize {
+function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
   // Extract relevant headers
   const viewportWidth = request.headers.get('Sec-CH-Viewport-Width');
   const dpr = request.headers.get('Sec-CH-DPR');
@@ -157,6 +176,28 @@ export function getVideoSizeFromClientHints(request: Request): VideoSize {
 }
 
 /**
+ * Get responsive video size based on client hints headers
+ * Uses tryOrDefault for safe size detection with proper error handling
+ * 
+ * @param request - The incoming request
+ * @returns Video size settings based on client hints, or default values on error
+ */
+export const getVideoSizeFromClientHints = tryOrDefault<[Request], VideoSize>(
+  getVideoSizeFromClientHintsImpl,
+  {
+    functionName: 'getVideoSizeFromClientHints',
+    component: 'ClientHints',
+    logErrors: true
+  },
+  {
+    // Safe default values if client hints processing fails
+    width: 854,
+    height: 480,
+    source: 'client-hints-error-fallback'
+  }
+);
+
+/**
  * Interface for network quality information
  */
 export interface NetworkQualityInfo {
@@ -170,6 +211,7 @@ export interface NetworkQualityInfo {
 }
 
 /**
+ * Implementation of getNetworkQuality that might throw errors
  * Analyzes connection quality based on client hints
  * This is a progressive enhancement that uses network hints when available,
  * but provides reasonable defaults when they're not.
@@ -177,7 +219,7 @@ export interface NetworkQualityInfo {
  * @param request - The incoming request
  * @returns Network quality information object
  */
-export function getNetworkQuality(request: Request): NetworkQualityInfo {
+function getNetworkQualityImpl(request: Request): NetworkQualityInfo {
   const ect = request.headers.get('ECT'); // Effective Connection Type
   const downlink = request.headers.get('Downlink'); // Bandwidth in Mbps
   const rtt = request.headers.get('RTT'); // Round Trip Time in ms
@@ -261,3 +303,27 @@ export function getNetworkQuality(request: Request): NetworkQualityInfo {
     return result;
   }
 }
+
+/**
+ * Analyzes connection quality based on client hints
+ * Uses tryOrDefault for safe network quality detection with proper error handling
+ * This is a progressive enhancement that uses network hints when available,
+ * but provides reasonable defaults when they're not.
+ * 
+ * @param request - The incoming request
+ * @returns Network quality information object, or safe defaults on error
+ */
+export const getNetworkQuality = tryOrDefault<[Request], NetworkQualityInfo>(
+  getNetworkQualityImpl,
+  {
+    functionName: 'getNetworkQuality',
+    component: 'ClientHints',
+    logErrors: true
+  },
+  {
+    // Safe default values for network quality if detection fails
+    quality: 'medium',
+    source: 'error-fallback',
+    supportsHints: false
+  }
+);

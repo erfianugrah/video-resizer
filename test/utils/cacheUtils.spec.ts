@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { determineCacheConfig, shouldCache } from '../../src/utils/cacheUtils';
 import { videoConfig } from '../../src/config/videoConfig';
+import { cacheConfig } from '../../src/config/CacheConfigurationManager';
 
 describe('cacheUtils', () => {
   describe('determineCacheConfig', () => {
@@ -18,6 +19,7 @@ describe('cacheUtils', () => {
       expect(config).toEqual({
         cacheability: true,
         videoCompression: 'auto',
+        useTtlByStatus: true,
         ttl: videoConfig.cache.default.ttl,
       });
     });
@@ -30,8 +32,8 @@ describe('cacheUtils', () => {
       const config = determineCacheConfig(url);
       
       // Assert
-      expect(config.ttl.ok).toBe(videoConfig.cache.highTraffic.ttl.ok);
       expect(config.ttl.ok).toBe(604800); // 7 days
+      expect(config.useTtlByStatus).toBe(true);
     });
     
     it('should find short form cache configuration for shorts', () => {
@@ -42,8 +44,8 @@ describe('cacheUtils', () => {
       const config = determineCacheConfig(url);
       
       // Assert
-      expect(config.ttl.ok).toBe(videoConfig.cache.shortForm.ttl.ok);
       expect(config.ttl.ok).toBe(172800); // 2 days
+      expect(config.useTtlByStatus).toBe(true);
     });
     
     it('should find dynamic cache configuration for live videos', () => {
@@ -54,8 +56,8 @@ describe('cacheUtils', () => {
       const config = determineCacheConfig(url);
       
       // Assert
-      expect(config.ttl.ok).toBe(videoConfig.cache.dynamic.ttl.ok);
       expect(config.ttl.ok).toBe(300); // 5 minutes
+      expect(config.useTtlByStatus).toBe(true);
     });
   });
   

@@ -3,6 +3,7 @@
  */
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { EnvironmentConfig } from '../config/environmentConfig';
+import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 
 /**
  * Interface for the response from URL transformation
@@ -34,13 +35,13 @@ interface DeploymentConfig {
 }
 
 /**
- * Transform a video request URL based on configuration
+ * Implementation of transformRequestUrl that might throw errors
  * @param request Original request
- * @param config Environment configuration
- * @param env Environment variables
+ * @param config Combined environment and deployment configuration
+ * @param env Optional environment variables
  * @returns Transformed request information
  */
-export function transformRequestUrl(
+function transformRequestUrlImpl(
   request: Request, 
   config: EnvironmentConfig & DeploymentConfig, 
   env?: Record<string, unknown>
@@ -88,20 +89,71 @@ export function transformRequestUrl(
   // Build the new origin URL
   const originUrl = buildOriginUrl(url, transformedPath, remoteOrigin);
 
-  result.originUrl = originUrl.toString();
-  result.originRequest = createOriginRequest(result.originUrl, request);
+  // Only update these properties if we got a valid URL back
+  if (originUrl && originUrl.toString() !== 'https://placeholder.example.com/') {
+    result.originUrl = originUrl.toString();
+    result.originRequest = createOriginRequest(result.originUrl, request);
+  } else {
+    // Log an error about using the fallback URL
+    try {
+      logErrorWithContext(
+        'Failed to build valid origin URL, using original request',
+        new Error('Invalid origin URL'),
+        { 
+          path, 
+          segments,
+          bucketName: result.bucketName,
+          transformedPath,
+          remoteOrigin
+        },
+        'URLTransformUtils'
+      );
+    } catch (logErr) {
+      // Last resort fallback if logging fails
+      console.error('URL transformation error and logging error', logErr);
+    }
+  }
 
   return result;
 }
 
 /**
- * Get derivative type based on path and configuration
+ * Transform a video request URL based on configuration
+ * Using tryOrDefault for safe URL transformation with proper error handling
+ * 
+ * @param request Original request
+ * @param config Environment configuration
+ * @param env Environment variables
+ * @returns Transformed request information
+ */
+export const transformRequestUrl = tryOrDefault<
+  [Request, EnvironmentConfig & DeploymentConfig, Record<string, unknown>?],
+  TransformedRequest
+>(
+  transformRequestUrlImpl,
+  {
+    functionName: 'transformRequestUrl',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  {
+    // Safe default if transformation fails completely, returns original request
+    originRequest: undefined as unknown as Request, // Will be set in the wrapper
+    bucketName: 'default',
+    originUrl: '',  // Will be set in the wrapper
+    derivative: null,
+    isRemoteFetch: false
+  }
+);
+
+/**
+ * Implementation of getDerivativeForPath that might throw errors
  * @param segments Path segments
  * @param path Full path
  * @param config Configuration
  * @returns Derivative name or null
  */
-function getDerivativeForPath(
+function getDerivativeForPathImpl(
   segments: string[], 
   path: string, 
   config: DeploymentConfig
@@ -133,14 +185,36 @@ function getDerivativeForPath(
 }
 
 /**
- * Transform path for remote buckets based on configuration
+ * Get derivative type based on path and configuration
+ * Using tryOrNull for safe derivative detection with proper error handling
+ * 
+ * @param segments Path segments
+ * @param path Full path
+ * @param config Configuration
+ * @returns Derivative name or null
+ */
+export const getDerivativeForPath = tryOrNull<
+  [string[], string, DeploymentConfig],
+  string | null
+>(
+  getDerivativeForPathImpl,
+  {
+    functionName: 'getDerivativeForPath',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  null // Safe default is null if no derivative can be determined
+);
+
+/**
+ * Implementation of transformPathForRemote that might throw errors
  * @param path Original path
  * @param segments Path segments
  * @param bucketName Bucket name
  * @param config Configuration
  * @returns Transformed path
  */
-function transformPathForRemote(
+function transformPathForRemoteImpl(
   path: string,
   segments: string[],
   bucketName: string,
@@ -181,13 +255,36 @@ function transformPathForRemote(
 }
 
 /**
- * Get remote origin URL for bucket
+ * Transform path for remote buckets based on configuration
+ * Using tryOrDefault for safe path transformation with proper error handling
+ * 
+ * @param path Original path
+ * @param segments Path segments
+ * @param bucketName Bucket name
+ * @param config Configuration
+ * @returns Transformed path
+ */
+export const transformPathForRemote = tryOrDefault<
+  [string, string[], string, DeploymentConfig],
+  string
+>(
+  transformPathForRemoteImpl,
+  {
+    functionName: 'transformPathForRemote',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  '' // Safe default is an empty path if transformation fails, will be updated in the wrapper
+);
+
+/**
+ * Implementation of getRemoteOrigin that might throw errors
  * @param bucketName Bucket name
  * @param config Configuration
  * @param env Environment variables
  * @returns Remote origin URL
  */
-function getRemoteOrigin(
+function getRemoteOriginImpl(
   bucketName: string, 
   config: DeploymentConfig, 
   env?: Record<string, unknown>
@@ -201,13 +298,35 @@ function getRemoteOrigin(
 }
 
 /**
- * Build origin URL by combining remote origin with path and non-video params
+ * Get remote origin URL for bucket
+ * Using tryOrDefault for safe origin resolution with proper error handling
+ * 
+ * @param bucketName Bucket name
+ * @param config Configuration
+ * @param env Environment variables
+ * @returns Remote origin URL
+ */
+export const getRemoteOrigin = tryOrDefault<
+  [string, DeploymentConfig, Record<string, unknown>?],
+  string
+>(
+  getRemoteOriginImpl,
+  {
+    functionName: 'getRemoteOrigin',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  'https://placeholder.example.com' // Safe default is the placeholder URL if resolution fails
+);
+
+/**
+ * Implementation of buildOriginUrl that might throw errors
  * @param originalUrl Original URL
  * @param transformedPath Transformed path
  * @param remoteOrigin Remote origin
  * @returns Built origin URL
  */
-function buildOriginUrl(originalUrl: URL, transformedPath: string, remoteOrigin: string): URL {
+function buildOriginUrlImpl(originalUrl: URL, transformedPath: string, remoteOrigin: string): URL {
   const originUrl = new URL(transformedPath, remoteOrigin);
 
   // List of video-specific params to exclude
@@ -239,12 +358,34 @@ function buildOriginUrl(originalUrl: URL, transformedPath: string, remoteOrigin:
 }
 
 /**
- * Create new request for the origin
+ * Build origin URL by combining remote origin with path and non-video params
+ * Using tryOrDefault for safe URL building with proper error handling
+ * 
+ * @param originalUrl Original URL
+ * @param transformedPath Transformed path
+ * @param remoteOrigin Remote origin
+ * @returns Built origin URL
+ */
+export const buildOriginUrl = tryOrDefault<
+  [URL, string, string],
+  URL
+>(
+  buildOriginUrlImpl,
+  {
+    functionName: 'buildOriginUrl',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  new URL('https://placeholder.example.com') // Safe default is a placeholder URL if building fails
+);
+
+/**
+ * Implementation of createOriginRequest that might throw errors
  * @param originUrl Origin URL
  * @param originalRequest Original request
  * @returns New request
  */
-function createOriginRequest(originUrl: string, originalRequest: Request): Request {
+function createOriginRequestImpl(originUrl: string, originalRequest: Request): Request {
   return new Request(originUrl, {
     method: originalRequest.method,
     headers: originalRequest.headers,
@@ -252,3 +393,24 @@ function createOriginRequest(originUrl: string, originalRequest: Request): Reque
     redirect: 'follow',
   });
 }
+
+/**
+ * Create new request for the origin
+ * Using tryOrDefault for safe request creation with proper error handling
+ * 
+ * @param originUrl Origin URL
+ * @param originalRequest Original request
+ * @returns New request
+ */
+export const createOriginRequest = tryOrDefault<
+  [string, Request],
+  Request
+>(
+  createOriginRequestImpl,
+  {
+    functionName: 'createOriginRequest',
+    component: 'URLTransformUtils',
+    logErrors: true
+  },
+  new Request('https://placeholder.example.com') // Safe default if request creation fails
+);

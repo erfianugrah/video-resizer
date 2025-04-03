@@ -655,7 +655,7 @@ export const createCfObjectParams = tryOrNull<
     if (source && cacheConfig.cacheability) {
       // Generate cache tags for the video
       const options = { derivative };
-      const tags = generateCacheTags(source, options);
+      const tags = generateCacheTags(source, options, undefined);
       
       if (tags.length > 0) {
         // Ensure no tag exceeds 1,024 characters (Cloudflare's limit for API purge compatibility)

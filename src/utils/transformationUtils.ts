@@ -3,6 +3,7 @@
  * and translating between different CDN parameter formats
  */
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
+import { tryOrNull, tryOrDefault, logErrorWithContext } from './errorHandlingUtils';
 
 /**
  * Valid time units
@@ -58,21 +59,32 @@ const AKAMAI_TO_CLOUDFLARE_MAPPING = {
 };
 
 /**
- * Translate Akamai parameter name to Cloudflare parameter name
- * @param akamaiParam Akamai parameter name
- * @returns Cloudflare parameter name or null if not supported
+ * Implementation of translateAkamaiParamName that might throw errors
  */
-export function translateAkamaiParamName(akamaiParam: string): string | null {
+function translateAkamaiParamNameImpl(akamaiParam: string): string | null {
   return AKAMAI_TO_CLOUDFLARE_MAPPING[akamaiParam as keyof typeof AKAMAI_TO_CLOUDFLARE_MAPPING] as string || null;
 }
 
 /**
- * Translate Akamai parameter value to Cloudflare parameter value
- * @param paramName Parameter name
- * @param akamaiValue Akamai parameter value
- * @returns Translated Cloudflare parameter value
+ * Translate Akamai parameter name to Cloudflare parameter name
+ * Using tryOrNull for safe parameter translation
+ * 
+ * @param akamaiParam Akamai parameter name
+ * @returns Cloudflare parameter name or null if not supported
  */
-export function translateAkamaiParamValue(paramName: string, akamaiValue: string | boolean | number): string | boolean | number {
+export const translateAkamaiParamName = tryOrNull<[string], string | null>(
+  translateAkamaiParamNameImpl,
+  {
+    functionName: 'translateAkamaiParamName',
+    component: 'TransformationUtils',
+    logErrors: false // Low importance function, avoid excessive logging
+  }
+);
+
+/**
+ * Implementation of translateAkamaiParamValue that might throw errors
+ */
+function translateAkamaiParamValueImpl(paramName: string, akamaiValue: string | boolean | number): string | boolean | number {
   // Handle special case for 'mute' param which inverts the meaning
   if (paramName === 'mute') {
     return !(akamaiValue === 'true' || akamaiValue === true);
@@ -88,11 +100,27 @@ export function translateAkamaiParamValue(paramName: string, akamaiValue: string
 }
 
 /**
- * Parse time string to seconds
- * @param timeStr Time string like "5s" or "2m"
- * @returns Time in seconds or null if invalid
+ * Translate Akamai parameter value to Cloudflare parameter value
+ * Using tryOrDefault for safe parameter translation
+ * 
+ * @param paramName Parameter name
+ * @param akamaiValue Akamai parameter value
+ * @returns Translated Cloudflare parameter value
  */
-export function parseTimeString(timeStr: string): number | null {
+export const translateAkamaiParamValue = tryOrDefault<[string, string | boolean | number], string | boolean | number>(
+  translateAkamaiParamValueImpl,
+  {
+    functionName: 'translateAkamaiParamValue',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  '' // Return empty string as a safe default if translation fails
+);
+
+/**
+ * Implementation of parseTimeString that might throw errors
+ */
+function parseTimeStringImpl(timeStr: string): number | null {
   if (!timeStr) return null;
 
   // Match a number followed by 's' or 'm'
@@ -110,11 +138,25 @@ export function parseTimeString(timeStr: string): number | null {
 }
 
 /**
- * Format seconds to time string
- * @param seconds Time in seconds
- * @returns Formatted time string (e.g., "5s" or "2m")
+ * Parse time string to seconds
+ * Using tryOrNull for safe execution with proper error handling
+ * 
+ * @param timeStr Time string like "5s" or "2m"
+ * @returns Time in seconds or null if invalid
  */
-export function formatTimeString(seconds: number): string {
+export const parseTimeString = tryOrNull<[string], number | null>(
+  parseTimeStringImpl,
+  {
+    functionName: 'parseTimeString',
+    component: 'TransformationUtils',
+    logErrors: true
+  }
+);
+
+/**
+ * Implementation of formatTimeString that might throw errors
+ */
+function formatTimeStringImpl(seconds: number): string {
   if (seconds >= 60) {
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m`;
@@ -123,11 +165,26 @@ export function formatTimeString(seconds: number): string {
 }
 
 /**
- * Validate time parameter
- * @param timeStr Time string
- * @returns If the time is valid according to Cloudflare limits (0-30s)
+ * Format seconds to time string
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
+ * @param seconds Time in seconds
+ * @returns Formatted time string (e.g., "5s" or "2m")
  */
-export function isValidTime(timeStr: string | null): boolean {
+export const formatTimeString = tryOrDefault<[number], string>(
+  formatTimeStringImpl,
+  {
+    functionName: 'formatTimeString',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  '0s' // Safe default if the function fails
+);
+
+/**
+ * Implementation of isValidTime that might throw errors
+ */
+function isValidTimeImpl(timeStr: string | null): boolean {
   if (!timeStr) return true;
   
   const seconds = parseTimeString(timeStr);
@@ -137,6 +194,23 @@ export function isValidTime(timeStr: string | null): boolean {
   return seconds >= 0 && seconds <= 30;
 }
 
+/**
+ * Validate time parameter
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
+ * @param timeStr Time string
+ * @returns If the time is valid according to Cloudflare limits (0-30s)
+ */
+export const isValidTime = tryOrDefault<[string | null], boolean>(
+  isValidTimeImpl,
+  {
+    functionName: 'isValidTime',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to accepting the time if validation fails
+);
+
 // In-memory cache for transformation limits discovered from API errors
 // Initially empty - will be populated from API responses
 const transformationLimits: Record<string, Record<string, number>> = {
@@ -145,13 +219,9 @@ const transformationLimits: Record<string, Record<string, number>> = {
 };
 
 /**
- * Store discovered transformation limit
- * 
- * @param type - The type of limit (duration, fileSize, etc.)
- * @param key - The limit key (max, min, etc.)
- * @param value - The limit value
+ * Implementation of storeTransformationLimit that might throw errors
  */
-export function storeTransformationLimit(type: string, key: string, value: number): void {
+function storeTransformationLimitImpl(type: string, key: string, value: number): void {
   // Import logger dynamically to avoid circular dependencies
   import('../utils/legacyLoggerAdapter').then(({ debug }) => {
     debug('TransformationUtils', `Discovered new ${type} limit`, {
@@ -162,6 +232,13 @@ export function storeTransformationLimit(type: string, key: string, value: numbe
       previousValue: transformationLimits[type]?.[key]
     });
   }).catch(err => {
+    // Log error with standardized error handling
+    logErrorWithContext(
+      'Failed to import logger for transformation limit storage',
+      err,
+      { type, key, value },
+      'TransformationUtils'
+    );
     // Fallback to console if import fails
     console.debug(`[TransformationUtils] Discovered new ${type} limit: ${key}=${value}`);
   });
@@ -174,31 +251,75 @@ export function storeTransformationLimit(type: string, key: string, value: numbe
 }
 
 /**
+ * Store discovered transformation limit
+ * Using tryOrDefault for safe execution to ensure limits are always stored
+ * 
+ * @param type - The type of limit (duration, fileSize, etc.)
+ * @param key - The limit key (max, min, etc.)
+ * @param value - The limit value
+ */
+export const storeTransformationLimit = tryOrDefault<[string, string, number], void>(
+  storeTransformationLimitImpl,
+  {
+    functionName: 'storeTransformationLimit',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  undefined // No return value needed
+);
+
+/**
+ * Implementation of getTransformationLimit that might throw errors
+ */
+function getTransformationLimitImpl(type: string, key: string): number | undefined {
+  return transformationLimits[type]?.[key];
+}
+
+/**
  * Get a transformation limit
+ * Using tryOrNull for safe execution with proper error handling
  * 
  * @param type - The type of limit (duration, fileSize, etc.)
  * @param key - The limit key (max, min, etc.)
  * @returns The limit value
  */
-export function getTransformationLimit(type: string, key: string): number | undefined {
-  return transformationLimits[type]?.[key];
-}
+export const getTransformationLimit = tryOrNull<[string, string], number | undefined>(
+  getTransformationLimitImpl,
+  {
+    functionName: 'getTransformationLimit',
+    component: 'TransformationUtils',
+    logErrors: true
+  }
+);
 
 /**
- * Check if we have learned duration limits
- * @returns Whether we have both min and max duration limits
+ * Implementation of haveDurationLimits that might throw errors
  */
-export function haveDurationLimits(): boolean {
+function haveDurationLimitsImpl(): boolean {
   return 'min' in transformationLimits.duration && 
          'max' in transformationLimits.duration;
 }
 
 /**
- * Validate duration parameter format
- * @param durationStr Duration string
- * @returns If the duration is a valid format (regardless of limits)
+ * Check if we have learned duration limits
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
+ * @returns Whether we have both min and max duration limits
  */
-export function isValidDuration(durationStr: string | null): boolean {
+export const haveDurationLimits = tryOrDefault<[], boolean>(
+  haveDurationLimitsImpl,
+  {
+    functionName: 'haveDurationLimits',
+    component: 'TransformationUtils',
+    logErrors: false // Low importance function, avoid excessive logging
+  },
+  false // Default to false if check fails
+);
+
+/**
+ * Implementation of isValidDuration that might throw errors
+ */
+function isValidDurationImpl(durationStr: string | null): boolean {
   if (!durationStr) return true;
   
   const seconds = parseTimeString(durationStr);
@@ -209,11 +330,26 @@ export function isValidDuration(durationStr: string | null): boolean {
 }
 
 /**
- * Check if duration is within learned limits
+ * Validate duration parameter format
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
  * @param durationStr Duration string
- * @returns If the duration is within known limits
+ * @returns If the duration is a valid format (regardless of limits)
  */
-export function isDurationWithinLimits(durationStr: string | null): boolean {
+export const isValidDuration = tryOrDefault<[string | null], boolean>(
+  isValidDurationImpl,
+  {
+    functionName: 'isValidDuration',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to accepting the duration if validation fails
+);
+
+/**
+ * Implementation of isDurationWithinLimits that might throw errors
+ */
+function isDurationWithinLimitsImpl(durationStr: string | null): boolean {
   if (!durationStr) return true;
   
   const seconds = parseTimeString(durationStr);
@@ -228,7 +364,15 @@ export function isDurationWithinLimits(durationStr: string | null): boolean {
         duration: durationStr,
         seconds
       });
-    }).catch(() => {});
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for duration limit check',
+        err,
+        { duration: durationStr, seconds },
+        'TransformationUtils'
+      );
+    });
     return true;
   }
   
@@ -249,7 +393,22 @@ export function isDurationWithinLimits(durationStr: string | null): boolean {
         exceedsMin: seconds < minDuration,
         exceedsMax: seconds > maxDuration
       });
-    }).catch(() => {});
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for duration limit warning',
+        err,
+        { 
+          duration: durationStr, 
+          seconds,
+          minDuration,
+          maxDuration,
+          exceedsMin: seconds < minDuration,
+          exceedsMax: seconds > maxDuration
+        },
+        'TransformationUtils'
+      );
+    });
   }
   
   // Use our learned limits for validation
@@ -257,12 +416,26 @@ export function isDurationWithinLimits(durationStr: string | null): boolean {
 }
 
 /**
- * Adjust duration to be within valid limits
+ * Check if duration is within learned limits
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
  * @param durationStr Duration string
- * @param useSafeMax Whether to use a safe integer maximum (slightly below the actual max)
- * @returns Adjusted duration string or original if already valid or no limits known
+ * @returns If the duration is within known limits
  */
-export function adjustDuration(durationStr: string | null, useSafeMax: boolean = false): string | null {
+export const isDurationWithinLimits = tryOrDefault<[string | null], boolean>(
+  isDurationWithinLimitsImpl,
+  {
+    functionName: 'isDurationWithinLimits',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to accepting the duration if validation fails
+);
+
+/**
+ * Implementation of adjustDuration that might throw errors
+ */
+function adjustDurationImpl(durationStr: string | null, useSafeMax: boolean = false): string | null {
   if (!durationStr) return durationStr;
   
   // Dynamically import logger to avoid circular dependencies
@@ -275,10 +448,15 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
       requestedDuration: durationStr
     });
   }).catch((err) => {
+    // Log error with standardized error handling
+    logErrorWithContext(
+      'Failed to import logger for duration adjustment',
+      err,
+      { durationStr, haveLimits: haveDurationLimits() },
+      'TransformationUtils'
+    );
     // Fallback to console for logging
-    console.info(`[TransformationUtils] Adjusting duration: ${durationStr}`, {
-      error: err instanceof Error ? err.message : String(err)
-    });
+    console.info(`[TransformationUtils] Adjusting duration: ${durationStr}`);
   });
   
   const seconds = parseTimeString(durationStr);
@@ -289,7 +467,14 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         durationStr,
         reason: 'Failed to parse time string'
       });
-    }).catch(() => {
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for invalid duration warning',
+        err,
+        { durationStr },
+        'TransformationUtils'
+      );
       console.warn(`[TransformationUtils] Invalid duration format: ${durationStr}`);
     });
     return durationStr;
@@ -314,7 +499,14 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         originalDuration: durationStr,
         seconds
       });
-    }).catch(() => {
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for default duration limits',
+        err,
+        { durationStr, seconds },
+        'TransformationUtils'
+      );
       console.warn('[TransformationUtils] No duration limits found - setting defaults of 0-30s');
     });
     
@@ -335,7 +527,19 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
       shouldAdjustMax: seconds > maxDuration,
       transformationLimits: JSON.stringify(transformationLimits)
     });
-  }).catch(() => {
+  }).catch((err) => {
+    // Log error with standardized error handling
+    logErrorWithContext(
+      'Failed to import logger for duration limit check',
+      err,
+      { 
+        durationStr, 
+        seconds, 
+        minDuration, 
+        maxDuration 
+      },
+      'TransformationUtils'
+    );
     console.info(`[TransformationUtils] Checking duration ${durationStr} (${seconds}s) against limits min=${minDuration}, max=${maxDuration}`);
   });
   
@@ -351,7 +555,21 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         minDuration,
         maxDuration
       });
-    }).catch(() => {
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for minimum duration adjustment',
+        err,
+        { 
+          original: durationStr,
+          originalSeconds: seconds,
+          adjusted,
+          adjustedSeconds: minDuration,
+          minDuration,
+          maxDuration
+        },
+        'TransformationUtils'
+      );
       console.warn(`[TransformationUtils] Duration ${durationStr} below minimum limit of ${minDuration}s, adjusting to ${adjusted}`);
     });
     return adjusted;
@@ -370,7 +588,21 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
         isDefault: maxDuration === 30, // Check if using default or learned limit
         usedSafeMax: true
       });
-    }).catch(() => {
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for maximum duration adjustment',
+        err,
+        { 
+          original: durationStr,
+          originalSeconds: seconds,
+          adjusted,
+          adjustedSeconds: safeMax,
+          maxDuration,
+          isDefault: maxDuration === 30
+        },
+        'TransformationUtils'
+      );
       console.warn(`[TransformationUtils] Duration ${durationStr} exceeds maximum limit of ${maxDuration}s, adjusting to ${adjusted}`);
     });
     return adjusted;
@@ -385,7 +617,8 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
       maxDuration,
       isDefault: maxDuration === 30 // Check if using default or learned limit
     });
-  }).catch(() => {
+  }).catch((err) => {
+    // For debug level, we can skip the standardized logging to avoid noise
     console.debug(`[TransformationUtils] No duration adjustment needed for ${durationStr}`);
   });
   
@@ -393,11 +626,27 @@ export function adjustDuration(durationStr: string | null, useSafeMax: boolean =
 }
 
 /**
- * Check if the error is related to duration limits
- * @param errorText The error message from the API
- * @returns Boolean indicating if it's a duration limit error
+ * Adjust duration to be within valid limits
+ * Using tryOrDefault for safe execution with proper error handling
+ * 
+ * @param durationStr Duration string
+ * @param useSafeMax Whether to use a safe integer maximum (slightly below the actual max)
+ * @returns Adjusted duration string or original if already valid or no limits known
  */
-export function isDurationLimitError(errorText: string): boolean {
+export const adjustDuration = tryOrDefault<[string | null, boolean?], string | null>(
+  adjustDurationImpl,
+  {
+    functionName: 'adjustDuration',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  null // Return null if adjustment fails completely
+);
+
+/**
+ * Implementation of isDurationLimitError that might throw errors
+ */
+function isDurationLimitErrorImpl(errorText: string): boolean {
   const isDurationError = errorText.includes('duration: attribute must be between');
   
   // Log duration limit detection
@@ -407,18 +656,44 @@ export function isDurationLimitError(errorText: string): boolean {
         errorText: errorText.substring(0, 100), // Truncate for safety
         pattern: 'duration: attribute must be between'
       });
-    }).catch(() => {});
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for duration limit detection',
+        err,
+        { 
+          errorTextSample: errorText.substring(0, 50), // Truncate for safety
+          pattern: 'duration: attribute must be between'
+        },
+        'TransformationUtils'
+      );
+    });
   }
   
   return isDurationError;
 }
 
 /**
- * Validate that format is only used with frame mode
- * @param options Video transform options
- * @returns If the format parameter is valid for the specified mode
+ * Check if the error is related to duration limits
+ * Using tryOrDefault for robust handling of error analysis
+ * 
+ * @param errorText The error message from the API
+ * @returns Boolean indicating if it's a duration limit error
  */
-export function isValidFormatForMode(options: VideoTransformOptions): boolean {
+export const isDurationLimitError = tryOrDefault<[string], boolean>(
+  isDurationLimitErrorImpl,
+  {
+    functionName: 'isDurationLimitError',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  false // Default to false if pattern matching fails
+);
+
+/**
+ * Implementation of isValidFormatForMode that might throw errors
+ */
+function isValidFormatForModeImpl(options: VideoTransformOptions): boolean {
   // Format should only be used with frame mode
   if (options.format && options.mode !== 'frame') {
     return false;
@@ -427,12 +702,26 @@ export function isValidFormatForMode(options: VideoTransformOptions): boolean {
 }
 
 /**
- * Validate quality parameter
- * @param qualityValue Quality value
- * @param validValues Valid quality values
- * @returns If the quality is valid
+ * Validate that format is only used with frame mode
+ * Using tryOrDefault for safe validation
+ * 
+ * @param options Video transform options
+ * @returns If the format parameter is valid for the specified mode
  */
-export function isValidQuality(
+export const isValidFormatForMode = tryOrDefault<[VideoTransformOptions], boolean>(
+  isValidFormatForModeImpl,
+  {
+    functionName: 'isValidFormatForMode',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to true if validation fails (safer to pass than to block)
+);
+
+/**
+ * Implementation of isValidQuality that might throw errors
+ */
+function isValidQualityImpl(
   qualityValue: string | null, 
   validValues: string[]
 ): boolean {
@@ -441,12 +730,27 @@ export function isValidQuality(
 }
 
 /**
- * Validate compression parameter
- * @param compressionValue Compression value
- * @param validValues Valid compression values
- * @returns If the compression is valid
+ * Validate quality parameter
+ * Using tryOrDefault for safe validation
+ * 
+ * @param qualityValue Quality value
+ * @param validValues Valid quality values
+ * @returns If the quality is valid
  */
-export function isValidCompression(
+export const isValidQuality = tryOrDefault<[string | null, string[]], boolean>(
+  isValidQualityImpl,
+  {
+    functionName: 'isValidQuality',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to true if validation fails (safer to pass than to block)
+);
+
+/**
+ * Implementation of isValidCompression that might throw errors
+ */
+function isValidCompressionImpl(
   compressionValue: string | null, 
   validValues: string[]
 ): boolean {
@@ -455,12 +759,27 @@ export function isValidCompression(
 }
 
 /**
- * Validate preload parameter
- * @param preloadValue Preload value
- * @param validValues Valid preload values
- * @returns If the preload is valid
+ * Validate compression parameter
+ * Using tryOrDefault for safe validation
+ * 
+ * @param compressionValue Compression value
+ * @param validValues Valid compression values
+ * @returns If the compression is valid
  */
-export function isValidPreload(
+export const isValidCompression = tryOrDefault<[string | null, string[]], boolean>(
+  isValidCompressionImpl,
+  {
+    functionName: 'isValidCompression',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to true if validation fails (safer to pass than to block)
+);
+
+/**
+ * Implementation of isValidPreload that might throw errors
+ */
+function isValidPreloadImpl(
   preloadValue: string | null, 
   validValues: string[]
 ): boolean {
@@ -469,11 +788,27 @@ export function isValidPreload(
 }
 
 /**
- * Validate that loop and autoplay parameters are used appropriately
- * @param options Video transform options
- * @returns If the loop and autoplay parameters are valid for the specified mode
+ * Validate preload parameter
+ * Using tryOrDefault for safe validation
+ * 
+ * @param preloadValue Preload value
+ * @param validValues Valid preload values
+ * @returns If the preload is valid
  */
-export function isValidPlaybackOptions(options: VideoTransformOptions): boolean {
+export const isValidPreload = tryOrDefault<[string | null, string[]], boolean>(
+  isValidPreloadImpl,
+  {
+    functionName: 'isValidPreload',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to true if validation fails (safer to pass than to block)
+);
+
+/**
+ * Implementation of isValidPlaybackOptions that might throw errors
+ */
+function isValidPlaybackOptionsImpl(options: VideoTransformOptions): boolean {
   // Loop and autoplay should only be used with video mode
   if ((options.loop || options.autoplay) && options.mode !== 'video') {
     return false;
@@ -491,11 +826,26 @@ export function isValidPlaybackOptions(options: VideoTransformOptions): boolean 
 }
 
 /**
- * Translate all parameters from Akamai format to Cloudflare format
- * @param akamaiParams Object with Akamai parameters
- * @returns Object with Cloudflare parameters
+ * Validate that loop and autoplay parameters are used appropriately
+ * Using tryOrDefault for safe validation with proper error handling
+ * 
+ * @param options Video transform options
+ * @returns If the loop and autoplay parameters are valid for the specified mode
  */
-export function translateAkamaiToCloudflareParams(
+export const isValidPlaybackOptions = tryOrDefault<[VideoTransformOptions], boolean>(
+  isValidPlaybackOptionsImpl,
+  {
+    functionName: 'isValidPlaybackOptions',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  true // Default to true if validation fails (safer to pass than to block)
+);
+
+/**
+ * Implementation of translateAkamaiToCloudflareParams that might throw errors
+ */
+function translateAkamaiToCloudflareParamsImpl(
   akamaiParams: Record<string, string | boolean | number>
 ): Record<string, string | boolean | number> {
   const result: Record<string, string | boolean | number> = {};
@@ -511,13 +861,29 @@ export function translateAkamaiToCloudflareParams(
 }
 
 /**
- * Parse error messages from Cloudflare's API to extract specific validation issues
- * This helps provide more detailed error information to clients
+ * Translate all parameters from Akamai format to Cloudflare format
+ * Using tryOrDefault for safe parameter translation with proper error handling
  * 
- * @param errorText - The error message text from Cloudflare's API
- * @returns An object with parsed error details and original error message
+ * @param akamaiParams Object with Akamai parameters
+ * @returns Object with Cloudflare parameters
  */
-export function parseErrorMessage(errorText: string): {
+export const translateAkamaiToCloudflareParams = tryOrDefault<
+  [Record<string, string | boolean | number>],
+  Record<string, string | boolean | number>
+>(
+  translateAkamaiToCloudflareParamsImpl,
+  {
+    functionName: 'translateAkamaiToCloudflareParams',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  {} // Return empty object as safe default if translation fails
+);
+
+/**
+ * Implementation of parseErrorMessage that might throw errors
+ */
+function parseErrorMessageImpl(errorText: string): {
   originalMessage: string;
   specificError?: string;
   errorType?: string;
@@ -533,7 +899,14 @@ export function parseErrorMessage(errorText: string): {
     debug('TransformationUtils', 'Parsing API error message', {
       errorText: errorText.substring(0, 100) // Truncate for safety
     });
-  }).catch(() => {
+  }).catch((err) => {
+    // Log error with standardized error handling
+    logErrorWithContext(
+      'Failed to import logger for error message parsing',
+      err,
+      { errorTextSample: errorText.substring(0, 50) },
+      'TransformationUtils'
+    );
     console.debug(`[TransformationUtils] Parsing API error: ${errorText.substring(0, 50)}...`);
   });
 
@@ -552,7 +925,19 @@ export function parseErrorMessage(errorText: string): {
         errorType: 'duration_limit',
         pattern: 'duration validation error'
       });
-    }).catch(() => {});
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for duration limit discovery',
+        err,
+        { 
+          minMs, 
+          maxS, 
+          convertedMinSeconds: minMs / 1000 
+        },
+        'TransformationUtils'
+      );
+    });
     
     // Store the discovered limits
     storeTransformationLimit('duration', 'min', minMs / 1000); // Convert ms to seconds
@@ -581,7 +966,15 @@ export function parseErrorMessage(errorText: string): {
         errorType: 'file_size_limit',
         pattern: 'file size validation error'
       });
-    }).catch(() => {});
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for file size limit discovery',
+        err,
+        { maxBytes, maxMB },
+        'TransformationUtils'
+      );
+    });
     
     // Store the discovered limit
     storeTransformationLimit('fileSize', 'max', maxBytes);
@@ -600,9 +993,38 @@ export function parseErrorMessage(errorText: string): {
     debug('TransformationUtils', 'No specific error pattern matched', {
       errorText: errorText.substring(0, 100) // Truncate for safety
     });
-  }).catch(() => {});
+  }).catch((err) => {
+    // For debug level, we can skip detailed error logging to reduce noise
+    console.debug(`[TransformationUtils] No specific error pattern matched in: ${errorText.substring(0, 50)}...`);
+  });
   
   // Add more error patterns as they are discovered
   
   return result;
 }
+
+/**
+ * Parse error messages from Cloudflare's API to extract specific validation issues
+ * Using tryOrDefault for safe error parsing with proper error handling
+ * 
+ * @param errorText - The error message text from Cloudflare's API
+ * @returns An object with parsed error details and original error message
+ */
+export const parseErrorMessage = tryOrDefault<
+  [string],
+  {
+    originalMessage: string;
+    specificError?: string;
+    errorType?: string;
+    limitType?: string;
+    parameter?: string;
+  }
+>(
+  parseErrorMessageImpl,
+  {
+    functionName: 'parseErrorMessage',
+    component: 'TransformationUtils',
+    logErrors: true
+  },
+  { originalMessage: 'Error parsing failed' } // Default to a simple error message if parsing fails
+);

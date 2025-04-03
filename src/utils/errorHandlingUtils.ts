@@ -4,10 +4,33 @@
  * This module provides consistent error handling patterns to use throughout the codebase,
  * reducing duplication and ensuring proper logging, context capturing, and error normalization.
  */
-import { VideoTransformError, ErrorType } from '../errors';
-import { normalizeError } from '../services/errorHandlerService';
+import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext, addBreadcrumb } from './requestContext';
 import { createLogger, error as pinoError, debug as pinoDebug } from './pinoLogger';
+
+/**
+ * Basic error normalization to prevent circular dependencies.
+ * This is a simplified version of the normalizeError function in errorHandlerService.ts.
+ * 
+ * @param err - Any error to normalize
+ * @param context - Additional context data
+ * @returns A VideoTransformError
+ */
+function normalizeErrorBasic(err: unknown, context: Record<string, unknown> = {}): VideoTransformError {
+  // If it's already a VideoTransformError, return it
+  if (err instanceof VideoTransformError) {
+    return err;
+  }
+  
+  // If it's another type of Error, convert it
+  if (err instanceof Error) {
+    return ProcessingError.fromError(err, ErrorType.UNKNOWN_ERROR, context);
+  }
+  
+  // If it's a string or other value, create a new error
+  const message = typeof err === 'string' ? err : 'Unknown error occurred';
+  return new VideoTransformError(message, ErrorType.UNKNOWN_ERROR, context);
+}
 
 /**
  * Standard error logging with context tracking.
@@ -23,8 +46,8 @@ export function logErrorWithContext(
   context: Record<string, unknown> = {},
   category: string = 'Application'
 ): void {
-  // Get normalized error data
-  const normalizedErr = normalizeError(error, context);
+  // Get normalized error data - use our basic normalizer to avoid circular dependencies
+  const normalizedErr = normalizeErrorBasic(error, context);
   const errorMessage = normalizedErr.message;
   const errorStack = normalizedErr instanceof Error ? normalizedErr.stack : undefined;
   
@@ -211,5 +234,6 @@ export function toTransformError(
   errorType: ErrorType = ErrorType.UNKNOWN_ERROR,
   context: Record<string, unknown> = {}
 ): VideoTransformError {
-  return normalizeError(error, context);
+  // Use our basic normalizer to avoid circular dependencies
+  return normalizeErrorBasic(error, context);
 }

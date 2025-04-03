@@ -9,6 +9,13 @@ import { CacheConfigurationManager } from '../config';
 import { EnvVariables } from '../config/environmentConfig';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { addBreadcrumb } from '../utils/requestContext';
+import { 
+  logErrorWithContext, 
+  withErrorHandling, 
+  tryOrNull, 
+  tryOrDefault 
+} from '../utils/errorHandlingUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -26,20 +33,6 @@ function logDebug(category: string, message: string, data?: Record<string, unkno
   } else {
     // Fall back to console as a last resort
     console.debug(`[${category}] ${message}`, data || {});
-  }
-}
-
-/**
- * Log an error message with proper context handling
- */
-function logError(category: string, message: string, data?: Record<string, unknown>) {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, category, message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.error(`[${category}] ${message}`, data || {});
   }
 }
 
@@ -130,10 +123,9 @@ export interface StorageResult {
 }
 
 /**
- * Apply path transformations for any origin type
- * This helper function is used to transform paths based on origin type
+ * Implementation of path transformation that might throw errors
  */
-function applyPathTransformation(
+function applyPathTransformationImpl(
   path: string,
   config: VideoResizerConfig,
   originType: 'r2' | 'remote' | 'fallback'
@@ -189,271 +181,301 @@ function applyPathTransformation(
 }
 
 /**
- * Fetch a video from R2 storage
+ * Apply path transformations for any origin type
+ * This helper function is used to transform paths based on origin type
+ * Uses standardized error handling to safely transform paths
  */
-async function fetchFromR2(
+function applyPathTransformation(
+  path: string,
+  config: VideoResizerConfig,
+  originType: 'r2' | 'remote' | 'fallback'
+): string {
+  try {
+    return applyPathTransformationImpl(path, config, originType);
+  } catch (err) {
+    // Log with standardized error handling
+    logErrorWithContext(
+      `Error transforming path for ${originType}`,
+      err,
+      {
+        path,
+        originType,
+        hasPathTransforms: !!config?.pathTransforms
+      },
+      'VideoStorageService'
+    );
+    
+    // Return original path as fallback
+    return path;
+  }
+}
+
+/**
+ * Implementation of fetchFromR2 that might throw errors
+ */
+async function fetchFromR2Impl(
   path: string, 
   bucket: R2Bucket,
   request?: Request,
   config?: VideoResizerConfig
 ): Promise<StorageResult | null> {
-  try {
-    // Normalize the path by removing leading slashes
-    const normalizedPath = path.replace(/^\/+/, '');
+  // Normalize the path by removing leading slashes
+  const normalizedPath = path.replace(/^\/+/, '');
+  
+  // Handle conditional requests if we have a request object
+  if (request) {
+    const ifNoneMatch = request.headers.get('If-None-Match');
+    const ifModifiedSince = request.headers.get('If-Modified-Since');
     
-    // Handle conditional requests if we have a request object
-    if (request) {
-      const ifNoneMatch = request.headers.get('If-None-Match');
-      const ifModifiedSince = request.headers.get('If-Modified-Since');
-      
-      // Check for conditional request options
-      const options: R2GetOptions = {};
-      
-      if (ifNoneMatch) {
-        options.onlyIf = { etagDoesNotMatch: ifNoneMatch };
-      } else if (ifModifiedSince) {
-        const ifModifiedSinceDate = new Date(ifModifiedSince);
-        if (!isNaN(ifModifiedSinceDate.getTime())) {
-          options.onlyIf = { uploadedAfter: ifModifiedSinceDate };
-        }
+    // Check for conditional request options
+    const options: R2GetOptions = {};
+    
+    if (ifNoneMatch) {
+      options.onlyIf = { etagDoesNotMatch: ifNoneMatch };
+    } else if (ifModifiedSince) {
+      const ifModifiedSinceDate = new Date(ifModifiedSince);
+      if (!isNaN(ifModifiedSinceDate.getTime())) {
+        options.onlyIf = { uploadedAfter: ifModifiedSinceDate };
       }
-      
-      // Handle range requests
-      const rangeHeader = request.headers.get('Range');
-      if (rangeHeader && rangeHeader.startsWith('bytes=')) {
-        try {
-          const rangeValue = rangeHeader.substring(6);
-          const [start, end] = rangeValue.split('-').map(v => parseInt(v, 10));
+    }
+    
+    // Handle range requests
+    const rangeHeader = request.headers.get('Range');
+    if (rangeHeader && rangeHeader.startsWith('bytes=')) {
+      try {
+        const rangeValue = rangeHeader.substring(6);
+        const [start, end] = rangeValue.split('-').map(v => parseInt(v, 10));
+        
+        if (!isNaN(start)) {
+          const range: R2Range = { offset: start };
           
-          if (!isNaN(start)) {
-            const range: R2Range = { offset: start };
-            
-            if (!isNaN(end)) {
-              range.length = end - start + 1;
-            }
-            
-            options.range = range;
+          if (!isNaN(end)) {
+            range.length = end - start + 1;
           }
-        } catch (err) {
-          // Invalid range header, ignore but still log it
-          logDebug('VideoStorageService', 'Invalid range header', { rangeHeader });
+          
+          options.range = range;
         }
+      } catch (err) {
+        // Invalid range header, ignore but still log it
+        logDebug('VideoStorageService', 'Invalid range header', { rangeHeader });
       }
-      
-      // Attempt to get the object from R2 with options
-      const object = await bucket.get(normalizedPath, options);
-      
-      // Handle 304 Not Modified
-      if (object === null && (ifNoneMatch || ifModifiedSince)) {
-        return {
-          response: new Response(null, { status: 304 }),
-          sourceType: 'r2',
-          contentType: null,
-          size: 0
-        };
-      }
-      
-      if (!object) {
-        return null;
-      }
-      
-      // Create headers using R2 object's writeHttpMetadata
-      const headers = new Headers();
-      object.writeHttpMetadata(headers);
-      
-      // Add additional headers
-      // Get cache TTL with proper type narrowing
-      const cacheTTL = config?.cache?.ttl?.ok ?? 86400;
-      headers.set('Cache-Control', `public, max-age=${cacheTTL}`);
-      headers.set('Accept-Ranges', 'bytes');
-      
-      // The Range response
-      let status = 200;
-      if (options.range && 'offset' in options.range) {
-        status = 206;
-        const offset = options.range.offset || 0;
-        const length = options.range.length || 0;
-        const end = offset + length - 1;
-        const total = object.size;
-        headers.set('Content-Range', `bytes ${offset}-${end}/${total}`);
-      }
-      
-      // Return a successful result with the object details
+    }
+    
+    // Attempt to get the object from R2 with options
+    const object = await bucket.get(normalizedPath, options);
+    
+    // Handle 304 Not Modified
+    if (object === null && (ifNoneMatch || ifModifiedSince)) {
       return {
-        response: new Response(object.body, {
-          headers,
-          status
-        }),
+        response: new Response(null, { status: 304 }),
         sourceType: 'r2',
-        contentType: object.httpMetadata?.contentType || null,
-        size: object.size,
-        path: normalizedPath
-      };
-    } else {
-      // Simple case - no request object
-      const object = await bucket.get(normalizedPath);
-      
-      if (!object) {
-        return null;
-      }
-      
-      // Create headers using R2 object's writeHttpMetadata
-      const headers = new Headers();
-      object.writeHttpMetadata(headers);
-      
-      // Add additional headers with proper type narrowing
-      const cacheTTL = config?.cache?.ttl?.ok ?? 86400;
-      headers.set('Cache-Control', `public, max-age=${cacheTTL}`);
-      headers.set('Accept-Ranges', 'bytes');
-      
-      // Return a successful result with the object details
-      return {
-        response: new Response(object.body, { headers }),
-        sourceType: 'r2',
-        contentType: object.httpMetadata?.contentType || null,
-        size: object.size,
-        path: normalizedPath
+        contentType: null,
+        size: 0
       };
     }
-  } catch (err) {
-    // Use our helper function to log consistently
-    logError('VideoStorageService', 'Error fetching from R2', { 
-      error: err instanceof Error ? err.message : String(err),
-      path,
-      stack: err instanceof Error ? err.stack : undefined
-    });
-    throw new Error('Error accessing R2 storage: ' + 
-      (err instanceof Error ? err.message : String(err)));
+    
+    if (!object) {
+      return null;
+    }
+    
+    // Create headers using R2 object's writeHttpMetadata
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    
+    // Add additional headers
+    // Get cache TTL with proper type narrowing
+    const cacheTTL = config?.cache?.ttl?.ok ?? 86400;
+    headers.set('Cache-Control', `public, max-age=${cacheTTL}`);
+    headers.set('Accept-Ranges', 'bytes');
+    
+    // The Range response
+    let status = 200;
+    if (options.range && 'offset' in options.range) {
+      status = 206;
+      const offset = options.range.offset || 0;
+      const length = options.range.length || 0;
+      const end = offset + length - 1;
+      const total = object.size;
+      headers.set('Content-Range', `bytes ${offset}-${end}/${total}`);
+    }
+    
+    // Return a successful result with the object details
+    return {
+      response: new Response(object.body, {
+        headers,
+        status
+      }),
+      sourceType: 'r2',
+      contentType: object.httpMetadata?.contentType || null,
+      size: object.size,
+      path: normalizedPath
+    };
+  } else {
+    // Simple case - no request object
+    const object = await bucket.get(normalizedPath);
+    
+    if (!object) {
+      return null;
+    }
+    
+    // Create headers using R2 object's writeHttpMetadata
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    
+    // Add additional headers with proper type narrowing
+    const cacheTTL = config?.cache?.ttl?.ok ?? 86400;
+    headers.set('Cache-Control', `public, max-age=${cacheTTL}`);
+    headers.set('Accept-Ranges', 'bytes');
+    
+    // Return a successful result with the object details
+    return {
+      response: new Response(object.body, { headers }),
+      sourceType: 'r2',
+      contentType: object.httpMetadata?.contentType || null,
+      size: object.size,
+      path: normalizedPath
+    };
   }
 }
 
 /**
- * Fetch a video from a remote URL
+ * Fetch a video from R2 storage
+ * Uses standardized error handling for consistent logging and error normalization
  */
-async function fetchFromRemote(
+const fetchFromR2 = withErrorHandling<
+  [string, R2Bucket, Request | undefined, VideoResizerConfig | undefined],
+  Promise<StorageResult | null>
+>(
+  fetchFromR2Impl,
+  {
+    functionName: 'fetchFromR2',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  {
+    storageType: 'r2'
+  }
+);
+
+/**
+ * Implementation of fetchFromRemote that might throw errors
+ */
+async function fetchFromRemoteImpl(
   path: string, 
   baseUrl: string,
   config: VideoResizerConfig,
   env: EnvVariables
 ): Promise<StorageResult | null> {
-  try {
-    // Get the current request context if available
-    const requestContext = getCurrentContext();
-    
-    // Build fetch options from config with proper type safety
-    const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
-      cf: {
-        cacheTtl: config?.cache?.ttl?.ok ?? 3600,
-        cacheEverything: true,
-      },
-      headers: {
-        'User-Agent': config?.storage?.fetchOptions?.userAgent ?? 'Cloudflare-Video-Resizer/1.0',
-      },
-    };
-    
-    // Add any additional headers from config if they exist
-    if (config?.storage?.fetchOptions?.headers) {
-      Object.entries(config.storage.fetchOptions.headers).forEach(([key, value]) => {
-        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-          // Add the headers from config
-          (fetchOptions.headers as Record<string, string>)[key] = String(value);
-        }
-      });
-    }
-    
-    // Apply path transformations for remote URLs
-    const transformedPath = applyPathTransformation(path, config, 'remote');
-    
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  // Build fetch options from config with proper type safety
+  const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
+    cf: {
+      cacheTtl: config?.cache?.ttl?.ok ?? 3600,
+      cacheEverything: true,
+    },
+    headers: {
+      'User-Agent': config?.storage?.fetchOptions?.userAgent ?? 'Cloudflare-Video-Resizer/1.0',
+    },
+  };
+  
+  // Add any additional headers from config if they exist
+  if (config?.storage?.fetchOptions?.headers) {
+    Object.entries(config.storage.fetchOptions.headers).forEach(([key, value]) => {
+      if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+        // Add the headers from config
+        (fetchOptions.headers as Record<string, string>)[key] = String(value);
+      }
+    });
+  }
+  
+  // Apply path transformations for remote URLs
+  const transformedPath = applyPathTransformation(path, config, 'remote');
+  
+  // Use our helper function for consistent logging
+  logDebug('VideoStorageService', 'Remote path after transformation', { 
+    originalPath: path, 
+    transformedPath 
+  });
+  
+  // Check if authentication is required for this origin
+  // Set the base URL
+  const finalUrl = new URL(transformedPath, baseUrl).toString();
+  
+  // Check if remote auth is enabled specifically for this remote URL
+  if (config?.storage?.remoteAuth?.enabled) {
     // Use our helper function for consistent logging
-    logDebug('VideoStorageService', 'Remote path after transformation', { 
-      originalPath: path, 
-      transformedPath 
+    logDebug('VideoStorageService', 'Remote auth enabled', {
+      type: config.storage.remoteAuth.type,
+      url: finalUrl
     });
     
-    // Check if authentication is required for this origin
-    // Set the base URL
-    const finalUrl = new URL(transformedPath, baseUrl).toString();
+    const remoteAuth = config.storage.remoteAuth;
     
-    // Check if remote auth is enabled specifically for this remote URL
-    if (config?.storage?.remoteAuth?.enabled) {
-      // Use our helper function for consistent logging
-      logDebug('VideoStorageService', 'Remote auth enabled', {
-        type: config.storage.remoteAuth.type,
-        url: finalUrl
-      });
-      
-      const remoteAuth = config.storage.remoteAuth;
-      
-      // Handle different auth types
-      if (remoteAuth.type === 'aws-s3') {
-        // Check if we're using origin-auth
-        if (config.storage?.auth?.useOriginAuth) {
-          // With origin-auth, we sign the headers and let Cloudflare pass them through
-          // Create an AWS-compatible signer
-          const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
-          const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
-          
-          // Access environment variables
-          const envRecord = env as unknown as Record<string, string | undefined>;
-          
-          const accessKey = envRecord[accessKeyVar] as string;
-          const secretKey = envRecord[secretKeyVar] as string;
-          
-          if (accessKey && secretKey) {
-            try {
-              // Import AwsClient
-              const { AwsClient } = await import('aws4fetch');
-              
-              // Setup AWS client
-              const aws = new AwsClient({
-                accessKeyId: accessKey,
-                secretAccessKey: secretKey,
-                service: remoteAuth.service ?? 's3',
-                region: remoteAuth.region ?? 'us-east-1'
-              });
-              
-              // Create a request to sign
-              const signRequest = new Request(finalUrl, {
-                method: 'GET'
-              });
-              
-              // Sign the request
-              const signedRequest = await aws.sign(signRequest);
-              
-              // Extract the headers and add them to fetch options
-              signedRequest.headers.forEach((value, key) => {
-                // Only include AWS specific headers
-                if (key.startsWith('x-amz-') || key === 'authorization') {
-                  if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-                    (fetchOptions.headers as Record<string, string>)[key] = value;
-                  }
-                }
-              });
-              
-              // Use our helper function for consistent logging
-              logDebug('VideoStorageService', 'Added AWS signed headers', {
-                url: finalUrl,
-                headerCount: Object.keys(fetchOptions.headers || {}).length
-              });
-            } catch (err) {
-              // Use our helper function for error logging
-              logError('VideoStorageService', 'Error signing AWS request', {
-                error: err instanceof Error ? err.message : String(err),
-                url: finalUrl,
-                stack: err instanceof Error ? err.stack : undefined
-              });
-              
-              // Continue without authentication if in permissive mode
-              if (config.storage.auth?.securityLevel !== 'permissive') {
-                return null;
-              }
-            }
-          } else {
-            // Use our helper function for error logging
-            logError('VideoStorageService', 'AWS credentials not found', {
-              accessKeyVar,
-              secretKeyVar
+    // Handle different auth types
+    if (remoteAuth.type === 'aws-s3') {
+      // Check if we're using origin-auth
+      if (config.storage?.auth?.useOriginAuth) {
+        // With origin-auth, we sign the headers and let Cloudflare pass them through
+        // Create an AWS-compatible signer
+        const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+        const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+        
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        
+        const accessKey = envRecord[accessKeyVar] as string;
+        const secretKey = envRecord[secretKeyVar] as string;
+        
+        if (accessKey && secretKey) {
+          try {
+            // Import AwsClient
+            const { AwsClient } = await import('aws4fetch');
+            
+            // Setup AWS client
+            const aws = new AwsClient({
+              accessKeyId: accessKey,
+              secretAccessKey: secretKey,
+              service: remoteAuth.service ?? 's3',
+              region: remoteAuth.region ?? 'us-east-1'
             });
+            
+            // Create a request to sign
+            const signRequest = new Request(finalUrl, {
+              method: 'GET'
+            });
+            
+            // Sign the request
+            const signedRequest = await aws.sign(signRequest);
+            
+            // Extract the headers and add them to fetch options
+            signedRequest.headers.forEach((value, key) => {
+              // Only include AWS specific headers
+              if (key.startsWith('x-amz-') || key === 'authorization') {
+                if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+                  (fetchOptions.headers as Record<string, string>)[key] = value;
+                }
+              }
+            });
+            
+            // Use our helper function for consistent logging
+            logDebug('VideoStorageService', 'Added AWS signed headers', {
+              url: finalUrl,
+              headerCount: Object.keys(fetchOptions.headers || {}).length
+            });
+          } catch (err) {
+            // Log error with standardized error handling
+            logErrorWithContext(
+              'Error signing AWS request',
+              err,
+              {
+                url: finalUrl,
+                accessKeyVar,
+                secretKeyVar
+              },
+              'VideoStorageService'
+            );
             
             // Continue without authentication if in permissive mode
             if (config.storage.auth?.securityLevel !== 'permissive') {
@@ -461,285 +483,328 @@ async function fetchFromRemote(
             }
           }
         } else {
-          // Use our helper function for consistent logging
-          logDebug('VideoStorageService', 'AWS S3 auth requires origin-auth to be enabled', {
-            url: finalUrl
-          });
-        }
-      } else if (remoteAuth.type === 'bearer') {
-        // Implement bearer token auth
-        if (remoteAuth.headers && 'Authorization' in remoteAuth.headers) {
-          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-            (fetchOptions.headers as Record<string, string>)['Authorization'] = 
-              remoteAuth.headers['Authorization'];
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'AWS credentials not found',
+            new Error('Missing credentials'),
+            {
+              accessKeyVar,
+              secretKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Continue without authentication if in permissive mode
+          if (config.storage.auth?.securityLevel !== 'permissive') {
+            return null;
           }
         }
-      } else if (remoteAuth.type === 'header') {
-        // Add custom headers
-        if (remoteAuth.headers) {
-          Object.entries(remoteAuth.headers).forEach(([key, value]) => {
-            if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-              (fetchOptions.headers as Record<string, string>)[key] = value;
-            }
-          });
+      } else {
+        // Use our helper function for consistent logging
+        logDebug('VideoStorageService', 'AWS S3 auth requires origin-auth to be enabled', {
+          url: finalUrl
+        });
+      }
+    } else if (remoteAuth.type === 'bearer') {
+      // Implement bearer token auth
+      if (remoteAuth.headers && 'Authorization' in remoteAuth.headers) {
+        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+          (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+            remoteAuth.headers['Authorization'];
         }
       }
-      
-      // Set cache TTL for authenticated requests
-      if (config.storage.auth?.cacheTtl && fetchOptions.cf) {
-        fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
+    } else if (remoteAuth.type === 'header') {
+      // Add custom headers
+      if (remoteAuth.headers) {
+        Object.entries(remoteAuth.headers).forEach(([key, value]) => {
+          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+            (fetchOptions.headers as Record<string, string>)[key] = value;
+          }
+        });
       }
-    } else {
-      // Use our helper function for consistent logging
-      logDebug('VideoStorageService', 'Remote auth not enabled for this URL', {
-        url: finalUrl
-      });
     }
     
-    // Fetch the video from the remote URL
-    logDebug('VideoStorageService', 'Fetching from remote URL', { url: finalUrl });
-    
-    const response = await fetch(finalUrl, fetchOptions);
-    
-    if (!response.ok) {
-      logDebug('VideoStorageService', 'Remote fetch failed', { 
-        url: finalUrl, 
-        status: response.status, 
-        statusText: response.statusText 
-      });
-      return null;
+    // Set cache TTL for authenticated requests
+    if (config.storage.auth?.cacheTtl && fetchOptions.cf) {
+      fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
     }
-    
-    // Clone the response to ensure we can access its body multiple times
-    const clonedResponse = response.clone();
-    
-    return {
-      response: clonedResponse,
-      sourceType: 'remote',
-      contentType: response.headers.get('Content-Type'),
-      size: parseInt(response.headers.get('Content-Length') || '0', 10) || null,
-      originalUrl: finalUrl,
-      path: transformedPath
-    };
-  } catch (err) {
-    logError('VideoStorageService', 'Error fetching from remote', { 
-      error: err instanceof Error ? err.message : String(err),
-      url: baseUrl,
-      path,
-      stack: err instanceof Error ? err.stack : undefined
+  } else {
+    // Use our helper function for consistent logging
+    logDebug('VideoStorageService', 'Remote auth not enabled for this URL', {
+      url: finalUrl
+    });
+  }
+  
+  // Fetch the video from the remote URL
+  logDebug('VideoStorageService', 'Fetching from remote URL', { url: finalUrl });
+  
+  const response = await fetch(finalUrl, fetchOptions);
+  
+  if (!response.ok) {
+    logDebug('VideoStorageService', 'Remote fetch failed', { 
+      url: finalUrl, 
+      status: response.status, 
+      statusText: response.statusText 
     });
     return null;
   }
+  
+  // Clone the response to ensure we can access its body multiple times
+  const clonedResponse = response.clone();
+  
+  return {
+    response: clonedResponse,
+    sourceType: 'remote',
+    contentType: response.headers.get('Content-Type'),
+    size: parseInt(response.headers.get('Content-Length') || '0', 10) || null,
+    originalUrl: finalUrl,
+    path: transformedPath
+  };
 }
 
 /**
- * Fetch a video from a fallback URL
+ * Fetch a video from a remote URL
+ * Uses standardized error handling for consistent logging and error propagation
  */
-async function fetchFromFallback(
+const fetchFromRemote = withErrorHandling<
+  [string, string, VideoResizerConfig, EnvVariables],
+  Promise<StorageResult | null>
+>(
+  fetchFromRemoteImpl,
+  {
+    functionName: 'fetchFromRemote',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  {
+    storageType: 'remote'
+  }
+);
+
+/**
+ * Implementation of fetchFromFallback that might throw errors
+ */
+async function fetchFromFallbackImpl(
   path: string, 
   fallbackUrl: string,
   config: VideoResizerConfig,
   env: EnvVariables
 ): Promise<StorageResult | null> {
-  try {
-    // Get the current request context if available
-    const requestContext = getCurrentContext();
+  // Get the current request context if available
+  const requestContext = getCurrentContext();
+  
+  // Build fetch options from config with proper type safety
+  const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
+    cf: {
+      cacheTtl: config?.cache?.ttl?.ok ?? 3600,
+      cacheEverything: true,
+    },
+    headers: {
+      'User-Agent': config?.storage?.fetchOptions?.userAgent ?? 'Cloudflare-Video-Resizer/1.0',
+    },
+  };
+  
+  // Add any additional headers from config if they exist
+  if (config?.storage?.fetchOptions?.headers) {
+    Object.entries(config.storage.fetchOptions.headers).forEach(([key, value]) => {
+      if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+        // Add the headers from config
+        (fetchOptions.headers as Record<string, string>)[key] = String(value);
+      }
+    });
+  }
+  
+  // Apply path transformations for fallback URLs
+  const transformedPath = applyPathTransformation(path, config, 'fallback');
+  
+  logDebug('VideoStorageService', 'Fallback path after transformation', { 
+    originalPath: path, 
+    transformedPath 
+  });
+  
+  // Set the base URL
+  const finalUrl = new URL(transformedPath, fallbackUrl).toString();
+  
+  // Check if fallback auth is enabled specifically for this URL
+  if (config?.storage?.fallbackAuth?.enabled) {
+    logDebug('VideoStorageService', 'Fallback auth enabled', {
+      type: config.storage.fallbackAuth.type,
+      url: finalUrl
+    });
     
-    // Build fetch options from config with proper type safety
-    const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
-      cf: {
-        cacheTtl: config?.cache?.ttl?.ok ?? 3600,
-        cacheEverything: true,
-      },
-      headers: {
-        'User-Agent': config?.storage?.fetchOptions?.userAgent ?? 'Cloudflare-Video-Resizer/1.0',
-      },
-    };
+    const fallbackAuth = config.storage.fallbackAuth;
     
-    // Add any additional headers from config if they exist
-    if (config?.storage?.fetchOptions?.headers) {
-      Object.entries(config.storage.fetchOptions.headers).forEach(([key, value]) => {
-        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-          // Add the headers from config
-          (fetchOptions.headers as Record<string, string>)[key] = String(value);
-        }
-      });
-    }
-    
-    // Apply path transformations for fallback URLs
-    const transformedPath = applyPathTransformation(path, config, 'fallback');
-    
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'VideoStorageService', 'Fallback path after transformation', { 
-        originalPath: path, 
-        transformedPath 
-      });
-    } else {
-      // Fallback for when no context is available
-      console.debug(`VideoStorageService: Fallback path after transformation: ${path} -> ${transformedPath}`);
-    }
-    
-    // Set the base URL
-    const finalUrl = new URL(transformedPath, fallbackUrl).toString();
-    
-    // Check if fallback auth is enabled specifically for this URL
-    if (config?.storage?.fallbackAuth?.enabled) {
-      logDebug('VideoStorageService', 'Fallback auth enabled', {
-        type: config.storage.fallbackAuth.type,
-        url: finalUrl
-      });
-      
-      const fallbackAuth = config.storage.fallbackAuth;
-      
-      // Handle different auth types
-      if (fallbackAuth.type === 'aws-s3') {
-        // Check if we're using origin-auth
-        if (config.storage?.auth?.useOriginAuth) {
-          // With origin-auth, we sign the headers and let Cloudflare pass them through
-          // Create an AWS-compatible signer
-          const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
-          const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
-          
-          // Access environment variables
-          const envRecord = env as unknown as Record<string, string | undefined>;
-          
-          const accessKey = envRecord[accessKeyVar] as string;
-          const secretKey = envRecord[secretKeyVar] as string;
-          
-          if (accessKey && secretKey) {
-            try {
-              // Import AwsClient
-              const { AwsClient } = await import('aws4fetch');
-              
-              // Setup AWS client
-              const aws = new AwsClient({
-                accessKeyId: accessKey,
-                secretAccessKey: secretKey,
-                service: fallbackAuth.service ?? 's3',
-                region: fallbackAuth.region ?? 'us-east-1'
-              });
-              
-              // Create a request to sign
-              const signRequest = new Request(finalUrl, {
-                method: 'GET'
-              });
-              
-              // Sign the request
-              const signedRequest = await aws.sign(signRequest);
-              
-              // Extract the headers and add them to fetch options
-              signedRequest.headers.forEach((value, key) => {
-                // Only include AWS specific headers
-                if (key.startsWith('x-amz-') || key === 'authorization') {
-                  if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-                    (fetchOptions.headers as Record<string, string>)[key] = value;
-                  }
-                }
-              });
-              
-              logDebug('VideoStorageService', 'Added AWS signed headers for fallback', {
-                url: finalUrl,
-                headerCount: Object.keys(fetchOptions.headers || {}).length
-              });
-            } catch (err) {
-              logError('VideoStorageService', 'Error signing AWS request for fallback', {
-                error: err instanceof Error ? err.message : String(err),
-                url: finalUrl,
-                stack: err instanceof Error ? err.stack : undefined
-              });
-              
-              // Continue without authentication if in permissive mode
-              if (config.storage.auth?.securityLevel !== 'permissive') {
-                return null;
-              }
-            }
-          } else {
-            logError('VideoStorageService', 'AWS credentials not found for fallback', {
-              accessKeyVar,
-              secretKeyVar
+    // Handle different auth types
+    if (fallbackAuth.type === 'aws-s3') {
+      // Check if we're using origin-auth
+      if (config.storage?.auth?.useOriginAuth) {
+        // With origin-auth, we sign the headers and let Cloudflare pass them through
+        // Create an AWS-compatible signer
+        const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+        const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+        
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        
+        const accessKey = envRecord[accessKeyVar] as string;
+        const secretKey = envRecord[secretKeyVar] as string;
+        
+        if (accessKey && secretKey) {
+          try {
+            // Import AwsClient
+            const { AwsClient } = await import('aws4fetch');
+            
+            // Setup AWS client
+            const aws = new AwsClient({
+              accessKeyId: accessKey,
+              secretAccessKey: secretKey,
+              service: fallbackAuth.service ?? 's3',
+              region: fallbackAuth.region ?? 'us-east-1'
             });
+            
+            // Create a request to sign
+            const signRequest = new Request(finalUrl, {
+              method: 'GET'
+            });
+            
+            // Sign the request
+            const signedRequest = await aws.sign(signRequest);
+            
+            // Extract the headers and add them to fetch options
+            signedRequest.headers.forEach((value, key) => {
+              // Only include AWS specific headers
+              if (key.startsWith('x-amz-') || key === 'authorization') {
+                if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+                  (fetchOptions.headers as Record<string, string>)[key] = value;
+                }
+              }
+            });
+            
+            logDebug('VideoStorageService', 'Added AWS signed headers for fallback', {
+              url: finalUrl,
+              headerCount: Object.keys(fetchOptions.headers || {}).length
+            });
+          } catch (err) {
+            // Log error with standardized error handling
+            logErrorWithContext(
+              'Error signing AWS request for fallback',
+              err,
+              {
+                url: finalUrl,
+                accessKeyVar,
+                secretKeyVar
+              },
+              'VideoStorageService'
+            );
             
             // Continue without authentication if in permissive mode
             if (config.storage.auth?.securityLevel !== 'permissive') {
               return null;
             }
           }
-        }
-      } else if (fallbackAuth.type === 'bearer') {
-        // Implement bearer token auth
-        if (fallbackAuth.headers && 'Authorization' in fallbackAuth.headers) {
-          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-            (fetchOptions.headers as Record<string, string>)['Authorization'] = 
-              fallbackAuth.headers['Authorization'];
+        } else {
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'AWS credentials not found for fallback',
+            new Error('Missing credentials'),
+            {
+              accessKeyVar,
+              secretKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Continue without authentication if in permissive mode
+          if (config.storage.auth?.securityLevel !== 'permissive') {
+            return null;
           }
         }
-      } else if (fallbackAuth.type === 'header') {
-        // Add custom headers
-        if (fallbackAuth.headers) {
-          Object.entries(fallbackAuth.headers).forEach(([key, value]) => {
-            if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-              (fetchOptions.headers as Record<string, string>)[key] = value;
-            }
-          });
+      }
+    } else if (fallbackAuth.type === 'bearer') {
+      // Implement bearer token auth
+      if (fallbackAuth.headers && 'Authorization' in fallbackAuth.headers) {
+        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+          (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+            fallbackAuth.headers['Authorization'];
         }
       }
-      
-      // Set cache TTL for authenticated requests
-      if (config.storage.auth?.cacheTtl && fetchOptions.cf) {
-        fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
+    } else if (fallbackAuth.type === 'header') {
+      // Add custom headers
+      if (fallbackAuth.headers) {
+        Object.entries(fallbackAuth.headers).forEach(([key, value]) => {
+          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+            (fetchOptions.headers as Record<string, string>)[key] = value;
+          }
+        });
       }
-    } else {
-      logDebug('VideoStorageService', 'Fallback auth not enabled for this URL', {
-        url: finalUrl
-      });
     }
     
-    // Fetch the video from the fallback URL
-    logDebug('VideoStorageService', 'Fetching from fallback URL', { url: finalUrl });
-    
-    const response = await fetch(finalUrl, fetchOptions);
-    
-    if (!response.ok) {
-      logDebug('VideoStorageService', 'Fallback fetch failed', { 
-        url: finalUrl, 
-        status: response.status, 
-        statusText: response.statusText 
-      });
-      return null;
+    // Set cache TTL for authenticated requests
+    if (config.storage.auth?.cacheTtl && fetchOptions.cf) {
+      fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
     }
-    
-    // Clone the response to ensure we can access its body multiple times
-    const clonedResponse = response.clone();
-    
-    return {
-      response: clonedResponse,
-      sourceType: 'fallback',
-      contentType: response.headers.get('Content-Type'),
-      size: parseInt(response.headers.get('Content-Length') || '0', 10) || null,
-      originalUrl: finalUrl,
-      path: transformedPath
-    };
-  } catch (err) {
-    logError('VideoStorageService', 'Error fetching from fallback', { 
-      error: err instanceof Error ? err.message : String(err),
-      url: fallbackUrl,
-      path,
-      stack: err instanceof Error ? err.stack : undefined
+  } else {
+    logDebug('VideoStorageService', 'Fallback auth not enabled for this URL', {
+      url: finalUrl
+    });
+  }
+  
+  // Fetch the video from the fallback URL
+  logDebug('VideoStorageService', 'Fetching from fallback URL', { url: finalUrl });
+  
+  const response = await fetch(finalUrl, fetchOptions);
+  
+  if (!response.ok) {
+    logDebug('VideoStorageService', 'Fallback fetch failed', { 
+      url: finalUrl, 
+      status: response.status, 
+      statusText: response.statusText 
     });
     return null;
   }
+  
+  // Clone the response to ensure we can access its body multiple times
+  const clonedResponse = response.clone();
+  
+  return {
+    response: clonedResponse,
+    sourceType: 'fallback',
+    contentType: response.headers.get('Content-Type'),
+    size: parseInt(response.headers.get('Content-Length') || '0', 10) || null,
+    originalUrl: finalUrl,
+    path: transformedPath
+  };
 }
 
 /**
- * Fetch a video from any available storage source
+ * Fetch a video from a fallback URL
+ * Uses standardized error handling for consistent logging and error propagation
+ */
+const fetchFromFallback = withErrorHandling<
+  [string, string, VideoResizerConfig, EnvVariables],
+  Promise<StorageResult | null>
+>(
+  fetchFromFallbackImpl,
+  {
+    functionName: 'fetchFromFallback',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  {
+    storageType: 'fallback'
+  }
+);
+
+/**
+ * Implementation of fetchVideo that orchestrates fetching from multiple sources
  * 
  * @param path The path to the video
  * @param config The video resizer configuration
  * @param env The Cloudflare environment
- * @returns A StorageResult object or null if the video couldn't be found
+ * @param request Optional request object for conditional requests
+ * @returns A StorageResult object with the fetched video
  */
-export async function fetchVideo(
+async function fetchVideoImpl(
   path: string,
   config: VideoResizerConfig,
   env: EnvVariables,
@@ -749,17 +814,22 @@ export async function fetchVideo(
   const requestId = Math.random().toString(36).substring(2, 10);
   const startTime = Date.now();
   
+  // Add detailed logging for the operation start
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Storage', 'Starting video fetch operation', {
+      path,
+      requestId,
+      options: config.storage?.priority ?? []
+    });
+  }
+  
   logDebug('VideoStorageService', `[${requestId}] Starting video fetch operation`, {
     path,
     hasRequest: !!request,
     url: request?.url,
     storageOptions: config.storage?.priority ?? [],
     timestamp: new Date().toISOString()
-  });
-  logDebug('VideoStorageService', 'Starting video fetch', {
-    path,
-    hasRequest: !!request,
-    storageOptions: config.storage?.priority ?? []
   });
   
   // First, check the request type to determine if this is a Cloudflare Media Transformation subrequest
@@ -809,7 +879,12 @@ export async function fetchVideo(
       try {
         // Make sure bucket is defined before using it
         if (!bucket) {
-          logError('VideoStorageService', 'R2 bucket is undefined', { path: r2Key });
+          logErrorWithContext(
+            'R2 bucket is undefined', 
+            new Error('Missing R2 bucket binding'),
+            { path: r2Key },
+            'VideoStorageService'
+          );
           throw new Error('R2 bucket is undefined');
         }
         
@@ -818,12 +893,15 @@ export async function fetchVideo(
         
         if (result) {
           logDebug('VideoStorageService', 'Found video in R2 bucket for subrequest', { r2Key });
-          logDebug('VideoStorageService', 'R2 fetch successful for media-transformation subrequest', {
-            contentType: result.contentType,
-            size: result.size,
-            key: r2Key,
-            timeMs: fetchEnd - fetchStart
-          });
+          
+          if (requestContext) {
+            addBreadcrumb(requestContext, 'Storage', 'R2 fetch successful for subrequest', {
+              key: r2Key,
+              contentType: result.contentType,
+              size: result.size
+            });
+          }
+          
           return result;
         }
         
@@ -835,35 +913,34 @@ export async function fetchVideo(
             normalizedPath 
           });
           
-          // Make sure bucket is defined before using it
           if (!bucket) {
-            logError('VideoStorageService', 'R2 bucket is undefined', { path: normalizedPath });
+            logErrorWithContext(
+              'R2 bucket is undefined', 
+              new Error('Missing R2 bucket binding'),
+              { path: normalizedPath },
+              'VideoStorageService'
+            );
             throw new Error('R2 bucket is undefined');
           }
           
           const fallbackResult = await fetchFromR2(normalizedPath, bucket, request, config);
           if (fallbackResult) {
             logDebug('VideoStorageService', 'Found video in R2 bucket using normalized path', { normalizedPath });
-            logDebug('VideoStorageService', 'R2 fallback fetch successful', {
-              contentType: fallbackResult.contentType,
-              size: fallbackResult.size,
-              key: normalizedPath,
-              timeMs: Date.now() - fetchStart
-            });
+            
+            if (requestContext) {
+              addBreadcrumb(requestContext, 'Storage', 'R2 fallback fetch successful', {
+                key: normalizedPath,
+                contentType: fallbackResult.contentType,
+                size: fallbackResult.size
+              });
+            }
+            
             return fallbackResult;
           }
         }
-        
-        logDebug('VideoStorageService', 'Video not found in R2 for subrequest', {
-          paths: r2Key !== normalizedPath ? `${r2Key}, ${normalizedPath}` : r2Key,
-          timeMs: fetchEnd - fetchStart
-        });
       } catch (err) {
-        logError('VideoStorageService', 'Error in R2 fetch for subrequest', {
-          error: err instanceof Error ? err.message : String(err),
-          path: r2Key,
-          stack: err instanceof Error ? err.stack : undefined
-        });
+        // Error is already logged by fetchFromR2 with standardized error handling
+        // Continue with other storage options
       }
     } else {
       logDebug('VideoStorageService', 'R2 not available for media-transformation subrequest', { 
@@ -900,32 +977,38 @@ export async function fetchVideo(
       });
       
       const bucket = env.VIDEOS_BUCKET;
-      const fetchStart = Date.now();
       
-      // Make sure bucket is defined before using it
       if (!bucket) {
-        logError('VideoStorageService', 'R2 bucket is undefined', { path: transformedPath });
-        throw new Error('R2 bucket is undefined');
+        logErrorWithContext(
+          'R2 bucket is undefined',
+          new Error('Missing R2 bucket binding'),
+          { path: transformedPath },
+          'VideoStorageService'
+        );
+        // Continue with next storage type
+        continue;
       }
       
       result = await fetchFromR2(transformedPath, bucket, request, config);
-      const fetchEnd = Date.now();
       
       if (result) {
         logDebug('VideoStorageService', 'R2 fetch successful', {
           size: result.size,
-          contentType: result.contentType,
-          timeMs: fetchEnd - fetchStart
+          contentType: result.contentType
         });
-      } else {
-        logDebug('VideoStorageService', 'R2 fetch failed', {
-          timeMs: fetchEnd - fetchStart
-        });
+        
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'Storage', 'R2 fetch successful', {
+            path: transformedPath,
+            contentType: result.contentType,
+            size: result.size
+          });
+        }
       }
     }
     
     // Try to fetch from remote URL
-    if (storageType === 'remote' && config.storage?.remoteUrl) {
+    if (!result && storageType === 'remote' && config.storage?.remoteUrl) {
       logDebug('VideoStorageService', 'Trying remote URL', { 
         path, 
         remoteUrl: config.storage.remoteUrl 
@@ -934,30 +1017,27 @@ export async function fetchVideo(
       // Apply path transformations for remote
       const transformedPath = applyPathTransformation(path, config, 'remote');
       
-      logDebug('VideoStorageService', 'Remote path after transformation', { 
-        originalPath: path, 
-        transformedPath 
-      });
-      
-      const fetchStart = Date.now();
       result = await fetchFromRemote(transformedPath, config.storage.remoteUrl, config, env);
-      const fetchEnd = Date.now();
       
       if (result) {
         logDebug('VideoStorageService', 'Remote fetch successful', {
           size: result.size,
-          contentType: result.contentType,
-          timeMs: fetchEnd - fetchStart
+          contentType: result.contentType
         });
-      } else {
-        logDebug('VideoStorageService', 'Remote fetch failed', {
-          timeMs: fetchEnd - fetchStart
-        });
+        
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'Storage', 'Remote fetch successful', {
+            path: transformedPath,
+            url: config.storage.remoteUrl,
+            contentType: result.contentType,
+            size: result.size
+          });
+        }
       }
     }
     
     // Try to fetch from fallback URL
-    if (storageType === 'fallback' && config.storage?.fallbackUrl) {
+    if (!result && storageType === 'fallback' && config.storage?.fallbackUrl) {
       logDebug('VideoStorageService', 'Trying fallback URL', { 
         path, 
         fallbackUrl: config.storage.fallbackUrl 
@@ -966,25 +1046,22 @@ export async function fetchVideo(
       // Apply path transformations for fallback
       const transformedPath = applyPathTransformation(path, config, 'fallback');
       
-      logDebug('VideoStorageService', 'Fallback path after transformation', { 
-        originalPath: path, 
-        transformedPath 
-      });
-      
-      const fetchStart = Date.now();
       result = await fetchFromFallback(transformedPath, config.storage.fallbackUrl, config, env);
-      const fetchEnd = Date.now();
       
       if (result) {
         logDebug('VideoStorageService', 'Fallback fetch successful', {
           size: result.size,
-          contentType: result.contentType,
-          timeMs: fetchEnd - fetchStart
+          contentType: result.contentType
         });
-      } else {
-        logDebug('VideoStorageService', 'Fallback fetch failed', {
-          timeMs: fetchEnd - fetchStart
-        });
+        
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'Storage', 'Fallback fetch successful', {
+            path: transformedPath,
+            url: config.storage.fallbackUrl,
+            contentType: result.contentType,
+            size: result.size
+          });
+        }
       }
     }
     
@@ -1004,15 +1081,32 @@ export async function fetchVideo(
     }
   }
   
-  // If we couldn't find the video anywhere, return an error
+  // If we couldn't find the video anywhere, create an error response
   const elapsedTime = Date.now() - startTime;
-  logError('VideoStorageService', `[${requestId}] Video not found in any storage location`, { 
-    path, 
-    elapsedMs: elapsedTime,
-    storageOptions: config.storage?.priority ?? [],
-    timestamp: new Date().toISOString()
-  });
   
+  // Log detailed error information
+  logErrorWithContext(
+    'Video not found in any storage location',
+    new Error('Video not found'),
+    { 
+      path, 
+      requestId,
+      elapsedMs: elapsedTime,
+      storageOptions: config.storage?.priority ?? [],
+      timestamp: new Date().toISOString()
+    },
+    'VideoStorageService'
+  );
+  
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Error', 'Video not found in any storage location', {
+      path,
+      storageOptions: config.storage?.priority?.join(',') ?? '',
+      severity: 'high'
+    });
+  }
+  
+  // Return a standardized error result
   return {
     response: new Response('Video not found', { status: 404 }),
     sourceType: 'error',
@@ -1024,11 +1118,36 @@ export async function fetchVideo(
 }
 
 /**
- * Determine if a response should bypass cache based on configuration and request
+ * Fetch a video from any available storage source
+ * Uses standardized error handling for consistent logging and robust error handling
+ * 
+ * @param path The path to the video
+ * @param config The video resizer configuration
+ * @param env The Cloudflare environment
+ * @param request Optional request object
+ * @returns A StorageResult object or an error response if not found
+ */
+export const fetchVideo = withErrorHandling<
+  [string, VideoResizerConfig, EnvVariables, Request | undefined],
+  Promise<StorageResult>
+>(
+  fetchVideoImpl,
+  {
+    functionName: 'fetchVideo',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  {
+    operation: 'fetch'
+  }
+);
+
+/**
+ * Implementation of shouldBypassCache that might throw errors
  * @param request - The incoming request
  * @returns Boolean indicating whether the cache should be bypassed
  */
-export function shouldBypassCache(request: Request): boolean {
+function shouldBypassCacheImpl(request: Request): boolean {
   // Check for cache-control header
   const cacheControl = request.headers.get('Cache-Control');
   if (cacheControl && (cacheControl.includes('no-cache') || cacheControl.includes('no-store'))) {
@@ -1043,6 +1162,23 @@ export function shouldBypassCache(request: Request): boolean {
   const cacheConfig = CacheConfigurationManager.getInstance();
   return cacheConfig.shouldBypassCache(url);
 }
+
+/**
+ * Determine if a response should bypass cache based on configuration and request
+ * Uses standardized error handling for consistent logging and to ensure a safe default
+ * 
+ * @param request - The incoming request
+ * @returns Boolean indicating whether the cache should be bypassed
+ */
+export const shouldBypassCache = tryOrDefault<[Request], boolean>(
+  shouldBypassCacheImpl,
+  {
+    functionName: 'shouldBypassCache',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  false // Default to not bypassing cache if there's an error determining status
+);
 
 /**
  * Interface for video options
@@ -1063,13 +1199,13 @@ interface VideoOptions {
 }
 
 /**
- * Generate cache tags for a video resource
+ * Implementation of generateCacheTags that might throw errors
  * @param videoPath - The path to the video
  * @param options - Video options (quality, format, etc.)
  * @param headers - Response headers for additional metadata
  * @returns Array of cache tags
  */
-export function generateCacheTags(
+function generateCacheTagsImpl(
   videoPath: string,
   options: VideoOptions,
   headers?: Headers
@@ -1210,3 +1346,25 @@ export function generateCacheTags(
   
   return tags;
 }
+
+/**
+ * Generate cache tags for a video resource
+ * Uses standardized error handling to ensure consistent error logging and fallback behavior
+ * 
+ * @param videoPath - The path to the video
+ * @param options - Video options (quality, format, etc.)
+ * @param headers - Response headers for additional metadata
+ * @returns Array of cache tags, or empty array on error
+ */
+export const generateCacheTags = tryOrDefault<
+  [string, VideoOptions, Headers | undefined],
+  string[]
+>(
+  generateCacheTagsImpl,
+  {
+    functionName: 'generateCacheTags',
+    component: 'VideoStorageService',
+    logErrors: true
+  },
+  [] // Default to empty array if tag generation fails
+);

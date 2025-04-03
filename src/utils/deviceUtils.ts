@@ -1,26 +1,45 @@
 /**
  * Device detection utilities for video requests
+ * Enhanced with standardized error handling for robustness
  */
 import { debug } from './loggerUtils';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { getDeviceTypeFromUserAgent, getVideoSizeForDeviceType } from './userAgentUtils';
 import { VideoSize } from './clientHints';
+import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 
 /**
- * Check if CF-Device-Type header is present
+ * Implementation of hasCfDeviceType that might throw errors
  * @param request - The incoming request
  * @returns True if CF-Device-Type is available
  */
-export function hasCfDeviceType(request: Request): boolean {
+function hasCfDeviceTypeImpl(request: Request): boolean {
   return Boolean(request.headers.get('CF-Device-Type'));
 }
 
 /**
- * Get responsive video size based on CF-Device-Type header
+ * Check if CF-Device-Type header is present
+ * Uses tryOrDefault for safe header detection with proper error handling
+ *
+ * @param request - The incoming request
+ * @returns True if CF-Device-Type is available, false on error
+ */
+export const hasCfDeviceType = tryOrDefault<[Request], boolean>(
+  hasCfDeviceTypeImpl,
+  {
+    functionName: 'hasCfDeviceType',
+    component: 'DeviceUtils',
+    logErrors: true
+  },
+  false // Safe default is false if detection fails
+);
+
+/**
+ * Implementation of getVideoSizeFromCfDeviceType that might throw errors
  * @param request - The incoming request
  * @returns Video size settings based on CF-Device-Type
  */
-export function getVideoSizeFromCfDeviceType(request: Request): VideoSize {
+function getVideoSizeFromCfDeviceTypeImpl(request: Request): VideoSize {
   const cfDeviceType = request.headers.get('CF-Device-Type');
   debug('DeviceUtils', 'CF-Device-Type detection', { cfDeviceType });
 
@@ -47,11 +66,34 @@ export function getVideoSizeFromCfDeviceType(request: Request): VideoSize {
 }
 
 /**
- * Get responsive video size based on User-Agent string
+ * Get responsive video size based on CF-Device-Type header
+ * Uses tryOrDefault for safe device detection with proper error handling
+ * 
+ * @param request - The incoming request
+ * @returns Video size settings based on CF-Device-Type, or default values on error
+ */
+export const getVideoSizeFromCfDeviceType = tryOrDefault<[Request], VideoSize>(
+  getVideoSizeFromCfDeviceTypeImpl,
+  {
+    functionName: 'getVideoSizeFromCfDeviceType',
+    component: 'DeviceUtils',
+    logErrors: true
+  },
+  {
+    // Safe default values if CF-Device-Type processing fails
+    width: 1080,
+    height: 608,
+    source: 'cf-device-type-error-fallback',
+    deviceType: 'desktop'
+  }
+);
+
+/**
+ * Implementation of getVideoSizeFromUserAgent that might throw errors
  * @param request - The incoming request
  * @returns Video size settings based on User-Agent detection
  */
-export function getVideoSizeFromUserAgent(request: Request): VideoSize {
+function getVideoSizeFromUserAgentImpl(request: Request): VideoSize {
   const userAgent = request.headers.get('User-Agent') || '';
   const deviceType = getDeviceTypeFromUserAgent(userAgent);
 
@@ -75,11 +117,34 @@ export function getVideoSizeFromUserAgent(request: Request): VideoSize {
 }
 
 /**
- * Detect device capabilities for video playback
+ * Get responsive video size based on User-Agent string
+ * Uses tryOrDefault for safe user agent detection with proper error handling
+ * 
+ * @param request - The incoming request
+ * @returns Video size settings based on User-Agent detection, or default values on error
+ */
+export const getVideoSizeFromUserAgent = tryOrDefault<[Request], VideoSize>(
+  getVideoSizeFromUserAgentImpl,
+  {
+    functionName: 'getVideoSizeFromUserAgent',
+    component: 'DeviceUtils',
+    logErrors: true
+  },
+  {
+    // Safe default values if User-Agent processing fails
+    width: 854,
+    height: 480,
+    source: 'user-agent-error-fallback',
+    deviceType: 'desktop'
+  }
+);
+
+/**
+ * Implementation of detectDeviceCapabilities that might throw errors
  * @param request - The incoming request
  * @returns Object with device capabilities
  */
-export function detectDeviceCapabilities(request: Request): Record<string, unknown> {
+function detectDeviceCapabilitiesImpl(request: Request): Record<string, unknown> {
   const userAgent = request.headers.get('User-Agent') || '';
   const deviceType = getDeviceTypeFromUserAgent(userAgent);
   
@@ -105,3 +170,28 @@ export function detectDeviceCapabilities(request: Request): Record<string, unkno
   
   return capabilities;
 }
+
+/**
+ * Detect device capabilities for video playback
+ * Uses tryOrDefault for safe device capability detection with proper error handling
+ * 
+ * @param request - The incoming request
+ * @returns Object with device capabilities, or default capabilities on error
+ */
+export const detectDeviceCapabilities = tryOrDefault<[Request], Record<string, unknown>>(
+  detectDeviceCapabilitiesImpl,
+  {
+    functionName: 'detectDeviceCapabilities',
+    component: 'DeviceUtils',
+    logErrors: true
+  },
+  {
+    // Safe default capabilities if detection fails
+    deviceType: 'desktop',
+    supportsHdr: false,
+    supportsTouchscreen: false,
+    supportsHighFramerate: true,
+    maxResolution: 1080,
+    source: 'error-fallback'
+  }
+);

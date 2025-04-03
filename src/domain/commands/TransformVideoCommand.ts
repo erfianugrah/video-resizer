@@ -1106,7 +1106,7 @@ export class TransformVideoCommand {
       // Add debug headers if debug is enabled (legacy method)
       if (this.context.debugInfo?.isEnabled) {
         const { addDebugHeaders } = await import('../../services/debugService');
-        errorResponse = addDebugHeaders(
+        errorResponse = await addDebugHeaders(
           errorResponse, 
           this.context.debugInfo, 
           diagnosticsInfo

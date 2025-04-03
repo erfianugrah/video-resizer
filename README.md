@@ -45,9 +45,11 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 ## Documentation
 
 - [Documentation Home](./docs/README.md)
-- [Configuration Reference](./docs/configuration/README.md)
-- [Dynamic Configuration](./docs/configuration/dynamic-configuration.md)
+- [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md)
+- [Configuration Guide](./docs/configuration/README.md)
 - [Deployment Guide](./docs/deployment/README.md)
+- [Error Handling Documentation](./docs/error-handling/README.md)
+- [URL Transformation Issues](./URL_TRANSFORMATION_ISSUES.md) - Known issues and solutions for URL transformation
 - [KV Caching System](./docs/kv-caching/README.md)
 - [Storage System](./docs/storage/README.md)
 - [IMQuery Support](./docs/features/imquery/README.md)

@@ -389,3 +389,15 @@ By following these error handling practices, we ensure that:
 4. Maintenance is easier because error handling is standardized
 
 Remember: Good error handling is about more than just preventing crashes - it's about making the system resilient and debuggable.
+
+## Additional Documentation
+
+For comprehensive documentation on the error handling implementation, see the [error-handling](./error-handling/) directory, which contains:
+
+1. [**Implementation Plan**](./error-handling/implementation-plan.md) - The original plan and phases for implementing standardized error handling
+2. [**Developer Guidelines**](./error-handling/developer-guidelines.md) - Guidelines for implementing standardized error handling in new code
+3. [**Test Improvements**](./error-handling/test-improvements.md) - Recommended test improvements to validate error handling
+4. [**Monitoring Plan**](./error-handling/monitoring-plan.md) - Plan for monitoring error handling effectiveness
+5. [**Summary**](./error-handling/summary.md) - Overall summary of the error handling implementation
+
+For implementation details of specific components, see the [implementations](./error-handling/implementations/) subdirectory.

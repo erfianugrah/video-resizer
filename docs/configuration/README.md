@@ -45,6 +45,8 @@ The configuration system is made up of several specialized managers:
 3. [Debug Configuration](./debug-configuration.md) - Controls debugging features
 4. [Logging Configuration](./logging-configuration.md) - Configures logging behavior
 
+For a complete reference of all configuration options and their details, see the [Configuration Reference](./CONFIGURATION_REFERENCE.md) document.
+
 ## Advanced Configuration Topics
 
 1. [Configuration Loading Process](./configuration-loading.md) - How configurations are loaded and applied

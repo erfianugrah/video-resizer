@@ -3,8 +3,15 @@
  */
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, error as pinoError, debug as pinoDebug } from '../utils/pinoLogger';
+import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import type { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
+import { 
+  logErrorWithContext, 
+  withErrorHandling, 
+  tryOrNull,
+  tryOrDefault
+} from '../utils/errorHandlingUtils';
+import { addBreadcrumb } from '../utils/requestContext';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -40,10 +47,9 @@ function logError(category: string, message: string, data?: Record<string, unkno
 }
 
 /**
- * Convert any error to a VideoTransformError
- * This is a utility function to ensure consistent error handling
+ * Implementation of normalizeError that might throw errors
  */
-export function normalizeError(err: unknown, context: Record<string, unknown> = {}): VideoTransformError {
+function normalizeErrorImpl(err: unknown, context: Record<string, unknown> = {}): VideoTransformError {
   // If it's already a VideoTransformError, return it
   if (err instanceof VideoTransformError) {
     return err;
@@ -60,15 +66,32 @@ export function normalizeError(err: unknown, context: Record<string, unknown> = 
 }
 
 /**
- * Fetch the original content when transformation fails with a 400 error
- * This provides graceful degradation by falling back to the original content
+ * Convert any error to a VideoTransformError
+ * Uses standardized error handling for consistent logging
+ * This is a utility function to ensure consistent error handling across the application
+ */
+export const normalizeError = tryOrDefault<
+  [unknown, Record<string, unknown>?],
+  VideoTransformError
+>(
+  normalizeErrorImpl,
+  {
+    functionName: 'normalizeError',
+    component: 'ErrorHandlerService',
+    logErrors: true
+  },
+  new VideoTransformError('Error normalization failed', ErrorType.UNKNOWN_ERROR, {})
+);
+
+/**
+ * Implementation of fetchOriginalContentFallback that might throw errors
  * 
  * @param originalUrl - The original URL before transformation attempt
  * @param error - The error that occurred during transformation
  * @param request - The original request
  * @returns A response with the original content, or null if fallback should not be applied
  */
-export async function fetchOriginalContentFallback(
+async function fetchOriginalContentFallbackImpl(
   originalUrl: string, 
   error: VideoTransformError, 
   request: Request
@@ -110,110 +133,112 @@ export async function fetchOriginalContentFallback(
     }
   });
 
-  try {
-    // Create a new request for the original content
-    const originalRequest = new Request(originalUrl, {
-      method: request.method,
-      headers: request.headers,
-      redirect: 'follow'
-    });
+  // Create a new request for the original content
+  const originalRequest = new Request(originalUrl, {
+    method: request.method,
+    headers: request.headers,
+    redirect: 'follow'
+  });
 
-    // Fetch the original content
-    const response = await fetch(originalRequest);
+  // Fetch the original content
+  const response = await fetch(originalRequest);
 
-    // Create new headers
-    const headers = new Headers();
-    
-    // Determine which headers to preserve
-    const preserveHeaders = fallbackConfig.preserveHeaders || 
-      ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'];
-    
-    // Copy preserved headers from original response
-    preserveHeaders.forEach((headerName: string) => {
-      const headerValue = response.headers.get(headerName);
-      if (headerValue) {
-        headers.set(headerName, headerValue);
-      }
-    });
-    
-    // Import error parsing utility
-    const { parseErrorMessage } = await import('../utils/transformationUtils');
-    
-    // Check if the error message is from Cloudflare's API
-    const parsedError = parseErrorMessage(error.message);
-    const fallbackReason = parsedError.specificError || error.message;
-    
-    // Add fallback-specific headers
-    headers.set('X-Fallback-Applied', 'true');
-    headers.set('X-Fallback-Reason', fallbackReason);
-    headers.set('X-Original-Error-Type', error.errorType);
-    headers.set('X-Original-Status-Code', error.statusCode.toString());
-    
-    // Add more specific headers if available
-    if (parsedError.errorType) {
-      headers.set('X-Error-Type', parsedError.errorType);
+  // Create new headers
+  const headers = new Headers();
+  
+  // Determine which headers to preserve
+  const preserveHeaders = fallbackConfig.preserveHeaders || 
+    ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'];
+  
+  // Copy preserved headers from original response
+  preserveHeaders.forEach((headerName: string) => {
+    const headerValue = response.headers.get(headerName);
+    if (headerValue) {
+      headers.set(headerName, headerValue);
     }
-    
-    if (parsedError.parameter) {
-      headers.set('X-Invalid-Parameter', parsedError.parameter);
-    }
-    
-    // Legacy headers for backward compatibility
-    if (parsedError.errorType === 'file_size_limit') {
-      headers.set('X-Video-Too-Large', 'true');
-    }
-    
-    // Add Cache-Control header to prevent caching of fallback response
-    headers.set('Cache-Control', 'no-store');
-
-    // Log successful fallback
-    logDebug('ErrorHandlerService', 'Successfully fetched fallback content', {
-      status: response.status,
-      contentType: response.headers.get('Content-Type'),
-      preservedHeaders: preserveHeaders
-    });
-    
-    logDebug('ErrorHandlerService', 'Successfully fetched original content', {
-      originalUrl,
-      status: response.status,
-      contentType: response.headers.get('Content-Type'),
-      size: response.headers.get('Content-Length')
-    });
-
-    // Return new response with modified headers
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  } catch (fallbackError) {
-    // Add breadcrumb for fallback error
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const { addBreadcrumb } = await import('../utils/requestContext');
-      addBreadcrumb(requestContext, 'Error', 'Fallback fetch failed', {
-        originalUrl,
-        error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
-      });
-    }
-
-    // Log fallback error
-    logError('ErrorHandlerService', 'Error fetching fallback content', {
-      error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
-      stack: fallbackError instanceof Error ? fallbackError.stack : undefined,
-      originalUrl
-    });
-    
-    // Return null to indicate fallback failed
-    return null;
+  });
+  
+  // Import error parsing utility
+  const { parseErrorMessage } = await import('../utils/transformationUtils');
+  
+  // Check if the error message is from Cloudflare's API
+  const parsedError = parseErrorMessage(error.message);
+  const fallbackReason = parsedError.specificError || error.message;
+  
+  // Add fallback-specific headers
+  headers.set('X-Fallback-Applied', 'true');
+  headers.set('X-Fallback-Reason', fallbackReason);
+  headers.set('X-Original-Error-Type', error.errorType);
+  headers.set('X-Original-Status-Code', error.statusCode.toString());
+  
+  // Add more specific headers if available
+  if (parsedError.errorType) {
+    headers.set('X-Error-Type', parsedError.errorType);
   }
+  
+  if (parsedError.parameter) {
+    headers.set('X-Invalid-Parameter', parsedError.parameter);
+  }
+  
+  // Legacy headers for backward compatibility
+  if (parsedError.errorType === 'file_size_limit') {
+    headers.set('X-Video-Too-Large', 'true');
+  }
+  
+  // Add Cache-Control header to prevent caching of fallback response
+  headers.set('Cache-Control', 'no-store');
+
+  // Log successful fallback
+  logDebug('ErrorHandlerService', 'Successfully fetched fallback content', {
+    status: response.status,
+    contentType: response.headers.get('Content-Type'),
+    preservedHeaders: preserveHeaders
+  });
+  
+  logDebug('ErrorHandlerService', 'Successfully fetched original content', {
+    originalUrl,
+    status: response.status,
+    contentType: response.headers.get('Content-Type'),
+    size: response.headers.get('Content-Length')
+  });
+
+  // Return new response with modified headers
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 /**
- * Create an appropriate error response based on the error type
+ * Fetch the original content when transformation fails with a 400 error
+ * This provides graceful degradation by falling back to the original content
+ * 
+ * @param originalUrl - The original URL before transformation attempt
+ * @param error - The error that occurred during transformation
+ * @param request - The original request
+ * @returns A response with the original content, or null if fallback should not be applied
+ */
+export const fetchOriginalContentFallback = withErrorHandling<
+  [string, VideoTransformError, Request],
+  Response | null
+>(
+  fetchOriginalContentFallbackImpl,
+  {
+    functionName: 'fetchOriginalContentFallback',
+    component: 'ErrorHandlerService',
+    logErrors: true
+  },
+  {
+    operation: 'fetch_original_content_fallback'
+  }
+);
+
+/**
+ * Implementation of createErrorResponse that might throw errors
  * This is the main entry point for handling errors throughout the application
  */
-export async function createErrorResponse(
+async function createErrorResponseImpl(
   err: unknown,
   request: Request,
   debugInfo?: DebugInfo,
@@ -230,7 +255,6 @@ export async function createErrorResponse(
   // Add breadcrumb for error normalization
   const requestContext = getCurrentContext();
   if (requestContext) {
-    const { addBreadcrumb } = await import('../utils/requestContext');
     addBreadcrumb(requestContext, 'Error', 'Error normalized', {
       errorType: normalizedError.errorType,
       statusCode: normalizedError.statusCode,
@@ -279,32 +303,24 @@ export async function createErrorResponse(
   if (fallbackConfig?.enabled) {
     // Only apply fallback for 400 Bad Request errors if badRequestOnly is true
     if (!fallbackConfig.badRequestOnly || normalizedError.statusCode === 400) {
-      try {
-        const fallbackResponse = await fetchOriginalContentFallback(originalUrl, normalizedError, request);
-        
-        // If fallback was successful, use it instead of error response
-        if (fallbackResponse) {
-          // Add debug headers if debug is enabled
-          if (debugInfo?.isEnabled) {
-            // Add the fallback information to diagnostics
-            diagInfo.warnings = diagInfo.warnings || [];
-            diagInfo.warnings.push('Returned original content due to transformation failure');
-            diagInfo.fallbackApplied = true;
-            diagInfo.fallbackReason = normalizedError.message;
-            
-            // Import debug service functions dynamically to avoid circular dependencies
-            const { addDebugHeaders } = await import('./debugService');
-            return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
-          }
+      const fallbackResponse = await fetchOriginalContentFallback(originalUrl, normalizedError, request);
+      
+      // If fallback was successful, use it instead of error response
+      if (fallbackResponse) {
+        // Add debug headers if debug is enabled
+        if (debugInfo?.isEnabled) {
+          // Add the fallback information to diagnostics
+          diagInfo.warnings = diagInfo.warnings || [];
+          diagInfo.warnings.push('Returned original content due to transformation failure');
+          diagInfo.fallbackApplied = true;
+          diagInfo.fallbackReason = normalizedError.message;
           
-          return fallbackResponse;
+          // Import debug service functions dynamically to avoid circular dependencies
+          const { addDebugHeaders } = await import('./debugService');
+          return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
         }
-      } catch (fallbackError) {
-        // Log the fallback error but continue with the original error response
-        logError('ErrorHandlerService', 'Error in fallback handler', {
-          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-          originalError: normalizedError.message
-        });
+        
+        return fallbackResponse;
       }
     }
   }
@@ -325,77 +341,59 @@ export async function createErrorResponse(
     
     // Use the ASSETS binding for the Astro-based debug UI
     if (env?.ASSETS) {
-      try {
-        // Create a new URL for the debug.html page
-        const debugUrl = new URL(request.url);
-        debugUrl.pathname = '/debug.html';
+      // Create a new URL for the debug.html page
+      const debugUrl = new URL(request.url);
+      debugUrl.pathname = '/debug.html';
+      
+      // Fetch the debug HTML page
+      const debugResponse = await env.ASSETS.fetch(
+        new Request(debugUrl.toString(), {
+          method: 'GET',
+          headers: new Headers({ 'Accept': 'text/html' })
+        })
+      );
+      
+      if (debugResponse.ok) {
+        const html = await debugResponse.text();
         
-        // Fetch the debug HTML page
-        const debugResponse = await env.ASSETS.fetch(
-          new Request(debugUrl.toString(), {
-            method: 'GET',
-            headers: new Headers({ 'Accept': 'text/html' })
-          })
-        );
+        // Safely serialize the diagnostics info
+        const safeJsonString = JSON.stringify(diagInfo)
+          .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
+          .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
+          .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
         
-        if (debugResponse.ok) {
-          const html = await debugResponse.text();
-          
-          // Safely serialize the diagnostics info
-          const safeJsonString = JSON.stringify(diagInfo)
-            .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
-            .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
-            .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
-          
-          // Insert diagnostic data into the HTML
-          let htmlWithData;
-          
-          // Try to insert in head (preferred) with fallback to body tag
-          if (html.includes('<head>')) {
-            htmlWithData = html.replace(
-              '<head>',
-              `<head>
-              <script type="text/javascript">
-                // Pre-load diagnostic data
-                window.DIAGNOSTICS_DATA = ${safeJsonString};
-                console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
-              </script>`
-            );
-          } else {
-            htmlWithData = html.replace(
-              '<body',
-              `<body data-debug="true" data-error="true"><script type="text/javascript">
-                // Pre-load diagnostic data
-                window.DIAGNOSTICS_DATA = ${safeJsonString};
-                console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
-              </script>`
-            );
+        // Insert diagnostic data into the HTML
+        let htmlWithData;
+        
+        // Try to insert in head (preferred) with fallback to body tag
+        if (html.includes('<head>')) {
+          htmlWithData = html.replace(
+            '<head>',
+            `<head>
+            <script type="text/javascript">
+              // Pre-load diagnostic data
+              window.DIAGNOSTICS_DATA = ${safeJsonString};
+              console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
+            </script>`
+          );
+        } else {
+          htmlWithData = html.replace(
+            '<body',
+            `<body data-debug="true" data-error="true"><script type="text/javascript">
+              // Pre-load diagnostic data
+              window.DIAGNOSTICS_DATA = ${safeJsonString};
+              console.log('Debug data loaded from worker (error):', typeof window.DIAGNOSTICS_DATA);
+            </script>`
+          );
+        }
+        
+        return new Response(htmlWithData, {
+          status: normalizedError.statusCode,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'X-Error-Type': normalizedError.errorType
           }
-          
-          return new Response(htmlWithData, {
-            status: normalizedError.statusCode,
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'X-Error-Type': normalizedError.errorType
-            }
-          });
-        }
-      } catch (htmlErr) {
-        // Add breadcrumb for HTML generation error
-        const requestContext = getCurrentContext();
-        if (requestContext) {
-          const { addBreadcrumb } = await import('../utils/requestContext');
-          addBreadcrumb(requestContext, 'Error', 'Debug HTML generation failed', {
-            error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
-            url: request.url
-          });
-        }
-        
-        // Log but continue if there's an error generating the HTML
-        logError('ErrorHandlerService', 'Error generating debug HTML', {
-          error: htmlErr instanceof Error ? htmlErr.message : 'Unknown error',
-          stack: htmlErr instanceof Error ? htmlErr.stack : undefined
         });
       }
     }
@@ -425,3 +423,22 @@ export async function createErrorResponse(
   // Return a normal error response
   return normalizedError.toResponse();
 }
+
+/**
+ * Create an appropriate error response based on the error type
+ * This is the main entry point for handling errors throughout the application
+ */
+export const createErrorResponse = withErrorHandling<
+  [unknown, Request, DebugInfo?, DiagnosticsInfo?, { ASSETS?: { fetch: (request: Request) => Promise<Response> } }?],
+  Response
+>(
+  createErrorResponseImpl,
+  {
+    functionName: 'createErrorResponse',
+    component: 'ErrorHandlerService',
+    logErrors: true
+  },
+  {
+    operation: 'create_error_response'
+  }
+);
