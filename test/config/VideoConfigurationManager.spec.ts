@@ -26,7 +26,7 @@ describe('VideoConfigurationManager', () => {
       const config = manager.getConfig();
       
       // Test a few key properties to ensure the default config was loaded
-      expect(config.derivatives.high).toBeDefined();
+      expect(config.derivatives.desktop).toBeDefined();
       expect(config.defaults.mode).toBe('video');
       expect(config.validOptions.fit).toContain('contain');
     });
@@ -64,9 +64,9 @@ describe('VideoConfigurationManager', () => {
 
     it('should return a derivative by name', () => {
       const manager = VideoConfigurationManager.getInstance();
-      const highDerivative = manager.getDerivative('high');
+      const desktopDerivative = manager.getDerivative('desktop');
       
-      expect(highDerivative).toEqual(videoConfig.derivatives.high);
+      expect(desktopDerivative).toEqual(videoConfig.derivatives.desktop);
     });
 
     it('should throw an error for non-existent derivative', () => {

@@ -50,11 +50,12 @@ For a complete reference of all configuration options and their details, see the
 ## Advanced Configuration Topics
 
 1. [Configuration Loading Process](./configuration-loading.md) - How configurations are loaded and applied
-2. [Path Pattern Troubleshooting](./path-pattern-troubleshooting.md) - Debugging path pattern matching issues
-3. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
-4. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
-5. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
-6. [IMQuery Support](./imquery-support.md) - Support for responsive image parameters and caching
+2. [Path Pattern Matching System](./path-pattern-matching.md) - Comprehensive documentation of the path pattern matching system
+3. [Path Pattern Troubleshooting](./path-pattern-troubleshooting.md) - Debugging path pattern matching issues
+4. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
+5. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
+6. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
+7. [IMQuery Support](./imquery-support.md) - Support for responsive image parameters and caching
 
 ## Environment Variables
 

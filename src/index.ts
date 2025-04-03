@@ -98,6 +98,9 @@ export default {
               const { ConfigurationService } = await import('./services/configurationService');
               const configService = ConfigurationService.getInstance();
               
+              // Initialize the configuration service with fast non-blocking initialization
+              configService.initialize(env);
+              
               // Attempt to load configuration from KV
               logInfo(context, 'Attempting to load configuration from KV');
               const kvConfig = await configService.loadConfiguration(env);

@@ -248,16 +248,16 @@ While maintaining full functionality:
    - Added comprehensive documentation with examples
 
 ### Medium-term Improvements (Next Sprint)
-1. Refactor configuration loading to reduce startup latency
-   - Add caching mechanism for configuration
-   - Implement non-blocking loading patterns
+1. ✅ Refactor configuration loading to reduce startup latency
+   - ✅ Add caching mechanism for configuration
+   - ✅ Implement non-blocking loading patterns
 
-2. Document path pattern matching system
-   - Create clear documentation for pattern syntax
-   - Add examples for common use cases
-   - Create debugging tools for pattern testing
+2. ✅ Document path pattern matching system
+   - ✅ Create clear documentation for pattern syntax
+   - ✅ Add examples for common use cases
+   - ✅ Create debugging tools for pattern testing
 
-3. Improve IMQuery integration and make caching behavior consistent
+3. Improve IMQuery integration and make caching behavior consistent (Next Task)
    - Review and optimize the derivative mapping logic
    - Ensure caching behavior is consistent across all IMQuery scenarios
    - Add tests for various viewport dimensions

@@ -193,6 +193,10 @@ export const handleConfigUpload = withErrorHandling<[Request, Env], Response>(
       });
       
       const configService = ConfigurationService.getInstance();
+      
+      // Initialize with non-blocking approach
+      configService.initialize(env);
+      
       const startTime = Date.now();
       const success = await configService.storeConfiguration(
         env,
@@ -429,6 +433,10 @@ export const handleConfigGet = withErrorHandling<[Request, Env], Response>(
       });
       
       const configService = ConfigurationService.getInstance();
+      
+      // Initialize with non-blocking approach
+      configService.initialize(env);
+      
       const startTime = Date.now();
       const config = await configService.loadConfiguration(env);
       const duration = Date.now() - startTime;

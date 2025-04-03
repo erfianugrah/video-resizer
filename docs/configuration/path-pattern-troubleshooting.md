@@ -2,6 +2,8 @@
 
 This guide addresses common issues with path pattern matching in the video-resizer and provides strategies for debugging and resolving them.
 
+> **Note**: For a comprehensive understanding of the path pattern matching system, see the [Path Pattern Matching System](./path-pattern-matching.md) documentation.
+
 ## Common Issues
 
 ### 1. Path Patterns Not Matching

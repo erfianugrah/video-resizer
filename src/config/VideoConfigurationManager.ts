@@ -171,8 +171,11 @@ export class VideoConfigurationManager {
    */
   private constructor(initialConfig: unknown = defaultConfig) {
     try {
+      // Ensure we're starting with defaultConfig if nothing is provided
+      const configToUse = initialConfig || defaultConfig;
+      
       // Validate and parse the configuration
-      this.config = VideoConfigSchema.parse(initialConfig);
+      this.config = VideoConfigSchema.parse(configToUse);
     } catch (error) {
       if (error instanceof z.ZodError) {
         const issues = error.errors.map(issue => 
@@ -440,6 +443,8 @@ export class VideoConfigurationManager {
 
   /**
    * Update the configuration (for testing or dynamic reconfiguration)
+   * @param newConfig Partial configuration to update
+   * @returns Updated full configuration
    */
   public updateConfig(newConfig: Partial<VideoConfiguration>): VideoConfiguration {
     try {
@@ -536,3 +541,35 @@ export class VideoConfigurationManager {
 
 // Export a default instance for easy access
 export const configManager = VideoConfigurationManager.getInstance();
+
+/**
+ * Update configuration specifically from ConfigurationService KV data
+ * This method is called by ConfigurationService when loading from KV
+ * to ensure configuration is properly updated from distributed configuration
+ * 
+ * @param kvConfig Configuration from KV store
+ */
+export function updateVideoConfigFromKV(kvConfig: Partial<VideoConfiguration>): void {
+  try {
+    if (!kvConfig) return;
+    
+    const manager = VideoConfigurationManager.getInstance();
+    
+    // Log KV configuration update
+    import('../utils/legacyLoggerAdapter').then(({ info }) => {
+      info('VideoConfigManager', 'Updating from KV configuration', {
+        hasDerivatives: !!kvConfig.derivatives,
+        pathPatternCount: kvConfig.pathPatterns?.length || 0,
+        hasDurationSettings: !!kvConfig.defaults?.duration,
+      });
+    }).catch(() => {
+      // Silent catch - don't fail configuration update if logging fails
+      console.log('[VideoConfigManager] Updating from KV configuration');
+    });
+    
+    // Use the regular update method to apply the changes
+    manager.updateConfig(kvConfig);
+  } catch (error) {
+    console.error('[VideoConfigManager] Error updating from KV:', error);
+  }
+}

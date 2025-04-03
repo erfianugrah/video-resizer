@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ConfigurationService, WorkerConfiguration } from '../../src/services/configurationService';
+import { ConfigurationService, WorkerConfiguration, WorkerConfigurationSchema } from '../../src/services/configurationService';
 
 describe('ConfigurationService', () => {
   // Mock KV namespace
@@ -416,8 +416,8 @@ describe('ConfigurationService', () => {
     ConfigurationService.resetInstance();
     const service = ConfigurationService.getInstance();
     
-    // Override validateConfig method to not throw validation error
-    service['validateConfig'] = vi.fn().mockReturnValue(true);
+    // Skip validation 
+    vi.spyOn(WorkerConfigurationSchema, 'parse').mockReturnValue(configWithoutTimestamp as any);
     
     // Store configuration
     await service.storeConfiguration(mockEnvWithStore, configWithoutTimestamp as any);

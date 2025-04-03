@@ -29,6 +29,7 @@ export function determineVideoOptions(
   _path: string
 ): VideoTransformOptions {
   // Get the configuration manager instance
+  // This manager is initialized by ConfigurationService during worker startup
   const configManager = VideoConfigurationManager.getInstance();
   
   // Start with default options
