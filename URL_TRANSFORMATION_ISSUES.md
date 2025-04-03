@@ -257,15 +257,15 @@ While maintaining full functionality:
    - ✅ Add examples for common use cases
    - ✅ Create debugging tools for pattern testing
 
-3. Improve IMQuery integration and make caching behavior consistent (Next Task)
-   - Review and optimize the derivative mapping logic
-   - Ensure caching behavior is consistent across all IMQuery scenarios
-   - Add tests for various viewport dimensions
+3. ✅ Improve IMQuery integration and make caching behavior consistent
+   - ✅ Review and optimize the derivative mapping logic
+   - ✅ Ensure caching behavior is consistent across all IMQuery scenarios
+   - ✅ Add tests for various viewport dimensions
 
-4. Add tests for key transformation scenarios
-   - Test URL construction with various input types
-   - Test pattern matching edge cases
-   - Test IMQuery mapping with different dimensions
+4. ✅ Add tests for key transformation scenarios
+   - ✅ Test URL construction with various input types (CDN-CGI URL construction with different options)
+   - ✅ Test pattern matching edge cases (complex regex patterns, priorities, URL variations)
+   - ✅ Test IMQuery mapping with different dimensions (responsive breakpoints, aspect ratios, edge cases)
 
 ### Long-term Architectural Changes (Future Roadmap)
 1. Eliminate circular dependencies through structural changes
@@ -295,6 +295,10 @@ While maintaining full functionality:
    - ✅ Verified correct handling of query parameters
    - ✅ Confirmed backward compatibility
    - ✅ All existing tests pass with the updated URL construction logic
+   - ✅ Added comprehensive test suite in `test/utils/url-transformation.spec.ts`
+   - ✅ Created pattern matching edge case tests in `test/utils/pattern-matching-edge-cases.spec.ts`
+   - ✅ Implemented IMQuery mapping tests in `test/integration/imquery-mapping.spec.ts`
+   - ✅ All tests pass with proper type checking and linting
 
 2. ✅ Error Handling Implementation
    - ✅ Created standardized utilities for consistent error handling

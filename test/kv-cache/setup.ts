@@ -140,10 +140,25 @@ vi.mock('../../src/utils/requestContext', () => ({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
     startTime: Date.now(),
-    debugEnabled: false
+    debugEnabled: false,
+    breadcrumbs: [],
+    diagnostics: {},
+    componentTiming: {}
   })),
   addBreadcrumb: vi.fn(),
-  initRequestContext: vi.fn()
+  initRequestContext: vi.fn(),
+  createRequestContext: vi.fn((request) => ({
+    requestId: 'test-request-id',
+    url: request?.url || 'https://example.com/videos/test.mp4',
+    startTime: Date.now(),
+    debugEnabled: false,
+    breadcrumbs: [],
+    diagnostics: {},
+    componentTiming: {},
+    verboseEnabled: false,
+    executionContext: request?.ctx
+  })),
+  setCurrentContext: vi.fn()
 }));
 
 // Mock the legacy logger adapter
@@ -153,7 +168,11 @@ vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
     url: 'https://example.com/videos/test.mp4',
     startTime: Date.now(),
     debugEnabled: false
-  }))
+  })),
+  info: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
 }));
 
 // Mock the video transformation service

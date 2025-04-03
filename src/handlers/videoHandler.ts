@@ -389,19 +389,49 @@ export const handleVideoRequest = withErrorHandling<
         // Add IMQuery detection to logs but don't use for cache key
         const imwidth = url.searchParams.get('imwidth');
         const imheight = url.searchParams.get('imheight');
+        const hasIMRef = url.searchParams.has('imref');
+        const hasIMQueryParams = !!(imwidth || imheight || hasIMRef);
         
-        // Use the derivative from videoOptions without adding IMQuery dimensions to the cache key
-        const videoOptionsWithIMQuery: TransformOptions = {
+        // Prepare video options for caching - start with a copy of the original options
+        let videoOptionsWithIMQuery: TransformOptions = {
           ...videoOptions
         };
         
-        // Log the IMQuery detection for debugging but note we're using derivative-based caching
-        if (imwidth || imheight) {
-          debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
-            imwidth,
-            imheight,
-            derivative: videoOptions.derivative
-          });
+        // Ensure we're using a derivative-based cache key for IMQuery requests
+        // This provides better cache hit rates by normalizing requests with slight dimension differences
+        if (hasIMQueryParams) {
+          if (videoOptions.derivative) {
+            debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
+              imwidth,
+              imheight,
+              hasIMRef,
+              derivative: videoOptions.derivative,
+              cacheType: 'derivative-based'
+            });
+            
+            // For IMQuery requests, include only the derivative, width and height in cache key
+            // This ensures consistent cache keys regardless of custom parameters
+            videoOptionsWithIMQuery = {
+              derivative: videoOptions.derivative,
+              width: videoOptions.width,
+              height: videoOptions.height,
+              // Keep mode in case this is a video/frame/spritesheet request
+              mode: videoOptions.mode
+            };
+            
+            addBreadcrumb(context, 'Cache', 'Using optimized IMQuery cache key', {
+              derivative: videoOptions.derivative,
+              originalParams: Object.keys(videoOptions).length,
+              optimizedParams: Object.keys(videoOptionsWithIMQuery).length
+            });
+          } else {
+            debug(context, logger, 'VideoHandler', 'IMQuery request without mapped derivative', {
+              imwidth,
+              imheight,
+              hasIMRef,
+              cacheType: 'dimension-based'
+            });
+          }
         }
         
         // Use waitUntil if available to store in KV without blocking response

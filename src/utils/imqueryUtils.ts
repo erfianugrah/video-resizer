@@ -114,6 +114,9 @@ export function mapWidthToDerivative(width: number | null): string | null {
     return findClosestDerivativePercentage(width, null);
   }
   
+  // Cache derivatives list to check availability
+  const availableDerivatives = Object.keys(configManager.getConfig().derivatives);
+  
   // Sort breakpoints by max value for consistent matching
   const sortedBreakpoints = Object.entries(breakpoints)
     .sort((a, b) => (a[1].max || Infinity) - (b[1].max || Infinity));
@@ -128,7 +131,7 @@ export function mapWidthToDerivative(width: number | null): string | null {
     // Check if within max bound (or if this is the last breakpoint with no max)
     if (range.max === undefined || width <= range.max) {
       // Verify the derivative exists in configuration
-      if (configManager.getConfig().derivatives[range.derivative]) {
+      if (availableDerivatives.includes(range.derivative)) {
         info('IMQuery', 'Matched width to breakpoint', { 
           width, 
           breakpoint: name, 
@@ -141,27 +144,61 @@ export function mapWidthToDerivative(width: number | null): string | null {
         debug('IMQuery', 'Breakpoint references non-existent derivative', {
           width,
           breakpoint: name,
-          derivative: range.derivative
+          derivative: range.derivative,
+          availableDerivatives: availableDerivatives.join(', ')
         });
       }
     }
   }
   
-  // If no match found through breakpoints, log and use highest breakpoint derivative
+  // If no exact match found, try to find the closest breakpoint instead of just using the highest
+  // This provides better cache consistency for edge cases that fall between breakpoints
   if (sortedBreakpoints.length > 0) {
-    const lastBreakpoint = sortedBreakpoints[sortedBreakpoints.length - 1];
-    const fallbackDerivative = lastBreakpoint[1].derivative;
-    
-    debug('IMQuery', 'No matching breakpoint found, using highest breakpoint derivative', {
-      width,
-      derivative: fallbackDerivative,
-      breakpoint: lastBreakpoint[0]
+    // Find the closest breakpoint using distance calculation
+    const breakpointDistances = sortedBreakpoints.map(([name, range]) => {
+      // Calculate how far width is from this breakpoint's range
+      let distance = Infinity;
+      
+      // Distance calculation logic:
+      // 1. If width is below min, distance is min - width
+      // 2. If width is above max, distance is width - max
+      // 3. If width is within range, distance is 0
+      if (range.min && width < range.min) {
+        distance = range.min - width;
+      } else if (range.max && width > range.max) {
+        distance = width - range.max;
+      } else {
+        // If width is within the range, distance is 0
+        distance = 0;
+      }
+      
+      return {
+        name,
+        range,
+        distance,
+        derivative: range.derivative
+      };
     });
     
-    return fallbackDerivative;
+    // Sort by distance (ascending)
+    breakpointDistances.sort((a, b) => a.distance - b.distance);
+    
+    // Get the closest breakpoint
+    const closestBreakpoint = breakpointDistances[0];
+    
+    // Check if the derivative exists in configuration
+    if (availableDerivatives.includes(closestBreakpoint.derivative)) {
+      debug('IMQuery', 'Using closest breakpoint for width outside exact range', {
+        width,
+        breakpoint: closestBreakpoint.name,
+        derivative: closestBreakpoint.derivative,
+        distance: closestBreakpoint.distance
+      });
+      return closestBreakpoint.derivative;
+    }
   }
   
-  // If we get here, no mapping was found, fall back to percentage-based method
+  // If we get here, no suitable breakpoint was found, fall back to percentage-based method
   debug('IMQuery', 'Falling back to percentage-based derivative matching', { width });
   return findClosestDerivativePercentage(width, null);
 }
@@ -215,6 +252,7 @@ export function findClosestDerivativePercentage(
     // Calculate Euclidean distance or single-dimension difference
     let distance = 0;
     let percentDifference = 0;
+    let aspectRatioMatch = 1.0; // Default to neutral aspect ratio match factor
     
     if (targetWidth && targetHeight && width && height) {
       // Both dimensions available - use Euclidean distance
@@ -228,6 +266,15 @@ export function findClosestDerivativePercentage(
       const heightDiff = Math.abs((height - targetHeight) / targetHeight);
       percentDifference = (widthDiff + heightDiff) / 2;
       
+      // Calculate aspect ratio match to prefer dimensions with similar aspect ratio
+      // This ensures more consistent visual results when resizing
+      const targetAspectRatio = targetWidth / targetHeight;
+      const derivativeAspectRatio = width / height;
+      const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / targetAspectRatio;
+      
+      // Higher value means worse aspect ratio match (will be multiplied with distance)
+      aspectRatioMatch = 1.0 + (aspectRatioDiff * 0.5);
+      
     } else if (targetWidth && width) {
       // Width only
       distance = Math.abs(width - targetWidth);
@@ -239,12 +286,17 @@ export function findClosestDerivativePercentage(
       percentDifference = Math.abs((height - targetHeight) / targetHeight);
     }
     
+    // Apply aspect ratio factor to distance for better cache consistency
+    const adjustedDistance = distance * aspectRatioMatch;
+    
     return { 
       name, 
-      distance, 
+      distance: adjustedDistance,
+      rawDistance: distance,
       percentDifference,
       derivativeWidth: width,
-      derivativeHeight: height
+      derivativeHeight: height,
+      aspectRatioMatch
     };
   });
   
@@ -263,10 +315,33 @@ export function findClosestDerivativePercentage(
       derivativeWidth: bestMatch.derivativeWidth,
       derivativeHeight: bestMatch.derivativeHeight,
       percentDifference: (bestMatch.percentDifference * 100).toFixed(2) + '%',
-      distance: bestMatch.distance
+      distance: bestMatch.rawDistance,
+      adjustedDistance: bestMatch.distance,
+      aspectRatioFactor: bestMatch.aspectRatioMatch.toFixed(3)
     });
     
     return bestMatch.name;
+  }
+  
+  // If no match found within the strict threshold, but we have candidates,
+  // try a more permissive approach for better cache consistency
+  if (scored.length > 0 && scored[0].percentDifference <= maxDifferenceThreshold * 1.5) {
+    // Use a more permissive threshold (150% of original) for greater cache consistency
+    const fallbackMatch = scored[0];
+    
+    debug('IMQuery', 'Using fallback derivative match with expanded threshold', {
+      targetWidth,
+      targetHeight,
+      fallbackDerivative: fallbackMatch.name,
+      derivativeWidth: fallbackMatch.derivativeWidth,
+      derivativeHeight: fallbackMatch.derivativeHeight,
+      percentDifference: (fallbackMatch.percentDifference * 100).toFixed(2) + '%',
+      standardThreshold: (maxDifferenceThreshold * 100) + '%',
+      expandedThreshold: (maxDifferenceThreshold * 150) + '%',
+      distance: fallbackMatch.rawDistance
+    });
+    
+    return fallbackMatch.name;
   }
   
   // If no good match found, log the best available match that was rejected
@@ -279,7 +354,7 @@ export function findClosestDerivativePercentage(
       derivativeHeight: bestMatch.derivativeHeight,
       percentDifference: (bestMatch.percentDifference * 100).toFixed(2) + '%',
       threshold: (maxDifferenceThreshold * 100) + '%',
-      distance: bestMatch.distance
+      distance: bestMatch.rawDistance
     });
   }
   
@@ -291,6 +366,8 @@ export function findClosestDerivativePercentage(
  * This is a wrapper function that first tries the new breakpoint method,
  * then falls back to the percentage-based method for backward compatibility
  * 
+ * It includes caching and debugging features to ensure consistent derivative mapping
+ * 
  * @param targetWidth - Requested width (from IMQuery)
  * @param targetHeight - Requested height (from IMQuery)
  * @param maxDifferenceThreshold - Maximum percentage difference allowed (0.25 = 25%)
@@ -301,21 +378,61 @@ export function findClosestDerivative(
   targetHeight?: number | null,
   maxDifferenceThreshold: number = 0.25
 ): string | null {
+  // Create cache key for width/height combination to normalize similar requests
+  // Round to nearest 10px to improve cache hit rates for slightly different dimensions
+  const normalizedWidth = targetWidth ? Math.round(targetWidth / 10) * 10 : null;
+  const normalizedHeight = targetHeight ? Math.round(targetHeight / 10) * 10 : null;
+  
+  // Use a static cache to ensure consistent mapping of similar dimensions
+  // This in-memory cache improves cache consistency for similar IMQuery parameters
+  const cacheKey = `${normalizedWidth || 'null'}_${normalizedHeight || 'null'}`;
+  
+  // Static cache of derivative mappings to ensure consistency
+  // This is a simple in-memory static variable at the module level
+  if (typeof (global as any).__derivativeMappingCache === 'undefined') {
+    (global as any).__derivativeMappingCache = {};
+  }
+  
+  const mappingCache = (global as any).__derivativeMappingCache;
+  
+  // Check if we have a cached mapping
+  if (mappingCache[cacheKey]) {
+    debug('IMQuery', 'Using cached derivative mapping', {
+      originalWidth: targetWidth,
+      originalHeight: targetHeight,
+      normalizedWidth,
+      normalizedHeight,
+      derivative: mappingCache[cacheKey],
+      source: 'memory-cache'
+    });
+    return mappingCache[cacheKey];
+  }
+  
   // If only width is specified, use the new breakpoint-based mapping
+  let derivative: string | null = null;
+  
   if (targetWidth && !targetHeight) {
-    const derivative = mapWidthToDerivative(targetWidth);
+    derivative = mapWidthToDerivative(targetWidth);
     if (derivative) {
+      // Store in cache for future requests
+      mappingCache[cacheKey] = derivative;
       return derivative;
     }
   }
   
   // For width+height or height-only, or if breakpoint mapping fails,
   // fall back to the original percentage-based method
-  return findClosestDerivativePercentage(
+  derivative = findClosestDerivativePercentage(
     targetWidth,
     targetHeight,
     maxDifferenceThreshold
   );
+  
+  // Store result in cache (even if null) to ensure consistent behavior
+  // This helps ensure similar dimensions always map to the same derivative
+  mappingCache[cacheKey] = derivative;
+  
+  return derivative;
 }
 
 /**

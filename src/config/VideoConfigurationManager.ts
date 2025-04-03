@@ -494,25 +494,64 @@ export class VideoConfigurationManager {
       }
       
       // Merge the new config with the existing one
+      // Special handling for array fields that should be completely replaced, not merged
       const mergedConfig = {
         ...this.config,
         ...newConfig,
+        // Ensure path patterns from the new config completely replace the old ones if present
+        pathPatterns: newConfig.pathPatterns || this.config.pathPatterns,
       };
       
       // Validate the merged configuration
       this.config = VideoConfigSchema.parse(mergedConfig);
       
-      // Log the final duration settings after update
+      // Log the final configuration details after update
       try {
-        import('../utils/legacyLoggerAdapter').then(({ info }) => {
+        import('../utils/loggerUtils').then(({ info }) => {
+          // Log duration settings
           info('VideoConfigurationManager', 'Updated configuration duration settings', {
             defaultDuration: this.config.defaults.duration,
             mobileDerivativeDuration: this.config.derivatives.mobile?.duration || 'not set',
             desktopDerivativeDuration: this.config.derivatives.desktop?.duration || 'not set'
           });
-        }).catch(() => {});
+          
+          // Log path pattern information if it was updated
+          if (newConfig.pathPatterns) {
+            info('VideoConfigurationManager', 'Updated path patterns', {
+              patternCount: this.config.pathPatterns.length,
+              patterns: this.config.pathPatterns.map(p => p.name).join(', ')
+            });
+          }
+        }).catch(() => {
+          // Fall back to legacy logger if loggerUtils isn't available
+          import('../utils/legacyLoggerAdapter').then(({ info }) => {
+            info('VideoConfigurationManager', 'Updated configuration', {
+              pathPatternCount: this.config.pathPatterns.length
+            });
+          }).catch(() => {
+            // Fallback to console logging
+            console.info('[VideoConfigurationManager] Updated configuration');
+            if (newConfig.pathPatterns) {
+              console.info(`[VideoConfigurationManager] Updated path patterns: ${this.config.pathPatterns.length} patterns`);
+            }
+          });
+        });
       } catch (loggingError) {
-        // Ignore logging errors
+        // Use errorHandlingUtils if available
+        try {
+          import('../utils/errorHandlingUtils').then(({ logErrorWithContext }) => {
+            logErrorWithContext(
+              'Error logging configuration update',
+              loggingError,
+              { component: 'VideoConfigurationManager' }
+            );
+          }).catch(() => {
+            // Last resort - console log
+            console.error('[VideoConfigurationManager] Error logging configuration update');
+          });
+        } catch {
+          // Silent failure - don't let logging errors impact configuration
+        }
       }
       
       return this.config;

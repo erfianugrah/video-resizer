@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { 
   parseImQueryRef, 
   convertImQueryToClientHints,
@@ -204,6 +204,11 @@ describe('IMQuery Utils', () => {
       }
     }));
 
+    // Clear any static cache before each test
+    beforeEach(() => {
+      (global as any).__derivativeMappingCache = {};
+    });
+
     it('should match dimensions to the closest derivative within threshold', () => {
       // Should match to mobile derivative (854x640)
       expect(findClosestDerivative(800, 600)).toBe('mobile');
@@ -235,6 +240,55 @@ describe('IMQuery Utils', () => {
       
       // For very strict thresholds that no derivative meets
       expect(findClosestDerivativePercentage(800, 450, 0.01)).toBeNull();
+    });
+    
+    it('should provide consistent mappings for similar dimensions', () => {
+      // First request establishes the mapping
+      const derivative1 = findClosestDerivative(805, 600);
+      expect(derivative1).toBe('mobile');
+      
+      // Slightly different dimensions should map to the same derivative
+      const derivative2 = findClosestDerivative(802, 598);
+      expect(derivative2).toBe('mobile');
+      
+      // Even more different dimensions, but within normalized rounding (nearest 10px)
+      const derivative3 = findClosestDerivative(809, 605);
+      expect(derivative3).toBe('mobile');
+    });
+    
+    it('should use closest breakpoint for dimensions outside exact ranges', () => {
+      // This width (1500) is outside any exact range but closest to 'extra-large' (min: 1441)
+      const derivative = findClosestDerivative(1500, null);
+      expect(derivative).toBe('desktop'); // Should map to desktop via 'extra-large' breakpoint
+      
+      // This width (630) is just below the medium range (min: 641), should map to closest breakpoint
+      const derivativeLower = findClosestDerivative(630, null);
+      expect(derivativeLower).toBe('mobile'); // Should map to mobile via closest breakpoint
+    });
+    
+    it('should factor in aspect ratio when both width and height are specified', () => {
+      // Regular 16:9 aspect ratio, should match to tablet
+      expect(findClosestDerivative(1200, 675)).toBe('tablet');
+      
+      // Very different aspect ratio (1:1 square) might match differently due to aspect ratio factor
+      // It should still pick the closest derivative by dimension, but with aspect ratio consideration
+      const squareResult = findClosestDerivative(720, 720);
+      // The exact result depends on our algorithm, but it should be consistent
+      expect(['mobile', 'tablet', 'desktop']).toContain(squareResult);
+      
+      // Ensure consistent mapping for same aspect ratio
+      const square1 = findClosestDerivative(720, 720);
+      const square2 = findClosestDerivative(700, 700);
+      expect(square1).toBe(square2); // Should get same derivative for similar squares
+    });
+    
+    it('should use expanded threshold for better cache consistency when needed', () => {
+      // Set up a dimension that's just outside the normal threshold but within expanded one
+      // With standard 25% threshold, this might fail, but with expanded threshold (37.5%) it should pass
+      const justAboveThreshold = findClosestDerivative(600, 500); // ~30% difference from mobile
+      
+      // Expect a mapping rather than null due to expanded threshold fallback
+      expect(justAboveThreshold).not.toBeNull();
     });
   });
 });

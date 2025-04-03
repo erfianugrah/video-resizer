@@ -20,11 +20,21 @@ When a request includes IMQuery parameters, the system maps these dimensions to 
 
 ### Derivative Mapping Methods
 
-The system uses two methods to map IMQuery parameters to derivatives:
+The system uses two methods to map IMQuery parameters to derivatives, with built-in consistency features to ensure similar dimensions always map to the same derivative:
 
 1. **Breakpoint-Based Mapping** (Preferred): When only `imwidth` is provided, the system uses responsive breakpoints to determine the appropriate derivative. This is configured through the `responsiveBreakpoints` setting.
+   - For widths that fall outside exact breakpoint ranges, the system finds the closest breakpoint rather than defaulting to the highest one
+   - Includes smart distance-based calculations to ensure consistent mapping for edge cases
 
 2. **Percentage-Based Mapping** (Fallback): When both width and height are provided or breakpoint mapping fails, the system calculates the closest derivative based on the percentage difference between requested dimensions and available derivatives.
+   - Takes aspect ratio into account when calculating match quality
+   - Uses expanded thresholds for edge cases to improve cache hit rates
+   - Normalizes similar dimensions to ensure consistent derivative mapping
+
+3. **In-Memory Caching**: The system also uses in-memory caching to ensure consistent derivative mapping for similar dimensions:
+   - Dimensions are normalized to the nearest 10 pixels
+   - Previous mapping results are cached to ensure consistent behavior
+   - This provides consistent cache keys even when client dimensions vary slightly
 
 ## Caching Implementation
 
@@ -48,26 +58,71 @@ if (isIMQuery && hasDerivative) {
 }
 ```
 
-2. **Derivative-Based Cache Keys**: Instead of using the specific IMQuery dimensions for cache keys, the system uses the derived derivative name:
+2. **Derivative-Based Cache Keys**: Instead of using the specific IMQuery dimensions for cache keys, the system uses only the essential transformation parameters in the cache key, focusing on the derivative name:
 
 ```typescript
-// From videoHandler.ts
-if (imwidth || imheight) {
-  debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
-    imwidth,
-    imheight,
-    derivative: videoOptions.derivative
-  });
+// From videoHandler.ts - Enhanced implementation
+if (hasIMQueryParams) {
+  if (videoOptions.derivative) {
+    debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
+      imwidth,
+      imheight,
+      hasIMRef,
+      derivative: videoOptions.derivative,
+      cacheType: 'derivative-based'
+    });
+    
+    // For IMQuery requests, include only the derivative, width and height in cache key
+    // This ensures consistent cache keys regardless of custom parameters
+    let optimizedCacheOptions: TransformOptions = {
+      derivative: videoOptions.derivative,
+      width: videoOptions.width,
+      height: videoOptions.height,
+      // Keep mode in case this is a video/frame/spritesheet request
+      mode: videoOptions.mode
+    };
+    
+    // Use this optimized cache key for better cache consistency
+    videoOptionsWithIMQuery = optimizedCacheOptions;
+  }
 }
+```
+
+3. **Dimension Normalization**: For improved cache consistency, similar dimensions are normalized before generating cache keys:
+
+```typescript
+// Create cache key for width/height combination to normalize similar requests
+// Round to nearest 10px to improve cache hit rates for slightly different dimensions
+const normalizedWidth = targetWidth ? Math.round(targetWidth / 10) * 10 : null;
+const normalizedHeight = targetHeight ? Math.round(targetHeight / 10) * 10 : null;
+```
+
+4. **Aspect Ratio Consideration**: When both width and height are provided, the system factors in aspect ratio to ensure consistent visual results:
+
+```typescript
+// Calculate aspect ratio match to prefer dimensions with similar aspect ratio
+const targetAspectRatio = targetWidth / targetHeight;
+const derivativeAspectRatio = width / height;
+const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / targetAspectRatio;
 ```
 
 ### Benefits of This Approach
 
-1. **Cache Efficiency**: By mapping similar dimensions to the same derivative, we achieve better cache reuse. Many slightly different IMQuery parameters can hit the same cached response.
+1. **Enhanced Cache Efficiency**: By mapping similar dimensions to the same derivative and normalizing cache keys, we achieve significantly better cache reuse. Many slightly different IMQuery parameters hit the same cached response.
 
-2. **Reduced Origin Load**: By increasing cache hit rates, we reduce load on origin servers.
+2. **Reduced Origin Load**: Higher cache hit rates significantly reduce load on origin servers and minimize transformation processing.
 
 3. **Consistent Quality**: Ensures users with similar viewport sizes get consistent video quality, even with slightly different dimensions.
+
+4. **Better Edge Case Handling**: The improved mapping system handles edge cases more gracefully:
+   - Dimensions that fall outside exact breakpoint ranges get mapped to the closest one
+   - Similar aspect ratios are grouped together for consistent visual results
+   - Expanded thresholds provide better fallbacks for non-standard dimensions
+   
+5. **Improved Memory Utilization**: By caching derivative mapping results in memory, the system:
+   - Ensures consistent behavior across requests
+   - Reduces computational overhead of repeated derivative calculations
+   - Minimizes variation in cache keys for similar client dimensions
 
 ## Implementation Details
 
