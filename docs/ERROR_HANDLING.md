@@ -379,6 +379,41 @@ export const getClientConfiguration = tryOrDefault<[string], ClientConfig>(
 );
 ```
 
+## Fallback Mechanism
+
+The application implements a sophisticated fallback mechanism for handling transformation failures:
+
+1. **Transformation Attempt**: First, the system attempts to transform the video using the requested parameters.
+
+2. **Fallback Detection**: When transformation fails (especially with server errors):
+   - For 400-level errors: Indicates client error (invalid parameters), uses standard fallback
+   - For 500-level errors: Indicates server error (transformation service issue), uses enhanced fallback
+
+3. **Intelligent Cache Strategy**:
+   - On first fallback: Store original video in Cache API with a special key (`__fb=1` parameter)
+   - On subsequent fallbacks: Check Cache API first for previously cached original
+   - Always try transformation first on new requests before using fallbacks
+
+4. **Cache Storage Optimization**:
+   - Uses Cache API instead of KV for fallback originals (KV has 25MB limit)
+   - Applies cache tags (`video-resizer,fallback:true,source:{path}`) for purging
+   - Background caching using waitUntil for non-blocking operation
+   - Clear separation between transformed videos and fallback originals in cache
+
+5. **Enhanced Diagnostics**:
+   - Fallback response includes detailed diagnostic headers:
+     - `X-Fallback-Applied: true` indicates fallback was used
+     - `X-Fallback-Cache-Hit: true` when using a cached fallback
+     - `X-Fallback-Reason: [reason]` explaining the specific error
+     - `X-Original-Status: [code]` preserving the original error status
+     - `Cache-Tag: video-resizer,fallback:true,source:{path}` for cache management
+
+This approach ensures that:
+1. Users still get the video content even when transformation fails
+2. Performance is optimized through intelligent caching of fallback content
+3. System automatically tries transformation on each request for self-healing
+4. Detailed diagnostics help monitor and debug transformation issues
+
 ## Conclusion
 
 By following these error handling practices, we ensure that:
@@ -387,8 +422,9 @@ By following these error handling practices, we ensure that:
 2. Debug information is comprehensive and useful
 3. The application degrades gracefully when possible
 4. Maintenance is easier because error handling is standardized
+5. User experience remains optimal even when errors occur
 
-Remember: Good error handling is about more than just preventing crashes - it's about making the system resilient and debuggable.
+Remember: Good error handling is about more than just preventing crashes - it's about making the system resilient, debuggable, and maintaining excellent user experience even under failure conditions.
 
 ## Additional Documentation
 
@@ -400,4 +436,7 @@ For comprehensive documentation on the error handling implementation, see the [e
 4. [**Monitoring Plan**](./error-handling/monitoring-plan.md) - Plan for monitoring error handling effectiveness
 5. [**Summary**](./error-handling/summary.md) - Overall summary of the error handling implementation
 
-For implementation details of specific components, see the [implementations](./error-handling/implementations/) subdirectory.
+For implementation details of specific components, see the [implementations](./error-handling/implementations/) subdirectory, particularly:
+
+1. [**Video Storage Implementation**](./error-handling/implementations/video-storage.md) - Details on the enhanced fallback mechanism
+2. [**Cache Utils Implementation**](./error-handling/implementations/cache-utils.md) - Cache-related error handling and fallback caching

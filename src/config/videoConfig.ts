@@ -133,8 +133,9 @@ export const videoConfig = {
     debug: false,
     fallback: {
       enabled: true,
-      badRequestOnly: true,
+      badRequestOnly: false, // Allow fallback for all errors, including 500s
       preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag'],
+      maxRetries: 2, // Maximum number of retries for 500 errors
     },
   },
 

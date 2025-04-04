@@ -106,6 +106,127 @@ The next components to update with standardized error handling are:
 1. `debugService.ts` - Service for debugging capabilities
 2. `errorHandlerService.ts` - Service for creating error responses
 
+## Recent Enhancements (April 4, 2025)
+
+### Enhanced Fallback Mechanism
+
+We've significantly improved the fallback mechanism in the error handling system:
+
+1. **Cache API for Original Videos**:
+   - Original videos used as fallbacks are now cached in Cloudflare Cache API
+   - Uses a separate cache key with `__fb=1` parameter to distinguish fallback content
+   - Applies cache tags (`video-resizer,fallback:true,source:{path}`) for efficient purging
+   - Avoids using KV for large original videos (which has 25MB size limitation)
+
+2. **Intelligent Fallback Strategy**:
+   - When transformation fails (especially for 500 errors), the system now:
+     - First checks if a cached original already exists in Cache API
+     - If found, serves it immediately with appropriate headers
+     - If not found, attempts to fetch and cache the original video
+   - For subsequent requests:
+     - Always tries the transformation first to see if the issue is resolved
+     - Falls back to cached original if transformation still fails
+     - This provides optimal balance between transformation attempts and fallback performance
+
+3. **Background Processing**:
+   - Uses Cloudflare's `waitUntil` when available for non-blocking background caching
+   - Falls back to Promise-based background processing when execution context isn't available
+   - Ensures responsive user experience while still caching for future requests
+
+4. **Enhanced Diagnostics**:
+   - Added new diagnostic headers to indicate fallback cache usage:
+     - `X-Fallback-Cache-Hit: true` when using a cached original
+     - `X-Fallback-Applied: true` for all fallback scenarios
+     - `Cache-Tag: video-resizer,fallback:true,source:{path}` enabling cache management
+     - Additional headers to explain the specific failure reason
+
+This enhancement significantly improves the user experience for videos that consistently fail transformation, while maintaining a clear separation between transformed videos and fallback originals in the cache.
+
+### Detailed Flow Diagrams
+
+The enhanced fallback mechanism follows these flows, illustrated using Mermaid diagrams:
+
+#### 1. Initial Request Flow
+
+```mermaid
+flowchart LR
+    A[Client Request] --> B[Video Transformation]
+    B -->|Success| C[Return Transformed Video]
+    B -->|Fails| D[Fetch Original Video]
+    D --> E[Return Original Video]
+    D -.->|Background| F[Cache Original in Cache API\nwith __fb=1 parameter]
+    
+    style B fill:#f9d77e,stroke:#707070
+    style D fill:#a8d0db,stroke:#707070
+    style F fill:#a8d0db,stroke:#707070,stroke-dasharray: 5 5
+```
+
+#### 2. Subsequent Request Flow
+
+```mermaid
+flowchart TD
+    A[Client Request] --> B[Video Transformation]
+    B -->|Success| C[Return Transformed Video]
+    B -->|Fails| D{Check Cache API\nfor Original}
+    D -->|Found| E[Return Cached Original\nwith X-Fallback-Cache-Hit]
+    D -->|Not Found| F[Fetch Original Video]
+    F --> G[Return Original Video]
+    F -.->|Background| H[Cache Original in Cache API\nwith __fb=1 parameter]
+    
+    style B fill:#f9d77e,stroke:#707070
+    style D fill:#a8d0db,stroke:#707070,shape:diamond
+    style E fill:#a8e8a0,stroke:#707070
+    style H fill:#a8d0db,stroke:#707070,stroke-dasharray: 5 5
+```
+
+#### 3. Cache Structure
+
+```mermaid
+classDiagram
+    class TransformedVideo {
+        Cache Key: {url}
+        Cache Tags: video-resizer,derivative:{type}
+        Headers: Cache-Control, Etag
+    }
+    
+    class FallbackOriginal {
+        Cache Key: {url}?__fb=1
+        Cache Tags: video-resizer,fallback:true,source:{path}
+        Headers: X-Fallback-Applied, Cache-Tag
+    }
+    
+    CloudflareCache --> TransformedVideo : stores
+    CloudflareCache --> FallbackOriginal : stores
+```
+
+#### 4. Background Operations (with waitUntil)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Worker
+    participant Transformation
+    participant Origin
+    participant CacheAPI
+    
+    Client->>Worker: Request Video
+    Worker->>Transformation: Transform Video
+    Transformation-->>Worker: Error (500)
+    Worker->>Origin: Fetch Original
+    Origin-->>Worker: Original Video
+    Worker->>Client: Return Original Video
+    Note over Worker,CacheAPI: Background Process (waitUntil)
+    Worker->>CacheAPI: Store Original with __fb=1 key
+    CacheAPI-->>Worker: Stored
+```
+
+This design pattern balances several important priorities:
+- Always tries transformation first to recover from transient errors
+- Avoids redundant origin fetches for persistent transformation failures
+- Maintains separate cache entries for transformed vs. original content
+- Uses async background caching to minimize response time
+- Provides clear diagnostic information via response headers
+
 ## Conclusion
 
-The implementation of standardized error handling in the Video Storage Service significantly enhances the robustness and debuggability of the video fetching process. By consistently using the error handling utilities, we ensure that errors are properly logged, contextualized, and handled with appropriate fallbacks.
+The implementation of standardized error handling in the Video Storage Service significantly enhances the robustness and debuggability of the video fetching process. By consistently using the error handling utilities and implementing intelligent fallback mechanisms, we ensure that errors are properly logged, contextualized, and handled with appropriate fallbacks to maintain the best possible user experience even when problems occur.

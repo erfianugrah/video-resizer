@@ -10,7 +10,6 @@ import { getCachedResponse } from '../services/cacheManagementService';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
-import type { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 
 /**
  * Cache orchestrator that tries multiple caching layers before processing a request
@@ -31,7 +30,7 @@ export async function withCaching(
   request: Request,
   env: EnvVariables,
   handler: () => Promise<Response>,
-  options?: any // Use any to avoid type issues between VideoTransformOptions and TransformOptions
+  options?: Record<string, unknown> // Type-safe alternative to any
 ): Promise<Response> {
   const requestContext = getCurrentContext();
   const logger = requestContext ? createLogger(requestContext) : undefined;
@@ -136,6 +135,87 @@ export async function withCaching(
           });
         }
         
+        // If we found in CF Cache but not in KV, populate KV in the background
+        // to improve global distribution of cached content
+        if (!kvResponse && env && options) {
+          const sourcePath = url.pathname;
+          const responseClone = cfResponse.clone();
+          
+          // Check if we should store in KV (using same criteria as below)
+          const contentType = responseClone.headers.get('content-type') || '';
+          const isError = responseClone.status >= 400;
+          
+          // Comprehensive list of video MIME types (same as below)
+          const videoMimeTypes = [
+            'video/mp4',
+            'video/webm', 
+            'video/ogg',
+            'video/x-msvideo', // AVI
+            'video/quicktime', // MOV
+            'video/x-matroska', // MKV
+            'video/x-flv',
+            'video/3gpp',
+            'video/3gpp2',
+            'video/mpeg',
+            'application/x-mpegURL', // HLS
+            'application/dash+xml'   // DASH
+          ];
+          
+          const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
+          
+          if (responseClone.ok && !skipCache && isVideoResponse && !isError) {
+            // Create customData for KV cache key
+            const customData: Record<string, unknown> = {};
+            const imwidth = url.searchParams.get('imwidth');
+            const imheight = url.searchParams.get('imheight');
+            if (imwidth) customData.imwidth = imwidth;
+            if (imheight) customData.imheight = imheight;
+            
+            // Add IMQuery parameters to options for cache key generation
+            const optionsWithIMQuery: typeof options = {
+              ...options,
+              customData: Object.keys(customData).length > 0 ? customData : undefined
+            };
+            
+            // Get execution context if available
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const ctx = (env as any).executionCtx || (env as any).ctx;
+            
+            if (ctx && typeof ctx.waitUntil === 'function') {
+              // Store in KV using waitUntil to do it in the background
+              logDebug('Populating KV from CF cache using waitUntil', { 
+                sourcePath, 
+                contentType,
+                hasIMQuery: Object.keys(customData).length > 0 
+              });
+              
+              ctx.waitUntil(
+                storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery)
+                  .then((success: boolean) => {
+                    logDebug(success ? 'Populated KV from CF cache' : 'Failed to populate KV from CF cache', {
+                      sourcePath,
+                      hasIMQuery: Object.keys(customData).length > 0
+                    });
+                    
+                    // Add breadcrumb if request context is available
+                    const reqContext = getCurrentContext();
+                    if (reqContext && success) {
+                      addBreadcrumb(reqContext, 'Cache', 'Populated KV from CF cache', {
+                        sourcePath,
+                        hasIMQuery: Object.keys(customData).length > 0
+                      });
+                    }
+                  })
+                  .catch((err) => {
+                    logDebug('Error populating KV from CF cache', {
+                      error: err instanceof Error ? err.message : String(err)
+                    });
+                  })
+              );
+            }
+          }
+        }
+        
         return cfResponse;
       }
       
@@ -227,6 +307,7 @@ export async function withCaching(
       }
       
       // Get execution context if available (from Cloudflare Worker environment)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ctx = (env as any).executionCtx || (env as any).ctx;
       
       if (ctx && typeof ctx.waitUntil === 'function') {

@@ -71,13 +71,17 @@ describe('Cache Orchestrator', () => {
       
       vi.mocked(cacheManagementService.getCachedResponse).mockResolvedValue(cachedResponse);
       
+      // Also mock KV cache miss to test cross-population enhancement
+      vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValue(null);
+      
       const response = await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
       
       // Verify cache API was checked
       expect(cacheManagementService.getCachedResponse).toHaveBeenCalledWith(mockRequest);
       
-      // Verify KV cache was not checked
-      expect(kvCacheUtils.getFromKVCache).not.toHaveBeenCalled();
+      // With our enhancement, KV cache is now checked in parallel with CF cache
+      // and then populated in background if CF cache hits but KV misses
+      expect(kvCacheUtils.getFromKVCache).toHaveBeenCalled();
       
       // Verify handler was not called
       expect(mockHandler).not.toHaveBeenCalled();

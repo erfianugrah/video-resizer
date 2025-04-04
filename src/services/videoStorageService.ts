@@ -85,6 +85,7 @@ interface StorageConfig {
   fallbackAuth?: AuthConfig;
   auth?: StorageAuthConfig;
   fetchOptions?: FetchOptions;
+  pathTransforms?: Record<string, unknown>; // Make it compatible with usage
 }
 
 interface PathTransformOriginConfig {
@@ -960,6 +961,17 @@ async function fetchVideoImpl(
     fallbackUrlSet: !!config.storage?.fallbackUrl
   });
   
+  // Log more detailed information about storage configuration before trying each option
+  logDebug('VideoStorageService', 'Detailed storage configuration', { 
+    storageTypes: availableStorage,
+    r2Config: config.storage?.r2 || {},
+    r2Bucket: env.VIDEOS_BUCKET ? 'defined' : 'undefined',
+    remoteUrl: config.storage?.remoteUrl ? 'defined' : 'undefined',
+    fallbackUrl: config.storage?.fallbackUrl ? 'defined' : 'undefined',
+    hasPathTransforms: !!config.storage?.pathTransforms,
+    path
+  });
+  
   // Try each storage option in order of priority
   for (const storageType of availableStorage) {
     let result: StorageResult | null = null;
@@ -1009,9 +1021,16 @@ async function fetchVideoImpl(
     
     // Try to fetch from remote URL
     if (!result && storageType === 'remote' && config.storage?.remoteUrl) {
-      logDebug('VideoStorageService', 'Trying remote URL', { 
+      // Add detailed diagnostics about remote URL attempt
+      logDebug('VideoStorageService', 'Trying remote URL with detailed diagnostics', { 
         path, 
-        remoteUrl: config.storage.remoteUrl 
+        remoteUrl: config.storage.remoteUrl,
+        remoteAuth: config.storage?.remoteAuth ? {
+          enabled: config.storage.remoteAuth.enabled,
+          type: config.storage.remoteAuth.type
+        } : 'undefined',
+        hasOriginAuth: config.storage?.auth?.useOriginAuth,
+        securityLevel: config.storage?.auth?.securityLevel
       });
       
       // Apply path transformations for remote
@@ -1038,9 +1057,17 @@ async function fetchVideoImpl(
     
     // Try to fetch from fallback URL
     if (!result && storageType === 'fallback' && config.storage?.fallbackUrl) {
-      logDebug('VideoStorageService', 'Trying fallback URL', { 
+      // Add detailed diagnostics about fallback URL attempt
+      logDebug('VideoStorageService', 'Trying fallback URL with detailed diagnostics', { 
         path, 
-        fallbackUrl: config.storage.fallbackUrl 
+        fallbackUrl: config.storage.fallbackUrl,
+        fallbackAuth: config.storage?.fallbackAuth ? {
+          enabled: config.storage.fallbackAuth.enabled,
+          type: config.storage.fallbackAuth.type
+        } : 'undefined',
+        hasOriginAuth: config.storage?.auth?.useOriginAuth,
+        securityLevel: config.storage?.auth?.securityLevel,
+        hasPathTransforms: !!config.storage?.pathTransforms
       });
       
       // Apply path transformations for fallback
@@ -1084,7 +1111,7 @@ async function fetchVideoImpl(
   // If we couldn't find the video anywhere, create an error response
   const elapsedTime = Date.now() - startTime;
   
-  // Log detailed error information
+  // Log detailed error information with expanded diagnostics
   logErrorWithContext(
     'Video not found in any storage location',
     new Error('Video not found'),
@@ -1093,6 +1120,15 @@ async function fetchVideoImpl(
       requestId,
       elapsedMs: elapsedTime,
       storageOptions: config.storage?.priority ?? [],
+      storageConfig: {
+        r2Enabled: config.storage?.r2?.enabled === true,
+        hasBucket: !!env.VIDEOS_BUCKET,
+        remoteUrl: config.storage?.remoteUrl,
+        fallbackUrl: config.storage?.fallbackUrl,
+        r2BucketName: env.VIDEOS_BUCKET ? 'defined' : 'undefined'
+      },
+      pathTransforms: config.storage?.pathTransforms ? 
+        Object.keys(config.storage.pathTransforms) : [],
       timestamp: new Date().toISOString()
     },
     'VideoStorageService'

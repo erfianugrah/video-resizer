@@ -684,7 +684,29 @@ export class TransformVideoCommand {
         });
       }
       
+      // Fetch transformation response from CDN-CGI
       const response = await fetch(cdnCgiUrl, fetchOptions);
+      
+      // Extract all headers for detailed logging
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, name) => {
+        responseHeaders[name] = value;
+      });
+      
+      // Log complete response details
+      await logDebug('TransformVideoCommand', 'CDN-CGI proxy response details', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers.get('Content-Type'),
+        contentLength: response.headers.get('Content-Length'),
+        isRangeRequest: response.status === 206 || response.headers.has('Content-Range'),
+        cfRay: response.headers.get('CF-Ray'),
+        cacheStatus: response.headers.get('CF-Cache-Status'),
+        allHeaders: responseHeaders,
+        url: cdnCgiUrl.split('/cdn-cgi/')[0] + '/[redacted]',
+        isError: response.status >= 400,
+        errorCategory: response.status >= 400 ? Math.floor(response.status / 100) * 100 : undefined
+      });
       
       // Add breadcrumb for response received
       if (this.requestContext) {
@@ -699,18 +721,21 @@ export class TransformVideoCommand {
         });
       }
       
-      // Handle 400 Bad Request status from the transformation proxy
-      if (response.status === 400) {
+      // Handle error responses from the transformation proxy
+      if (response.status >= 400) {
         const errorText = await response.text();
         
         // Parse the error text to extract specific validation issues
         const { parseErrorMessage, isDurationLimitError, adjustDuration } = await import('../../utils/transformationUtils');
         const parsedError = parseErrorMessage(errorText);
         
-        logErrorWithContext('Transformation proxy returned 400 Bad Request', { message: errorText }, {
+        logErrorWithContext(`Transformation proxy returned ${response.status} ${response.statusText}`, { message: errorText }, {
           url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
           error: errorText,
-          parsedError
+          parsedError,
+          status: response.status,
+          statusText: response.statusText,
+          errorCategory: Math.floor(response.status / 100) * 100
         }, 'TransformVideoCommand');
         
         // Check if this is a duration limit error and we can retry with adjusted duration
@@ -766,6 +791,22 @@ export class TransformVideoCommand {
             // Retry the fetch with the adjusted URL
             const retryResponse = await fetch(adjustedCdnCgiUrl);
             
+            // Log detailed retry response
+            const retryResponseHeaders: Record<string, string> = {};
+            retryResponse.headers.forEach((value, name) => {
+              retryResponseHeaders[name] = value;
+            });
+            
+            await logDebug('TransformVideoCommand', 'Retry response details', {
+              status: retryResponse.status,
+              statusText: retryResponse.statusText,
+              contentType: retryResponse.headers.get('Content-Type'),
+              contentLength: retryResponse.headers.get('Content-Length'),
+              allHeaders: retryResponseHeaders,
+              isError: retryResponse.status >= 400,
+              adjustedDuration
+            });
+            
             // If retry succeeded, add headers to indicate the adjustment
             if (retryResponse.ok) {
               const headers = new Headers(retryResponse.headers);
@@ -798,71 +839,135 @@ export class TransformVideoCommand {
           }
         }
         
-        // For 400 Bad Request errors, use the videoStorageService to fetch the original content
-        const path = new URL(this.context.request.url).pathname;
+        // Get path and check if this is a server error (5xx)
+        const url = new URL(this.context.request.url);
+        const path = url.pathname;
+        const isServerError = response.status >= 500 && response.status < 600;
         
-        // Add breadcrumb for fallback attempt
+        // Add breadcrumb with more specific information about error type
         if (this.requestContext) {
           const { addBreadcrumb } = await import('../../utils/requestContext');
-          addBreadcrumb(this.requestContext, 'Error', 'Fetching original video as fallback due to 400 error', {
-            path,
-            errorText: errorText.substring(0, 100), // Limit error text length for safety
-            specificError: parsedError.specificError,
-            errorType: parsedError.errorType || 'CDN-CGIError',
-            fallbackEnabled: true
-          });
+          addBreadcrumb(this.requestContext, 'Error', 
+            isServerError ? 
+              'Transformation proxy failed with server error - fetching original directly' : 
+              'Transformation proxy returned client error - using fallback',
+            {
+              path,
+              errorStatus: response.status,
+              errorText: errorText.substring(0, 100), // Limit error text length for safety
+              specificError: parsedError.specificError,
+              errorType: parsedError.errorType || 'CDN-CGIError',
+              isServerError
+            }
+          );
         }
-        
-        // Import the videoStorageService to fetch the original content
-        const { fetchVideo } = await import('../../services/videoStorageService');
         
         // Get the VideoConfigurationManager to access configuration
         const { VideoConfigurationManager } = await import('../../config');
         const videoConfigManager = VideoConfigurationManager.getInstance();
-        const cacheConfig = videoConfigManager.getCachingConfig();
+        const videoConfig = videoConfigManager.getConfig();
         
-        // Create a configuration object for fetchVideo that follows the VideoResizerConfig interface
-        // We need to access the storage configuration from environment, but safely cast it
-        const env = this.context.env || {};
-        const storageConfig = (env as any)?.STORAGE_CONFIG || {};
-        
-        const videoResizerConfig = {
-          storage: storageConfig,
-          cache: {
-            ttl: {
-              // Use a reasonable default TTL for the fallback content
-              ok: 600 // 10 minutes
-            }
-          }
-        };
-        
-        await logDebug('TransformVideoCommand', 'Using videoStorageService for fallback content', {
+        // Log detailed diagnostics for error handling
+        await logDebug('TransformVideoCommand', 'Transformation error handling', {
           path,
-          fallbackEnabled: cacheConfig.fallback?.enabled
+          status: response.status,
+          isServerError,
+          requestUrl: this.context.request.url,
+          originalUrl: url.toString(),
         });
         
-        // Fetch the video using the storage service
-        const storageResult = await fetchVideo(
-          path, 
-          videoResizerConfig, 
-          this.context.env || {}, 
-          this.context.request
-        );
+        // For server errors (500s), try to fetch the original content directly
+        // Use the source URL that was used for transformation
+        let fallbackResponse: Response | undefined;
         
-        // Check if we successfully got a fallback video
-        if (storageResult.sourceType === 'error') {
-          // If we couldn't get the video, log the error
-          logErrorWithContext('Failed to get fallback content', storageResult.error || new Error('Unknown error'), {
+        if (isServerError) {
+          // Log the direct fetch attempt
+          await logDebug('TransformVideoCommand', 'Server error - fetching original directly', {
             path,
-            errorDetails: storageResult.error?.message
-          }, 'TransformVideoCommand');
+            cdnCgiUrl: cdnCgiUrl.split("?")[0],
+            serverError: response.status
+          });
           
-          // Let the original error propagate
-          throw new Error(`Unable to get fallback content: ${errorText}`);
+          // Directly fetch the source URL - no storage service needed for 500 errors
+          // We extract the source URL from the CDN-CGI URL which has format:
+          // /cdn-cgi/media/params/sourceUrl
+          const sourceUrl = cdnCgiUrl.split('/cdn-cgi/media/')[1].split(',', 2)[1];
+          
+          await logDebug('TransformVideoCommand', 'Fetching original directly', {
+            sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined',
+            method: request.method
+          });
+          
+          try {
+            // Create a new request with the same headers
+            const directRequest = new Request(sourceUrl, {
+              method: request.method,
+              headers: request.headers,
+              redirect: 'follow'
+            });
+            
+            // Fetch directly
+            fallbackResponse = await fetch(directRequest);
+            
+            // Log successful direct fetch
+            await logDebug('TransformVideoCommand', 'Direct fetch response', {
+              status: fallbackResponse.status,
+              contentType: fallbackResponse.headers.get('Content-Type'),
+              contentLength: fallbackResponse.headers.get('Content-Length')
+            });
+          } catch (directFetchError) {
+            // Log error and fall back to regular storage service approach
+            logErrorWithContext('Error fetching directly from source', directFetchError, {
+              sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined'
+            }, 'TransformVideoCommand');
+            
+            // Continue to fallback approach if direct fetch fails
+            fallbackResponse = undefined;
+          }
         }
         
-        // Create new headers to preserve critical ones from the storage result
-        const headers = new Headers(storageResult.response.headers);
+        // If this is a client error OR the direct fetch for server error failed,
+        // use the videoStorageService for fallback
+        if (!isServerError || !fallbackResponse || !fallbackResponse.ok) {
+          // Import the videoStorageService to fetch the original content
+          const { fetchVideo } = await import('../../services/videoStorageService');
+          
+          // Get storage config safely using type assertion to avoid TypeScript errors
+          const storageConfig = (videoConfig as any).storage;
+          
+          await logDebug('TransformVideoCommand', 'Using storage service for fallback', {
+            path,
+            hasStorageConfig: !!storageConfig,
+            storageType: isServerError ? 'direct-fetch-failed' : 'client-error-fallback',
+            availablePriority: storageConfig?.priority || []
+          });
+          
+          // Fetch the video using the storage service
+          const storageResult = await fetchVideo(
+            path, 
+            videoConfig, 
+            this.context.env || {}, 
+            this.context.request
+          );
+          
+          // Check if we successfully got a fallback video
+          if (storageResult.sourceType === 'error') {
+            // If we couldn't get the video, log the error
+            logErrorWithContext('Failed to get fallback content', storageResult.error || new Error('Unknown error'), {
+              path,
+              errorDetails: storageResult.error?.message
+            }, 'TransformVideoCommand');
+            
+            // Let the original error propagate
+            throw new Error(`Unable to get fallback content: ${errorText}`);
+          }
+          
+          // Use the storage result response
+          fallbackResponse = storageResult.response;
+        }
+        
+        // Create new headers for the fallback response
+        const headers = new Headers(fallbackResponse.headers);
         
         // Use the parsed error for more specific headers
         const fallbackReason = parsedError.specificError || errorText;
@@ -870,7 +975,7 @@ export class TransformVideoCommand {
         // Add fallback-specific headers
         headers.set('X-Fallback-Applied', 'true');
         headers.set('X-Fallback-Reason', fallbackReason);
-        headers.set('X-Original-Error', 'Bad Request (400)');
+        headers.set('X-Original-Error', isServerError ? 'Server Error (500)' : 'Bad Request (400)');
         
         // Add more specific headers based on parsed error
         if (parsedError.errorType) {
@@ -886,24 +991,34 @@ export class TransformVideoCommand {
           headers.set('X-Video-Too-Large', 'true');
         }
         
-        headers.set('X-Storage-Source', storageResult.sourceType);
+        // Include original error status for debugging
+        headers.set('X-Original-Status', String(response.status));
+        headers.set('X-Original-Status-Text', response.statusText);
+        
+        // Tell browser not to cache this fallback response
         headers.set('Cache-Control', 'no-store');
         
-        await logDebug('TransformVideoCommand', 'Successfully fetched original content as fallback', {
+        // Log success
+        await logDebug('TransformVideoCommand', 'Successfully fetched fallback content', {
           path,
-          sourceType: storageResult.sourceType,
-          status: storageResult.response.status,
-          contentType: storageResult.contentType,
-          size: storageResult.size,
+          status: fallbackResponse.status,
+          contentType: fallbackResponse.headers.get('Content-Type'),
+          size: fallbackResponse.headers.get('Content-Length'),
+          method: isServerError ? 'direct-fetch' : 'storage-service',
           fallbackReason
         });
         
         // Return the fallback response with the enhanced headers
-        return new Response(storageResult.response.body, {
-          status: storageResult.response.status,
-          statusText: storageResult.response.statusText,
+        return new Response(fallbackResponse.body, {
+          status: fallbackResponse.status,
+          statusText: fallbackResponse.statusText,
           headers
         });
+        
+        // Include original error status for debugging
+        headers.set('X-Original-Status', String(response.status));
+        headers.set('X-Original-Status-Text', response.statusText);
+        
       }
       
       // Apply cache headers to the response based on configuration

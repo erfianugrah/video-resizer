@@ -147,6 +147,7 @@ Now that our standardized error handling implementation is complete, we can focu
    - Implement monitoring for error rates in production
    - Track fallback usage to identify common failure points
    - Create dashboards for error visualization
+   - Monitor Cache API fallback usage for original videos
 
 2. **Testing Enhancement**:
    - Add specific tests for error paths to validate behavior

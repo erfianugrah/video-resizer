@@ -91,3 +91,28 @@ The standardized error handling implementation in cacheUtils.ts provides several
 ## Conclusion
 
 The cacheUtils.ts module now has comprehensive error handling that makes it more robust against configuration errors and unexpected inputs. The implementation ensures that even when errors occur in cache configuration or pattern matching, the system will continue to function with safe, conservative default behaviors that prioritize correctness over performance.
+
+## Recent Enhancements (April 4, 2025)
+
+### Fallback Video Caching
+
+We've enhanced the error handling system with an important improvement to the fallback mechanism:
+
+1. **Cache API Integration for Original Videos**:
+   - Original videos used as fallbacks are now cached in Cloudflare Cache API
+   - Uses a separate cache key with `__fb=1` parameter to distinguish fallback content
+   - Applies cache tags (`video-resizer,fallback:true,source:{path}`) for purging
+   - Avoids storing large original videos in KV which has size limitations (25MB)
+
+2. **Intelligent Fallback Strategy**:
+   - On first fallback: Store original video in Cache API with specific cache key
+   - On subsequent fallback attempts: Check Cache API first for previously cached original
+   - If cached original exists, serve it directly with appropriate headers
+   - If not found, attempt transformation again before falling back to origin
+
+3. **Background Processing**:
+   - Uses `waitUntil` when available for non-blocking background caching
+   - Falls back to Promise-based background processing when execution context isn't available
+   - Ensures responsive user experience while still caching for future requests
+
+This enhancement significantly improves the user experience for videos that consistently fail transformation, while maintaining proper separation between transformed videos and original fallbacks in the cache.
