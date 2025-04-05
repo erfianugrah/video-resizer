@@ -884,7 +884,7 @@ export class TransformVideoCommand {
           // Log the direct fetch attempt
           await logDebug('TransformVideoCommand', 'Server error - fetching original directly', {
             path,
-            cdnCgiUrl: cdnCgiUrl.split("?")[0],
+            cdnCgiUrl: cdnCgiUrl.split('?')[0],
             serverError: response.status
           });
           

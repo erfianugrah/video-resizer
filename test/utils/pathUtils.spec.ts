@@ -325,5 +325,48 @@ describe('pathUtils', () => {
       expect(cdnCgiUrl).toEqual('https://videos.erfi.dev/cdn-cgi/media/width=854,height=480,fit=contain/https://videos.erfi.dev/rocky.mp4');
       expect(cdnCgiUrl.startsWith('https://videos.erfi.dev/cdn-cgi/media/')).toBe(true);
     });
+    
+    it('should filter out transformation parameters from the origin URL', () => {
+      // Arrange - Create a URL with transformation parameters
+      const originUrl = 'https://example.com/videos/test.mp4?width=640&height=480&quality=high&imwidth=800&test=value';
+      const requestUrl = 'https://cdn.example.com/videos/test.mp4?width=640&height=480&quality=high&imwidth=800&test=value';
+      
+      // Define transformation parameters
+      const transformParams = {
+        width: 1280,
+        height: 720,
+        quality: 'medium',
+        mode: 'video'
+      };
+      
+      // Act - Generate the CDN-CGI URL
+      const cdnCgiUrl = buildCdnCgiMediaUrl(transformParams, originUrl, requestUrl);
+      
+      // Assert - Extract the origin URL from the generated CDN-CGI URL
+      // Expected format: https://cdn.example.com/cdn-cgi/media/width=1280,height=720,quality=medium,mode=video/https://example.com/videos/test.mp4?test=value
+      const urlParts = cdnCgiUrl.split('/');
+      
+      // Find the part after the parameters by looking for https:// in the URL parts
+      let originUrlWithParams = '';
+      for (let i = 0; i < urlParts.length; i++) {
+        if (urlParts[i] === 'https:' && i < urlParts.length - 1) {
+          originUrlWithParams = 'https://' + urlParts.slice(i + 1).join('/');
+          break;
+        }
+      }
+      
+      // Parse the filtered origin URL
+      const parsedUrl = new URL(originUrlWithParams);
+      
+      // Check that transformation parameters are removed
+      expect(parsedUrl.searchParams.has('width')).toBe(false);
+      expect(parsedUrl.searchParams.has('height')).toBe(false);
+      expect(parsedUrl.searchParams.has('quality')).toBe(false);
+      expect(parsedUrl.searchParams.has('imwidth')).toBe(false);
+      
+      // Check that non-transformation parameters are preserved
+      expect(parsedUrl.searchParams.has('test')).toBe(true);
+      expect(parsedUrl.searchParams.get('test')).toBe('value');
+    });
   });
 });

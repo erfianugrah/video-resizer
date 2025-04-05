@@ -331,6 +331,7 @@ function buildOriginUrlImpl(originalUrl: URL, transformedPath: string, remoteOri
 
   // List of video-specific params to exclude
   const videoParams = [
+    // Basic dimension and quality parameters
     'width',
     'height',
     'bitrate',
@@ -339,12 +340,35 @@ function buildOriginUrlImpl(originalUrl: URL, transformedPath: string, remoteOri
     'segment',
     'time',
     'derivative',
+    'duration',
+    'compression',
+    
+    // Video transformation method parameters
+    'mode',
+    'fit',
+    'crop',
+    'rotate',
+    'imref',
+    
+    // Playback control parameters
+    'loop',
+    'preload',
+    'autoplay',
+    'muted',
+    
     // Additional Cloudflare parameters
     'speed',
     'audio',
     'fps',
     'keyframe',
     'codec',
+    
+    // IMQuery parameters
+    'imwidth',
+    'imheight',
+    'im-viewwidth',
+    'im-viewheight',
+    'im-density',
   ];
 
   // Copy over search params, excluding video-specific ones

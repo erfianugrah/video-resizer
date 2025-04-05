@@ -310,21 +310,86 @@ export function buildCdnCgiMediaUrl(
   const baseUrlObj = new URL(baseUrlSource);
   const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
+  // Filter out transformation parameters from the origin URL
+  const transformationUrlObj = new URL(originUrl);
+  
+  // List of video-specific params to exclude
+  const videoParams = [
+    // Basic dimension and quality parameters
+    'width',
+    'height',
+    'bitrate',
+    'quality',
+    'format',
+    'segment',
+    'time',
+    'derivative',
+    'duration',
+    'compression',
+    
+    // Video transformation method parameters
+    'mode',
+    'fit',
+    'crop',
+    'rotate',
+    'imref',
+    
+    // Playback control parameters
+    'loop',
+    'preload',
+    'autoplay',
+    'muted',
+    
+    // Additional Cloudflare parameters
+    'speed',
+    'audio',
+    'fps',
+    'keyframe',
+    'codec',
+    
+    // IMQuery parameters
+    'imwidth',
+    'imheight',
+    'im-viewwidth',
+    'im-viewheight',
+    'im-density',
+  ];
+
+  // Create a new URL object for filtered origin URL
+  const filteredOriginUrlObj = new URL(transformationUrlObj.toString());
+  
+  // Clear search params to rebuild without transformation parameters
+  filteredOriginUrlObj.search = '';
+  
+  // Copy over search params, excluding video-specific ones
+  transformationUrlObj.searchParams.forEach((value, key) => {
+    if (!videoParams.includes(key)) {
+      filteredOriginUrlObj.searchParams.set(key, value);
+    }
+  });
+  
+  // Use the filtered origin URL
+  const filteredOriginUrl = filteredOriginUrlObj.toString();
+  
   // Build the CDN-CGI media URL with the correct URLs:
   // - Use request host for the base part
-  // - Use origin URL for the content source
-  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${originUrl}`;
+  // - Use filtered origin URL for the content source
+  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${filteredOriginUrl}`;
   
   // Log the transformation details (critical for debugging)
   logDebug('Building CDN-CGI media URL', {
     cdnCgiBasePath: basePath,
     transformParams: validOptions,
     parameterString: optionsString,
-    originUrl: originUrl,
+    originalOriginUrl: originUrl,
+    filteredOriginUrl: filteredOriginUrl,
     requestUrl: requestUrl || 'not provided',
     baseUrl: baseUrl,
     transformedUrl: cdnCgiUrl,
     paramCount: Object.keys(validOptions).length,
+    filteredParams: Array.from(transformationUrlObj.searchParams.keys())
+      .filter(key => videoParams.includes(key)),
+    retainedParams: Array.from(filteredOriginUrlObj.searchParams.keys()),
     keyParams: {
       width: validOptions.width,
       height: validOptions.height,
@@ -364,9 +429,14 @@ export function buildCdnCgiMediaUrl(
           basePath,
           baseUrl,
           // Include source and transformation URLs
-          originUrl: originUrl,
+          originalOriginUrl: originUrl,
+          filteredOriginUrl: filteredOriginUrl,
           requestUrl: requestUrl || 'not provided',
           baseUrlSource: baseUrlSource,
+          // Include parameter filtering information
+          filteredParams: Array.from(transformationUrlObj.searchParams.keys())
+            .filter(key => videoParams.includes(key)),
+          retainedParams: Array.from(filteredOriginUrlObj.searchParams.keys()),
           // Include the complete URL for debugging (essential for troubleshooting)
           completeUrl: cdnCgiUrl
         });

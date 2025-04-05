@@ -157,6 +157,68 @@ The `VideoConfigurationManager` provides the following methods:
 | `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
 | `VIDEO_DEFAULT_COMPRESSION` | string | Default compression level |
 
+## Query Parameter Handling
+
+The video-resizer service processes transformation-specific query parameters and excludes them from the origin request to ensure clean URLs when fetching from the origin server.
+
+### Transformation Parameters
+
+The following query parameters are recognized by the service and excluded from origin requests:
+
+#### Basic Dimension and Quality Parameters
+- `width` - Video width in pixels
+- `height` - Video height in pixels
+- `bitrate` - Target bitrate for the video
+- `quality` - Quality level (low, medium, high)
+- `format` - Output format (mp4, webm, etc.)
+- `segment` - Video segment identifier
+- `time` - Timestamp for frame extraction
+- `derivative` - Predefined transformation profile
+- `duration` - Duration for clip extraction
+- `compression` - Compression level
+
+#### Video Transformation Method Parameters
+- `mode` - Transformation mode (video, frame, spritesheet)
+- `fit` - Scaling method (contain, cover, scale-down)
+- `crop` - Crop dimensions
+- `rotate` - Rotation angle
+- `imref` - Image reference identifier
+
+#### Playback Control Parameters
+- `loop` - Enable video looping
+- `preload` - Preload behavior (none, metadata, auto)
+- `autoplay` - Enable autoplay
+- `muted` - Mute audio
+
+#### Additional Cloudflare Parameters
+- `speed` - Playback speed
+- `audio` - Audio configuration
+- `fps` - Frames per second
+- `keyframe` - Keyframe interval
+- `codec` - Video codec selection
+
+#### IMQuery Parameters
+- `imwidth` - Requested image width
+- `imheight` - Requested image height
+- `im-viewwidth` - Viewport width
+- `im-viewheight` - Viewport height
+- `im-density` - Device pixel density
+- `imref` - IMQuery reference parameter
+
+### Example
+
+For a request like:
+```
+https://example.com/videos/sample.mp4?width=640&height=480&quality=high&tracking=abc123
+```
+
+The URL sent to the origin server will be:
+```
+https://example.com/videos/sample.mp4?tracking=abc123
+```
+
+This ensures that only parameters not related to video transformation are passed to the origin server.
+
 ## Example Usage
 
 ```typescript
