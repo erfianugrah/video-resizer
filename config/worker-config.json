@@ -302,7 +302,7 @@
 	},
 	"cache": {
 		"method": "cacheApi",
-		"debug": false,
+		"debug": true,
 		"defaultMaxAge": 86400,
 		"respectOriginHeaders": true,
 		"cacheEverything": false,

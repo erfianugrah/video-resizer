@@ -92,25 +92,48 @@ export function createRequestContext(request: Request, ctx?: ExecutionContext): 
   let envDebugEnabled = false;
   let envVerboseEnabled = false;
   
+  // Try to access the debug config through the existing module system
+  // This will work as long as the DebugConfigurationManager has been initialized elsewhere in the app
   try {
-    // Use dynamic import to load the configuration manager
-    // We'll use Promise.resolve to handle the async nature but proceed with default values
-    // while the import is in progress
-    import('../config/DebugConfigurationManager').then(module => {
+    // Import directly from the module index where it should be initialized
+    const { debugConfig } = require('../config');
+    if (debugConfig) {
+      envDebugEnabled = debugConfig.isDebugEnabled();
+      envVerboseEnabled = debugConfig.isVerboseEnabled();
+      
+      logDebug('Loaded debug config', { 
+        enabled: envDebugEnabled, 
+        verbose: envVerboseEnabled 
+      });
+    }
+  } catch (err) {
+    // Fall back to async import if the module isn't loaded yet
+    import('../config').then(module => {
       try {
-        const debugConfig = module.DebugConfigurationManager.getInstance();
-        // Get debug settings from manager - these will apply to future requests
-        envDebugEnabled = debugConfig.isDebugEnabled();
-        envVerboseEnabled = debugConfig.isVerboseEnabled();
-      } catch (importErr) {
-        logWarn('Error getting DebugConfigurationManager instance', { error: String(importErr) });
+        if (module && module.debugConfig) {
+          const debugEnabled = module.debugConfig.isDebugEnabled();
+          const verboseEnabled = module.debugConfig.isVerboseEnabled();
+          
+          // Update context after the fact
+          if (currentRequestContext && currentRequestContext.requestId === context.requestId) {
+            currentRequestContext.debugEnabled = debugEnabled;
+            currentRequestContext.verboseEnabled = verboseEnabled;
+            
+            logDebug('Updated debug config asynchronously', { 
+              enabled: debugEnabled, 
+              verbose: verboseEnabled 
+            });
+          }
+        }
+      } catch (configErr) {
+        logWarn('Error accessing debug configuration', { error: String(configErr) });
       }
     }).catch(importErr => {
-      logWarn('Error importing DebugConfigurationManager', { error: String(importErr) });
+      logWarn('Error importing configuration module', { error: String(importErr) });
     });
-  } catch (err) {
-    // Continue if we can't access configuration
-    logWarn('Error in debug configuration loading', { error: String(err) });
+    
+    // Log but continue with defaults
+    logWarn('Error in initial debug configuration loading', { error: String(err) });
   }
   
   // Check for debug parameters - request parameters override environment settings
