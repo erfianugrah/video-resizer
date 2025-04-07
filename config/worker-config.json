@@ -307,6 +307,7 @@
 		"respectOriginHeaders": true,
 		"cacheEverything": false,
 		"enableCacheTags": true,
+		"cacheTagPrefix": "video-prod-",
 		"purgeOnUpdate": false,
 		"bypassQueryParameters": [
 			"nocache",

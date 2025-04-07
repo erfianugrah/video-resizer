@@ -1257,7 +1257,24 @@ function generateCacheTagsImpl(
   
   const startTime = Date.now();
   const tags: string[] = [];
-  const prefix = 'video-';
+  
+  // Get prefix from the cache configuration
+  // The prefix is configured in worker-config.json directly
+  let prefix = 'video-'; // Default fallback
+  
+  try {
+    prefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
+    
+    logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
+      prefix
+    });
+  } catch (err) {
+    // In case of any error with cache config, fall back to the default prefix
+    logDebug('VideoStorageService', 'Could not get prefix from config, using default prefix', {
+      error: err instanceof Error ? err.message : String(err),
+      defaultPrefix: prefix
+    });
+  }
   
   // Add base tag for the video path (normalized to avoid special chars)
   const leadingSlashPattern = '^\/+';
@@ -1267,7 +1284,8 @@ function generateCacheTagsImpl(
   logDebug('VideoStorageService', 'Generating cache tags', {
     videoPath,
     hasOptions: !!options,
-    hasHeaders: !!headers
+    hasHeaders: !!headers,
+    prefix
   });
   
   // Normalize path to create safe tags

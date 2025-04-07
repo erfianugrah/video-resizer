@@ -70,6 +70,7 @@ export const CacheConfigSchema = z.object({
   
   // Cache tagging and purging
   enableCacheTags: z.boolean().default(true),
+  cacheTagPrefix: z.string().default('video-'),
   purgeOnUpdate: z.boolean().default(false),
   
   // Bypass settings
@@ -111,6 +112,7 @@ const defaultCacheConfig: CacheConfiguration = {
   respectOriginHeaders: true,
   cacheEverything: false,
   enableCacheTags: true,
+  cacheTagPrefix: 'video-',
   purgeOnUpdate: false,
   bypassQueryParameters: ['nocache', 'bypass'],
   bypassHeaderValue: 'no-cache',
