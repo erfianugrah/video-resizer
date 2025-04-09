@@ -48,7 +48,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 - [Documentation Home](./docs/README.md) - Central documentation hub
 - [Architecture Overview](./docs/architecture/ARCHITECTURE_OVERVIEW.md) - High-level architecture and design patterns
-- [Architecture Roadmap](./ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
+- [Architecture Roadmap](./docs/architecture/ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
 - [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md) - Complete configuration options
 - [Configuration Guide](./docs/configuration/README.md) - Basic configuration guidance
 - [Deployment Guide](./docs/deployment/README.md) - Deployment instructions
@@ -68,7 +68,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 #### Documentation and Tools
 - [Enhanced Configuration Tool](./tools/README.md) - Improved error handling, security, and validation
 - [Future Recommendations](./docs/deployment/FUTURE_RECOMMENDATIONS.md) - Recommendations for further improvements
-- [Documentation Reorganization](./docs/DOCUMENTATION_REORGANIZATION.md) - Plan for improved documentation organization
+- [Documentation Organization](./docs/DOCUMENTATION.md) - Documentation overview and organization
 
 ## Quick Start
 
