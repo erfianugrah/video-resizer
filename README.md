@@ -46,17 +46,23 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 ## Documentation
 
-- [Documentation Home](./docs/README.md)
+- [Documentation Home](./docs/README.md) - Central documentation hub
 - [Architecture Overview](./docs/architecture/ARCHITECTURE_OVERVIEW.md) - High-level architecture and design patterns
 - [Architecture Roadmap](./ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
-- [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md)
-- [Configuration Guide](./docs/configuration/README.md)
-- [Deployment Guide](./docs/deployment/README.md)
-- [Error Handling](./docs/ERROR_HANDLING.md) - Error handling system and best practices
-- [KV Caching System](./docs/kv-caching/README.md)
-- [Storage System](./docs/storage/README.md)
-- [IMQuery Support](./docs/features/imquery/README.md)
-- [Breakpoint-Based Mapping](./docs/features/imquery/breakpoint-based-derivative-mapping.md)
+- [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md) - Complete configuration options
+- [Configuration Guide](./docs/configuration/README.md) - Basic configuration guidance
+- [Deployment Guide](./docs/deployment/README.md) - Deployment instructions
+- [Error Handling](./docs/error-handling/README.md) - Error handling system and best practices
+- [KV Caching System](./docs/kv-caching/README.md) - KV caching implementation
+- [Storage System](./docs/storage/README.md) - Storage backend configuration
+- [IMQuery Support](./docs/features/imquery/README.md) - IMQuery integration
+
+### Recent Documentation Updates
+
+- [Deployment Issues Fixed](./docs/deployment/DEPLOYMENT_ISSUES_FIXED.md) - Resolution of recent production issues
+- [Enhanced Configuration Tool](./tools/README.md) - Improved configuration upload tool
+- [Future Recommendations](./docs/deployment/FUTURE_RECOMMENDATIONS.md) - Recommendations for further improvements
+- [Documentation Reorganization](./docs/DOCUMENTATION_REORGANIZATION.md) - Plan for improved documentation organization
 
 ## Quick Start
 
