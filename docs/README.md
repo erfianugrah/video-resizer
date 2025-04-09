@@ -35,6 +35,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Error Handling](./error-handling/README.md)**: Comprehensive error handling documentation
   - [Developer Guidelines](./error-handling/developer-guidelines.md)
   - [Implementation Plan](./error-handling/implementation-plan.md)
+  - [Next Steps](./error-handling/NEXT_STEPS.md)
   - [Monitoring Plan](./error-handling/monitoring-plan.md)
   - [Test Improvements](./error-handling/test-improvements.md)
   - [Implementation Details](./error-handling/implementations/)
@@ -62,6 +63,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 ## Architecture Documentation
 
 - **[Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md)**: High-level architecture description
+- **[Architecture Roadmap](./architecture/ARCHITECTURE_ROADMAP.md)**: Current progress and future architectural improvements
 - **[Architecture Patterns](./architecture/ARCHITECTURE_PATTERNS.md)**: Architectural patterns used in the project
 - **[Dependency Inversion](./architecture/DEPENDENCY_INVERSION_PLAN.md)**: Plan for implementing dependency inversion
   - [Refined Dependency Inversion](./architecture/REFINED_DEPENDENCY_INVERSION.md)
@@ -81,13 +83,14 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Configuration Upload Tool](../tools/README.md)**: Tool for managing dynamic configuration *[Updated]*
 - **[Debug UI Documentation](../debug-ui/README.md)**: Debug interface for monitoring and diagnostics
 
-## Documentation Reorganization
+## Documentation Cleanup
 
-A comprehensive reorganization of documentation is planned. See [Documentation Reorganization Plan](./DOCUMENTATION_REORGANIZATION.md) for details.
+A documentation cleanup is in progress to improve organization and remove outdated content. 
+See [Documentation Cleanup Plan](./CLEANUP_PLAN.md) for details.
 
 ## Additional Resources
 
-- **[Archive](./archive/)**: Older or superseded documentation kept for reference (planned for cleanup)
+- **[Archive](./archive/)**: Historical documents kept for reference
 
 ## Recent Changes
 
