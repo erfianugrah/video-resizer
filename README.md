@@ -69,7 +69,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 #### Documentation and Tools
 - [Enhanced Configuration Tool](./tools/README.md) - Improved error handling, security, and validation
 - [Future Recommendations](./docs/deployment/FUTURE_RECOMMENDATIONS.md) - Recommendations for further improvements
-- [Documentation Organization](./docs/DOCUMENTATION.md) - Documentation overview and organization
+- [Documentation Organization](./docs/structure/README.md) - Documentation overview and organization
 
 ## Quick Start
 

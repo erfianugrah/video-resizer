@@ -83,10 +83,13 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Configuration Upload Tool](../tools/README.md)**: Tool for managing dynamic configuration *[Updated]*
 - **[Debug UI Documentation](../debug-ui/README.md)**: Debug interface for monitoring and diagnostics
 
-## Documentation Cleanup
+## Documentation Structure
 
-A documentation cleanup is in progress to improve organization and remove outdated content. 
-See [Documentation Cleanup Plan](./CLEANUP_PLAN.md) for details.
+For information about the documentation organization and cleanup efforts:
+
+- [Documentation Structure](./structure/README.md) - Overview of documentation organization
+- [Documentation Cleanup Plan](./structure/CLEANUP_PLAN.md) - Plan for documentation cleanup
+- [Documentation Overview](./structure/DOCUMENTATION.md) - General documentation information
 
 ## Environment Configuration
 
