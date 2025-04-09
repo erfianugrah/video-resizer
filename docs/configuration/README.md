@@ -43,7 +43,7 @@ The configuration system is made up of several specialized managers:
 1. [Video Configuration](./video-configuration.md) - Controls video transformation options
 2. [Cache Configuration](./cache-configuration.md) - Manages caching behavior
 3. [Debug Configuration](./debug-configuration.md) - Controls debugging features
-4. [Logging Configuration](./logging-configuration.md) - Configures logging behavior
+4. **Logging Configuration** - Configures logging behavior (see [Features/Logging](../features/logging/README.md))
 
 For a complete reference of all configuration options and their details, see the [Configuration Reference](./CONFIGURATION_REFERENCE.md) document.
 
@@ -55,7 +55,7 @@ For a complete reference of all configuration options and their details, see the
 4. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
 5. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
 6. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
-7. [IMQuery Support](./imquery-support.md) - Support for responsive image parameters and caching
+7. [IMQuery Support](../features/imquery/README.md) - Support for responsive image parameters and caching
 
 ## Environment Variables
 
