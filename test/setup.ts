@@ -104,4 +104,57 @@ vi.mock('../src/config/DebugConfigurationManager', () => {
   }
 };
 
+// Mock the config index module
+vi.mock('../src/config', () => {
+  return {
+    CacheConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        getConfig: vi.fn().mockReturnValue({
+          method: 'cache-api',
+          debug: false,
+          defaultTtl: 3600,
+          bypassQueryParameters: ['debug', 'nocache', 'bypass']
+        }),
+        shouldBypassCache: vi.fn().mockReturnValue(false)
+      })
+    },
+    DebugConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        isDebugEnabled: vi.fn().mockReturnValue(true),
+        isVerboseEnabled: vi.fn().mockReturnValue(false),
+        shouldIncludeHeaders: vi.fn().mockReturnValue(true),
+        shouldIncludePerformance: vi.fn().mockReturnValue(true)
+      }),
+      resetInstance: vi.fn()
+    },
+    LoggingConfigurationManager: {
+      getInstance: vi.fn().mockReturnValue({
+        getPinoConfig: vi.fn().mockReturnValue({
+          level: 'debug',
+          browser: { asObject: true },
+          base: { service: 'video-resizer', env: 'test' }
+        }),
+        getSamplingConfig: vi.fn().mockReturnValue({
+          enabled: false,
+          rate: 1.0
+        }),
+        getBreadcrumbConfig: vi.fn().mockReturnValue({
+          enabled: true,
+          maxItems: 100
+        }),
+        areBreadcrumbsEnabled: vi.fn().mockReturnValue(true),
+        getMaxBreadcrumbs: vi.fn().mockReturnValue(100),
+        getLogLevel: vi.fn().mockReturnValue('debug'),
+        shouldLogComponent: vi.fn().mockReturnValue(true)
+      })
+    },
+    debugConfig: {
+      isDebugEnabled: vi.fn().mockReturnValue(true),
+      isVerboseEnabled: vi.fn().mockReturnValue(false),
+      shouldIncludeHeaders: vi.fn().mockReturnValue(true),
+      shouldIncludePerformance: vi.fn().mockReturnValue(true)
+    }
+  };
+});
+
 // Initialize other global variables if needed

@@ -204,10 +204,18 @@ export const handleVideoRequest = withErrorHandling<
           verboseEnabled: context.verboseEnabled
         });
         
+        // Create a new response with the same body but mutable headers
+        const headers = new Headers(kvResponse.headers);
+        headers.set('X-Cache-Source', 'KV');
+        headers.set('X-Cache-Status', 'HIT');
+        const mutableResponse = new Response(kvResponse.body, {
+          status: kvResponse.status,
+          statusText: kvResponse.statusText,
+          headers: headers
+        });
+        
         // Return the KV cached response with debug headers
-        const responseBuilder = new ResponseBuilder(kvResponse, context);
-        kvResponse.headers.set('X-Cache-Source', 'KV');
-        kvResponse.headers.set('X-Cache-Status', 'HIT');
+        const responseBuilder = new ResponseBuilder(mutableResponse, context);
         return await responseBuilder.withDebugInfo().build();
       }
       
@@ -253,9 +261,17 @@ export const handleVideoRequest = withErrorHandling<
           verboseEnabled: context.verboseEnabled
         });
         
+        // Create a new response with the same body but mutable headers
+        const headers = new Headers(cfResponse.headers);
+        headers.set('X-Cache-Source', 'CloudflareCache');
+        const mutableResponse = new Response(cfResponse.body, {
+          status: cfResponse.status,
+          statusText: cfResponse.statusText,
+          headers: headers
+        });
+        
         // Return the CF cached response with debug headers
-        const responseBuilder = new ResponseBuilder(cfResponse, context);
-        cfResponse.headers.set('X-Cache-Source', 'CloudflareCache');
+        const responseBuilder = new ResponseBuilder(mutableResponse, context);
         return await responseBuilder.withDebugInfo().build();
       }
       
