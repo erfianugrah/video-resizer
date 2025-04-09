@@ -11,12 +11,14 @@
 import { handleVideoRequest } from './handlers/videoHandler';
 import { handleConfigUpload, handleConfigGet } from './handlers/configHandler';
 import { getEnvironmentConfig, EnvironmentConfig, EnvVariables } from './config/environmentConfig';
-import { initializeConfiguration } from './config';
+import { initializeConfiguration, updateAllConfigFromKV } from './config';
 import { initializeLogging } from './utils/loggingManager';
-import { createRequestContext, updateBreadcrumbConfig } from './utils/requestContext';
+import { createRequestContext, updateBreadcrumbConfig, addBreadcrumb } from './utils/requestContext';
 import { createLogger, info, error, debug } from './utils/pinoLogger';
 import { initializeLegacyLogger } from './utils/legacyLoggerAdapter';
 import { LoggingConfigurationManager } from './config/LoggingConfigurationManager';
+import { ConfigurationService } from './services/configurationService';
+import { VideoConfigurationManager } from './config/VideoConfigurationManager';
 
 /**
  * Helper functions for consistent logging in the index module
@@ -94,8 +96,7 @@ export default {
           // Try to load dynamic configuration from KV if available
           if (env.VIDEO_CONFIGURATION_STORE) {
             try {
-              // Import the ConfigurationService (dynamic import to avoid circular deps)
-              const { ConfigurationService } = await import('./services/configurationService');
+              // Use statically imported ConfigurationService 
               const configService = ConfigurationService.getInstance();
               
               // Initialize the configuration service with fast non-blocking initialization
@@ -113,8 +114,6 @@ export default {
                 
                 // Apply KV configuration to all config managers
                 try {
-                  const { updateAllConfigFromKV } = await import('./config');
-                  
                   // Log configuration details before applying
                   logInfo(context, 'About to apply KV configuration', {
                     hasVideoConfig: !!kvConfig.video,
@@ -129,7 +128,6 @@ export default {
                   
                   // Add breadcrumb for debugging
                   if (context) {
-                    const { addBreadcrumb } = await import('./utils/requestContext');
                     addBreadcrumb(context, 'Configuration', 'Applying KV configuration', {
                       hasVideoConfig: !!kvConfig.video,
                       hasPassthrough: !!kvConfig.video?.passthrough,
@@ -142,7 +140,6 @@ export default {
                   
                   // Log detailed information about the path patterns after loading from KV
                   try {
-                    const { VideoConfigurationManager } = await import('./config/VideoConfigurationManager');
                     const videoConfig = VideoConfigurationManager.getInstance();
                     const pathPatterns = videoConfig.getPathPatterns();
                     
@@ -160,7 +157,6 @@ export default {
                     
                     // Add breadcrumb for path patterns
                     if (context) {
-                      const { addBreadcrumb } = await import('./utils/requestContext');
                       addBreadcrumb(context, 'Configuration', 'Loaded path patterns from KV', {
                         patternCount: pathPatterns.length,
                         // Include just names for breadcrumb to keep it lightweight

@@ -100,25 +100,110 @@ try {
 // Create the base logger
 const baseLogger = pino(pinoConfig);
 
-/**
- * Create a request-scoped logger
- * @param context The request context
- * @returns A Pino logger instance with request ID
- */
-export function createLogger(context: RequestContext) {
-  // Create a child logger with request ID binding
-  const childLogger = baseLogger.child({ requestId: context.requestId });
-  
-  // Add bindings method for tests
-  if (!childLogger.bindings && typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
-    // For test environment only, add a bindings method that returns the bindings
-    (childLogger as any).bindings = () => ({ requestId: context.requestId });
-  }
-  
-  return childLogger;
+// Global flag for breadcrumbs
+let breadcrumbsEnabled = true;
+
+// Try to get breadcrumbs configuration
+try {
+  breadcrumbsEnabled = loggingConfigManager.areBreadcrumbsEnabled();
+} catch (err) {
+  logError('Error getting breadcrumbs configuration', {
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined
+  });
 }
 
-// This section was moved to the top of the file to avoid TS2448 error
+/**
+ * Check if a specified log level is enabled for a context
+ * @param context Request context
+ * @param level The log level to check
+ * @returns Whether logging at this level is enabled
+ */
+export function isLevelEnabled(
+  context: RequestContext | undefined | null,
+  level: string
+): boolean {
+  // Check sampling first
+  if (!shouldSampleRequest(context)) {
+    return false;
+  }
+  
+  // Get configured log level from LoggingConfigurationManager
+  const configManager = LoggingConfigurationManager.getInstance();
+  const configuredLevel = configManager.getLogLevel();
+  
+  // Map levels to numeric values for comparison
+  const levels: Record<string, number> = {
+    error: 0,
+    warn: 1,
+    info: 2,
+    debug: 3,
+    trace: 4
+  };
+  
+  return (levels[level] || 0) <= (levels[configuredLevel] || 2);
+}
+
+/**
+ * Create a logger instance for the request
+ * @param context Request context or undefined if not available
+ * @returns A logger instance
+ */
+export function createLogger(context?: RequestContext | null): pino.Logger {
+  if (!context) {
+    return baseLogger;
+  }
+  
+  // Create a child logger with context
+  return baseLogger.child({
+    requestId: context.requestId,
+    // Don't include the URL in every log, as it can be long
+  });
+}
+
+/**
+ * Prepare common context for logging
+ * @param context Request context
+ * @returns Common logging context
+ */
+function prepareLoggingContext(context?: RequestContext | null): Record<string, unknown> {
+  if (!context) {
+    return {};
+  }
+  
+  return {
+    requestId: context.requestId,
+    // Include just request ID for now to keep logs clean
+  };
+}
+
+/**
+ * Check if a request should be sampled based on sampling configuration
+ * Using a deterministic approach based on request ID for consistency
+ * @param context Request context
+ * @returns True if the request should be sampled, false otherwise
+ */
+function shouldSampleRequest(context?: RequestContext | null): boolean {
+  // If sampling is disabled, always return true
+  if (!samplingConfig.enabled) {
+    return true;
+  }
+  
+  // If no context available, use random sampling
+  if (!context) {
+    return Math.random() <= samplingConfig.rate;
+  }
+  
+  // Use request ID for deterministic sampling
+  const requestId = context.requestId;
+  const hash = Array.from(requestId).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  
+  // Normalize hash to [0, 1]
+  const normalizedHash = (hash % 1000) / 1000;
+  
+  // Return true if the hash is less than or equal to the sampling rate
+  return normalizedHash <= samplingConfig.rate;
+}
 
 /**
  * Debug level log with breadcrumb
@@ -136,16 +221,19 @@ export function debug(
   message: string, 
   data?: Record<string, unknown>
 ) {
-  // Always add breadcrumb for tracking, regardless of log level or debug settings
+  // Check if debug level is enabled before any object creation
+  if (!isLevelEnabled(context, 'debug')) {
+    return;
+  }
+  
+  // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
-  // Skip debug logs if:
-  // 1. The logger's level is higher than debug OR
-  // 2. Debug is not enabled in the request context
+  // Check if the logger's level allows debug logs
   const loggerLevel = logger.level as string;
-  const isDebugAllowedByLevel = loggerLevel === 'debug' || loggerLevel === 'trace';
+  const isLogLevelAllowed = ['debug', 'trace'].includes(loggerLevel);
   
-  if (!isDebugAllowedByLevel || !context.debugEnabled) {
+  if (!isLogLevelAllowed) {
     return breadcrumb;
   }
   
@@ -190,6 +278,11 @@ export function info(
   message: string, 
   data?: Record<string, unknown>
 ) {
+  // Check if info level is enabled before any object creation
+  if (!isLevelEnabled(context, 'info')) {
+    return;
+  }
+  
   // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
@@ -242,6 +335,11 @@ export function warn(
   message: string, 
   data?: Record<string, unknown>
 ) {
+  // Check if warn level is enabled before any object creation
+  if (!isLevelEnabled(context, 'warn')) {
+    return;
+  }
+  
   // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
@@ -289,6 +387,11 @@ export function error(
   message: string, 
   data?: Record<string, unknown>
 ) {
+  // Check if error level is enabled before any object creation - almost always true
+  if (!isLevelEnabled(context, 'error')) {
+    return;
+  }
+  
   // Always add breadcrumb for tracking, regardless of log level
   const breadcrumb = addBreadcrumb(context, category, message, data);
   

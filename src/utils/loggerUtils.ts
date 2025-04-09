@@ -40,13 +40,29 @@ export function info(component: string, message: string, data?: Record<string, u
 }
 
 /**
+ * Check if a specified log level is enabled
+ * @param level The log level to check
+ * @returns Whether logging at this level is enabled
+ */
+export function isLevelEnabled(level: string): boolean {
+  // For now, simple implementation based on debug flag
+  if (level === 'debug' || level === 'trace') {
+    return logConfig.debugEnabled;
+  }
+  
+  // Info, warn, and error are always enabled
+  return true;
+}
+
+/**
  * Log a debug message (only if debug is enabled)
  * @param component Component name
  * @param message Message to log
  * @param data Optional data to include in log
  */
 export function debug(component: string, message: string, data?: Record<string, unknown>) {
-  if (logConfig.debugEnabled) {
+  // Check level before logging to avoid creating objects unnecessarily
+  if (isLevelEnabled('debug')) {
     // Use the Pino logger through the legacy adapter
     pinoDebug(component, message, data);
   }

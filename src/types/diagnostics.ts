@@ -104,6 +104,10 @@ export interface DiagnosticsInfo {
     mappingMethod?: string;
   };
   
+  // Request-scoped caches
+  fnCache?: Map<string, any>;
+  patternMatchCache?: Map<string, any>;
+  
   // Additional data
   [key: string]: unknown;
 }

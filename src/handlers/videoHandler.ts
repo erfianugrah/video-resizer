@@ -9,12 +9,14 @@ import { getEnvironmentConfig, EnvVariables } from '../config/environmentConfig'
 import { EnvironmentConfig } from '../config/environmentConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
-import { createRequestContext, addBreadcrumb } from '../utils/requestContext';
+import { createRequestContext, addBreadcrumb, startTimedOperation, endTimedOperation, setCurrentContext } from '../utils/requestContext';
 import { createLogger, info, debug, error } from '../utils/pinoLogger';
 import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
-import { TransformOptions } from '../utils/kvCacheUtils';
+import { TransformOptions, getFromKVCache, storeInKVCache } from '../utils/kvCacheUtils';
 import { ResponseBuilder } from '../utils/responseBuilder';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
+import { getCachedResponse, cacheResponse } from '../services/cacheManagementService';
+import { CacheConfigurationManager } from '../config';
 
 /**
  * Main handler for video requests
@@ -38,9 +40,6 @@ export const handleVideoRequest = withErrorHandling<
     }
     // Create request context and logger, pass execution context for waitUntil operations
     const context = createRequestContext(request, ctx);
-    
-    // Import performance tracking functions and context management
-    const { startTimedOperation, endTimedOperation, setCurrentContext } = await import('../utils/requestContext');
     
     // Set the current request context for the global context manager
     setCurrentContext(context);
@@ -92,10 +91,7 @@ export const handleVideoRequest = withErrorHandling<
         return fetch(request);
       }
       
-      // Import the cache services
-      const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
-      const { CacheConfigurationManager } = await import('../config');
-      const { getFromKVCache, storeInKVCache } = await import('../utils/kvCacheUtils');
+      // Cache services are now imported at the top of the file
 
       // Try to get the response from cache first
       addBreadcrumb(context, 'Cache', 'Checking cache', {

@@ -44,9 +44,22 @@ export function isCdnCgiMediaPath(path: string): boolean {
  * Find a matching path pattern for a given URL path
  * @param path The URL path to match
  * @param patterns Array of path patterns to check against
+ * @param context Optional request context for caching
  * @returns The matching pattern or null if none match
  */
-export function findMatchingPathPattern(path: string, patterns: PathPattern[]): PathPattern | null {
+export function findMatchingPathPattern(
+  path: string, 
+  patterns: PathPattern[], 
+  context?: any
+): PathPattern | null {
+  // Check cache if context is provided
+  if (context && context.diagnostics && context.diagnostics.patternMatchCache) {
+    const cacheKey = `findMatchingPathPattern:${path}:${patterns.length}`;
+    if (context.diagnostics.patternMatchCache.has(cacheKey)) {
+      return context.diagnostics.patternMatchCache.get(cacheKey);
+    }
+  }
+
   // Import logger utilities in case they're available
   let logDebug: (message: string, data?: Record<string, unknown>) => void;
   const console_debug = console.debug;
@@ -113,6 +126,18 @@ export function findMatchingPathPattern(path: string, patterns: PathPattern[]): 
           path: path,
           processPath: pattern.processPath
         });
+        
+        // Cache result if context is provided
+        if (context && context.diagnostics) {
+          // Initialize cache if it doesn't exist
+          if (!context.diagnostics.patternMatchCache) {
+            context.diagnostics.patternMatchCache = new Map<string, any>();
+          }
+          
+          const cacheKey = `findMatchingPathPattern:${path}:${patterns.length}`;
+          context.diagnostics.patternMatchCache.set(cacheKey, pattern);
+        }
+        
         return pattern;
       }
     } catch (err) {
@@ -125,6 +150,18 @@ export function findMatchingPathPattern(path: string, patterns: PathPattern[]): 
   }
 
   logDebug('No matching pattern found for path', { path });
+  
+  // Cache null result if context is provided
+  if (context && context.diagnostics) {
+    // Initialize cache if it doesn't exist
+    if (!context.diagnostics.patternMatchCache) {
+      context.diagnostics.patternMatchCache = new Map<string, any>();
+    }
+    
+    const cacheKey = `findMatchingPathPattern:${path}:${patterns.length}`;
+    context.diagnostics.patternMatchCache.set(cacheKey, null);
+  }
+  
   return null;
 }
 
@@ -132,9 +169,22 @@ export function findMatchingPathPattern(path: string, patterns: PathPattern[]): 
  * Find a matching path pattern with captured groups
  * @param path The URL path to match
  * @param patterns Array of path patterns to check against
+ * @param context Optional request context for caching the result
  * @returns A path match result with pattern and captures
  */
-export function matchPathWithCaptures(path: string, patterns: PathPattern[]): PathMatchResult | null {
+export function matchPathWithCaptures(
+  path: string, 
+  patterns: PathPattern[],
+  context?: any
+): PathMatchResult | null {
+  // If context is provided and has a patternMatchCache, check for cached result
+  if (context && context.diagnostics && context.diagnostics.patternMatchCache) {
+    const cacheKey = `${path}:${patterns.length}`;
+    if (context.diagnostics.patternMatchCache.has(cacheKey)) {
+      return context.diagnostics.patternMatchCache.get(cacheKey);
+    }
+  }
+
   // Sort patterns by priority if specified (higher values first)
   const sortedPatterns = [...patterns].sort((a, b) => {
     const priorityA = a.priority ?? 0;
@@ -162,13 +212,39 @@ export function matchPathWithCaptures(path: string, patterns: PathPattern[]): Pa
         }
       }
       
-      return {
+      const result = {
         pattern,
         matched: true,
         captures,
         originalPath: path,
       };
+
+      // Cache the result if context is provided
+      if (context && context.diagnostics) {
+        // Initialize cache if it doesn't exist
+        if (!context.diagnostics.patternMatchCache) {
+          context.diagnostics.patternMatchCache = new Map<string, PathMatchResult>();
+        }
+        
+        // Cache the result with a key combining path and pattern count
+        const cacheKey = `${path}:${patterns.length}`;
+        context.diagnostics.patternMatchCache.set(cacheKey, result);
+      }
+      
+      return result;
     }
+  }
+
+  // Cache null result if context is provided
+  if (context && context.diagnostics) {
+    // Initialize cache if it doesn't exist
+    if (!context.diagnostics.patternMatchCache) {
+      context.diagnostics.patternMatchCache = new Map<string, PathMatchResult | null>();
+    }
+    
+    // Cache the null result
+    const cacheKey = `${path}:${patterns.length}`;
+    context.diagnostics.patternMatchCache.set(cacheKey, null);
   }
 
   return null;
@@ -178,10 +254,15 @@ export function matchPathWithCaptures(path: string, patterns: PathPattern[]): Pa
  * Extract video ID from a path using a path pattern
  * @param path The URL path
  * @param pattern The path pattern to use
+ * @param context Optional request context for caching
  * @returns The extracted video ID or null if no match
  */
-export function extractVideoId(path: string, pattern: PathPattern): string | null {
-  const result = matchPathWithCaptures(path, [pattern]);
+export function extractVideoId(
+  path: string, 
+  pattern: PathPattern, 
+  context?: any
+): string | null {
+  const result = matchPathWithCaptures(path, [pattern], context);
   if (!result) return null;
   
   // Try named videoId capture first
