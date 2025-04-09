@@ -57,10 +57,16 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - [Storage System](./docs/storage/README.md) - Storage backend configuration
 - [IMQuery Support](./docs/features/imquery/README.md) - IMQuery integration
 
-### Recent Documentation Updates
+### Recent Updates
 
-- [Deployment Issues Fixed](./docs/deployment/DEPLOYMENT_ISSUES_FIXED.md) - Resolution of recent production issues
-- [Enhanced Configuration Tool](./tools/README.md) - Improved configuration upload tool
+#### Production Deployment Fixes
+- [Deployment Issues Fixed](./docs/deployment/DEPLOYMENT_ISSUES_FIXED.md) - Resolution of recent production issues:
+  - Fixed storage configuration integration in VideoConfigurationManager
+  - Fixed fallback URL construction in TransformVideoCommand
+  - Disabled debug mode in production configuration
+
+#### Documentation and Tools
+- [Enhanced Configuration Tool](./tools/README.md) - Improved error handling, security, and validation
 - [Future Recommendations](./docs/deployment/FUTURE_RECOMMENDATIONS.md) - Recommendations for further improvements
 - [Documentation Reorganization](./docs/DOCUMENTATION_REORGANIZATION.md) - Plan for improved documentation organization
 
