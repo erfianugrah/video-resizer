@@ -51,6 +51,7 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 - [Architecture Roadmap](./docs/architecture/ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
 - [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md) - Complete configuration options
 - [Configuration Guide](./docs/configuration/README.md) - Basic configuration guidance
+- [Environment Configuration](./docs/environments/README.md) - Environment-specific settings
 - [Deployment Guide](./docs/deployment/README.md) - Deployment instructions
 - [Error Handling](./docs/error-handling/README.md) - Error handling system and best practices
 - [KV Caching System](./docs/kv-caching/README.md) - KV caching implementation

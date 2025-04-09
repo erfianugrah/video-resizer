@@ -35,7 +35,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Error Handling](./error-handling/README.md)**: Comprehensive error handling documentation
   - [Developer Guidelines](./error-handling/developer-guidelines.md)
   - [Implementation Plan](./error-handling/implementation-plan.md)
-  - [Next Steps](./error-handling/NEXT_STEPS.md)
+  - [Next Steps](./error-handling/next-steps.md)
   - [Monitoring Plan](./error-handling/monitoring-plan.md)
   - [Test Improvements](./error-handling/test-improvements.md)
   - [Implementation Details](./error-handling/implementations/)
@@ -87,6 +87,12 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 
 A documentation cleanup is in progress to improve organization and remove outdated content. 
 See [Documentation Cleanup Plan](./CLEANUP_PLAN.md) for details.
+
+## Environment Configuration
+
+- **[Environments](./environments/README.md)**: Environment-specific configuration
+  - Development, Staging, Production environments
+  - Environment-specific configuration requirements
 
 ## Additional Resources
 
