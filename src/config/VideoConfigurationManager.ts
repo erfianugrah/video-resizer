@@ -95,6 +95,9 @@ const ResponsiveBreakpointSchema = z.object({
   derivative: z.string()
 });
 
+// Import StorageConfigSchema to include storage config in video config
+import { StorageConfigSchema } from './storageConfig';
+
 // Complete Video Configuration Schema
 export const VideoConfigSchema = z.object({
   derivatives: DerivativeSchema,
@@ -154,6 +157,8 @@ export const VideoConfigSchema = z.object({
     }),
   }).optional(), // Make caching optional
   cache: z.record(CacheConfigSchema).optional(), // Make cache optional
+  // Include storage configuration
+  storage: StorageConfigSchema.optional(),
 });
 
 // Type exported from the schema
@@ -365,6 +370,47 @@ export class VideoConfigurationManager {
    */
   public getCdnCgiConfig() {
     return this.config.cdnCgi;
+  }
+
+  /**
+   * Get storage configuration for video sources
+   * @returns Storage configuration or default if not set
+   */
+  public getStorageConfig() {
+    // Using a local defaultStorageConfig inline to avoid async issues
+    const defaultConfig = {
+      priority: ['r2', 'remote', 'fallback'],
+      r2: {
+        enabled: false,
+        bucketBinding: 'VIDEOS_BUCKET',
+      },
+      fetchOptions: {
+        userAgent: 'Cloudflare-Video-Resizer/1.0',
+      },
+    };
+    
+    if (!this.config.storage) {
+      try {
+        // Try to log the missing config once, not on every call
+        const logWarning = () => {
+          import('../utils/legacyLoggerAdapter').then(({ warn }) => {
+            warn('VideoConfigurationManager', 'Storage configuration not found, using defaults');
+          }).catch(() => {
+            console.warn('[VideoConfigurationManager] Storage configuration not found, using defaults');
+          });
+        };
+        
+        // Only log once by using a function we define and call immediately
+        logWarning();
+      } catch {
+        // Silent catch - don't fail getting config if logging fails
+      }
+      
+      return defaultConfig;
+    }
+    
+    // Return the stored configuration
+    return this.config.storage;
   }
 
   /**

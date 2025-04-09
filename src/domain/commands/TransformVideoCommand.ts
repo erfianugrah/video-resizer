@@ -933,6 +933,7 @@ export class TransformVideoCommand {
           const { fetchVideo } = await import('../../services/videoStorageService');
           
           // Get storage config safely using type assertion to avoid TypeScript errors
+          // Note: This is a temporary solution until we update the videoConfig interface
           const storageConfig = (videoConfig as any).storage;
           
           await logDebug('TransformVideoCommand', 'Using storage service for fallback', {
