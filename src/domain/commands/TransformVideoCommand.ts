@@ -891,7 +891,45 @@ export class TransformVideoCommand {
           // Directly fetch the source URL - no storage service needed for 500 errors
           // We extract the source URL from the CDN-CGI URL which has format:
           // /cdn-cgi/media/params/sourceUrl
-          const sourceUrl = cdnCgiUrl.split('/cdn-cgi/media/')[1].split(',', 2)[1];
+          // This fix ensures we correctly extract the source URL
+          let sourceUrl: string;
+          
+          try {
+            // Fixed extraction - get everything after parameters
+            const cdnCgiParts = cdnCgiUrl.split('/cdn-cgi/media/');
+            if (cdnCgiParts.length < 2) {
+              throw new Error('Invalid CDN-CGI URL format');
+            }
+            
+            // The full path after /cdn-cgi/media/
+            const fullPath = cdnCgiParts[1];
+            
+            // The source URL starts after the first comma in the path
+            const firstCommaIndex = fullPath.indexOf(',');
+            if (firstCommaIndex === -1) {
+              throw new Error('Invalid CDN-CGI URL format - no comma in path');
+            }
+            
+            // Extract source URL - everything after first comma
+            sourceUrl = fullPath.substring(firstCommaIndex + 1);
+            
+            // Log the extracted URL for debugging
+            await logDebug('TransformVideoCommand', 'Extracted source URL for direct fetch', {
+              extractedUrl: sourceUrl.substring(0, 50) + (sourceUrl.length > 50 ? '...' : '')
+            });
+          } catch (extractError) {
+            // Log extraction error but continue
+            logErrorWithContext('Error extracting source URL from CDN-CGI URL', extractError, {
+              cdnCgiUrl: cdnCgiUrl.split('?')[0]
+            }, 'TransformVideoCommand');
+            
+            // Use the original URL as fallback
+            sourceUrl = this.context.request.url;
+            
+            await logDebug('TransformVideoCommand', 'Using request URL as fallback', {
+              fallbackUrl: sourceUrl
+            });
+          }
           
           await logDebug('TransformVideoCommand', 'Fetching original directly', {
             sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined',

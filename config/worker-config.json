@@ -302,7 +302,7 @@
 	},
 	"cache": {
 		"method": "cacheApi",
-		"debug": true,
+		"debug": false,
 		"defaultMaxAge": 86400,
 		"respectOriginHeaders": true,
 		"cacheEverything": false,
@@ -419,8 +419,8 @@
 		}
 	},
 	"debug": {
-		"enabled": true,
-		"verbose": true,
+		"enabled": false,
+		"verbose": false,
 		"includeHeaders": true,
 		"includePerformance": true,
 		"dashboardMode": true,

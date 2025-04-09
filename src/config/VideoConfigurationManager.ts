@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { ConfigurationError } from '../errors';
 import { videoConfig as defaultConfig } from './videoConfig';
+import { StorageConfigSchema } from './storageConfig';
 
 // Define Zod schemas for each part of the configuration
 
@@ -154,6 +155,9 @@ export const VideoConfigSchema = z.object({
     }),
   }).optional(), // Make caching optional
   cache: z.record(CacheConfigSchema).optional(), // Make cache optional
+  
+  // Add storage configuration schema from storageConfig.ts
+  storage: StorageConfigSchema.optional(),
 });
 
 // Type exported from the schema
@@ -440,6 +444,47 @@ export class VideoConfigurationManager {
       whitelistedFormats: []
     };
   }
+  
+  /**
+   * Get storage configuration for video sources
+   * @returns Storage configuration or default if not set
+   */
+  public getStorageConfig() {
+    // Using a local defaultStorageConfig inline to avoid async issues
+    const defaultConfig = {
+      priority: ['r2', 'remote', 'fallback'],
+      r2: {
+        enabled: false,
+        bucketBinding: 'VIDEOS_BUCKET',
+      },
+      fetchOptions: {
+        userAgent: 'Cloudflare-Video-Resizer/1.0',
+      },
+    };
+    
+    if (!this.config.storage) {
+      try {
+        // Try to log the missing config once, not on every call
+        const logWarning = () => {
+          import('../utils/legacyLoggerAdapter').then(({ warn }) => {
+            warn('VideoConfigurationManager', 'Storage configuration not found, using defaults');
+          }).catch(() => {
+            console.warn('[VideoConfigurationManager] Storage configuration not found, using defaults');
+          });
+        };
+        
+        // Only log once by using a function we define and call immediately
+        logWarning();
+      } catch (err) {
+        // Silent catch - don't fail getting config if logging fails
+      }
+      
+      return defaultConfig;
+    }
+    
+    // Return the stored configuration
+    return this.config.storage;
+  }
 
   /**
    * Update the configuration (for testing or dynamic reconfiguration)
@@ -600,6 +645,10 @@ export function updateVideoConfigFromKV(kvConfig: Partial<VideoConfiguration>): 
         hasDerivatives: !!kvConfig.derivatives,
         pathPatternCount: kvConfig.pathPatterns?.length || 0,
         hasDurationSettings: !!kvConfig.defaults?.duration,
+        hasStorageConfig: !!kvConfig.storage,
+        r2Enabled: kvConfig.storage?.r2?.enabled,
+        storagePriority: kvConfig.storage?.priority,
+        hasPathTransforms: !!kvConfig.storage?.pathTransforms
       });
     }).catch(() => {
       // Silent catch - don't fail configuration update if logging fails
@@ -608,6 +657,30 @@ export function updateVideoConfigFromKV(kvConfig: Partial<VideoConfiguration>): 
     
     // Use the regular update method to apply the changes
     manager.updateConfig(kvConfig);
+    
+    // Additional detailed logging for storage config which is critical
+    if (kvConfig.storage) {
+      import('../utils/legacyLoggerAdapter').then(({ info }) => {
+        // Use a local reference to avoid repeated null checks
+        const storage = kvConfig.storage;
+        
+        // Make sure storage is defined before accessing its properties
+        if (storage) {
+          info('VideoConfigManager', 'Storage configuration details', {
+            r2Enabled: storage.r2?.enabled,
+            r2BucketBinding: storage.r2?.bucketBinding,
+            storagePriority: storage.priority,
+            remoteUrl: storage.remoteUrl,
+            fallbackUrl: storage.fallbackUrl,
+            hasPathTransforms: !!storage.pathTransforms,
+            pathTransformsKeys: storage.pathTransforms ? Object.keys(storage.pathTransforms) : []
+          });
+        }
+      }).catch(() => {
+        // Silent catch - don't fail configuration update if logging fails
+        console.log('[VideoConfigManager] Storage config updated');
+      });
+    }
   } catch (error) {
     console.error('[VideoConfigManager] Error updating from KV:', error);
   }
