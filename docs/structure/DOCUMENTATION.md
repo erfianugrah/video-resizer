@@ -20,7 +20,7 @@ Our documentation has been reorganized to provide better navigation and more cur
 3. Created a reorganization plan for all documentation
 4. Added a central documentation index
 
-See the [Documentation Reorganization Plan](./docs/DOCUMENTATION_REORGANIZATION.md) for details on upcoming documentation improvements.
+See the [Documentation Cleanup Plan](./CLEANUP_PLAN.md) for details on upcoming documentation improvements.
 
 ## Using the Documentation
 
