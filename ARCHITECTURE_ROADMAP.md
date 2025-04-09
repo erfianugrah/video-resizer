@@ -457,7 +457,7 @@ In addition to our existing test suite, we plan to implement:
    - ✅ Added configuration examples and troubleshooting tips
 
 3. ✅ Error Handling Documentation
-   - ✅ Created `/docs/ERROR_HANDLING.md`
+   - ✅ Created `/docs/error-handling/README.md`
    - ✅ Documented standardized error handling utilities
    - ✅ Provided concrete examples for different use cases
    - ✅ Added best practices and implementation guidance
@@ -579,7 +579,7 @@ Removing these warnings will make the debug UI cleaner and avoid potentially mis
     - Added rich context data to all errors
     - Fixed TypeScript type issues for Promise chains and Response objects
     - Resolved circular dependency issues with proper error handling
-- Created comprehensive documentation in `/docs/ERROR_HANDLING.md`:
+- Created comprehensive documentation in `/docs/error-handling/README.md`:
   - Detailed API reference for all utility functions 
   - Updated examples showing the new context-object pattern
   - Implementation guidance for different error scenarios

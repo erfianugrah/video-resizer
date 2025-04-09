@@ -48,7 +48,7 @@ In our last session, we:
 
 4. Updated documentation:
    - Updated `ERROR_HANDLING_IMPLEMENTATION_PLAN.md` to track progress
-   - Enhanced `ERROR_HANDLING.md` with new examples
+   - Enhanced `error-handling/README.md` with new examples
    - Created `IMPLEMENTATION_NOTES.md` to document challenges and solutions
 
 ## Progress Summary

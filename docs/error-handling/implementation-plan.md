@@ -6,7 +6,7 @@ This document outlines the plan for implementing standardized error handling uti
 
 ✅ Phase 1: Initial Utility Creation and Documentation
 - ✅ Created error handling utilities in `src/utils/errorHandlingUtils.ts`
-- ✅ Documented usage patterns in `/docs/ERROR_HANDLING.md`
+- ✅ Documented usage patterns in `/docs/error-handling/README.md`
 - ✅ Implemented in `TransformationService.ts` as proof of concept
 - ✅ Verified TypeScript safety and test compatibility
 
