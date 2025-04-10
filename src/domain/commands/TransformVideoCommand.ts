@@ -889,13 +889,14 @@ export class TransformVideoCommand {
           });
           
           // Directly fetch the source URL - no storage service needed for 500 errors
-          // We extract the source URL from the CDN-CGI URL which has format:
-          // /cdn-cgi/media/params/sourceUrl
-          const sourceUrl = cdnCgiUrl.split('/cdn-cgi/media/')[1].split(',', 2)[1];
+          // Use the source URL that's already available from earlier in the process
+          // This is more reliable than trying to extract it from the CDN-CGI URL
+          const sourceUrl = source;
           
           await logDebug('TransformVideoCommand', 'Fetching original directly', {
             sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined',
-            method: request.method
+            method: request.method,
+            usedSourceDirectly: true
           });
           
           try {
@@ -1009,16 +1010,16 @@ export class TransformVideoCommand {
           fallbackReason
         });
         
+        // Include original error status for debugging before returning
+        headers.set('X-Original-Status', String(response.status));
+        headers.set('X-Original-Status-Text', response.statusText);
+        
         // Return the fallback response with the enhanced headers
         return new Response(fallbackResponse.body, {
           status: fallbackResponse.status,
           statusText: fallbackResponse.statusText,
           headers
         });
-        
-        // Include original error status for debugging
-        headers.set('X-Original-Status', String(response.status));
-        headers.set('X-Original-Status-Text', response.statusText);
         
       }
       
