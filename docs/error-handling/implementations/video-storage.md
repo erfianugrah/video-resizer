@@ -106,126 +106,131 @@ The next components to update with standardized error handling are:
 1. `debugService.ts` - Service for debugging capabilities
 2. `errorHandlerService.ts` - Service for creating error responses
 
-## Recent Enhancements (April 4, 2025)
+## Recent Enhancements (April 10, 2025)
 
-### Enhanced Fallback Mechanism
+### Enhanced Fallback Mechanism for CDN-CGI 500 Errors
 
-We've significantly improved the fallback mechanism in the error handling system:
+We've significantly improved the fallback mechanism in the `TransformVideoCommand.ts` to better handle 500 errors from the CDN-CGI transformation service:
 
-1. **Cache API for Original Videos**:
-   - Original videos used as fallbacks are now cached in Cloudflare Cache API
-   - Uses a separate cache key with `__fb=1` parameter to distinguish fallback content
-   - Applies cache tags (`video-resizer,fallback:true,source:{path}`) for efficient purging
-   - Avoids using KV for large original videos (which has 25MB size limitation)
+1. **Fixed Source URL Extraction**:
+   - Previously, the code was incorrectly trying to extract the original source URL from the CDN-CGI URL using string manipulation:
+   ```typescript
+   // Old problematic code:
+   const sourceUrl = cdnCgiUrl.split('/cdn-cgi/media/')[1].split(',', 2)[1];
+   ```
+   - This led to 500 errors when the transformation failed because it was extracting `height=1080` instead of the actual source URL
+   - Now uses the source URL that's already available from earlier in the process:
+   ```typescript
+   // New reliable code:
+   const sourceUrl = source;
+   ```
 
-2. **Intelligent Fallback Strategy**:
-   - When transformation fails (especially for 500 errors), the system now:
-     - First checks if a cached original already exists in Cache API
-     - If found, serves it immediately with appropriate headers
-     - If not found, attempts to fetch and cache the original video
-   - For subsequent requests:
-     - Always tries the transformation first to see if the issue is resolved
-     - Falls back to cached original if transformation still fails
-     - This provides optimal balance between transformation attempts and fallback performance
+2. **Fixed Response Header Logic**:
+   - Fixed an issue where header setting code appeared after a return statement and was never reached
+   - Moved the header setting code before the return statement to ensure headers are properly applied:
+   ```typescript
+   // Include original error status for debugging before returning
+   headers.set('X-Original-Status', String(response.status));
+   headers.set('X-Original-Status-Text', response.statusText);
+   
+   // Return the fallback response with the enhanced headers
+   return new Response(fallbackResponse.body, {
+     status: fallbackResponse.status,
+     statusText: fallbackResponse.statusText,
+     headers
+   });
+   ```
 
-3. **Background Processing**:
-   - Uses Cloudflare's `waitUntil` when available for non-blocking background caching
-   - Falls back to Promise-based background processing when execution context isn't available
-   - Ensures responsive user experience while still caching for future requests
+3. **Improved Caching Strategy**:
+   - Maintains the existing two-tier caching strategy for fallbacks:
+     - The fallback response itself isn't cached due to `no-store` directive
+     - But the original content is cached separately with a special fallback key
+     - For subsequent 500 errors, it checks this special cache before fetching again
+   - This ensures fast fallbacks while still trying the transformation on each new request
 
-4. **Enhanced Diagnostics**:
-   - Added new diagnostic headers to indicate fallback cache usage:
-     - `X-Fallback-Cache-Hit: true` when using a cached original
-     - `X-Fallback-Applied: true` for all fallback scenarios
-     - `Cache-Tag: video-resizer,fallback:true,source:{path}` enabling cache management
-     - Additional headers to explain the specific failure reason
+### Fallback Process Flow
 
-This enhancement significantly improves the user experience for videos that consistently fail transformation, while maintaining a clear separation between transformed videos and fallback originals in the cache.
-
-### Detailed Flow Diagrams
-
-The enhanced fallback mechanism follows these flows, illustrated using Mermaid diagrams:
-
-#### 1. Initial Request Flow
-
-```mermaid
-flowchart LR
-    A[Client Request] --> B[Video Transformation]
-    B -->|Success| C[Return Transformed Video]
-    B -->|Fails| D[Fetch Original Video]
-    D --> E[Return Original Video]
-    D -.->|Background| F[Cache Original in Cache API\nwith __fb=1 parameter]
-    
-    style B fill:#f9d77e,stroke:#707070
-    style D fill:#a8d0db,stroke:#707070
-    style F fill:#a8d0db,stroke:#707070,stroke-dasharray: 5 5
-```
-
-#### 2. Subsequent Request Flow
+Here's the process flow for the enhanced fallback mechanism:
 
 ```mermaid
 flowchart TD
-    A[Client Request] --> B[Video Transformation]
+    A[Client Request] --> B[Try CDN-CGI Transformation]
     B -->|Success| C[Return Transformed Video]
-    B -->|Fails| D{Check Cache API\nfor Original}
-    D -->|Found| E[Return Cached Original\nwith X-Fallback-Cache-Hit]
-    D -->|Not Found| F[Fetch Original Video]
-    F --> G[Return Original Video]
-    F -.->|Background| H[Cache Original in Cache API\nwith __fb=1 parameter]
+    B -->|500 Error| D{Check Cache API\nfor __fb=1 entry}
+    D -->|Found| E[Return Cached Original\nwith Fallback Headers]
+    D -->|Not Found| F[Fetch from Original Source]
+    F -->|Success| G[Return Original Video\nwith Fallback Headers]
+    F -->|Failure| H[Try Storage Service\n as last resort]
+    H -->|Success| I[Return Original\nfrom Storage Service]
+    H -->|Failure| J[Return Error Response]
+    F -.->|Background| K[Cache Original in\nCache API with __fb=1 key]
     
     style B fill:#f9d77e,stroke:#707070
     style D fill:#a8d0db,stroke:#707070,shape:diamond
-    style E fill:#a8e8a0,stroke:#707070
-    style H fill:#a8d0db,stroke:#707070,stroke-dasharray: 5 5
+    style G fill:#a8e8a0,stroke:#707070
+    style K fill:#a8d0db,stroke:#707070,stroke-dasharray: 5 5
 ```
 
-#### 3. Cache Structure
+### Fallback Response Headers
+
+The fallback mechanism adds these diagnostic headers to responses:
 
 ```mermaid
 classDiagram
-    class TransformedVideo {
-        Cache Key: {url}
-        Cache Tags: video-resizer,derivative:{type}
-        Headers: Cache-Control, Etag
+    class FallbackHeaders {
+        X-Fallback-Applied: true
+        X-Fallback-Reason: [error reason]
+        X-Original-Status: [status code]
+        X-Original-Status-Text: [status text]
+        X-Fallback-Cache-Hit: true (if applicable)
+        X-Error-Type: [error type] (if available)
+        X-Invalid-Parameter: [parameter] (if applicable)
+        Cache-Control: no-store
+        Cache-Tag: video-resizer,fallback:true,source:[path]
     }
     
-    class FallbackOriginal {
-        Cache Key: {url}?__fb=1
-        Cache Tags: video-resizer,fallback:true,source:{path}
-        Headers: X-Fallback-Applied, Cache-Tag
-    }
-    
-    CloudflareCache --> TransformedVideo : stores
-    CloudflareCache --> FallbackOriginal : stores
+    FallbackResponse --> FallbackHeaders : includes
 ```
 
-#### 4. Background Operations (with waitUntil)
+### Request Flow Sequence
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Worker
-    participant Transformation
-    participant Origin
+    participant CDN_CGI as CDN-CGI Media API
     participant CacheAPI
+    participant Origin
     
     Client->>Worker: Request Video
-    Worker->>Transformation: Transform Video
-    Transformation-->>Worker: Error (500)
-    Worker->>Origin: Fetch Original
-    Origin-->>Worker: Original Video
-    Worker->>Client: Return Original Video
-    Note over Worker,CacheAPI: Background Process (waitUntil)
-    Worker->>CacheAPI: Store Original with __fb=1 key
-    CacheAPI-->>Worker: Stored
+    Worker->>CDN_CGI: Transform Request
+    alt Transformation Succeeds
+        CDN_CGI-->>Worker: Transformed Video
+        Worker-->>Client: Return Transformed Video
+    else Transformation Returns 500
+        CDN_CGI-->>Worker: 500 Error
+        Worker->>CacheAPI: Check for fallback cache (__fb=1)
+        alt Fallback in Cache
+            CacheAPI-->>Worker: Cached Original
+            Worker-->>Client: Return with X-Fallback-* Headers
+        else No Fallback in Cache
+            Worker->>Origin: Fetch Original Video
+            Origin-->>Worker: Original Video
+            Worker-->>Client: Return with X-Fallback-* Headers
+            Worker->>CacheAPI: Store Original with __fb=1 key (background)
+        end
+    end
 ```
 
-This design pattern balances several important priorities:
-- Always tries transformation first to recover from transient errors
-- Avoids redundant origin fetches for persistent transformation failures
-- Maintains separate cache entries for transformed vs. original content
-- Uses async background caching to minimize response time
-- Provides clear diagnostic information via response headers
+### Benefits of the Enhanced Approach
+
+1. **Reliability**: Fixed source URL extraction ensures the fallback always works correctly
+2. **Diagnostic Clarity**: Proper headers help with debugging transformation failures
+3. **Optimized Performance**: Caching strategy balances retry attempts with quick fallbacks
+4. **Graceful Degradation**: Users get content even when transformation services fail
+5. **Better Monitoring**: Enhanced headers enable tracking of transformation failures
+
+These fixes will significantly improve user experience when the CDN-CGI Media API experiences issues, ensuring videos continue to be delivered using the original source when transformations fail.
 
 ## Conclusion
 
