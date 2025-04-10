@@ -392,8 +392,24 @@ export async function createDebugReport(
       if (debugResponse.ok) {
         const html = await debugResponse.text();
         
-        // Safely serialize the diagnostics info
-        const safeJsonString = JSON.stringify(diagnosticsInfo)
+        // Safely serialize the diagnostics info without circular references
+        const getCircularReplacer = () => {
+          const seen = new WeakSet();
+          return (key: any, value: any) => {
+            // If the value is an object and not null
+            if (typeof value === 'object' && value !== null) {
+              // If we've seen this object before, return '[Circular]'
+              if (seen.has(value)) {
+                return '[Circular]';
+              }
+              // Otherwise, add it to our set of seen objects
+              seen.add(value);
+            }
+            return value;
+          };
+        };
+        
+        const safeJsonString = JSON.stringify(diagnosticsInfo, getCircularReplacer())
           .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
           .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
           .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities

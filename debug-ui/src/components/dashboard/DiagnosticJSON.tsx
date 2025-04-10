@@ -18,8 +18,20 @@ export function DiagnosticJSON({ data, className }: DiagnosticJSONProps) {
   useEffect(() => {
     if (!initialized.current) {
       initialized.current = true;
-      // Format the JSON data
-      setCode(JSON.stringify(data, null, 2));
+      // Format the JSON data with circular reference handling
+      const getCircularReplacer = () => {
+        const seen = new WeakSet();
+        return (key: any, value: any) => {
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return '[Circular]';
+            }
+            seen.add(value);
+          }
+          return value;
+        };
+      };
+      setCode(JSON.stringify(data, getCircularReplacer(), 2));
     }
   }, [data]);
 

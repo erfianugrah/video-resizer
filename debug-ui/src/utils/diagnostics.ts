@@ -33,8 +33,21 @@ export function parseDiagnosticsFromUrl(): DiagnosticsInfo | null {
         logToPage('Found window.DIAGNOSTICS_DATA');
         
         try {
-          // Stringify and parse to validate it's proper JSON
-          const validatedData = JSON.parse(JSON.stringify(window.DIAGNOSTICS_DATA));
+          // Stringify and parse to validate it's proper JSON, handling circular references
+          const getCircularReplacer = () => {
+            const seen = new WeakSet();
+            return (key: any, value: any) => {
+              if (typeof value === 'object' && value !== null) {
+                if (seen.has(value)) {
+                  return '[Circular]';
+                }
+                seen.add(value);
+              }
+              return value;
+            };
+          };
+          
+          const validatedData = JSON.parse(JSON.stringify(window.DIAGNOSTICS_DATA, getCircularReplacer()));
           logToPage(`DIAGNOSTICS_DATA is valid: ${typeof validatedData === 'object'}`);
           return window.DIAGNOSTICS_DATA;
         } catch (e) {
