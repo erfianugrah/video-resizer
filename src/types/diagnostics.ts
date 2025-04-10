@@ -44,6 +44,7 @@ export interface DiagnosticsInfo {
   // Transformation details
   pathMatch?: string;
   transformParams?: TransformParams;
+  actualTransformParams?: Record<string, string>;
   cdnCgiUrl?: string;
   
   // Client detection
@@ -64,6 +65,12 @@ export interface DiagnosticsInfo {
   // Extended diagnostics info
   derivative?: string;
   source?: string;
+  videoInfo?: {
+    width?: number;
+    height?: number;
+    duration?: number;
+    format?: string;
+  };
   
   // Configuration information (for debug UI)
   videoConfig?: Record<string, unknown>;

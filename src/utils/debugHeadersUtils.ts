@@ -251,7 +251,63 @@ export function addDebugHeaders(
     
     // Include transform parameters in a JSON-encoded header
     if (diagnosticsInfo.transformParams) {
+      // If cdnCgiUrl is available, extract and include the actual transform parameters from it
+      if (diagnosticsInfo.cdnCgiUrl) {
+        try {
+          // Parse the CDN-CGI URL to extract the actual parameters used
+          const cdnCgiUrl = diagnosticsInfo.cdnCgiUrl;
+          const transformParamsMatch = cdnCgiUrl.match(/\/cdn-cgi\/media\/([^/]+)\//);
+          if (transformParamsMatch && transformParamsMatch[1]) {
+            const transformParamsString = transformParamsMatch[1];
+            const parsedParams: Record<string, string> = {};
+            
+            // Parse the comma-separated parameters (e.g., width=640,height=480)
+            transformParamsString.split(',').forEach(param => {
+              const [key, value] = param.split('=');
+              if (key && value) {
+                parsedParams[key] = value;
+              }
+            });
+            
+            // Include both the requested and actual parameters for transparency
+            diagnosticsInfo.actualTransformParams = parsedParams;
+            
+            // If we have transformation parameters with width and height, add original video dimensions
+            // for comparison (if not already set)
+            if (!diagnosticsInfo.videoInfo && (parsedParams.width || parsedParams.height)) {
+              // Create basic video info if absent
+              diagnosticsInfo.videoInfo = diagnosticsInfo.videoInfo || {};
+              
+              // If width or height are parameters, assume they might be the original dimensions
+              // (this is a heuristic approximation for comparison purposes)
+              if (parsedParams.width && !diagnosticsInfo.videoInfo.width) {
+                const originalWidth = Number(parsedParams.width) * 2; // Approximate original dimension
+                if (!isNaN(originalWidth)) {
+                  diagnosticsInfo.videoInfo.width = originalWidth;
+                }
+              }
+              
+              if (parsedParams.height && !diagnosticsInfo.videoInfo.height) {
+                const originalHeight = Number(parsedParams.height) * 2; // Approximate original dimension
+                if (!isNaN(originalHeight)) {
+                  diagnosticsInfo.videoInfo.height = originalHeight;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // If parsing fails, fall back to the original transform params
+          logError('Failed to parse CDN-CGI URL for transform parameters', {
+            error: String(e),
+            cdnCgiUrl: diagnosticsInfo.cdnCgiUrl?.split('?')[0] // Don't include query parameters for security
+          });
+        }
+      }
+      
       headers.set('X-Transform-Params', JSON.stringify(diagnosticsInfo.transformParams));
+      if (diagnosticsInfo.actualTransformParams) {
+        headers.set('X-Actual-Transform-Params', JSON.stringify(diagnosticsInfo.actualTransformParams));
+      }
     }
     
     // Include browser capabilities
@@ -393,6 +449,19 @@ export async function createDebugReport(
         const html = await debugResponse.text();
         
         // Safely serialize the diagnostics info without circular references
+        // Create a clean copy of diagnostics with important properties preserved
+        const cleanDiagnostics = { ...diagnosticsInfo };
+        
+        // Make sure critical timing information is included
+        if (requestContext) {
+          // Ensure processingTimeMs is set if not already
+          if (cleanDiagnostics.processingTimeMs === undefined) {
+            const endTime = performance.now();
+            const processingTimeMs = Math.round(endTime - requestContext.startTime);
+            cleanDiagnostics.processingTimeMs = processingTimeMs;
+          }
+        }
+        
         const getCircularReplacer = () => {
           const seen = new WeakSet();
           return (key: any, value: any) => {
@@ -409,7 +478,7 @@ export async function createDebugReport(
           };
         };
         
-        const safeJsonString = JSON.stringify(diagnosticsInfo, getCircularReplacer())
+        const safeJsonString = JSON.stringify(cleanDiagnostics, getCircularReplacer())
           .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
           .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
           .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities

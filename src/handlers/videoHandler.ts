@@ -361,6 +361,21 @@ export const handleVideoRequest = withErrorHandling<
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
       
+      // If derivative is present, make a more educated guess about video info
+      if (context.diagnostics.derivative && videoOptions?.width && videoOptions?.height) {
+        context.diagnostics.videoInfo = context.diagnostics.videoInfo || {};
+        
+        // Use the requested width/height as an estimate for original dimensions,
+        // but only if they're reasonably sized (larger videos are more likely to be original dimensions)
+        if (videoOptions.width > 640 && !context.diagnostics.videoInfo.width) {
+          context.diagnostics.videoInfo.width = videoOptions.width;
+        }
+        
+        if (videoOptions.height > 480 && !context.diagnostics.videoInfo.height) {
+          context.diagnostics.videoInfo.height = videoOptions.height;
+        }
+      }
+      
       // Store the response in cache if it's cacheable
       if (response.headers.get('Cache-Control')?.includes('max-age=')) {
         // Use a non-blocking cache write to avoid delaying the response

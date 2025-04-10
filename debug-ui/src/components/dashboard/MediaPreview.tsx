@@ -16,6 +16,10 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
   
   const importantParams = ['width', 'height', 'mode', 'fit', 'format', 'quality', 'time'];
   
+  // For display, we need to show the actual transformed parameters, not the original URL parameters
+  // The actualTransformParams will contain the parameters extracted from cdnCgiUrl if available
+  const transformParameters = diagnostics.actualTransformParams || diagnostics.transformParams || {};
+  
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
@@ -63,21 +67,80 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
           </div>
         </div>
         
-        <div className="text-sm mb-4">
-          <div className="font-medium mb-2">Transform Parameters</div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <tbody>
-                {diagnostics.transformParams && Object.entries(diagnostics.transformParams)
-                  .filter(([key]) => importantParams.includes(key))
-                  .map(([key, value]) => (
-                    <tr key={key} className="border-b last:border-0">
-                      <td className="py-2 pr-4 font-medium">{key}</td>
-                      <td className="py-2 font-mono">{String(value)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+        <div className="space-y-4 text-sm mb-4">
+          {/* Original video dimensions section */}
+          {(diagnostics.videoInfo?.width || diagnostics.videoInfo?.height) && (
+            <div>
+              <div className="font-medium mb-2">
+                <span className="flex items-center">
+                  <span className="mr-1">Original Video Dimensions</span>
+                  <span className="text-xs bg-slate-200 px-1 rounded text-slate-700">estimated</span>
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <tbody>
+                    {diagnostics.videoInfo?.width && (
+                      <tr className="border-b">
+                        <td className="py-2 pr-4 font-medium">width</td>
+                        <td className="py-2 font-mono">{diagnostics.videoInfo.width}</td>
+                      </tr>
+                    )}
+                    {diagnostics.videoInfo?.height && (
+                      <tr className="border-b last:border-0">
+                        <td className="py-2 pr-4 font-medium">height</td>
+                        <td className="py-2 font-mono">{diagnostics.videoInfo.height}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Transform Parameters section */}
+          <div>
+            <div className="font-medium mb-2">Transform Parameters</div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <tbody>
+                  {/* Show difference between requested and actual parameters when available */}
+                  {importantParams.map(key => {
+                    const requestedValue = diagnostics.transformParams?.[key];
+                    const actualValue = diagnostics.actualTransformParams?.[key];
+                    
+                    // Skip if both are undefined
+                    if (requestedValue === undefined && actualValue === undefined) {
+                      return null;
+                    }
+                    
+                    // Check if there's a difference between requested and actual
+                    const isDifferent = actualValue !== undefined && 
+                                       String(requestedValue) !== String(actualValue);
+                    
+                    return (
+                      <tr key={key} className="border-b last:border-0">
+                        <td className="py-2 pr-4 font-medium">{key}</td>
+                        <td className="py-2 font-mono">
+                          {isDifferent ? (
+                            <>
+                              <span className={`${isDifferent ? 'text-amber-600 line-through mr-2' : ''}`}>
+                                {String(requestedValue)}
+                              </span>
+                              <span className="text-green-600">
+                                {String(actualValue)}
+                              </span>
+                            </>
+                          ) : (
+                            String(requestedValue || actualValue)
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }).filter(Boolean)}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
         
