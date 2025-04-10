@@ -5,7 +5,8 @@ import {
   hasIMQueryParams,
   validateAkamaiParams,
   findClosestDerivative,
-  findClosestDerivativePercentage
+  findClosestDerivativePercentage,
+  getDerivativeDimensions
 } from '../../src/utils/imqueryUtils';
 
 // Mock the VideoConfigurationManager
@@ -289,6 +290,41 @@ describe('IMQuery Utils', () => {
       
       // Expect a mapping rather than null due to expanded threshold fallback
       expect(justAboveThreshold).not.toBeNull();
+    });
+  });
+
+  describe('getDerivativeDimensions', () => {
+    // Mock getCurrentContext and createLogger
+    vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+      getCurrentContext: vi.fn().mockReturnValue(null)
+    }));
+    
+    vi.mock('../../src/utils/pinoLogger', () => ({
+      createLogger: vi.fn().mockReturnValue({
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn()
+      })
+    }));
+
+    it('should return the correct dimensions for a valid derivative', () => {
+      // The mock VideoConfigurationManager is already set up with the test derivatives
+      const dimensions = getDerivativeDimensions('mobile');
+      
+      expect(dimensions).not.toBeNull();
+      expect(dimensions?.width).toBe(854);
+      expect(dimensions?.height).toBe(640);
+    });
+    
+    it('should return null for an invalid derivative', () => {
+      const dimensions = getDerivativeDimensions('nonexistent');
+      expect(dimensions).toBeNull();
+    });
+    
+    it('should return null when derivative is null', () => {
+      const dimensions = getDerivativeDimensions(null);
+      expect(dimensions).toBeNull();
     });
   });
 });

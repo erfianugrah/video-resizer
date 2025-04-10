@@ -7,9 +7,7 @@
 				"width": 1920,
 				"height": 1080,
 				"mode": "video",
-				"fit": "contain",
 				"audio": true,
-				"quality": "high",
 				"duration": "5m",
 				"compression": "low",
 				"description": "1920x1080 pixels. The video plays in high-definition."
@@ -18,9 +16,7 @@
 				"width": 1280,
 				"height": 720,
 				"mode": "video",
-				"fit": "contain",
 				"audio": true,
-				"quality": "medium",
 				"duration": "5m",
 				"compression": "medium",
 				"description": "1280x720 pixels. The video plays at medium resolution."
@@ -29,9 +25,7 @@
 				"width": 854,
 				"height": 640,
 				"mode": "video",
-				"fit": "contain",
 				"audio": true,
-				"quality": "low",
 				"duration": "5m",
 				"compression": "high",
 				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
@@ -49,7 +43,7 @@
 			"width": null,
 			"height": null,
 			"mode": "video",
-			"fit": "contain",
+			"fit": null,
 			"audio": true,
 			"format": null,
 			"time": null,
@@ -194,21 +188,16 @@
 		},
 		"responsiveBreakpoints": {
 			"small": {
-				"max": 640,
+				"max": 854,
 				"derivative": "mobile"
 			},
 			"medium": {
-				"min": 641,
-				"max": 1024,
+				"min": 855,
+				"max": 1280,
 				"derivative": "tablet"
 			},
 			"large": {
-				"min": 1025,
-				"max": 1440,
-				"derivative": "tablet"
-			},
-			"extra-large": {
-				"min": 1441,
+				"min": 1281,
 				"derivative": "desktop"
 			}
 		},
@@ -419,7 +408,7 @@
 		}
 	},
 	"debug": {
-		"enabled": false,
+		"enabled": true,
 		"verbose": false,
 		"includeHeaders": true,
 		"includePerformance": true,

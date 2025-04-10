@@ -105,7 +105,7 @@ export const VideoConfigSchema = z.object({
     width: z.number().nullable(),
     height: z.number().nullable(),
     mode: z.enum(['video', 'frame', 'spritesheet']),
-    fit: z.enum(['contain', 'scale-down', 'cover']),
+    fit: z.enum(['contain', 'scale-down', 'cover']).nullable(),
     audio: z.boolean(),
     format: z.string().nullable(),
     time: z.string().nullable(),

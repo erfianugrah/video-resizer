@@ -5,7 +5,7 @@
  * including R2 buckets, remote URLs, and fallback URLs.
  */
 
-import { CacheConfigurationManager } from '../config';
+import { CacheConfigurationManager, VideoConfigurationManager } from '../config';
 import { EnvVariables } from '../config/environmentConfig';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
@@ -16,6 +16,7 @@ import {
   tryOrNull, 
   tryOrDefault 
 } from '../utils/errorHandlingUtils';
+import { getDerivativeDimensions } from '../utils/imqueryUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -1333,18 +1334,66 @@ function generateCacheTagsImpl(
     }
   }
   
-  // Add tags for dimensions if available
-  if (options.width) {
-    tags.push(`${prefix}width-${options.width}`);
-  }
-  
-  if (options.height) {
-    tags.push(`${prefix}height-${options.height}`);
-  }
-  
-  // Add combined dimensions tag if both width and height are specified
-  if (options.width && options.height) {
-    tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
+  // Add tag for the derivative if present
+  if (options.derivative) {
+    tags.push(`${prefix}derivative-${options.derivative}`);
+    
+    // When we have a derivative, use the actual derivative dimensions for width/height tags
+    // instead of the requested dimensions for better cache consistency
+    const derivativeDimensions = getDerivativeDimensions(options.derivative);
+    
+    if (derivativeDimensions) {
+      // Add tags for the derivative's actual dimensions
+      if (derivativeDimensions.width) {
+        tags.push(`${prefix}width-${derivativeDimensions.width}`);
+      }
+      
+      if (derivativeDimensions.height) {
+        tags.push(`${prefix}height-${derivativeDimensions.height}`);
+      }
+      
+      // Add combined dimensions tag for the derivative's actual dimensions
+      if (derivativeDimensions.width && derivativeDimensions.height) {
+        tags.push(`${prefix}dimensions-${derivativeDimensions.width}x${derivativeDimensions.height}`);
+      }
+      
+      // Also include the original requested dimensions with a different prefix
+      // This helps with debugging but doesn't affect cache behavior
+      if (options.width) {
+        tags.push(`${prefix}requested-width-${options.width}`);
+      }
+      
+      if (options.height) {
+        tags.push(`${prefix}requested-height-${options.height}`);
+      }
+    } else {
+      // Fallback to the requested dimensions if the derivative config is not found
+      if (options.width) {
+        tags.push(`${prefix}width-${options.width}`);
+      }
+      
+      if (options.height) {
+        tags.push(`${prefix}height-${options.height}`);
+      }
+      
+      if (options.width && options.height) {
+        tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
+      }
+    }
+  } else {
+    // No derivative - use requested dimensions directly
+    if (options.width) {
+      tags.push(`${prefix}width-${options.width}`);
+    }
+    
+    if (options.height) {
+      tags.push(`${prefix}height-${options.height}`);
+    }
+    
+    // Add combined dimensions tag if both width and height are specified
+    if (options.width && options.height) {
+      tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
+    }
   }
   
   // Add IMQuery-specific tags if present

@@ -10,6 +10,7 @@ import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
+import { getDerivativeDimensions } from '../utils/imqueryUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -32,6 +33,7 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
 import { createTransformationStrategy } from '../domain/strategies/StrategyFactory';
 import { videoConfig } from '../config/videoConfig';
+import { VideoConfigurationManager } from '../config';
 
 /**
  * Orchestrate the video transformation process
@@ -302,12 +304,15 @@ export const prepareVideoTransformation = withErrorHandling<
     // Get cache configuration for the video URL
     let cacheConfig = determineCacheConfig(videoUrl);
     
+    // Setup source for cache tagging
+    const source = pathPattern.name;
+    
     // IMPORTANT: Special handling for IMQuery - ensure it's cacheable
     // If this is an IMQuery request with derivative, log and ensure cacheability
     const isIMQuery = url.searchParams.has('imwidth') || url.searchParams.has('imheight');
     const hasDerivative = !!options.derivative;
     
-    if (isIMQuery && hasDerivative) {
+    if (isIMQuery && hasDerivative && options.derivative) {
       logDebug('IMQuery with derivative found - checking cache config', {
         url: url.toString(),
         derivative: options.derivative,
@@ -324,6 +329,62 @@ export const prepareVideoTransformation = withErrorHandling<
           originalCacheability: cacheConfig.cacheability
         });
         cacheConfig.cacheability = true;
+      }
+      
+      // CRITICAL: When we have a derivative, use the derivative's dimensions in the transformation
+      // rather than the original requested dimensions
+      const derivativeDimensions = getDerivativeDimensions(options.derivative);
+      
+      if (derivativeDimensions) {
+        // Replace the width/height with the derivative's dimensions in the transformation parameters
+        if (derivativeDimensions.width) {
+          cdnParams.width = derivativeDimensions.width;
+        }
+        
+        if (derivativeDimensions.height) {
+          cdnParams.height = derivativeDimensions.height;
+        }
+        
+        // Rebuild the CDN-CGI media URL with the derivative's dimensions
+        const updatedCdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+        
+        // We need to reassign cdnCgiUrl to a variable that's not a constant
+        let finalCdnCgiUrl = updatedCdnCgiUrl;
+        
+        // Update diagnostics to include actual dimensions used
+        if (diagnosticsInfo.transformParams) {
+          diagnosticsInfo.transformParams.width = derivativeDimensions.width;
+          diagnosticsInfo.transformParams.height = derivativeDimensions.height;
+        }
+        
+        // Also add imquery mapping info to diagnostics
+        diagnosticsInfo.imqueryParams = {
+          requestedWidth: parseFloat(url.searchParams.get('imwidth') || '0') || options.width,
+          requestedHeight: parseFloat(url.searchParams.get('imheight') || '0') || options.height,
+          mappedToDerivative: options.derivative,
+          actualWidth: derivativeDimensions.width,
+          actualHeight: derivativeDimensions.height
+        };
+        
+        // Log this substitution for debugging
+        logDebug('Using derivative dimensions instead of requested dimensions', {
+          requestedWidth: options.width,
+          requestedHeight: options.height,
+          derivativeWidth: cdnParams.width,
+          derivativeHeight: cdnParams.height,
+          derivative: options.derivative,
+          originalUrl: url.toString(),
+          updatedUrl: finalCdnCgiUrl
+        });
+        
+        // Return the transformation result with the updated URL
+        return {
+          cdnCgiUrl: finalCdnCgiUrl,
+          cacheConfig,
+          source,
+          derivative: options.derivative,
+          diagnosticsInfo
+        };
       }
     }
       
@@ -382,8 +443,7 @@ export const prepareVideoTransformation = withErrorHandling<
     diagnosticsInfo.cacheability = cacheConfig?.cacheability;
     diagnosticsInfo.cacheTtl = cacheConfig?.ttl.ok;
     
-    // Setup source and derivative for cache tagging
-    const source = pathPattern.name;
+    // Assign the derivative value here 
     const derivative = options.derivative || '';
 
     // Return the transformation result

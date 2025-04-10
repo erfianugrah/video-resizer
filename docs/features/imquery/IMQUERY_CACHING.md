@@ -106,6 +106,19 @@ const derivativeAspectRatio = width / height;
 const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / targetAspectRatio;
 ```
 
+5. **Using Derivative Dimensions in Transformation**: The most recent enhancement ensures the actual derivative dimensions (not the requested dimensions) are used in the transformation URL:
+
+```typescript
+// Get the actual dimensions for the derivative
+const derivativeDimensions = getDerivativeDimensions(options.derivative);
+
+if (derivativeDimensions) {
+  // Use the derivative's actual dimensions in the transformation
+  cdnParams.width = derivativeDimensions.width;
+  cdnParams.height = derivativeDimensions.height;
+}
+```
+
 ### Benefits of This Approach
 
 1. **Enhanced Cache Efficiency**: By mapping similar dimensions to the same derivative and normalizing cache keys, we achieve significantly better cache reuse. Many slightly different IMQuery parameters hit the same cached response.
@@ -124,6 +137,11 @@ const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / ta
    - Reduces computational overhead of repeated derivative calculations
    - Minimizes variation in cache keys for similar client dimensions
 
+6. **Consistent Transformations**: By using the derivative's actual dimensions in transformation URLs, we ensure:
+   - All videos with the same derivative look identical
+   - Cache tags accurately reflect content dimensions
+   - Debugging is clearer and more accurate
+
 ## Implementation Details
 
 ### Caching Strategy
@@ -131,6 +149,7 @@ const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / ta
 1. **Mapping Step**:
    - Map IMQuery dimensions to a derivative using breakpoint or percentage methods
    - The derivative name becomes part of the cache key
+   - Store the actual derivative dimensions in metadata
 
 2. **Cacheability Check**:
    - For IMQuery requests with derivatives, cacheability is forced to true
@@ -139,10 +158,42 @@ const aspectRatioDiff = Math.abs(targetAspectRatio - derivativeAspectRatio) / ta
 3. **Cache Storage**:
    - In `videoHandler.ts`, derivative-based caching is used instead of dimension-specific caching
    - The cached response is stored using the derivative name as part of the key
+   - Metadata includes both derivative dimensions and requested dimensions
 
 4. **Cache Retrieval**:
    - When a new request comes in with IMQuery parameters, it follows the same mapping process
    - If it maps to the same derivative as a previously cached response, it will get a cache hit
+
+### Centralized Utility Functions
+
+A key improvement is the centralization of derivative dimension lookup:
+
+```typescript
+/**
+ * Get the actual dimensions for a derivative
+ * 
+ * @param derivative - The name of the derivative
+ * @returns The dimensions {width, height} or null if not found
+ */
+export function getDerivativeDimensions(derivative: string | null): { width: number; height: number } | null {
+  if (!derivative) return null;
+  
+  const configManager = VideoConfigurationManager.getInstance();
+  const derivatives = configManager.getConfig().derivatives;
+  
+  if (derivatives && derivatives[derivative]) {
+    const derivativeConfig = derivatives[derivative];
+    if (derivativeConfig.width && derivativeConfig.height) {
+      return {
+        width: derivativeConfig.width,
+        height: derivativeConfig.height
+      };
+    }
+  }
+  
+  return null;
+}
+```
 
 ## Configuration Options
 
@@ -156,22 +207,24 @@ Configure responsive breakpoints in the worker configuration:
     "responsiveBreakpoints": {
       "small": {
         "min": 0,
-        "max": 640,
+        "max": 854,
         "derivative": "mobile"
       },
       "medium": {
-        "min": 641,
-        "max": 1200,
+        "min": 855,
+        "max": 1280,
         "derivative": "tablet"
       },
       "large": {
-        "min": 1201,
+        "min": 1281,
         "derivative": "desktop"
       }
     }
   }
 }
 ```
+
+> **Note**: The updated breakpoint configuration now aligns with the actual derivative dimensions (854→mobile, 855-1280→tablet, 1281+→desktop) to ensure consistent behavior.
 
 ### Derivative Configuration
 
@@ -182,19 +235,19 @@ Define derivatives with their transformation parameters:
   "video": {
     "derivatives": {
       "mobile": {
-        "width": 640,
-        "height": 360,
+        "width": 854,
+        "height": 640,
         "quality": "low",
         "compression": "high"
       },
       "tablet": {
-        "width": 960,
-        "height": 540,
+        "width": 1280,
+        "height": 720,
         "quality": "medium"
       },
       "desktop": {
-        "width": 1280,
-        "height": 720,
+        "width": 1920,
+        "height": 1080,
         "quality": "high",
         "compression": "medium"
       }
@@ -222,13 +275,29 @@ Only one transformation is stored in cache, and all three devices get a cache hi
 Both likely map to the same derivative based on percentage difference.
 The first request populates the cache, and the second gets a cache hit.
 
+### Scenario 3: Boundary Cases
+
+1. Device A requests `imwidth=854`
+2. Device B requests `imwidth=855`
+
+Device A maps to `mobile` derivative (854x640)
+Device B maps to `tablet` derivative (1280x720)
+
+Both will use the exact dimensions of their respective derivatives in the transformation URL, ensuring consistent results.
+
 ## Troubleshooting
 
-### Unexpected Cache Misses
+### Debug Information
 
-If you're experiencing unexpected cache misses for IMQuery requests:
+When investigating IMQuery caching issues, enable debug mode to see:
 
-1. Check the logs for `Using derivative-based caching for IMQuery request` to confirm the derivative mapping
-2. Verify the derivative exists in configuration
-3. Ensure breakpoints are configured correctly
-4. Check if percentage thresholds need adjustment (default is 25%)
+- Requested dimensions vs. derivative dimensions
+- Matching process details (breakpoint or percentage-based)
+- Cache key generation
+- Cache hit/miss information
+
+### Common Issues
+
+1. **Unexpected derivative mapping**: Check the breakpoint configuration to ensure it matches expected behavior
+2. **Inconsistent cache keys**: Verify that the centralized dimension utility is being used everywhere
+3. **Cache size issues**: If videos are unexpectedly not being cached, check debug logs for size-related information

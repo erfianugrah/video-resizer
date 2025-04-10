@@ -5,7 +5,7 @@
  * It supports storing both the video content and associated metadata, which can be used for cache invalidation.
  */
 
-import { CacheConfigurationManager } from '../config';
+import { CacheConfigurationManager, VideoConfigurationManager } from '../config';
 import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
@@ -16,6 +16,7 @@ import {
   tryOrNull, 
   tryOrDefault 
 } from '../utils/errorHandlingUtils';
+import { getDerivativeDimensions } from '../utils/imqueryUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -215,8 +216,6 @@ async function storeTransformedVideoImpl(
   const metadata: TransformationMetadata = {
     sourcePath,
     mode: options.mode || 'video',
-    width: options.width,
-    height: options.height,
     format: options.format,
     quality: options.quality,
     compression: options.compression,
@@ -232,8 +231,37 @@ async function storeTransformedVideoImpl(
     columns: options.columns,
     rows: options.rows,
     interval: options.interval,
-    customData: options.customData
+    customData: {
+      ...(options.customData || {})
+    }
   };
+  
+  // When we have a derivative, use the actual derivative dimensions for width/height
+  // but store the original requested dimensions in customData
+  if (options.derivative) {
+    // Use centralized helper to get derivative dimensions
+    const derivativeDimensions = getDerivativeDimensions(options.derivative);
+    
+    if (derivativeDimensions) {
+      metadata.width = derivativeDimensions.width;
+      metadata.height = derivativeDimensions.height;
+      
+      // Store original requested dimensions in customData for reference
+      metadata.customData = {
+        ...metadata.customData,
+        requestedWidth: options.width,
+        requestedHeight: options.height
+      };
+    } else {
+      // Fallback to the provided dimensions if derivative config not found
+      metadata.width = options.width;
+      metadata.height = options.height;
+    }
+  } else {
+    // No derivative - use provided dimensions directly
+    metadata.width = options.width;
+    metadata.height = options.height;
+  }
   
   // If TTL is provided, set expiresAt
   if (ttl) {

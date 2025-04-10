@@ -100,6 +100,33 @@ vi.mock('../../src/services/videoStorageService', () => ({
   generateCacheTags: vi.fn(() => ['video-test', 'video-derivative-mobile'])
 }));
 
+// Mock the VideoConfigurationManager
+vi.mock('../../src/config/VideoConfigurationManager', () => ({
+  VideoConfigurationManager: {
+    getInstance: vi.fn(() => ({
+      getConfig: vi.fn(() => ({
+        derivatives: {
+          mobile: {
+            width: 854,
+            height: 640,
+            mode: 'video'
+          },
+          tablet: {
+            width: 1280,
+            height: 720,
+            mode: 'video'
+          },
+          desktop: {
+            width: 1920,
+            height: 1080,
+            mode: 'video'
+          }
+        }
+      }))
+    }))
+  }
+}));
+
 describe('KV Storage Service', () => {
   let mockKV: MockKVNamespace;
   
@@ -177,9 +204,11 @@ describe('KV Storage Service', () => {
       expect(value).toBeDefined();
       expect(metadata).toBeDefined();
       expect(metadata.sourcePath).toBe('/videos/test.mp4');
-      expect(metadata.width).toBe(640);
-      expect(metadata.height).toBe(360);
+      expect(metadata.width).toBe(854); // Now using the actual derivative dimensions
+      expect(metadata.height).toBe(640); // Now using the actual derivative dimensions
       expect(metadata.derivative).toBe('mobile');
+      expect(metadata.customData.requestedWidth).toBe(640); // The originally requested dimensions
+      expect(metadata.customData.requestedHeight).toBe(360); // The originally requested dimensions
       expect(metadata.format).toBe('mp4');
       expect(metadata.quality).toBe('high');
       expect(metadata.contentType).toBe('video/mp4');

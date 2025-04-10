@@ -18,31 +18,27 @@ The new solution implements a breakpoint-based approach that maps width ranges t
 ```json
 "responsiveBreakpoints": {
   "small": {
-    "max": 640,
+    "max": 854,
     "derivative": "mobile"
   },
   "medium": {
-    "min": 641,
-    "max": 1024,
+    "min": 855,
+    "max": 1280,
     "derivative": "tablet"
   },
   "large": {
-    "min": 1025,
-    "max": 1440,
-    "derivative": "tablet"
-  },
-  "extra-large": {
-    "min": 1441,
+    "min": 1281,
     "derivative": "desktop"
   }
 }
 ```
 
 With this configuration:
-- `imwidth=500` maps to "mobile" derivative (width ≤ 640px)
-- `imwidth=800` maps to "tablet" derivative (641px ≤ width ≤ 1024px)
-- `imwidth=1200` maps to "tablet" derivative (1025px ≤ width ≤ 1440px)
-- `imwidth=1600` maps to "desktop" derivative (width ≥ 1441px)
+- `imwidth=500` maps to "mobile" derivative (width ≤ 854px)
+- `imwidth=855` maps to "tablet" derivative (855px ≤ width ≤ 1280px)
+- `imwidth=1300` maps to "desktop" derivative (width ≥ 1281px)
+
+> **Note**: The breakpoint boundaries have been updated to align with actual derivative dimensions for better consistency.
 
 ## Benefits
 
@@ -51,6 +47,7 @@ With this configuration:
 3. **Configurability**: Easy to adjust through configuration without code changes
 4. **Cache Optimization**: Results in better cache hit rates by normalizing similar requests
 5. **Documentation**: Clear ranges make it easy to document which widths map to which derivatives
+6. **Consistency**: Breakpoint boundaries now align with actual derivative dimensions
 
 ## Technical Implementation
 
@@ -90,6 +87,24 @@ export function mapWidthToDerivative(width: number | null): string | null {
   }
   
   return null;
+}
+```
+
+### Enhanced Implementation
+
+The mapping function has been enhanced to work with the new centralized utility function for derivative dimensions:
+
+```typescript
+// After mapping a width to a derivative
+const derivative = mapWidthToDerivative(width);
+
+// Get the actual dimensions of that derivative
+const derivativeDimensions = getDerivativeDimensions(derivative);
+
+// Use the derivative's actual dimensions in transformation and metadata
+if (derivativeDimensions) {
+  transformParams.width = derivativeDimensions.width;
+  transformParams.height = derivativeDimensions.height;
 }
 ```
 
@@ -134,13 +149,50 @@ Standard video derivative configuration:
 }
 ```
 
+## Recent Updates
+
+### New Breakpoint Boundaries
+
+The breakpoint boundaries have been updated to align with actual derivative dimensions:
+
+- **Old**: Fixed arbitrary ranges (0-640, 641-1024, 1025+)
+- **New**: Ranges align with derivative dimensions (0-854, 855-1280, 1281+)
+
+This ensures that:
+1. Boundary case `imwidth=854` maps to mobile (854x640)
+2. Boundary case `imwidth=855` maps to tablet (1280x720)
+3. The mapping is clear and predictable based on the actual derivative dimensions
+
+### Dimension Handling
+
+We've also improved how dimensions are used after mapping:
+
+1. The breakpoint mapping still occurs based on the requested `imwidth`
+2. After mapping to a derivative, we now use the derivative's actual dimensions in:
+   - Transformation URLs
+   - Cache metadata
+   - Cache tags
+
+This ensures consistency across all aspects of the system.
+
 ## Best Practices
 
 1. Name derivatives according to their intended device/context (mobile, tablet, desktop)
-2. Use logical breakpoints that align with your CSS breakpoints for consistency
+2. Use breakpoint boundaries that align with derivative dimensions for clarity
 3. Ensure breakpoint ranges don't overlap
 4. For the largest breakpoint, you can omit the `max` value
 5. Make sure all referenced derivatives exist in your configuration
+
+## Testing Edge Cases
+
+When testing this feature, pay special attention to boundary values:
+
+- Test with `imwidth=854` to verify it maps to "mobile"
+- Test with `imwidth=855` to verify it maps to "tablet"
+- Test with `imwidth=1280` to verify it maps to "tablet"
+- Test with `imwidth=1281` to verify it maps to "desktop"
+
+Confirm that the transformation URLs and cache metadata use the derivative's actual dimensions in each case.
 
 ## Future Enhancements
 

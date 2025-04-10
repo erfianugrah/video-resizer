@@ -3,6 +3,8 @@
  */
 import { debug, info } from './loggerUtils';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
+import { getCurrentContext } from './legacyLoggerAdapter';
+import { createLogger } from './pinoLogger';
 
 /**
  * Parse IMQuery reference parameter
@@ -440,6 +442,53 @@ export function findClosestDerivative(
  * @param params - Akamai parameters
  * @returns Validation result with warnings
  */
+/**
+ * Get the actual dimensions for a derivative
+ * Centralizes accessing derivative dimensions to avoid duplication across components
+ * 
+ * @param derivative - The name of the derivative (mobile, tablet, desktop)
+ * @returns The actual dimensions {width, height} or null if derivative not found
+ */
+export function getDerivativeDimensions(derivative: string | null): { width: number; height: number } | null {
+  if (!derivative) return null;
+  
+  const configManager = VideoConfigurationManager.getInstance();
+  const derivatives = configManager.getConfig().derivatives;
+  
+  if (derivatives && derivatives[derivative]) {
+    const derivativeConfig = derivatives[derivative];
+    if (derivativeConfig.width && derivativeConfig.height) {
+      // Optional debug logging with proper context handling
+      const requestContext = getCurrentContext();
+      if (requestContext) {
+        const logger = createLogger(requestContext);
+        logger.debug('Retrieved derivative dimensions', {
+          derivative,
+          width: derivativeConfig.width,
+          height: derivativeConfig.height
+        });
+      }
+      
+      return {
+        width: derivativeConfig.width,
+        height: derivativeConfig.height
+      };
+    }
+  }
+  
+  // Log not found case
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    logger.debug('Derivative dimensions not found', {
+      derivative,
+      availableDerivatives: derivatives ? Object.keys(derivatives) : []
+    });
+  }
+  
+  return null;
+}
+
 export function validateAkamaiParams(
   params: Record<string, string | boolean | number>
 ): { isValid: boolean; warnings: string[] } {

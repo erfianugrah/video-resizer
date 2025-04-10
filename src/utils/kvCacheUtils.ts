@@ -290,54 +290,36 @@ export async function storeInKVCache(
     // Check content length for KV storage limits
     const contentLength = parseInt(responseClone.headers.get('content-length') || '0', 10);
     
-    // Log content length discovery
+    // Log content length discovery with enhanced data for debugging
+    const contentLengthMB = contentLength > 0 ? Math.round(contentLength / (1024 * 1024) * 100) / 100 : 0;
+    
     logDebug('Determined content length for KV storage calculation', {
       contentLength,
       contentType, 
+      contentLengthHeader: responseClone.headers.get('content-length'),
+      contentLengthMB,
+      contentLengthMiB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024 * 1.024) * 100) / 100 : 0, // Convert to MiB
       sourcePath,
       mode: options.mode || 'video',
+      derivative: options.derivative,
       sizeCategory: contentLength > 10000000 ? 'very large' : 
                    contentLength > 1000000 ? 'large' : 
-                   contentLength > 100000 ? 'medium' : 'small',
-      sizeMB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024) * 100) / 100 : 0
+                   contentLength > 100000 ? 'medium' : 'small'
     });
     
-    // Get storage limits from configuration - use cacheConfig manager for consistent access
-    let KV_SIZE_LIMIT: number;
+    // Log content size details for monitoring purposes
+    // Note: We've removed the pre-emptive size check to let KV naturally handle size limitations
+    // This avoids potential incorrect rejections when the content size calculation is inaccurate
     
-    try {
-      // Get the limit from cache configuration
-      const cacheSettings = cacheConfig.getConfig();
-      KV_SIZE_LIMIT = cacheSettings.maxSizeBytes;
-      
-      logDebug('Using configured KV size limit', {
-        maxSizeBytes: KV_SIZE_LIMIT,
-        source: 'cache-configuration'
-      });
-    } catch (err) {
-      // Default KV size limit if configuration isn't available
-      KV_SIZE_LIMIT = 25 * 1024 * 1024; // 25MiB default
-      
-      logDebug('Error getting KV size limit from configuration, using default', {
-        defaultLimit: KV_SIZE_LIMIT,
-        error: err instanceof Error ? err.message : String(err)
-      });
-    }
-    
-    const exceedsKVLimit = contentLength > KV_SIZE_LIMIT;
-    
-    // Skip KV storage for content exceeding the configured KV size limit
-    if (exceedsKVLimit) {
-      logDebug(`Skipping KV storage for content exceeding size limit (${Math.round(KV_SIZE_LIMIT / (1024 * 1024))}MiB)`, {
-        contentType,
-        contentLength,
-        maxSizeBytes: KV_SIZE_LIMIT,
-        sizeLimitMiB: Math.round(KV_SIZE_LIMIT / (1024 * 1024)),
-        sourcePath,
-        mode: options.mode || 'video'
-      });
-      return false;
-    }
+    logDebug('Content size details for KV storage', {
+      contentLength,
+      contentLengthMB: contentLengthMB,
+      contentLengthMiB: contentLength > 0 ? Math.round(contentLength / (1024 * 1024 * 1.024) * 100) / 100 : 0,
+      contentType,
+      derivative: options.derivative,
+      sourcePath,
+      mode: options.mode || 'video'
+    });
     
     // Enhanced logging before storage
     logDebug('Attempting to store in KV cache', {

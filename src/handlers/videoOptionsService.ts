@@ -86,10 +86,23 @@ export function determineVideoOptions(
         // Get the configuration manager instance
         const configManager = VideoConfigurationManager.getInstance();
         
+        // Store original requested dimensions before applying derivative configuration
+        const requestedWidth = imwidth;
+        const requestedHeight = imheight;
+        
         // Apply derivative configuration
         Object.assign(options, configManager.getConfig().derivatives[matchedDerivative]);
         options.derivative = matchedDerivative;
         options.source = 'imquery-derivative';
+        
+        // Store original dimensions in customData for reference
+        if (!options.customData) {
+          options.customData = {};
+        }
+        
+        options.customData.requestedWidth = requestedWidth;
+        options.customData.requestedHeight = requestedHeight;
+        options.customData.mappedFrom = 'imquery';
         
         // Determine mapping method used for diagnostics
         const mappingMethod = (imwidth && !imheight) 
@@ -100,15 +113,18 @@ export function determineVideoOptions(
         debug('IMQuery', 'Applied derivative configuration for caching', {
           derivative: matchedDerivative,
           mappingMethod,
-          // The derivative configurations don't have cacheability directly, so just log the derivative
+          requestedWidth,
+          requestedHeight,
+          appliedWidth: options.width,
+          appliedHeight: options.height,
           originalQueryParams: Object.fromEntries(params.entries())
         });
         
         // Store diagnostics
         if (requestContext.diagnostics) {
           requestContext.diagnostics.imqueryMatching = {
-            requestedWidth: imwidth,
-            requestedHeight: imheight,
+            requestedWidth: requestedWidth,
+            requestedHeight: requestedHeight,
             matchedDerivative: matchedDerivative,
             derivativeWidth: configManager.getConfig().derivatives[matchedDerivative].width,
             derivativeHeight: configManager.getConfig().derivatives[matchedDerivative].height,
@@ -118,8 +134,8 @@ export function determineVideoOptions(
         
         // Add breadcrumb for derivative selection
         addBreadcrumb(requestContext, 'Client', 'Matched IMQuery dimensions to derivative', {
-          imwidth,
-          imheight,
+          requestedWidth,
+          requestedHeight,
           derivative: matchedDerivative,
           derivativeWidth: configManager.getConfig().derivatives[matchedDerivative].width,
           derivativeHeight: configManager.getConfig().derivatives[matchedDerivative].height,
@@ -128,9 +144,11 @@ export function determineVideoOptions(
         });
         
         info('IMQuery', 'Applied derivative based on IMQuery dimensions', {
-          imwidth,
-          imheight,
+          requestedWidth,
+          requestedHeight,
           derivative: matchedDerivative,
+          appliedWidth: options.width,
+          appliedHeight: options.height,
           mappingMethod,
           source: 'imquery-derivative'
         });
