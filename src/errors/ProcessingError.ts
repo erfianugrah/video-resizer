@@ -68,19 +68,32 @@ export class ProcessingError extends VideoTransformError {
   
   /**
    * Create a processing error from an original error
+   * Enhanced to better preserve error chains
    */
   static fromError(
     originalError: Error,
     errorType: ErrorType = ErrorType.TRANSFORMATION_FAILED,
     context: ErrorContext = {}
   ): ProcessingError {
-    return new ProcessingError(
+    // Create a new error with the original message
+    const error = new ProcessingError(
       originalError.message,
       errorType,
       {
         ...context,
-        additionalInfo: originalError.stack
+        originalError: {
+          message: originalError.message,
+          name: originalError.name,
+          stack: originalError.stack
+        }
       }
     );
+    
+    // Preserve the original stack trace if available
+    if (originalError.stack) {
+      error.stack = `${error.stack || ''}\nCaused by: ${originalError.stack}`;
+    }
+    
+    return error;
   }
 }

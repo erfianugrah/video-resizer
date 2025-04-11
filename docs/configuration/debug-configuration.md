@@ -15,6 +15,7 @@ The `DebugConfigurationManager` handles debugging capabilities and settings. It 
 | `headerMode` | boolean | true | Enable debug headers |
 | `debugQueryParam` | string | 'debug' | Query parameter to enable debug |
 | `debugViewParam` | string | 'view' | Value for debug view parameter |
+| `preserveDebugParams` | boolean | false | Whether to preserve debug parameters in transformed URLs |
 | `debugHeaders` | string[] | [...] | Headers that enable debugging |
 | `renderStaticHtml` | boolean | true | Render static HTML for debug views |
 | `includeStackTrace` | boolean | false | Include stack traces in debug info |
@@ -66,6 +67,7 @@ When header mode is enabled, the service adds detailed debug headers to the resp
 - `getConfig()`: Get the entire debug configuration
 - `isEnabled()`: Check if debugging is enabled
 - `isVerbose()`: Check if verbose debugging is enabled
+- `shouldPreserveDebugParams()`: Check if debug parameters should be preserved in URLs
 - `shouldIncludeHeaders()`: Check if headers should be included
 - `shouldIncludePerformance()`: Check if performance metrics should be included
 - `shouldEnableForRequest(request)`: Check if debug should be enabled for a request
@@ -104,6 +106,13 @@ if (shouldEnableDebug) {
 const isDebugView = debugConfig.isDebugViewRequested(request);
 if (isDebugView) {
   // Return debug view HTML instead of processed video
+}
+
+// Check if debug parameters should be preserved in transformed URLs
+const preserveDebugParams = debugConfig.shouldPreserveDebugParams();
+if (preserveDebugParams) {
+  // Keep debug parameters in transformed URLs
+  // This is useful for maintaining debug=view in CDN-CGI URLs
 }
 ```
 

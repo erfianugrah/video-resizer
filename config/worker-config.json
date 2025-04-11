@@ -417,6 +417,7 @@
 		"headerMode": true,
 		"debugQueryParam": "debug",
 		"debugViewParam": "view",
+		"preserveDebugParams": false,
 		"debugHeaders": [
 			"X-Debug",
 			"X-Debug-Enabled",

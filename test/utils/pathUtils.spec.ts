@@ -368,5 +368,45 @@ describe('pathUtils', () => {
       expect(parsedUrl.searchParams.has('test')).toBe(true);
       expect(parsedUrl.searchParams.get('test')).toBe('value');
     });
+    
+    it('should preserve debug=view parameter for debug views', () => {
+      // Arrange - Create a URL with debug=view parameter
+      const originUrl = 'https://example.com/videos/test.mp4?width=640&height=480&debug=view&test=value';
+      const requestUrl = 'https://cdn.example.com/videos/test.mp4?width=640&height=480&debug=view&test=value';
+      
+      // Define transformation parameters
+      const transformParams = {
+        width: 1280,
+        height: 720
+      };
+      
+      // Act - Generate the CDN-CGI URL
+      const cdnCgiUrl = buildCdnCgiMediaUrl(transformParams, originUrl, requestUrl);
+      
+      // Parse the resulting URL to extract the filtered origin URL
+      const urlParts = cdnCgiUrl.split('/');
+      let originUrlWithParams = '';
+      for (let i = 0; i < urlParts.length; i++) {
+        if (urlParts[i] === 'https:' && i < urlParts.length - 1) {
+          originUrlWithParams = 'https://' + urlParts.slice(i + 1).join('/');
+          break;
+        }
+      }
+      
+      // Parse the filtered origin URL
+      const parsedUrl = new URL(originUrlWithParams);
+      
+      // Check that transformation parameters are removed
+      expect(parsedUrl.searchParams.has('width')).toBe(false);
+      expect(parsedUrl.searchParams.has('height')).toBe(false);
+      
+      // Check that debug=view is preserved for debugging
+      expect(parsedUrl.searchParams.has('debug')).toBe(true);
+      expect(parsedUrl.searchParams.get('debug')).toBe('view');
+      
+      // Check that other non-transformation parameters are also preserved
+      expect(parsedUrl.searchParams.has('test')).toBe(true);
+      expect(parsedUrl.searchParams.get('test')).toBe('value');
+    });
   });
 });

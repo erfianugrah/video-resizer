@@ -412,6 +412,63 @@ export class VideoConfigurationManager {
     // Return the stored configuration
     return this.config.storage;
   }
+  
+  /**
+   * Get diagnostics for storage configuration
+   * This method provides detailed information about storage configuration status
+   * including R2 bucket availability and any configuration inconsistencies
+   * 
+   * @param env Environment containing bindings
+   * @returns Detailed storage diagnostics
+   */
+  public getStorageDiagnostics(env?: Record<string, unknown>) {
+    const storageConfig = this.getStorageConfig();
+    const r2Config = storageConfig.r2 || { enabled: false, bucketBinding: 'VIDEOS_BUCKET' };
+    
+    // Check if the R2 bucket is available
+    const hasBucket = !!(env && r2Config.bucketBinding && env[r2Config.bucketBinding]);
+    const r2Enabled = r2Config.enabled === true;
+    
+    // Detect configuration inconsistencies
+    const inconsistencies: string[] = [];
+    if (r2Enabled && !hasBucket) {
+      inconsistencies.push('R2 enabled but bucket binding not available');
+    }
+    if (!r2Enabled && hasBucket) {
+      inconsistencies.push('R2 bucket available but not enabled in configuration');
+    }
+    
+    // Determine remoteUrl availability
+    const hasRemoteUrl = !!(storageConfig as any).remoteUrl;
+    
+    // Check if remote auth is properly configured
+    const remoteAuth = (storageConfig as any).remoteAuth || { enabled: false };
+    const remoteAuthConfigured = remoteAuth.enabled === true;
+    const remoteAuthInconsistent = remoteAuthConfigured && !hasRemoteUrl;
+    if (remoteAuthInconsistent) {
+      inconsistencies.push('Remote auth enabled but no remoteUrl configured');
+    }
+    
+    return {
+      storage: {
+        r2: {
+          enabled: r2Enabled,
+          hasBucket,
+          bucketBinding: r2Config.bucketBinding,
+          available: r2Enabled && hasBucket
+        },
+        remote: {
+          enabled: hasRemoteUrl,
+          url: hasRemoteUrl ? (storageConfig as any).remoteUrl : null,
+          authConfigured: remoteAuthConfigured,
+          available: hasRemoteUrl
+        },
+        priority: storageConfig.priority || [],
+        inconsistencies,
+        status: inconsistencies.length > 0 ? 'warning' : 'ok'
+      }
+    };
+  }
 
   /**
    * Get cache configuration

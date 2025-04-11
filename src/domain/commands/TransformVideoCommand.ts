@@ -272,16 +272,70 @@ export class TransformVideoCommand {
           totalElapsedMs: Math.round(performance.now() - this.requestContext.startTime)
         });
         
-        // Add breadcrumbs to diagnostics info
-        diagnosticsInfo.breadcrumbs = this.requestContext.breadcrumbs;
+        // Sanitize breadcrumbs to prevent circular references before adding to diagnostics
+        if (this.requestContext.breadcrumbs) {
+          // Function to sanitize breadcrumbs to prevent circular references
+          const sanitizeBreadcrumbs = (breadcrumbs: any[]) => {
+            if (!Array.isArray(breadcrumbs)) return [];
+            
+            return breadcrumbs.map(breadcrumb => {
+              // Create a shallow copy of the breadcrumb
+              const sanitizedBreadcrumb = {...breadcrumb};
+              
+              // Handle data property which might contain diagnosticsInfo
+              if (sanitizedBreadcrumb.data && typeof sanitizedBreadcrumb.data === 'object') {
+                // Create a shallow copy of the data
+                sanitizedBreadcrumb.data = {...sanitizedBreadcrumb.data};
+                
+                // Remove direct diagnosticsInfo references
+                if ('diagnosticsInfo' in sanitizedBreadcrumb.data) {
+                  sanitizedBreadcrumb.data.diagnosticsInfo = '[DiagnosticsInfo Reference]';
+                }
+                
+                // Check for nested objects that might contain diagnosticsInfo
+                Object.keys(sanitizedBreadcrumb.data).forEach(key => {
+                  const value = sanitizedBreadcrumb.data[key];
+                  if (value && typeof value === 'object' && 'diagnosticsInfo' in value) {
+                    sanitizedBreadcrumb.data[key] = '[Contains DiagnosticsInfo]';
+                  }
+                });
+              }
+              
+              return sanitizedBreadcrumb;
+            });
+          };
+          
+          // Add sanitized breadcrumbs to diagnostics info
+          diagnosticsInfo.breadcrumbs = sanitizeBreadcrumbs(this.requestContext.breadcrumbs);
+        }
         
         // Add performance metrics
         const { getPerformanceMetrics } = await import('../../utils/requestContext');
         diagnosticsInfo.performanceMetrics = getPerformanceMetrics(this.requestContext);
       }
       
-      // Safely serialize the diagnostics info to avoid script injection issues
-      const safeJsonString = JSON.stringify(diagnosticsInfo)
+      // Function to handle circular references during JSON serialization
+      const getCircularReplacer = () => {
+        const seen = new WeakSet();
+        return (key: string, value: any) => {
+          // Handle specific known circular reference points
+          if (key === 'diagnosticsInfo') {
+            return '[DiagnosticsInfo Reference]';
+          }
+          
+          // Handle general circular references
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return '[Circular Reference]';
+            }
+            seen.add(value);
+          }
+          return value;
+        };
+      };
+      
+      // Safely serialize the diagnostics info to avoid script injection and circular references
+      const safeJsonString = JSON.stringify(diagnosticsInfo, getCircularReplacer())
         .replace(/</g, '\\u003c')  // Escape < to avoid closing script tags
         .replace(/>/g, '\\u003e')  // Escape > to avoid closing script tags
         .replace(/&/g, '\\u0026'); // Escape & to avoid HTML entities
@@ -339,25 +393,75 @@ export class TransformVideoCommand {
         requestUrl: this.context.request.url
       }, 'TransformVideoCommand');
       
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      
-      if (this.requestContext) {
-        const { addBreadcrumb } = await import('../../utils/requestContext');
-        addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Error generating debug UI', {
-          error: errorMessage
-        });
-      }
-      
-      return new Response(
-        `<html><body><h1>Debug UI Error</h1><p>${errorMessage}</p><h2>Debug Data</h2><pre>${JSON.stringify(diagnosticsInfo, null, 2)}</pre></body></html>`,
-        {
-          status: isError ? 500 : 200,
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store'
-          }
+      // Create an ultra-simple fallback that can't fail
+      try {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        
+        if (this.requestContext) {
+          const { addBreadcrumb } = await import('../../utils/requestContext');
+          addBreadcrumb(this.requestContext, 'TransformVideoCommand', 'Error generating debug UI', {
+            error: errorMessage
+          });
         }
-      );
+        
+        // Escape HTML characters to prevent XSS
+        const safeErrorMessage = String(errorMessage)
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        
+        // Create minimal diagnostic information that won't have circular references
+        const safeDiagnostics = {
+          url: diagnosticsInfo?.originalUrl || this.context.request.url,
+          error: diagnosticsInfo?.errors?.[0] || 'Unknown error',
+          timestamp: new Date().toISOString(),
+          status: isError ? 500 : 200
+        };
+        
+        // Format safe JSON string
+        const safeDiagnosticsJson = JSON.stringify(safeDiagnostics, null, 2)
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        
+        return new Response(
+          `<!DOCTYPE html>
+          <html>
+          <head>
+            <title>Debug View Error</title>
+            <style>
+              body { font-family: monospace; padding: 20px; }
+              pre { background: #f0f0f0; padding: 10px; overflow: auto; }
+            </style>
+          </head>
+          <body>
+            <h1>Debug UI Error</h1>
+            <p>An error occurred while rendering the debug view:</p>
+            <pre>${safeErrorMessage}</pre>
+            <hr/>
+            <h2>Minimal Diagnostics</h2>
+            <pre>${safeDiagnosticsJson}</pre>
+          </body>
+          </html>`,
+          {
+            status: isError ? 500 : 200,
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-store'
+            }
+          }
+        );
+      } catch (fallbackError) {
+        // Ultra-minimal fallback that cannot possibly fail
+        return new Response(
+          '<html><body><h1>Critical Error</h1><p>Unable to generate debug view</p></body></html>',
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-store'
+            }
+          }
+        );
+      }
     }
   }
 
@@ -422,6 +526,9 @@ export class TransformVideoCommand {
       const url = new URL(request.url);
       const path = url.pathname;
       
+      // Store fallback URL for potential error recovery
+      let fallbackOriginUrl: string | null = null;
+      
       // Collect request headers for diagnostics if debug is enabled
       if (this.context.debugInfo?.isEnabled) {
         diagnosticsInfo.requestHeaders = extractRequestHeaders(request);
@@ -467,6 +574,23 @@ export class TransformVideoCommand {
       
       const pathPattern = findMatchingPathPattern(path, pathPatterns);
       
+      // Compute the fallback origin URL from the pattern if found
+      if (pathPattern) {
+        // Use the configured origin URL from the pattern, or fall back to baseUrl
+        const originBaseUrl = pathPattern.originUrl || pathPattern.baseUrl;
+        if (originBaseUrl) {
+          const pathWithoutQuery = url.pathname;
+          fallbackOriginUrl = new URL(pathWithoutQuery, originBaseUrl).toString();
+          
+          // Log the computed fallback URL for debugging
+          await logDebug('TransformVideoCommand', 'Computed fallback origin URL', {
+            pattern: pathPattern.name,
+            originBaseUrl,
+            fallbackOriginUrl
+          });
+        }
+      }
+      
       // If no matching pattern found or if the pattern is set to not process, pass through
       if (!pathPattern || !pathPattern.processPath) {
         // Log skipping path transformation
@@ -475,6 +599,7 @@ export class TransformVideoCommand {
           url: url.toString(),
           hasPattern: !!pathPattern,
           shouldProcess: pathPattern?.processPath,
+          fallbackOriginUrl
         });
         
         // Add breadcrumb
@@ -888,38 +1013,50 @@ export class TransformVideoCommand {
             serverError: response.status
           });
           
-          // Directly fetch the source URL - no storage service needed for 500 errors
-          // Use the source URL that's already available from earlier in the process
-          // This is more reliable than trying to extract it from the CDN-CGI URL
-          const sourceUrl = source;
+          // Use our pre-computed fallback origin URL if available,
+          // otherwise try to use the source that was used for the transformation
+          const sourceUrl = fallbackOriginUrl || source;
           
           await logDebug('TransformVideoCommand', 'Fetching original directly', {
             sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined',
             method: request.method,
-            usedSourceDirectly: true
+            usedFallbackOriginUrl: !!fallbackOriginUrl,
+            usedSource: !fallbackOriginUrl && !!source
           });
           
           try {
-            // Create a new request with the same headers
-            const directRequest = new Request(sourceUrl, {
-              method: request.method,
-              headers: request.headers,
-              redirect: 'follow'
-            });
-            
-            // Fetch directly
-            fallbackResponse = await fetch(directRequest);
-            
-            // Log successful direct fetch
-            await logDebug('TransformVideoCommand', 'Direct fetch response', {
-              status: fallbackResponse.status,
-              contentType: fallbackResponse.headers.get('Content-Type'),
-              contentLength: fallbackResponse.headers.get('Content-Length')
-            });
+            // Only proceed if we have a valid URL
+            if (sourceUrl) {
+              // Create a new request with the same headers
+              const directRequest = new Request(sourceUrl, {
+                method: request.method,
+                headers: request.headers,
+                redirect: 'follow'
+              });
+              
+              // Fetch directly
+              fallbackResponse = await fetch(directRequest);
+              
+              // Log successful direct fetch
+              await logDebug('TransformVideoCommand', 'Direct fetch response', {
+                status: fallbackResponse.status,
+                contentType: fallbackResponse.headers.get('Content-Type'),
+                contentLength: fallbackResponse.headers.get('Content-Length'),
+                usedFallbackOriginUrl: !!fallbackOriginUrl
+              });
+            } else {
+              // Log that we don't have a valid URL for direct fetch
+              await logDebug('TransformVideoCommand', 'No valid URL available for direct fetch', {
+                path,
+                hasFallbackOriginUrl: !!fallbackOriginUrl,
+                hasSource: !!source
+              });
+            }
           } catch (directFetchError) {
             // Log error and fall back to regular storage service approach
             logErrorWithContext('Error fetching directly from source', directFetchError, {
-              sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined'
+              sourceUrl: sourceUrl ? sourceUrl.substring(0, 50) + '...' : 'undefined',
+              usedFallbackOriginUrl: !!fallbackOriginUrl
             }, 'TransformVideoCommand');
             
             // Continue to fallback approach if direct fetch fails

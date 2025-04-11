@@ -553,6 +553,18 @@ export const handleVideoRequest = withErrorHandling<
       }
       context.diagnostics.errors.push(err instanceof Error ? err.message : 'Unknown error');
       
+      // Add storage diagnostics for better debugging
+      try {
+        const { VideoConfigurationManager } = await import('../config/VideoConfigurationManager');
+        const configManager = VideoConfigurationManager.getInstance();
+        context.diagnostics.storageDiagnostics = configManager.getStorageDiagnostics(env as Record<string, unknown>);
+      } catch (diagError) {
+        // If diagnostics fail, don't block error handling
+        error(context, logger, 'VideoHandler', 'Failed to add storage diagnostics', {
+          error: diagError instanceof Error ? diagError.message : 'Unknown error'
+        });
+      }
+      
       // Create error response with ResponseBuilder
       const errorResponse = new Response(`Error processing video: ${err instanceof Error ? err.message : 'Unknown error'}`, {
         status: 500,

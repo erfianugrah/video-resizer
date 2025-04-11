@@ -34,6 +34,11 @@ export interface ErrorContext {
   parameters?: Record<string, unknown>;
   source?: string;
   additionalInfo?: string;
+  originalError?: {
+    message: string;
+    name: string;
+    stack?: string;
+  };
 }
 
 export class VideoTransformError extends Error {

@@ -353,6 +353,9 @@ export function buildCdnCgiMediaUrl(
     'im-viewwidth',
     'im-viewheight',
     'im-density',
+    
+    // Debug parameters
+    'debug',
   ];
 
   // Create a new URL object for filtered origin URL
@@ -361,12 +364,25 @@ export function buildCdnCgiMediaUrl(
   // Clear search params to rebuild without transformation parameters
   filteredOriginUrlObj.search = '';
   
+  // Check if we should preserve the debug parameter
+  // This is a direct approach that doesn't depend on async imports
+  const hasDebugParam = transformationUrlObj.searchParams.has('debug');
+  const debugParamValue = hasDebugParam ? transformationUrlObj.searchParams.get('debug') : null;
+  
   // Copy over search params, excluding video-specific ones
   transformationUrlObj.searchParams.forEach((value, key) => {
+    // Standard filter: Keep params that aren't in the videoParams list
     if (!videoParams.includes(key)) {
       filteredOriginUrlObj.searchParams.set(key, value);
     }
   });
+  
+  // Explicitly handle debug parameter - we want to preserve it for "debug=view" case
+  // This ensures debug views will work in CDN-CGI transformed URLs
+  if (hasDebugParam && debugParamValue === 'view') {
+    filteredOriginUrlObj.searchParams.set('debug', debugParamValue);
+    logDebug('Preserving debug=view parameter for debug view functionality');
+  }
   
   // Use the filtered origin URL
   const filteredOriginUrl = filteredOriginUrlObj.toString();

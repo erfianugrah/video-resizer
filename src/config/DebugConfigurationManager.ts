@@ -23,6 +23,9 @@ export const DebugConfigSchema = z.object({
   debugQueryParam: z.string().default('debug'),
   debugViewParam: z.string().default('view'),
   
+  // Whether to preserve debug parameters in transformed URLs
+  preserveDebugParams: z.boolean().default(false),
+  
   // Headers settings
   debugHeaders: z.array(z.string()).default([
     'X-Debug', 
@@ -57,6 +60,7 @@ const defaultDebugConfig: DebugConfiguration = {
   headerMode: true,
   debugQueryParam: 'debug',
   debugViewParam: 'view',
+  preserveDebugParams: false,
   debugHeaders: ['X-Debug', 'X-Debug-Enabled', 'Debug'],
   renderStaticHtml: true,
   includeStackTrace: false,
@@ -138,6 +142,13 @@ export class DebugConfigurationManager {
    */
   public isVerbose(): boolean {
     return this.config.verbose && this.config.enabled;
+  }
+  
+  /**
+   * Check if debug parameters should be preserved in URLs
+   */
+  public shouldPreserveDebugParams(): boolean {
+    return this.config.preserveDebugParams;
   }
   
   /**

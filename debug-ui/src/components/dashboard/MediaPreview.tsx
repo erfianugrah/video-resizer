@@ -46,13 +46,13 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="bg-slate-900 rounded-md overflow-hidden flex items-center justify-center mb-4">
-          <div className="h-64 w-full flex items-center justify-center">
+        <div className="bg-slate-900 rounded-md overflow-hidden flex items-center justify-center mb-4 max-w-full">
+          <div className="h-64 w-full flex items-center justify-center overflow-hidden">
             {isVideo ? (
               <video 
                 src={originalUrl} 
                 controls
-                className="max-h-64 max-w-full"
+                className="max-h-64 w-auto object-contain"
                 preload="metadata"
               >
                 Your browser does not support the video tag.
@@ -61,7 +61,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
               <img 
                 src={originalUrl} 
                 alt="Transformed media"
-                className="max-h-64 max-w-full object-contain"
+                className="max-h-64 w-auto object-contain"
               />
             )}
           </div>
@@ -77,8 +77,8 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
                   <span className="text-xs bg-slate-200 px-1 rounded text-slate-700">estimated</span>
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+              <div className="overflow-x-auto w-full">
+                <table className="w-full text-sm table-fixed">
                   <tbody>
                     {diagnostics.videoInfo?.width && (
                       <tr className="border-b">
@@ -101,8 +101,8 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
           {/* Transform Parameters section */}
           <div>
             <div className="font-medium mb-2">Transform Parameters</div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-sm table-fixed">
                 <tbody>
                   {/* Show difference between requested and actual parameters when available */}
                   {importantParams.map(key => {

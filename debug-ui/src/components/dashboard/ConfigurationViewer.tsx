@@ -59,8 +59,8 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
           </Button>
         </div>
       </div>
-      <div className={`${isExpanded ? 'max-h-[80vh]' : 'max-h-60'} overflow-auto transition-all duration-200`}>
-        <pre className="bg-muted/50 p-4 m-0 text-xs overflow-auto">
+      <div className={`${isExpanded ? 'max-h-[60vh]' : 'max-h-60'} overflow-auto transition-all duration-200 w-full`}>
+        <pre className="bg-muted/50 p-4 m-0 text-xs overflow-x-auto whitespace-pre-wrap break-words">
           <code>{formattedData}</code>
         </pre>
       </div>
