@@ -8,7 +8,9 @@ The Debug UI is a web-based interface that helps developers diagnose and trouble
 
 ## Documentation
 
-- [Debug UI Enhancement Plan](./debug-ui-enhancement-plan.md)
+- [Debug Headers](./DEBUG_HEADERS.md) - Information about debug headers used for diagnostics
+- [Debug View Mode](./DEBUG_VIEW_MODE.md) - How to use the ?debug=view parameter for detailed diagnostics
+- [Debug UI Enhancement Plan](./debug-ui-enhancement-plan.md) - Future enhancements planned for the debug UI
 
 ## Implementation Details
 

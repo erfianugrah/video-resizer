@@ -2,6 +2,12 @@
 
 This directory contains documentation for the various features implemented in the Video Resizer project.
 
+## Video Transformation
+
+- [Transformation Modes Overview](./transformation-modes.md) - Comparison of video, frame, and spritesheet modes
+- [Frame Extraction](./frame/README.md) - Documentation for the frame extraction mode
+- [Spritesheet Generation](./spritesheet/README.md) - Documentation for the spritesheet generation mode
+
 ## Feature Documentation
 
 ### Akamai Integration

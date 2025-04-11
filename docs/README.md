@@ -14,7 +14,9 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
   - [Dynamic Configuration](./configuration/dynamic-configuration.md)
   - [Path Pattern Matching](./configuration/path-pattern-matching.md)
   - [Path Pattern Troubleshooting](./configuration/path-pattern-troubleshooting.md)
+  - [URL Parameter Filtering](./configuration/url-parameter-filtering.md) *[New]*
   - [Updating Configuration](./configuration/updating-configuration.md)
+  - [Parameter Compatibility Matrix](./configuration/parameter-compatibility.md) *[New]*
   - [Configuration Reference](./configuration/CONFIGURATION_REFERENCE.md)
 
 - **[Deployment Guide](./deployment/README.md)**: How to deploy Video Resizer to Cloudflare Workers
@@ -43,6 +45,9 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 ## Features Documentation
 
 - **[Features Overview](./features/README.md)**: Documentation for specific features
+  - **[Video Transformation Modes](./features/transformation-modes.md)**: Overview of video, frame and spritesheet modes *[New]*
+    - **[Frame Extraction](./features/frame/README.md)**: Video frame extraction feature *[New]*
+    - **[Spritesheet Generation](./features/spritesheet/README.md)**: Video spritesheet generation feature *[New]*
   - **[Akamai Integration](./features/akamai/README.md)**: Compatibility with Akamai image format
     - [Akamai Integration Completion](./features/akamai/akamai-integration-completion.md)
     - [Akamai Translation Enhancement](./features/akamai/akamai-translation-enhancement.md)
@@ -50,6 +55,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
     - [Client Detection Improvements](./features/client-detection/CLIENT_DETECTION_IMPROVEMENT.md)
   - **[Debug UI](./features/debug-ui/README.md)**: Debugging interface for troubleshooting
     - [Debug Headers](./features/debug-ui/DEBUG_HEADERS.md)
+    - [Debug View Mode](./features/debug-ui/DEBUG_VIEW_MODE.md) *[New]*
     - [Debug UI Enhancement Plan](./features/debug-ui/debug-ui-enhancement-plan.md)
   - **[IMQuery Support](./features/imquery/README.md)**: Support for IMQuery responsive image parameters
     - [IMQuery Caching](./features/imquery/IMQUERY_CACHING.md)
@@ -65,6 +71,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md)**: High-level architecture description
 - **[Architecture Roadmap](./architecture/ARCHITECTURE_ROADMAP.md)**: Current progress and future architectural improvements
 - **[Architecture Patterns](./architecture/ARCHITECTURE_PATTERNS.md)**: Architectural patterns used in the project
+- **[Transformation Strategies](./architecture/TRANSFORMATION_STRATEGIES.md)**: Strategy pattern for transformation modes *[New]*
 - **[Dependency Inversion](./architecture/DEPENDENCY_INVERSION_PLAN.md)**: Plan for implementing dependency inversion
   - [Refined Dependency Inversion](./architecture/REFINED_DEPENDENCY_INVERSION.md)
   - [Implementation Progress](./architecture/DEPENDENCY_INVERSION_IMPLEMENTATION_PROGRESS.md)

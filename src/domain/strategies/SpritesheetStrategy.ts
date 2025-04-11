@@ -7,6 +7,7 @@ import { VideoConfigurationManager } from '../../config';
 import { isValidTime, isValidDuration } from '../../utils/transformationUtils';
 import { debug } from '../../utils/loggerUtils';
 import { ValidationError } from '../../errors/ValidationError';
+import { ErrorType } from '../../errors/VideoTransformError';
 
 export class SpritesheetStrategy implements TransformationStrategy {
   /**
@@ -54,19 +55,67 @@ export class SpritesheetStrategy implements TransformationStrategy {
    */
   async validateOptions(options: VideoTransformOptions): Promise<void> {
     const configManager = VideoConfigurationManager.getInstance();
-    const context = { parameters: { mode: 'spritesheet' } };
+    const context = { 
+      parameters: { mode: 'spritesheet' },
+      diagnosticsInfo: {} as Record<string, unknown>
+    };
     
-    // Validate width and height range
-    if (options.width !== null && options.width !== undefined) {
-      if (options.width < 10 || options.width > 2000) {
-        throw ValidationError.invalidDimension('width', options.width, 10, 2000, context);
-      }
+    // Require width and height for spritesheet mode
+    if (options.width === null || options.width === undefined) {
+      throw new ValidationError(
+        'Missing required parameter: width',
+        ErrorType.INVALID_PARAMETER,
+        context
+      );
     }
     
-    if (options.height !== null && options.height !== undefined) {
-      if (options.height < 10 || options.height > 2000) {
-        throw ValidationError.invalidDimension('height', options.height, 10, 2000, context);
-      }
+    if (options.height === null || options.height === undefined) {
+      throw new ValidationError(
+        'Missing required parameter: height',
+        ErrorType.INVALID_PARAMETER,
+        context
+      );
+    }
+    
+    // Validate width and height range
+    if (options.width < 10 || options.width > 2000) {
+      throw ValidationError.invalidDimension('width', options.width, 10, 2000, context);
+    }
+    
+    if (options.height < 10 || options.height > 2000) {
+      throw ValidationError.invalidDimension('height', options.height, 10, 2000, context);
+    }
+    
+    // Check aspect ratio for extreme values
+    const ratio = options.width / options.height;
+    if (ratio > 5 || ratio < 0.2) {
+      // Add warning to a custom property instead of array
+      context.diagnosticsInfo['ratioWarning'] = 
+        `Extreme aspect ratio (${ratio.toFixed(2)}) may result in distorted spritesheet thumbnails`;
+    }
+    
+    // Validate format parameter - not allowed for spritesheet mode
+    if (options.format !== null && options.format !== undefined) {
+      const invalidParams: Record<string, unknown> = { format: options.format };
+      throw ValidationError.invalidOptionCombination(
+        'Format parameter cannot be used with mode=spritesheet (always outputs JPEG)',
+        invalidParams,
+        context
+      );
+    }
+    
+    // Validate quality and compression parameters - not allowed for spritesheet mode
+    if ((options.quality !== null && options.quality !== undefined) || 
+        (options.compression !== null && options.compression !== undefined)) {
+      const invalidParams: Record<string, unknown> = { 
+        quality: options.quality, 
+        compression: options.compression 
+      };
+      throw ValidationError.invalidOptionCombination(
+        'Quality and compression parameters cannot be used with mode=spritesheet',
+        invalidParams,
+        context
+      );
     }
     
     // Validate fit
@@ -92,22 +141,34 @@ export class SpritesheetStrategy implements TransformationStrategy {
       }
     }
     
-    // Validate duration parameter format only
+    // Validate duration parameter format and warn for long durations
     if (options.duration !== null && options.duration !== undefined) {
       const { parseTimeString } = await import('../../utils/transformationUtils');
       
-      // Check if the format is valid (not checking limits)
+      // Check if the format is valid
       const seconds = parseTimeString(options.duration);
       if (seconds === null) {
         // Invalid format
         throw ValidationError.invalidTimeValue('duration', options.duration, context);
       }
       
-      // Allow any valid duration format - we'll let the API limit it
+      // Warn for very long durations (which could produce large spritesheets)
+      if (seconds > 60) {
+        // Add to custom property instead of warnings array
+        context.diagnosticsInfo['durationWarning'] = 
+          `Duration of ${options.duration} may result in a very large spritesheet with reduced thumbnail quality`;
+      }
     }
     
-    // Validate if video-specific parameters are used, which is not allowed for spritesheet mode
-    if (options.loop || options.autoplay || options.muted || options.preload) {
+    // Validate if video-specific parameters are explicitly set, which is not allowed for spritesheet mode
+    // Only check for non-null values to allow defaults to pass through
+    const hasExplicitPlaybackParams = 
+      (options.loop !== null && options.loop !== undefined) || 
+      (options.autoplay !== null && options.autoplay !== undefined) || 
+      (options.muted !== null && options.muted !== undefined) || 
+      (options.preload !== null && options.preload !== undefined);
+    
+    if (hasExplicitPlaybackParams) {
       const invalidParams = {
         loop: options.loop,
         autoplay: options.autoplay,
@@ -132,22 +193,54 @@ export class SpritesheetStrategy implements TransformationStrategy {
     // Add spritesheet-specific diagnostic information
     diagnosticsInfo.transformationType = 'spritesheet';
     
-    // Add time range information
-    if (options.time) {
-      diagnosticsInfo.startTime = options.time;
-    } else {
-      diagnosticsInfo.startTime = '0s'; // Default start time
-    }
+    // Add time range information as custom properties
+    const startTime = options.time || '0s'; // Default start time
+    const duration = options.duration || '10s'; // Default duration
     
-    if (options.duration) {
-      diagnosticsInfo.duration = options.duration;
-    } else {
-      diagnosticsInfo.duration = '10s'; // Default duration
-    }
+    // Add additional spritesheet-specific information
+    diagnosticsInfo['outputFormat'] = 'jpg'; // Spritesheets are always JPEG
     
-    // Add spritesheet configuration info to diagnostics
+    // Add information on spritesheet specifics as a custom property
+    diagnosticsInfo['spritesheet'] = {
+      width: options.width,
+      height: options.height,
+      fit: options.fit || 'contain',
+      timeRange: {
+        start: startTime,
+        duration: duration
+      }
+    };
+    
+    diagnosticsInfo['startTime'] = startTime;
+    diagnosticsInfo['duration'] = duration;
+    
+    // Ensure warnings array exists
     if (!diagnosticsInfo.warnings) {
       diagnosticsInfo.warnings = [];
+    }
+    
+    // Check for ratio issues and add to custom diagnostics
+    if (options.width && options.height) {
+      const ratio = options.width / options.height;
+      
+      if (ratio > 5 || ratio < 0.2) {
+        // Store in custom property to avoid type issues
+        const warning = `Extreme aspect ratio (${ratio.toFixed(2)}) may result in distorted spritesheet thumbnails`;
+        diagnosticsInfo['ratioWarning'] = warning;
+      }
+    }
+    
+    // Check for duration issues
+    if (options.duration) {
+      const durationMatch = options.duration.match(/(\d+)/);
+      if (durationMatch) {
+        const seconds = parseInt(durationMatch[1], 10);
+        if (seconds > 60) {
+          // Store in custom property
+          const warning = `Duration of ${options.duration} may result in a very large spritesheet with reduced thumbnail quality`;
+          diagnosticsInfo['durationWarning'] = warning;
+        }
+      }
     }
   }
 }

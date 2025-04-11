@@ -42,6 +42,69 @@ All static assets (`.png`, `.jpg`, `.svg`, `.css`, `.js`, `.ico`, etc.) are also
 
 If you want to allow certain non-MP4 formats to be processed despite the risks, you can add them to the `whitelistedFormats` array.
 
+## Transformation Modes
+
+The `mode` parameter specifies what type of output the Cloudflare Media Transformation service will generate:
+
+1. **Video Mode (`mode=video`)**
+   - Default mode when not specified
+   - Outputs an optimized MP4 video file with H.264 video and AAC audio
+   - Preserves motion and audio from the original video
+   - Allows control over playback parameters (loop, autoplay, muted, preload)
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=video&width=640&height=360`
+
+2. **Frame Mode (`mode=frame`)**
+   - Outputs a single still image from the video at the specified time
+   - Useful for generating video thumbnails or previews
+   - Requires the `time` parameter to specify which frame to extract
+   - Supports different output formats (jpg, png, webp) using the `format` parameter
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=30s&format=jpg&width=640`
+
+3. **Spritesheet Mode (`mode=spritesheet`)**
+   - Outputs a JPEG image containing a grid of thumbnails from the video
+   - Each thumbnail represents a frame from the video at regular intervals
+   - Useful for video scrubbing interfaces, preview thumbnails, and video navigation
+   - Can specify a time range using `time` (start) and `duration` parameters
+   - Playback parameters (loop, autoplay, muted, preload) are incompatible with this mode
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=640&height=480&duration=10s`
+   
+   **Spritesheet-specific Parameters:**
+   
+   | Parameter | Description | Default | Example |
+   |-----------|-------------|---------|---------|
+   | `time` | Starting time for the spritesheet range | `0s` | `time=30s` |
+   | `duration` | Duration of video to include in spritesheet | `10s` | `duration=60s` |
+   | `width` | Width of the entire spritesheet | Required | `width=800` |
+   | `height` | Height of the entire spritesheet | Required | `height=600` |
+   | `fit` | How to fit thumbnails within the grid | `contain` | `fit=cover` |
+   
+   **Technical Notes:**
+   - Cloudflare will automatically determine the grid size based on the video length
+   - The maximum input video size is 40MB
+   - For best results, use videos with uniform motion or scene changes
+   - Playback parameters will cause validation errors if explicitly set
+   - Spritesheet mode is best for short to medium-length videos (up to a few minutes)
+   
+   **Example URLs:**
+   ```
+   # Basic spritesheet for first 10 seconds
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600
+   
+   # Custom time range spritesheet (30s to 90s)
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600&time=30s&duration=60s
+   
+   # Spritesheet with cover fit (crops to fill cells completely)
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600&fit=cover
+   ```
+
+### Technical Requirements
+
+According to Cloudflare's documentation:
+- Input videos must be less than 40MB in size
+- Input videos should preferably be in MP4 format
+- Input videos should use H.264 video encoding and AAC/MP3 audio encoding
+- Width and height parameters must be between 10-2000 pixels
+
 ## Video Default Options
 
 | Option | Type | Default | Description |
@@ -60,6 +123,8 @@ If you want to allow certain non-MP4 formats to be processed despite the risks, 
 | `preload` | string | null | Preload behavior: 'none', 'metadata', 'auto' |
 | `autoplay` | boolean | null | Whether video should autoplay |
 | `muted` | boolean | null | Whether video should be muted |
+
+> Note: Playback parameters (`loop`, `autoplay`, `muted`, `preload`) are only applicable to `mode=video` and will cause validation errors if used with other modes.
 
 ## Path Patterns
 

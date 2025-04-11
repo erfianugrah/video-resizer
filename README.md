@@ -47,10 +47,12 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 ## Documentation
 
 - [Documentation Home](./docs/README.md) - Central documentation hub
+- [Video Transformation Modes](./docs/features/transformation-modes.md) - Overview of video, frame and spritesheet modes
 - [Architecture Overview](./docs/architecture/ARCHITECTURE_OVERVIEW.md) - High-level architecture and design patterns
 - [Architecture Roadmap](./docs/architecture/ARCHITECTURE_ROADMAP.md) - Current progress and future architectural improvements
 - [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md) - Complete configuration options
 - [Configuration Guide](./docs/configuration/README.md) - Basic configuration guidance
+- [Parameter Compatibility](./docs/configuration/parameter-compatibility.md) - Compatibility matrix for transformation parameters
 - [Environment Configuration](./docs/environments/README.md) - Environment-specific settings
 - [Deployment Guide](./docs/deployment/README.md) - Deployment instructions
 - [Error Handling](./docs/error-handling/README.md) - Error handling system and best practices
@@ -162,10 +164,23 @@ But the client never sees this - they just get back the transformed video with t
 
 - **Resized Video**: `/videos/sample.mp4?width=854&height=480&fit=contain`
 - **Video Clip**: `/videos/sample.mp4?time=5s&duration=5s`
-- **Video Thumbnail**: `/videos/sample.mp4?mode=frame&time=5s&width=640&height=360`
+- **Video Thumbnail**: `/videos/sample.mp4?mode=frame&time=5s&width=640&height=360` ([documentation](./docs/features/frame/README.md))
+- **Video Spritesheet**: `/videos/sample.mp4?mode=spritesheet&width=640&height=480&duration=10s` ([documentation](./docs/features/spritesheet/README.md))
 - **Using a Derivative**: `/videos/sample.mp4?derivative=mobile`
 - **Using IMQuery**: `/videos/sample.mp4?imwidth=800` (maps to tablet derivative via breakpoint)
 - **Debug View**: `/videos/sample.mp4?width=720&height=480&debug=view`
+
+### Live Examples
+
+**Video Frames:**
+- **Basic Frame**: [https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=5s&width=640&height=360](https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=5s&width=640&height=360)
+- **PNG Format Frame**: [https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=15s&format=png&width=640&height=360](https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=15s&format=png&width=640&height=360)
+- **WebP Format with Cover Fit**: [https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=10s&format=webp&width=400&height=300&fit=cover](https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=10s&format=webp&width=400&height=300&fit=cover)
+
+**Video Spritesheets:**
+- **Basic Spritesheet**: [https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=640&height=480&duration=10s](https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=640&height=480&duration=10s)
+- **Spritesheet with Cover Fit**: [https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=800&height=600&fit=cover](https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=800&height=600&fit=cover)
+- **Custom Time Range Spritesheet**: [https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=800&height=600&time=30s&duration=60s](https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=800&height=600&time=30s&duration=60s)
 
 ## Supported Parameters
 

@@ -54,7 +54,7 @@
 			"quality": "auto",
 			"compression": "auto",
 			"loop": null,
-			"preload": "auto",
+			"preload": null,
 			"autoplay": null,
 			"muted": null
 		},
@@ -196,11 +196,11 @@
 			},
 			"medium": {
 				"min": 855,
-				"max": 1280,
+				"max": 1080,
 				"derivative": "tablet"
 			},
 			"large": {
-				"min": 1281,
+				"min": 1081,
 				"derivative": "desktop"
 			}
 		},
