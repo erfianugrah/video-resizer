@@ -76,6 +76,12 @@ export function ConfigurationViewer({ configuration }: {
     debugConfig?: Record<string, any>;
     loggingConfig?: Record<string, any>;
     environment?: Record<string, any>;
+    performanceMetrics?: {
+      totalElapsedMs: number;
+      componentTiming?: Record<string, number>;
+      breadcrumbCount: number;
+    };
+    componentTiming?: Record<string, number>;
   } 
 }) {
   const [allExpanded, setAllExpanded] = useState(false);
@@ -85,9 +91,12 @@ export function ConfigurationViewer({ configuration }: {
   const hasDebugConfig = configuration?.debugConfig && Object.keys(configuration.debugConfig).length > 0;
   const hasLoggingConfig = configuration?.loggingConfig && Object.keys(configuration.loggingConfig).length > 0;
   const hasEnvironment = configuration?.environment && Object.keys(configuration.environment).length > 0;
+  const hasPerformanceMetrics = 
+    (configuration?.performanceMetrics && Object.keys(configuration.performanceMetrics).length > 0) ||
+    (configuration?.componentTiming && Object.keys(configuration.componentTiming).length > 0);
   
   // If no configuration is provided, show a placeholder
-  if (!hasVideoConfig && !hasCacheConfig && !hasDebugConfig && !hasLoggingConfig && !hasEnvironment) {
+  if (!hasVideoConfig && !hasCacheConfig && !hasDebugConfig && !hasLoggingConfig && !hasEnvironment && !hasPerformanceMetrics) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -166,6 +175,7 @@ export function ConfigurationViewer({ configuration }: {
             {hasDebugConfig && <TabsTrigger value="debug">Debug</TabsTrigger>}
             {hasLoggingConfig && <TabsTrigger value="logging">Logging</TabsTrigger>}
             {hasEnvironment && <TabsTrigger value="environment">Environment</TabsTrigger>}
+            {hasPerformanceMetrics && <TabsTrigger value="performance">Performance</TabsTrigger>}
           </TabsList>
           
           {hasVideoConfig && (
@@ -195,6 +205,17 @@ export function ConfigurationViewer({ configuration }: {
           {hasEnvironment && (
             <TabsContent value="environment" className="space-y-4">
               <JsonView data={configuration.environment} title="Environment" globalExpanded={allExpanded} />
+            </TabsContent>
+          )}
+          
+          {hasPerformanceMetrics && (
+            <TabsContent value="performance" className="space-y-4">
+              {configuration.performanceMetrics && (
+                <JsonView data={configuration.performanceMetrics} title="Performance Metrics" globalExpanded={allExpanded} />
+              )}
+              {configuration.componentTiming && !configuration.performanceMetrics?.componentTiming && (
+                <JsonView data={configuration.componentTiming} title="Component Timing" globalExpanded={allExpanded} />
+              )}
             </TabsContent>
           )}
         </Tabs>

@@ -454,11 +454,14 @@ export async function createDebugReport(
         
         // Make sure critical timing information is included
         if (requestContext) {
-          // Ensure processingTimeMs is set if not already
-          if (cleanDiagnostics.processingTimeMs === undefined) {
-            const endTime = performance.now();
-            const processingTimeMs = Math.round(endTime - requestContext.startTime);
-            cleanDiagnostics.processingTimeMs = processingTimeMs;
+          // Always calculate and set processingTimeMs to ensure it's accurate when displayed
+          const endTime = performance.now();
+          const processingTimeMs = Math.round(endTime - requestContext.startTime);
+          cleanDiagnostics.processingTimeMs = processingTimeMs;
+          
+          // Also include component timing information if available
+          if (requestContext.componentTiming) {
+            cleanDiagnostics.componentTiming = requestContext.componentTiming;
           }
         }
         

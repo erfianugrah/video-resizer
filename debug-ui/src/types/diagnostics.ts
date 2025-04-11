@@ -56,6 +56,14 @@ export interface DiagnosticsInfo {
   errors?: string[];
   warnings?: string[];
   
+  // Performance metrics
+  componentTiming?: Record<string, number>;
+  performanceMetrics?: {
+    totalElapsedMs: number;
+    componentTiming?: Record<string, number>;
+    breadcrumbCount: number;
+  };
+  
   // Extended diagnostics info
   derivative?: string;
   source?: string;

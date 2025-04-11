@@ -215,13 +215,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
       // Import and render the StatCard components properly with React
       import('../components/dashboard/StatCard').then(({ StatCard }) => {
         import('react-dom/client').then(({ createRoot }) => {
-          // Processing Time
+          // Processing Time - Show performance data
+          const processingTime = diagnosticsData.processingTimeMs !== undefined ? 
+            diagnosticsData.processingTimeMs : 
+            (diagnosticsData.performanceMetrics?.totalElapsedMs || 0);
+            
           const processingTimeRoot = document.createElement('div');
           statsRow.appendChild(processingTimeRoot);
           const processingTimeRootInstance = createRoot(processingTimeRoot);
           processingTimeRootInstance.render(React.createElement(StatCard, {
             title: 'Processing Time',
-            value: `${diagnosticsData.processingTimeMs || 0} ms`,
+            value: `${processingTime} ms`,
             icon: Timer,
             variant: 'default',
           }));
@@ -265,10 +269,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
           const processingTimeRow = document.createElement('div');
           requestInfoContent.appendChild(processingTimeRow);
           const processingTimeInstance = createRoot(processingTimeRow);
+          
+          // Get processing time from either direct value or performance metrics
+          const processingTime = diagnosticsData.processingTimeMs !== undefined ? 
+            diagnosticsData.processingTimeMs : 
+            (diagnosticsData.performanceMetrics?.totalElapsedMs || 0);
+            
           processingTimeInstance.render(
             React.createElement(InfoRow, { 
               label: 'Processing Time:', 
-              value: React.createElement(Badge, { variant: 'default' }, `${diagnosticsData.processingTimeMs || 0} ms`)
+              value: React.createElement(Badge, { variant: 'default' }, `${processingTime} ms`)
             })
           );
           
@@ -507,7 +517,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
       cacheConfig: diagnosticsData.cacheConfig || {},
       debugConfig: diagnosticsData.debugConfig || {},
       loggingConfig: diagnosticsData.loggingConfig || {},
-      environment: diagnosticsData.environment || {}
+      environment: diagnosticsData.environment || {},
+      performanceMetrics: diagnosticsData.performanceMetrics || {},
+      componentTiming: diagnosticsData.componentTiming || {}
     };
     
     // Log available configuration data
