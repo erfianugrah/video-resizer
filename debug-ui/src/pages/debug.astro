@@ -16,8 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 </script>
 
 <MainLayout title="Video Resizer Debug">
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div class="col-span-1 lg:col-span-2 space-y-6">
+  <div class="flex flex-col lg:flex-row gap-6 max-w-[1600px] mx-auto">
+    <div class="lg:w-2/3 space-y-6">
       <div id="placeholder-message" class="flex items-center justify-center h-60 rounded-lg border border-dashed p-8">
         <div class="text-center">
           <h3 class="text-lg font-medium">Loading diagnostic data...</h3>
@@ -127,7 +127,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
       </div>
     </div>
     
-    <div class="col-span-1 space-y-6">
+    <div class="lg:w-1/3 space-y-6">
       <!-- Media Preview - will be client-rendered -->
       <div id="media-preview-container" class="hidden">
         <!-- MediaPreview component will be client-rendered -->

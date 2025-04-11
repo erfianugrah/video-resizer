@@ -26,8 +26,8 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
   };
   
   return (
-    <div className="overflow-hidden rounded-md border">
-      <div className="flex items-center justify-between bg-muted px-4 py-2">
+    <div className="rounded-lg border overflow-hidden w-full">
+      <div className="flex items-center justify-between bg-card border-b px-4 py-2">
         <h3 className="font-medium text-sm">{title}</h3>
         <div className="flex gap-2">
           <Button 
@@ -59,8 +59,8 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
           </Button>
         </div>
       </div>
-      <div className={`${isExpanded ? 'max-h-[50vh]' : 'max-h-60'} overflow-auto transition-all duration-200 w-full`}>
-        <pre className="bg-muted/50 p-4 m-0 text-xs overflow-x-auto whitespace-pre-wrap break-words">
+      <div className={`${isExpanded ? 'max-h-[60vh]' : 'max-h-60'} overflow-auto transition-all duration-200`}>
+        <pre className="bg-muted/20 p-4 m-0 text-xs font-mono overflow-x-auto">
           <code>{formattedData}</code>
         </pre>
       </div>
@@ -100,7 +100,7 @@ export function ConfigurationViewer({ configuration }: {
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="gap-2">
+          <CardTitle className="flex items-center">
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               width="18" 
@@ -130,9 +130,9 @@ export function ConfigurationViewer({ configuration }: {
   }
   
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="gap-2">
+        <CardTitle className="flex items-center">
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
             width="18" 
@@ -167,50 +167,76 @@ export function ConfigurationViewer({ configuration }: {
           )}
         </Button>
       </CardHeader>
-      <CardContent>
-        <Tabs defaultValue={hasVideoConfig ? 'video' : hasDebugConfig ? 'debug' : 'cache'}>
-          <TabsList className="mb-4 w-full flex-wrap">
-            {hasVideoConfig && <TabsTrigger value="video">Video</TabsTrigger>}
-            {hasCacheConfig && <TabsTrigger value="cache">Cache</TabsTrigger>}
-            {hasDebugConfig && <TabsTrigger value="debug">Debug</TabsTrigger>}
-            {hasLoggingConfig && <TabsTrigger value="logging">Logging</TabsTrigger>}
-            {hasEnvironment && <TabsTrigger value="environment">Environment</TabsTrigger>}
-            {hasPerformanceMetrics && <TabsTrigger value="performance">Performance</TabsTrigger>}
-          </TabsList>
+      <CardContent className="p-4">
+        <Tabs defaultValue={hasVideoConfig ? 'video' : hasDebugConfig ? 'debug' : 'cache'} className="w-full">
+          <div className="border-b pb-2 mb-4">
+            <TabsList className="w-auto inline-flex bg-transparent p-0 h-auto space-x-4">
+              {hasVideoConfig && 
+                <TabsTrigger value="video" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Video
+                </TabsTrigger>
+              }
+              {hasCacheConfig && 
+                <TabsTrigger value="cache" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Cache
+                </TabsTrigger>
+              }
+              {hasDebugConfig && 
+                <TabsTrigger value="debug" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Debug
+                </TabsTrigger>
+              }
+              {hasLoggingConfig && 
+                <TabsTrigger value="logging" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Logging
+                </TabsTrigger>
+              }
+              {hasEnvironment && 
+                <TabsTrigger value="environment" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Environment
+                </TabsTrigger>
+              }
+              {hasPerformanceMetrics && 
+                <TabsTrigger value="performance" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md px-3 py-1.5">
+                  Performance
+                </TabsTrigger>
+              }
+            </TabsList>
+          </div>
           
-          <div className="overflow-auto">
+          <div className="w-full">
             {hasVideoConfig && (
-              <TabsContent value="video" className="space-y-4">
+              <TabsContent value="video" className="w-full">
                 <JsonView data={configuration.videoConfig} title="Video Configuration" globalExpanded={allExpanded} />
               </TabsContent>
             )}
             
             {hasCacheConfig && (
-              <TabsContent value="cache" className="space-y-4">
+              <TabsContent value="cache" className="w-full">
                 <JsonView data={configuration.cacheConfig} title="Cache Configuration" globalExpanded={allExpanded} />
               </TabsContent>
             )}
             
             {hasDebugConfig && (
-              <TabsContent value="debug" className="space-y-4">
+              <TabsContent value="debug" className="w-full">
                 <JsonView data={configuration.debugConfig} title="Debug Configuration" globalExpanded={allExpanded} />
               </TabsContent>
             )}
             
             {hasLoggingConfig && (
-              <TabsContent value="logging" className="space-y-4">
+              <TabsContent value="logging" className="w-full">
                 <JsonView data={configuration.loggingConfig} title="Logging Configuration" globalExpanded={allExpanded} />
               </TabsContent>
             )}
             
             {hasEnvironment && (
-              <TabsContent value="environment" className="space-y-4">
+              <TabsContent value="environment" className="w-full">
                 <JsonView data={configuration.environment} title="Environment" globalExpanded={allExpanded} />
               </TabsContent>
             )}
             
             {hasPerformanceMetrics && (
-              <TabsContent value="performance" className="space-y-4">
+              <TabsContent value="performance" className="w-full">
                 {configuration.performanceMetrics && (
                   <JsonView data={configuration.performanceMetrics} title="Performance Metrics" globalExpanded={allExpanded} />
                 )}
