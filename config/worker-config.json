@@ -9,6 +9,7 @@
 				"mode": "video",
 				"audio": true,
 				"duration": "5m",
+				"fit": "contain",
 				"compression": "low",
 				"description": "1920x1080 pixels. The video plays in high-definition."
 			},
@@ -17,6 +18,7 @@
 				"height": 720,
 				"mode": "video",
 				"audio": true,
+				"fit": "contain",
 				"duration": "5m",
 				"compression": "medium",
 				"description": "1280x720 pixels. The video plays at medium resolution."
@@ -26,6 +28,7 @@
 				"height": 640,
 				"mode": "video",
 				"audio": true,
+				"fit": "contain",
 				"duration": "5m",
 				"compression": "high",
 				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
