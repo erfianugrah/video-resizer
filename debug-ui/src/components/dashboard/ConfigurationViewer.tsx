@@ -28,7 +28,7 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center justify-between bg-muted px-4 py-2">
-        <h3 className="font-medium">{title}</h3>
+        <h3 className="font-medium text-sm">{title}</h3>
         <div className="flex gap-2">
           <Button 
             variant="ghost" 
@@ -39,12 +39,12 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
             {isExpanded ? (
               <>
                 <Minimize className="h-4 w-4 mr-1" />
-                Collapse
+                <span className="text-xs">Collapse</span>
               </>
             ) : (
               <>
                 <Expand className="h-4 w-4 mr-1" />
-                Expand
+                <span className="text-xs">Expand</span>
               </>
             )}
           </Button>
@@ -55,11 +55,11 @@ function JsonView({ data, title, globalExpanded }: { data: any; title: string; g
             className="h-8 px-2"
           >
             {copied ? <CheckCheck className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
-            <span>{copied ? 'Copied!' : 'Copy'}</span>
+            <span className="text-xs">{copied ? 'Copied!' : 'Copy'}</span>
           </Button>
         </div>
       </div>
-      <div className={`${isExpanded ? 'max-h-[60vh]' : 'max-h-60'} overflow-auto transition-all duration-200 w-full`}>
+      <div className={`${isExpanded ? 'max-h-[50vh]' : 'max-h-60'} overflow-auto transition-all duration-200 w-full`}>
         <pre className="bg-muted/50 p-4 m-0 text-xs overflow-x-auto whitespace-pre-wrap break-words">
           <code>{formattedData}</code>
         </pre>
@@ -169,7 +169,7 @@ export function ConfigurationViewer({ configuration }: {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue={hasVideoConfig ? 'video' : hasDebugConfig ? 'debug' : 'cache'}>
-          <TabsList className="mb-4 w-full">
+          <TabsList className="mb-4 w-full flex-wrap">
             {hasVideoConfig && <TabsTrigger value="video">Video</TabsTrigger>}
             {hasCacheConfig && <TabsTrigger value="cache">Cache</TabsTrigger>}
             {hasDebugConfig && <TabsTrigger value="debug">Debug</TabsTrigger>}
@@ -178,46 +178,48 @@ export function ConfigurationViewer({ configuration }: {
             {hasPerformanceMetrics && <TabsTrigger value="performance">Performance</TabsTrigger>}
           </TabsList>
           
-          {hasVideoConfig && (
-            <TabsContent value="video" className="space-y-4">
-              <JsonView data={configuration.videoConfig} title="Video Configuration" globalExpanded={allExpanded} />
-            </TabsContent>
-          )}
-          
-          {hasCacheConfig && (
-            <TabsContent value="cache" className="space-y-4">
-              <JsonView data={configuration.cacheConfig} title="Cache Configuration" globalExpanded={allExpanded} />
-            </TabsContent>
-          )}
-          
-          {hasDebugConfig && (
-            <TabsContent value="debug" className="space-y-4">
-              <JsonView data={configuration.debugConfig} title="Debug Configuration" globalExpanded={allExpanded} />
-            </TabsContent>
-          )}
-          
-          {hasLoggingConfig && (
-            <TabsContent value="logging" className="space-y-4">
-              <JsonView data={configuration.loggingConfig} title="Logging Configuration" globalExpanded={allExpanded} />
-            </TabsContent>
-          )}
-          
-          {hasEnvironment && (
-            <TabsContent value="environment" className="space-y-4">
-              <JsonView data={configuration.environment} title="Environment" globalExpanded={allExpanded} />
-            </TabsContent>
-          )}
-          
-          {hasPerformanceMetrics && (
-            <TabsContent value="performance" className="space-y-4">
-              {configuration.performanceMetrics && (
-                <JsonView data={configuration.performanceMetrics} title="Performance Metrics" globalExpanded={allExpanded} />
-              )}
-              {configuration.componentTiming && !configuration.performanceMetrics?.componentTiming && (
-                <JsonView data={configuration.componentTiming} title="Component Timing" globalExpanded={allExpanded} />
-              )}
-            </TabsContent>
-          )}
+          <div className="overflow-auto">
+            {hasVideoConfig && (
+              <TabsContent value="video" className="space-y-4">
+                <JsonView data={configuration.videoConfig} title="Video Configuration" globalExpanded={allExpanded} />
+              </TabsContent>
+            )}
+            
+            {hasCacheConfig && (
+              <TabsContent value="cache" className="space-y-4">
+                <JsonView data={configuration.cacheConfig} title="Cache Configuration" globalExpanded={allExpanded} />
+              </TabsContent>
+            )}
+            
+            {hasDebugConfig && (
+              <TabsContent value="debug" className="space-y-4">
+                <JsonView data={configuration.debugConfig} title="Debug Configuration" globalExpanded={allExpanded} />
+              </TabsContent>
+            )}
+            
+            {hasLoggingConfig && (
+              <TabsContent value="logging" className="space-y-4">
+                <JsonView data={configuration.loggingConfig} title="Logging Configuration" globalExpanded={allExpanded} />
+              </TabsContent>
+            )}
+            
+            {hasEnvironment && (
+              <TabsContent value="environment" className="space-y-4">
+                <JsonView data={configuration.environment} title="Environment" globalExpanded={allExpanded} />
+              </TabsContent>
+            )}
+            
+            {hasPerformanceMetrics && (
+              <TabsContent value="performance" className="space-y-4">
+                {configuration.performanceMetrics && (
+                  <JsonView data={configuration.performanceMetrics} title="Performance Metrics" globalExpanded={allExpanded} />
+                )}
+                {configuration.componentTiming && !configuration.performanceMetrics?.componentTiming && (
+                  <JsonView data={configuration.componentTiming} title="Component Timing" globalExpanded={allExpanded} />
+                )}
+              </TabsContent>
+            )}
+          </div>
         </Tabs>
       </CardContent>
     </Card>

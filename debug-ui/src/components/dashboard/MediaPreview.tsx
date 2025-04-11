@@ -45,7 +45,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
           Media Preview
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-hidden">
         <div className="bg-slate-900 rounded-md overflow-hidden flex items-center justify-center mb-4 max-w-full">
           <div className="h-64 w-full flex items-center justify-center overflow-hidden">
             {isVideo ? (
@@ -67,7 +67,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
           </div>
         </div>
         
-        <div className="space-y-4 text-sm mb-4">
+        <div className="space-y-4 text-sm mb-4 overflow-x-auto">
           {/* Original video dimensions section */}
           {(diagnostics.videoInfo?.width || diagnostics.videoInfo?.height) && (
             <div>
@@ -78,7 +78,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
                 </span>
               </div>
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-sm table-fixed">
+                <table className="w-full text-sm">
                   <tbody>
                     {diagnostics.videoInfo?.width && (
                       <tr className="border-b">
@@ -102,7 +102,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
           <div>
             <div className="font-medium mb-2">Transform Parameters</div>
             <div className="overflow-x-auto w-full">
-              <table className="w-full text-sm table-fixed">
+              <table className="w-full text-sm">
                 <tbody>
                   {/* Show difference between requested and actual parameters when available */}
                   {importantParams.map(key => {
@@ -120,7 +120,7 @@ export function MediaPreview({ diagnostics, className }: MediaPreviewProps) {
                     
                     return (
                       <tr key={key} className="border-b last:border-0">
-                        <td className="py-2 pr-4 font-medium">{key}</td>
+                        <td className="py-2 pr-4 font-medium whitespace-nowrap">{key}</td>
                         <td className="py-2 font-mono">
                           {isDifferent ? (
                             <>
