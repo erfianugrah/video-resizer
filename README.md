@@ -63,15 +63,15 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 ### Recent Updates
 
 #### Production Deployment Fixes
-- [Deployment Issues Fixed](./docs/deployment/DEPLOYMENT_ISSUES_FIXED.md) - Resolution of recent production issues:
-  - Fixed storage configuration integration in VideoConfigurationManager
-  - Fixed fallback URL construction in TransformVideoCommand
-  - Disabled debug mode in production configuration
+- Fixed storage configuration integration in VideoConfigurationManager
+- Fixed fallback URL construction in TransformVideoCommand
+- Added support for video loop parameter
+- Disabled debug mode in production configuration
 
 #### Documentation and Tools
 - [Enhanced Configuration Tool](./tools/README.md) - Improved error handling, security, and validation
-- [Future Recommendations](./docs/deployment/FUTURE_RECOMMENDATIONS.md) - Recommendations for further improvements
 - [Documentation Organization](./docs/structure/README.md) - Documentation overview and organization
+- Fixed broken links and consolidated deployment documentation
 
 ## Quick Start
 

@@ -196,7 +196,6 @@ Pattern with path prefix and named capture groups:
 Path patterns are evaluated in order of their `priority` value (highest first). If no priority is specified, patterns are evaluated in the order they appear in the configuration. The first pattern that matches the request path will be used.
 
 If the matching pattern has `processPath: true`, the video will be transformed according to the pattern and derivative settings. If `processPath: false` or no matching pattern is found, the request will be passed through to the origin without transformation.
-```
 
 ## Configuration Methods
 

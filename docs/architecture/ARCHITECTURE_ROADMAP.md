@@ -549,6 +549,22 @@ The documentation now clearly explains why IMQuery caching behaves differently, 
 
 Removing these warnings will make the debug UI cleaner and avoid potentially misleading information while still ensuring users have access to accurate API constraints through the official documentation.
 
+### April 14, 2025 - Documentation Overhaul and Loop Functionality
+
+- **Documentation Updates**: Performed a comprehensive documentation overhaul:
+  - Fixed broken links throughout documentation
+  - Consolidated deployment documentation
+  - Updated architecture timeline to reflect current state
+  - Fixed formatting errors in documentation files
+  - Removed references to non-existent files
+  - Standardized documentation cross-references
+  - Updated references to include the loop parameter
+
+- **Loop Parameter Support**: Added documentation for the loop parameter added on April 13, 2025:
+  - Updated relevant documentation to mention loop functionality
+  - Added examples showing loop parameter usage
+  - Ensured parameter compatibility information is up to date
+
 ### April 2, 2025 - Created and Implemented Standardized Error Handling Utilities
 - **Issue #10 Addressed**: Created and implemented a centralized error handling utility module
 - Added new file `/src/utils/errorHandlingUtils.ts` with standardized error handling functions:
