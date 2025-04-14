@@ -2,7 +2,7 @@
 
 Welcome to the Video Resizer documentation. This document serves as a central hub for all the documentation related to the Video Resizer project.
 
-*Last Updated: April 9, 2025*
+*Last Updated: April 14, 2025*
 
 ## Core Documentation
 
@@ -14,15 +14,14 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
   - [Dynamic Configuration](./configuration/dynamic-configuration.md)
   - [Path Pattern Matching](./configuration/path-pattern-matching.md)
   - [Path Pattern Troubleshooting](./configuration/path-pattern-troubleshooting.md)
-  - [URL Parameter Filtering](./configuration/url-parameter-filtering.md) *[New]*
+  - [URL Parameter Filtering](./configuration/url-parameter-filtering.md)
   - [Updating Configuration](./configuration/updating-configuration.md)
-  - [Parameter Compatibility Matrix](./configuration/parameter-compatibility.md) *[New]*
+  - [Parameter Compatibility Matrix](./configuration/parameter-compatibility.md)
   - [Configuration Reference](./configuration/CONFIGURATION_REFERENCE.md)
 
 - **[Deployment Guide](./deployment/README.md)**: How to deploy Video Resizer to Cloudflare Workers
   - [Authentication Setup](./deployment/auth-setup.md)
-  - [Deployment Issues Fixed](./deployment/DEPLOYMENT_ISSUES_FIXED.md) *[New]*
-  - [Future Recommendations](./deployment/FUTURE_RECOMMENDATIONS.md) *[New]*
+  - [Deployment Process](./deployment/DEPLOY.md)
 
 - **[KV Caching System](./kv-caching/README.md)**: Documentation on the KV caching implementation
   - [Implementation Details](./kv-caching/implementation.md)
@@ -71,19 +70,12 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 - **[Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md)**: High-level architecture description
 - **[Architecture Roadmap](./architecture/ARCHITECTURE_ROADMAP.md)**: Current progress and future architectural improvements
 - **[Architecture Patterns](./architecture/ARCHITECTURE_PATTERNS.md)**: Architectural patterns used in the project
-- **[Transformation Strategies](./architecture/TRANSFORMATION_STRATEGIES.md)**: Strategy pattern for transformation modes *[New]*
+- **[Transformation Strategies](./architecture/TRANSFORMATION_STRATEGIES.md)**: Strategy pattern for transformation modes
 - **[Dependency Inversion](./architecture/DEPENDENCY_INVERSION_PLAN.md)**: Plan for implementing dependency inversion
   - [Refined Dependency Inversion](./architecture/REFINED_DEPENDENCY_INVERSION.md)
-  - [Implementation Progress](./architecture/DEPENDENCY_INVERSION_IMPLEMENTATION_PROGRESS.md)
 - **[Path Matching Enhancement](./architecture/PATH_MATCHING_ENHANCEMENT.md)**: Enhancements to the path matching system
 - **[Refactoring Guide](./architecture/REFACTORING.md)**: Notes on refactoring approaches
-  - [Cache Utils Refactoring](./architecture/CACHE_UTILS_REFACTORING.md)
-  - [Client Hints Refactoring](./architecture/CLIENT_HINTS_REFACTORING.md)
-  - [Device Utils Refactoring](./architecture/DEVICE_UTILS_REFACTORING.md)
-  - [URL Transform Refactoring](./architecture/URL_TRANSFORM_REFACTORING.md)
 - **[Unified Origins Migration](./architecture/MIGRATING_TO_UNIFIED_ORIGINS.md)**: Guide to migrating to unified origins
-  - [Migration Plan](./architecture/MIGRATION_PLAN.md)
-  - [Migration Completion](./architecture/MIGRATION_COMPLETION.md)
 
 ## Tools Documentation
 
@@ -112,8 +104,8 @@ For information about the documentation organization and cleanup efforts:
 
 The following significant changes have recently been implemented:
 
-1. **Fixed Storage Configuration Integration**: Added proper storage configuration support to VideoConfigurationManager
-2. **Enhanced Configuration Tool**: Improved error handling, security, and validation in the config-upload.js tool
-3. **Fixed Fallback URL Construction**: Corrected CDN-CGI URL extraction for fallback sources
-4. **Deployment Issue Resolution**: Documentation of production deployment issues and fixes
-5. **Documentation Reorganization**: Plan for cleaning up and organizing documentation
+1. **Added Loop Functionality**: Added support for the `loop` parameter in video playback
+2. **Fixed Storage Configuration Integration**: Added proper storage configuration support to VideoConfigurationManager
+3. **Enhanced Configuration Tool**: Improved error handling, security, and validation in the config-upload.js tool
+4. **Fixed Fallback URL Construction**: Corrected CDN-CGI URL extraction for fallback sources
+5. **Documentation Reorganization**: Cleaned up and reorganized documentation to fix broken links and inconsistencies

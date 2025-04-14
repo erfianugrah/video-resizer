@@ -14,7 +14,7 @@ The Video Resizer is built with a service-oriented architecture that transforms 
 ### Domain Layer
 - **Command Pattern**: `TransformVideoCommand` encapsulates core business logic
 - **Strategy Pattern**: Specialized strategies handle different transformation types
-  - `VideoStrategy`: For regular video transformations
+  - `VideoStrategy`: For regular video transformations with playback controls (loop, autoplay, etc.)
   - `FrameStrategy`: For extracting frames
   - `SpritesheetStrategy`: For creating sprite sheets
 
@@ -66,10 +66,11 @@ With the core functionality stable, we will focus on:
 
 ## Implementation Timeline
 
-| Phase | Duration | Focus Area |
-|-------|----------|------------|
-| 1     | 3 weeks  | Dependency Structure Refactoring |
-| 2     | 2 weeks  | Path Matching and Configuration |
-| 3     | 2 weeks  | Testing and Performance |
+| Phase | Status | Focus Area |
+|-------|--------|------------|
+| 1     | ✅ Completed | Dependency Structure Refactoring |
+| 2     | ✅ Completed | Path Matching and Configuration |
+| 3     | 🔄 In Progress | Testing and Performance Optimization |
+| 4     | 📅 Planned | Advanced Features and UI Enhancements |
 
-See [ARCHITECTURE_ROADMAP.md](../../ARCHITECTURE_ROADMAP.md) for detailed implementation plans and current status.
+See [ARCHITECTURE_ROADMAP.md](./ARCHITECTURE_ROADMAP.md) for detailed implementation plans and current status.

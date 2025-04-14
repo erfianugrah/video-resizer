@@ -19,7 +19,7 @@ The video-resizer supports three distinct transformation modes, each designed fo
 The default mode when no `mode` parameter is specified.
 
 ```
-https://cdn.example.com/video.mp4?width=854&height=480
+https://cdn.example.com/video.mp4?width=854&height=480&loop=true
 ```
 
 **Key Features:**
@@ -27,6 +27,7 @@ https://cdn.example.com/video.mp4?width=854&height=480
 - Preserves motion and audio
 - Supports all transformation parameters
 - Allows playback controls (loop, autoplay, muted, preload)
+  - The new `loop` parameter enables continuous playback
 
 **Example Use Cases:**
 - Responsive video playback
