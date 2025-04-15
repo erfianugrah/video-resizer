@@ -281,7 +281,7 @@
 			},
 			{
 				"name": "standard",
-				"matcher": "^/(.*\\.mp4)",
+				"matcher": "^/(.*\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv))",
 				"processPath": true,
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",

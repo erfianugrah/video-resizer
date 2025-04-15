@@ -293,7 +293,7 @@ export default {
             whitelistedFormatsCount: passthroughConfig.whitelistedFormats.length,
             whitelistedFormats: passthroughConfig.whitelistedFormats.join(', '),
             extension: pathExtension,
-            isWhitelisted: passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)
+            isWhitelisted: passthroughConfig.whitelistedFormats.includes(pathExtension)
           });
           
           // Add breadcrumb for config retrieval
@@ -303,7 +303,7 @@ export default {
               enabled: passthroughConfig.enabled,
               whitelistedFormatsCount: passthroughConfig.whitelistedFormats.length,
               extension: pathExtension,
-              isWhitelisted: passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)
+              isWhitelisted: passthroughConfig.whitelistedFormats.includes(pathExtension)
             });
           }
           
@@ -319,7 +319,7 @@ export default {
           
           // Check if passthrough is enabled and this format is not explicitly whitelisted
           if (passthroughConfig.enabled && 
-              !passthroughConfig.whitelistedFormats.includes(`.${pathExtension}`)) {
+              !passthroughConfig.whitelistedFormats.includes(pathExtension)) {
             
             logInfo(context, 'Non-MP4 video request - bypassing video processing', {
               path: requestUrl.pathname,
