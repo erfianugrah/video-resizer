@@ -55,12 +55,14 @@ export interface TransformOptions {
  * @param env - Environment variables with KV namespaces
  * @param sourcePath - Original source path
  * @param options - Transformation options
+ * @param request - Optional request for range request support
  * @returns The cached response or null if not found
  */
 export async function getFromKVCache(
   env: EnvVariables,
   sourcePath: string,
-  options: TransformOptions
+  options: TransformOptions,
+  request?: Request // Add optional request parameter for range support
 ): Promise<Response | null> {
   // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
   const config = getCacheConfig(env);
@@ -97,10 +99,19 @@ export async function getFromKVCache(
       return null;
     }
     
+    // Log if this is a range request
+    if (request?.headers.has('Range')) {
+      logDebug('Range request detected', {
+        sourcePath,
+        range: request.headers.get('Range')
+      });
+    }
+    
     const result = await getTransformedVideo(
       kvNamespace,
       sourcePath,
-      options
+      options,
+      request // Pass the request through for range handling
     );
     
     if (result) {

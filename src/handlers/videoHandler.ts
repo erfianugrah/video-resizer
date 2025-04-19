@@ -133,8 +133,8 @@ export const handleVideoRequest = withErrorHandling<
           hasQuery: url.search.length > 0
         });
         
-        // Start KV lookup
-        kvPromise = getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions);
+        // Start KV lookup with request for range handling support
+        kvPromise = getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
       }
       
       // Start CF cache check in parallel if not skipped

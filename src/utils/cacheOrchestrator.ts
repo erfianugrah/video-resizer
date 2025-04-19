@@ -114,7 +114,8 @@ export async function withCaching(
           });
         }
         
-        kvCachePromise = getFromKVCache(env, sourcePath, lookupOptions).catch(err => {
+        // Pass the request through for range handling support
+        kvCachePromise = getFromKVCache(env, sourcePath, lookupOptions, request).catch(err => {
           logDebug('Error checking KV cache', { 
             error: err instanceof Error ? err.message : String(err) 
           });

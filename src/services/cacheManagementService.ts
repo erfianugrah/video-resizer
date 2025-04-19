@@ -298,7 +298,34 @@ export const cacheResponse = withErrorHandling<
     }
     
     // Clone the response to avoid consuming it
-    const responseClone = response.clone();
+    let responseClone = response.clone();
+    
+    // Check if this is a video response that needs range support
+    const responseContentType = responseClone.headers.get('content-type') || '';
+    const isVideoResponseType = responseContentType.startsWith('video/') || responseContentType.startsWith('audio/');
+    
+    if (isVideoResponseType) {
+      // Create new headers with range request support
+      const headers = new Headers(responseClone.headers);
+      
+      // Always set Accept-Ranges for video content
+      if (!headers.has('Accept-Ranges')) {
+        headers.set('Accept-Ranges', 'bytes');
+      }
+      
+      logDebug('Enhanced response headers for video caching with range support', {
+        url: request.url,
+        contentType: responseContentType,
+        acceptRanges: headers.get('Accept-Ranges')
+      });
+      
+      // Create a new response with the enhanced headers
+      responseClone = new Response(responseClone.body, {
+        status: responseClone.status,
+        statusText: responseClone.statusText,
+        headers: headers
+      });
+    }
     
     // Get the default cache
     const cache = caches.default;
@@ -435,6 +462,10 @@ export const getCachedResponse = withErrorHandling<
       return null;
     }
     
+    // Check if this is a range request
+    const isRangeRequest = request.headers.has('Range');
+    const rangeHeader = request.headers.get('Range');
+    
     // Cache API implementation using tryOrNull for safer async operation
     const cacheMatchOperation = withErrorHandling(
       async () => {
@@ -451,12 +482,14 @@ export const getCachedResponse = withErrorHandling<
             addBreadcrumb(requestContext, 'Cache', 'Cache hit', {
               url: request.url,
               method: 'cache-api',
-              status: cachedResponse.status
+              status: cachedResponse.status,
+              isRangeRequest
             });
           } else {
             addBreadcrumb(requestContext, 'Cache', 'Cache miss', {
               url: request.url,
-              method: 'cache-api'
+              method: 'cache-api',
+              isRangeRequest
             });
           }
         }
@@ -465,14 +498,142 @@ export const getCachedResponse = withErrorHandling<
           logDebug('Cache hit using Cache API', {
             url: request.url,
             method: 'cache-api',
-            status: cachedResponse.status
+            status: cachedResponse.status,
+            isRangeRequest,
+            hasRange: rangeHeader,
+            contentType: cachedResponse.headers.get('Content-Type')
           });
+          
+          // Handle range requests for 200 OK responses from cache
+          if (isRangeRequest && cachedResponse.status === 200) {
+            try {
+              // Dynamically import httpUtils to avoid circular dependencies
+              const { parseRangeHeader, createUnsatisfiableRangeResponse } = await import('../utils/httpUtils');
+              
+              // Clone the cached response to avoid consuming it
+              const responseClone = cachedResponse.clone();
+              const arrayBuffer = await responseClone.arrayBuffer();
+              const totalSize = arrayBuffer.byteLength;
+              
+              // Log detailed information about the range request
+              logDebug('Processing range request from Cache API', { 
+                url: request.url,
+                range: rangeHeader,
+                totalSize,
+                contentType: cachedResponse.headers.get('Content-Type')
+              });
+              
+              const range = parseRangeHeader(rangeHeader, totalSize);
+              
+              if (range) {
+                // Valid range request - create a 206 Partial Content response
+                const slicedBody = arrayBuffer.slice(range.start, range.end + 1);
+                
+                // Create new headers from the cached response headers
+                const rangeHeaders = new Headers(cachedResponse.headers);
+                rangeHeaders.set('Content-Range', `bytes ${range.start}-${range.end}/${range.total}`);
+                rangeHeaders.set('Content-Length', slicedBody.byteLength.toString());
+                rangeHeaders.set('Accept-Ranges', 'bytes');
+                
+                // Add debug headers to verify range handling
+                rangeHeaders.set('X-Range-Handled-By', 'Cache-API');
+                rangeHeaders.set('X-Range-Request', rangeHeader || '');
+                rangeHeaders.set('X-Range-Bytes', `${range.start}-${range.end}/${range.total}`);
+                
+                logDebug('Serving ranged response from Cache API', { 
+                  url: request.url,
+                  range: rangeHeader,
+                  start: range.start,
+                  end: range.end,
+                  total: range.total,
+                  sliceSize: slicedBody.byteLength,
+                  bytesSent: range.end - range.start + 1
+                });
+                
+                // Add breadcrumb for range response
+                const requestContext = getCurrentContext();
+                if (requestContext) {
+                  addBreadcrumb(requestContext, 'Cache', 'Serving partial content from Cache API', {
+                    url: request.url,
+                    contentRange: `bytes ${range.start}-${range.end}/${range.total}`,
+                    contentLength: slicedBody.byteLength,
+                    rangeRequest: rangeHeader || ''
+                  });
+                  
+                  // Add diagnostic information to request context
+                  if (!requestContext.diagnostics) {
+                    requestContext.diagnostics = {};
+                  }
+                  
+                  requestContext.diagnostics.rangeRequest = {
+                    header: rangeHeader,
+                    start: range.start,
+                    end: range.end,
+                    total: range.total,
+                    bytes: range.end - range.start + 1,
+                    source: 'cache-api'
+                  };
+                }
+                
+                return new Response(slicedBody, { 
+                  status: 206, 
+                  statusText: 'Partial Content',
+                  headers: rangeHeaders 
+                });
+              } else {
+                // Invalid or unsatisfiable range - return 416
+                logDebug('Unsatisfiable range requested for Cache API cached item', {
+                  url: request.url,
+                  range: rangeHeader,
+                  totalSize,
+                  contentType: cachedResponse.headers.get('Content-Type')
+                });
+                
+                // Add breadcrumb for unsatisfiable range
+                const requestContext = getCurrentContext();
+                if (requestContext) {
+                  addBreadcrumb(requestContext, 'Cache', 'Unsatisfiable range requested', {
+                    url: request.url,
+                    contentType: cachedResponse.headers.get('Content-Type'),
+                    totalSize,
+                    range: rangeHeader
+                  });
+                  
+                  // Add diagnostic information to request context
+                  if (!requestContext.diagnostics) {
+                    requestContext.diagnostics = {};
+                  }
+                  
+                  requestContext.diagnostics.rangeRequest = {
+                    header: rangeHeader,
+                    error: 'unsatisfiable',
+                    total: totalSize,
+                    source: 'cache-api'
+                  };
+                }
+                
+                return createUnsatisfiableRangeResponse(totalSize);
+              }
+            } catch (err) {
+              logDebug('Error processing range request from Cache API, falling back to full response', {
+                url: request.url,
+                error: err instanceof Error ? err.message : String(err),
+                range: rangeHeader
+              });
+              
+              // Fall back to returning the original cached response
+              return cachedResponse;
+            }
+          }
+          
+          // If not a range request or already a 206 response, return as-is
           return cachedResponse;
         }
         
         logDebug('Cache miss using Cache API', {
           url: request.url,
-          method: 'cache-api'
+          method: 'cache-api',
+          isRangeRequest
         });
         return null;
       },

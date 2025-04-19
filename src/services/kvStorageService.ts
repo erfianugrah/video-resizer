@@ -372,6 +372,7 @@ export const storeTransformedVideo = withErrorHandling<
  * @param namespace - The KV namespace to use
  * @param sourcePath - Original video path
  * @param options - Transformation options
+ * @param request - Optional request object for range request support
  * @returns The stored video response or null if not found
  */
 async function getTransformedVideoImpl(
@@ -389,7 +390,8 @@ async function getTransformedVideoImpl(
     columns?: number | null;
     rows?: number | null;
     interval?: string | null;
-  }
+  },
+  request?: Request // Add request parameter for range support
 ): Promise<{ response: Response; metadata: TransformationMetadata } | null> {
   // Generate a key for this transformed variant using consistent format with = delimiter
   const key = generateKVKey(sourcePath, options);
@@ -400,7 +402,8 @@ async function getTransformedVideoImpl(
     sourcePath,
     derivative: options.derivative,
     width: options.width,
-    height: options.height
+    height: options.height,
+    hasRangeRequest: request?.headers.has('Range')
   });
   
   // Check if the key exists in KV
@@ -414,7 +417,9 @@ async function getTransformedVideoImpl(
   // Create headers for the response
   const headers = new Headers();
   headers.set('Content-Type', metadata.contentType);
-  headers.set('Content-Length', metadata.contentLength.toString());
+  
+  // Always set Accept-Ranges header for video content to indicate range request support
+  headers.set('Accept-Ranges', 'bytes');
   
   // Add Cache-Control header if expiresAt is set
   const now = Date.now();
@@ -451,14 +456,160 @@ async function getTransformedVideoImpl(
     headers.set('X-Video-Quality', options.quality);
   }
   
-  // Create a new response with the video data
-  const response = new Response(value, { headers });
+  let response: Response;
+  
+  // Check for range request and handle it if present
+  if (request && request.headers.has('Range')) {
+    try {
+      // Dynamically import httpUtils to avoid potential circular dependencies
+      const { parseRangeHeader, createUnsatisfiableRangeResponse } = await import('../utils/httpUtils');
+      
+      const rangeHeader = request.headers.get('Range');
+      const totalSize = value.byteLength;
+      
+      // Log detailed information about the range request
+      logDebug('Processing range request from KV cache', { 
+        key,
+        range: rangeHeader,
+        totalSize,
+        contentType: metadata.contentType,
+        url: request.url
+      });
+      
+      const range = parseRangeHeader(rangeHeader, totalSize);
+      
+      if (range) {
+        // Valid range request - create a 206 Partial Content response
+        const slicedBody = value.slice(range.start, range.end + 1);
+        const rangeHeaders = new Headers(headers);
+        rangeHeaders.set('Content-Range', `bytes ${range.start}-${range.end}/${range.total}`);
+        rangeHeaders.set('Content-Length', slicedBody.byteLength.toString());
+        
+        // Add debug headers to verify range handling
+        rangeHeaders.set('X-Range-Handled-By', 'KV-Cache');
+        rangeHeaders.set('X-Range-Request', rangeHeader || '');
+        rangeHeaders.set('X-Range-Bytes', `${range.start}-${range.end}/${range.total}`);
+        
+        logDebug('Serving ranged response from KV cache', { 
+          key,
+          range: rangeHeader,
+          start: range.start,
+          end: range.end,
+          total: range.total,
+          sliceSize: slicedBody.byteLength,
+          bytesSent: range.end - range.start + 1
+        });
+        
+        // Add breadcrumb for range response
+        const requestContext = getCurrentContext();
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'KV', 'Serving partial content from KV cache', {
+            key,
+            contentRange: `bytes ${range.start}-${range.end}/${range.total}`,
+            contentLength: slicedBody.byteLength,
+            age: cacheAge + 's',
+            rangeRequest: rangeHeader || ''
+          });
+          
+          // Add diagnostic information to request context
+          if (!requestContext.diagnostics) {
+            requestContext.diagnostics = {};
+          }
+          
+          requestContext.diagnostics.rangeRequest = {
+            header: rangeHeader,
+            start: range.start,
+            end: range.end,
+            total: range.total,
+            bytes: range.end - range.start + 1,
+            source: 'kv-cache'
+          };
+        }
+        
+        response = new Response(slicedBody, { 
+          status: 206, 
+          statusText: 'Partial Content',
+          headers: rangeHeaders 
+        });
+      } else {
+        // Invalid or unsatisfiable range - return 416
+        logDebug('Unsatisfiable range requested for KV cached item', {
+          key,
+          range: rangeHeader,
+          totalSize,
+          contentType: metadata.contentType
+        });
+        
+        // Add breadcrumb for unsatisfiable range
+        const requestContext = getCurrentContext();
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'KV', 'Unsatisfiable range requested', {
+            key,
+            contentType: metadata.contentType,
+            totalSize,
+            range: rangeHeader
+          });
+          
+          // Add diagnostic information to request context
+          if (!requestContext.diagnostics) {
+            requestContext.diagnostics = {};
+          }
+          
+          requestContext.diagnostics.rangeRequest = {
+            header: rangeHeader,
+            error: 'unsatisfiable',
+            total: totalSize,
+            source: 'kv-cache'
+          };
+        }
+        
+        response = createUnsatisfiableRangeResponse(totalSize);
+      }
+    } catch (err) {
+      logDebug('Error processing range request, falling back to full response', {
+        key,
+        error: err instanceof Error ? err.message : String(err),
+        range: request.headers.get('Range')
+      });
+      
+      // Add error to diagnostics
+      const requestContext = getCurrentContext();
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Error', 'Range processing error in KV cache', {
+          key,
+          error: err instanceof Error ? err.message : 'Unknown error',
+          range: request.headers.get('Range')
+        });
+        
+        // Add diagnostic information to request context
+        if (!requestContext.diagnostics) {
+          requestContext.diagnostics = {};
+        }
+        
+        requestContext.diagnostics.rangeRequest = {
+          header: request.headers.get('Range'),
+          error: err instanceof Error ? err.message : 'Unknown error',
+          source: 'kv-cache'
+        };
+      }
+      
+      // Fall back to sending full response
+      headers.set('Content-Length', metadata.contentLength.toString());
+      response = new Response(value, { headers });
+    }
+  } else {
+    // Not a range request - create a standard response
+    headers.set('Content-Length', metadata.contentLength.toString());
+    response = new Response(value, { headers });
+  }
   
   // Log success
   logDebug('Retrieved transformed video from KV', {
     key,
     size: metadata.contentLength,
-    age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's'
+    age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's',
+    status: response.status,
+    isRanged: response.status === 206
   });
   
   // Add breadcrumb for successful KV retrieval
@@ -468,7 +619,8 @@ async function getTransformedVideoImpl(
       key,
       contentType: metadata.contentType,
       contentLength: metadata.contentLength,
-      age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's'
+      age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's',
+      status: response.status
     });
   }
   
@@ -482,6 +634,7 @@ async function getTransformedVideoImpl(
  * @param namespace - The KV namespace to use
  * @param sourcePath - Original video path
  * @param options - Transformation options
+ * @param request - Optional request object for range request support
  * @returns The stored video response or null if not found
  */
 export const getTransformedVideo = withErrorHandling<
@@ -500,17 +653,20 @@ export const getTransformedVideo = withErrorHandling<
       columns?: number | null;
       rows?: number | null;
       interval?: string | null;
-    }
+    },
+    Request | undefined // Add optional request parameter
   ],
   Promise<{ response: Response; metadata: TransformationMetadata } | null>
 >(
   async function getTransformedVideoWrapper(
     namespace,
     sourcePath,
-    options
+    options,
+    request // Add request parameter
   ): Promise<{ response: Response; metadata: TransformationMetadata } | null> {
     try {
-      return await getTransformedVideoImpl(namespace, sourcePath, options);
+      // Pass request to the implementation
+      return await getTransformedVideoImpl(namespace, sourcePath, options, request);
     } catch (err) {
       // Add breadcrumb for KV retrieval error
       const requestContext = getCurrentContext();
@@ -529,6 +685,7 @@ export const getTransformedVideo = withErrorHandling<
         {
           sourcePath,
           options,
+          hasRangeRequest: request?.headers.has('Range'),
           key: generateKVKey(sourcePath, options)
         },
         'KVStorageService'
