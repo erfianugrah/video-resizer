@@ -42,3 +42,39 @@ The KV caching system follows a multi-layered approach:
 - **Origin traffic reduction**: Minimizes requests to origin storage services
 - **Variant management**: Cache specific variants based on transformation parameters
 - **Purge flexibility**: Support for cache tags to purge related cached content
+
+## Enabling/Disabling KV Cache
+
+The KV cache system can be enabled or disabled using the `enableKVCache` configuration option. When set to `false`, the worker will not read from or write to KV cache.
+
+### Configuration
+
+```json
+{
+  "cache": {
+    "enableKVCache": true,  // Set to false to disable KV cache
+    "method": "cf",
+    "enableCacheTags": true,
+    // Other cache configuration...
+  }
+}
+```
+
+### Environment Variables
+
+```
+CACHE_ENABLE_KV=true  # Set to false to disable KV cache
+```
+
+## Recent Updates
+
+### enableKVCache Flag Fix (April 2025)
+
+Fixed an issue where the `enableKVCache` flag was not being respected in the direct videoHandler.ts KV cache check path.
+
+Changes made:
+1. Updated videoHandler.ts to check the enableKVCache flag before calling getFromKVCache directly
+2. Updated videoHandler.ts to check the enableKVCache flag before attempting to write to KV cache
+3. Added logging when KV cache operations are skipped due to configuration
+
+These changes ensure that all KV cache operations (both read and write) properly respect the enableKVCache configuration setting, whether it's set via KV configuration or environment variables.

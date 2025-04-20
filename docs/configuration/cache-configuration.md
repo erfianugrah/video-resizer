@@ -47,7 +47,7 @@ The cache system also supports storing transformed video variants in Cloudflare 
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enableKVCache` | boolean | false | Enable KV storage for transformed variants |
+| `enableKVCache` | boolean | true | Enable KV storage for transformed variants |
 | `kvTtl.ok` | number | 86400 | TTL for 2xx responses in KV storage |
 | `kvTtl.redirects` | number | 3600 | TTL for 3xx responses in KV storage |
 | `kvTtl.clientError` | number | 60 | TTL for 4xx responses in KV storage |
@@ -63,6 +63,34 @@ The KV cache system requires a KV namespace binding:
   }
 ]
 ```
+
+### KV Cache Enable/Disable Behavior
+
+When `enableKVCache` is set to `false`, the worker will:
+
+1. Not read from KV cache when processing video requests
+2. Not write to KV cache when transforming videos
+3. Log that KV cache operations were skipped
+4. Continue to use the Cloudflare Cache API for regular caching
+
+You can disable KV cache in two ways:
+
+1. Via configuration loaded from KV:
+   ```json
+   {
+     "cache": {
+       "enableKVCache": false,
+       "method": "cf",
+       "enableCacheTags": true,
+       ...
+     }
+   }
+   ```
+
+2. Via environment variable:
+   ```bash
+   CACHE_ENABLE_KV=false
+   ```
 
 For detailed documentation on the KV caching system, see [KV Caching Guide](../kv-caching/README.md).
 
