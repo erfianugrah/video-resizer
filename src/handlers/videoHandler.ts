@@ -121,20 +121,33 @@ export const handleVideoRequest = withErrorHandling<
         const sourcePath = url.pathname;
         const videoOptions = determineVideoOptions(request, url.searchParams, path);
         
-        addBreadcrumb(context, 'Cache', 'Checking KV cache', {
-          url: request.url,
-          path: sourcePath,
-          options: JSON.stringify(videoOptions)
-        });
+        // Get KV cache configuration
+        const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
+        const cacheConfig = CacheConfigurationManager.getInstance();
+        const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
         
-        debug(context, logger, 'KVCacheUtils', 'Checking KV cache for video', {
-          sourcePath: sourcePath,
-          derivative: videoOptions.derivative,
-          hasQuery: url.search.length > 0
-        });
-        
-        // Start KV lookup with request for range handling support
-        kvPromise = getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
+        // Only check KV cache if it's enabled in config
+        if (kvCacheEnabled) {
+          addBreadcrumb(context, 'Cache', 'Checking KV cache', {
+            url: request.url,
+            path: sourcePath,
+            options: JSON.stringify(videoOptions)
+          });
+          
+          debug(context, logger, 'KVCacheUtils', 'Checking KV cache for video', {
+            sourcePath: sourcePath,
+            derivative: videoOptions.derivative,
+            hasQuery: url.search.length > 0
+          });
+          
+          // Start KV lookup with request for range handling support
+          kvPromise = getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
+        } else {
+          debug(context, logger, 'KVCacheUtils', 'Skipping KV cache (disabled by configuration)', {
+            sourcePath: sourcePath,
+            enableKVCache: false
+          });
+        }
       }
       
       // Start CF cache check in parallel if not skipped
@@ -403,60 +416,93 @@ export const handleVideoRequest = withErrorHandling<
         
         // Also store in KV cache if environment is available
         if (env && videoOptions) {
-          const sourcePath = url.pathname;
-          const responseClone = response.clone();
+          // Get KV cache configuration
+          const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
+          const cacheConfig = CacheConfigurationManager.getInstance();
+          const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
           
-          // Use derivative-based caching instead of specific IMQuery dimensions
-          // This ensures better cache reuse when multiple imwidth/imheight values map to the same derivative
-          
-          // Add IMQuery detection to logs but don't use for cache key
-          const imwidth = url.searchParams.get('imwidth');
-          const imheight = url.searchParams.get('imheight');
-          const hasIMRef = url.searchParams.has('imref');
-          const hasIMQueryParams = !!(imwidth || imheight || hasIMRef);
-          
-          // Ensure we're using a derivative-based cache key for IMQuery requests
-          // This provides better cache hit rates by normalizing requests with slight dimension differences
-          let videoOptionsWithIMQuery = videoOptions;
-          if (hasIMQueryParams) {
-            if (videoOptions.derivative) {
-              debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
-                imwidth,
-                imheight,
-                hasIMRef,
-                derivative: videoOptions.derivative,
-                cacheType: 'derivative-based'
-              });
-              
-              // For IMQuery requests, include only the derivative, width and height in cache key
-              // This ensures consistent cache keys regardless of custom parameters
-              videoOptionsWithIMQuery = {
-                derivative: videoOptions.derivative,
-                width: videoOptions.width,
-                height: videoOptions.height,
-                // Keep mode in case this is a video/frame/spritesheet request
-                mode: videoOptions.mode
-              };
-              
-              addBreadcrumb(context, 'Cache', 'Using optimized IMQuery cache key', {
-                derivative: videoOptions.derivative,
-                originalParams: Object.keys(videoOptions).length,
-                optimizedParams: Object.keys(videoOptionsWithIMQuery).length
-              });
-            } else {
-              debug(context, logger, 'VideoHandler', 'IMQuery request without mapped derivative', {
-                imwidth,
-                imheight,
-                hasIMRef,
-                cacheType: 'dimension-based'
-              });
+          // Only proceed with KV cache if it's enabled in config
+          if (kvCacheEnabled) {
+            const sourcePath = url.pathname;
+            const responseClone = response.clone();
+            
+            // Use derivative-based caching instead of specific IMQuery dimensions
+            // This ensures better cache reuse when multiple imwidth/imheight values map to the same derivative
+            
+            // Add IMQuery detection to logs but don't use for cache key
+            const imwidth = url.searchParams.get('imwidth');
+            const imheight = url.searchParams.get('imheight');
+            const hasIMRef = url.searchParams.has('imref');
+            const hasIMQueryParams = !!(imwidth || imheight || hasIMRef);
+            
+            // Ensure we're using a derivative-based cache key for IMQuery requests
+            // This provides better cache hit rates by normalizing requests with slight dimension differences
+            let videoOptionsWithIMQuery = videoOptions;
+            if (hasIMQueryParams) {
+              if (videoOptions.derivative) {
+                debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
+                  imwidth,
+                  imheight,
+                  hasIMRef,
+                  derivative: videoOptions.derivative,
+                  cacheType: 'derivative-based'
+                });
+                
+                // For IMQuery requests, include only the derivative, width and height in cache key
+                // This ensures consistent cache keys regardless of custom parameters
+                videoOptionsWithIMQuery = {
+                  derivative: videoOptions.derivative,
+                  width: videoOptions.width,
+                  height: videoOptions.height,
+                  // Keep mode in case this is a video/frame/spritesheet request
+                  mode: videoOptions.mode
+                };
+                
+                addBreadcrumb(context, 'Cache', 'Using optimized IMQuery cache key', {
+                  derivative: videoOptions.derivative,
+                  originalParams: Object.keys(videoOptions).length,
+                  optimizedParams: Object.keys(videoOptionsWithIMQuery).length
+                });
+              } else {
+                debug(context, logger, 'VideoHandler', 'IMQuery request without mapped derivative', {
+                  imwidth,
+                  imheight,
+                  hasIMRef,
+                  cacheType: 'dimension-based'
+                });
+              }
             }
-          }
-          
-          // Use waitUntil if available to store in KV without blocking response
-          const envWithCtx = env as unknown as EnvWithExecutionContext;
-          if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
-            envWithCtx.executionCtx.waitUntil(
+            
+            // Use waitUntil if available to store in KV without blocking response
+            const envWithCtx = env as unknown as EnvWithExecutionContext;
+            if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
+              envWithCtx.executionCtx.waitUntil(
+                storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
+                  .then(success => {
+                    if (success) {
+                      debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
+                        path: sourcePath,
+                        hasIMQuery: !!(imwidth || imheight),
+                        derivative: videoOptions.derivative
+                      });
+                    } else {
+                      debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
+                        path: sourcePath
+                      });
+                    }
+                  })
+                  .catch(err => {
+                    error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
+                      error: err instanceof Error ? err.message : 'Unknown error',
+                      path: sourcePath
+                    });
+                  })
+                  .finally(() => {
+                    endTimedOperation(context, 'cache-storage');
+                  })
+              );
+            } else {
+              // No waitUntil available, try to store directly
               storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
                 .then(success => {
                   if (success) {
@@ -479,33 +525,14 @@ export const handleVideoRequest = withErrorHandling<
                 })
                 .finally(() => {
                   endTimedOperation(context, 'cache-storage');
-                })
-            );
-          } else {
-            // No waitUntil available, try to store directly
-            storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
-              .then(success => {
-                if (success) {
-                  debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
-                    path: sourcePath,
-                    hasIMQuery: !!(imwidth || imheight),
-                    derivative: videoOptions.derivative
-                  });
-                } else {
-                  debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
-                    path: sourcePath
-                  });
-                }
-              })
-              .catch(err => {
-                error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
-                  error: err instanceof Error ? err.message : 'Unknown error',
-                  path: sourcePath
                 });
-              })
-              .finally(() => {
-                endTimedOperation(context, 'cache-storage');
-              });
+            }
+          } else {
+            // KV cache is disabled in config
+            debug(context, logger, 'VideoHandler', 'Skipping KV cache storage (disabled by configuration)', {
+              enableKVCache: false
+            });
+            endTimedOperation(context, 'cache-storage');
           }
         } else {
           endTimedOperation(context, 'cache-storage');
@@ -528,7 +555,52 @@ export const handleVideoRequest = withErrorHandling<
         verboseEnabled: context.verboseEnabled
       });
       
-      const responseBuilder = new ResponseBuilder(response, context);
+      // Check if we should add cache tags to the final response
+      let finalResponse = response;
+      if (finalResponse.ok && finalResponse.status < 300) {
+        try {
+          // Import necessary functions
+          const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
+          const { generateCacheTags } = await import('../services/videoStorageService');
+          
+          // Check if cache tags are enabled in configuration
+          const cacheConfigMgr = CacheConfigurationManager.getInstance();
+          if (cacheConfigMgr.getConfig().enableCacheTags) {
+            const url = new URL(request.url);
+            
+            // Generate tags using the video options
+            // Cast videoOptions to match the expected type with index signature
+            const tags = generateCacheTags(url.pathname, videoOptions as any, finalResponse.headers);
+            if (tags.length > 0) {
+              debug(context, logger, 'VideoHandler', 'Applying cache tags to final response', {
+                tagCount: tags.length
+              });
+              
+              // Clone the response to modify headers
+              const newHeaders = new Headers(finalResponse.headers);
+              newHeaders.set('Cache-Tag', tags.join(','));
+              
+              finalResponse = new Response(finalResponse.body, {
+                status: finalResponse.status,
+                statusText: finalResponse.statusText,
+                headers: newHeaders
+              });
+              
+              addBreadcrumb(context, 'Cache', 'Applied Cache-Tags to final response', {
+                count: tags.length,
+                firstTags: tags.slice(0, 3).join(',')
+              });
+            }
+          }
+        } catch (tagError) {
+          // Fallback to original response if applying tags fails
+          error(context, logger, 'VideoHandler', 'Failed to apply cache tags', {
+            error: tagError instanceof Error ? tagError.message : String(tagError)
+          });
+        }
+      }
+      
+      const responseBuilder = new ResponseBuilder(finalResponse, context);
       const result = await responseBuilder.withDebugInfo().build();
       endTimedOperation(context, 'response-building');
       

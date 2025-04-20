@@ -60,6 +60,9 @@ export const CacheConfigSchema = z.object({
   // Caching method: 'cf' for Cloudflare-managed cache, 'cacheApi' for Cache API
   method: z.enum(['cf', 'cacheApi']).default('cacheApi'),
   
+  // Enable/disable KV cache operations
+  enableKVCache: z.boolean().default(true),
+  
   // Enable debug logging for cache operations
   debug: z.boolean().default(false),
   
@@ -107,6 +110,7 @@ export type CacheProfileConfiguration = z.infer<typeof CacheProfileSchema>;
 // Default configuration
 const defaultCacheConfig: CacheConfiguration = {
   method: 'cf',
+  enableKVCache: true,
   debug: false,
   defaultMaxAge: 86400,
   respectOriginHeaders: true,
@@ -265,6 +269,13 @@ export class CacheConfigurationManager {
    */
   public isDebugEnabled(): boolean {
     return this.config.debug;
+  }
+  
+  /**
+   * Check if KV cache is enabled
+   */
+  public isKVCacheEnabled(): boolean {
+    return this.config.enableKVCache !== false;
   }
 
   /**

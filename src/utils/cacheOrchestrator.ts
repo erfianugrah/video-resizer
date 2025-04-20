@@ -56,6 +56,9 @@ export async function withCaching(
   // This only checks for specific bypass parameters, not all query parameters
   const shouldBypass = cacheConfig.shouldBypassCache(url);
   const isNotGet = request.method !== 'GET';
+  // Check KV cache flag for cache operations
+  // Use the isKVCacheEnabled method instead of directly accessing the config property
+  const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
   const skipCache = isNotGet || shouldBypass;
   
   if (skipCache) {
@@ -86,8 +89,8 @@ export async function withCaching(
       
       let kvCachePromise: Promise<Response | null> = Promise.resolve(null);
       
-      // Only check KV if options and env are provided
-      if (options && env) {
+      // Only check KV if options and env are provided and KV cache is enabled
+      if (options && env && kvCacheEnabled) {
         const sourcePath = url.pathname;
         
         // Check if this is an IMQuery request for lookup
@@ -121,6 +124,9 @@ export async function withCaching(
           });
           return null;
         });
+      } else if (options && env && !kvCacheEnabled) {
+        // Log that KV cache is disabled by configuration
+        logDebug('KV cache is disabled by configuration, skipping lookup');
       }
       
       // Wait for both cache checks to complete
@@ -137,8 +143,8 @@ export async function withCaching(
         }
         
         // If we found in CF Cache but not in KV, populate KV in the background
-        // to improve global distribution of cached content
-        if (!kvResponse && env && options) {
+        // to improve global distribution of cached content, but only if KV cache is enabled
+        if (!kvResponse && env && options && kvCacheEnabled) {
           const sourcePath = url.pathname;
           const responseClone = cfResponse.clone();
           
@@ -215,6 +221,8 @@ export async function withCaching(
               );
             }
           }
+        } else if (!kvResponse && env && options && !kvCacheEnabled) {
+          logDebug('Skipping KV cache population (disabled by configuration)');
         }
         
         return cfResponse;
@@ -279,7 +287,7 @@ export async function withCaching(
     
     const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
     
-    if (options && env && response.ok && request.method === 'GET' && !skipCache && isVideoResponse && !isError) {
+    if (options && env && response.ok && request.method === 'GET' && !skipCache && isVideoResponse && !isError && kvCacheEnabled) {
       const sourcePath = url.pathname;
       const responseClone = response.clone();
       
@@ -348,6 +356,12 @@ export async function withCaching(
           });
         }
       }
+    } else if (options && env && request.method === 'GET' && !kvCacheEnabled && response.ok && !skipCache && isVideoResponse && !isError) {
+      // Explicitly log that we're skipping due to KV cache being disabled
+      logDebug('Skipped KV storage (disabled by configuration)', {
+        path: url.pathname,
+        contentType
+      });
     } else if (options && env && request.method === 'GET') {
       // Log reasons for skipping storage
       logDebug('Skipped KV storage', {
@@ -357,7 +371,8 @@ export async function withCaching(
         isVideoResponse,
         isError,
         statusCode: response.status,
-        contentType
+        contentType,
+        kvCacheEnabled
       });
     }
     

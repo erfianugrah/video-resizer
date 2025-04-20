@@ -1264,10 +1264,12 @@ function generateCacheTagsImpl(
   let prefix = 'video-'; // Default fallback
   
   try {
+    // Properly use the configured cacheTagPrefix from CacheConfigurationManager
     prefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
     
     logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
-      prefix
+      prefix,
+      source: 'CacheConfigurationManager'
     });
   } catch (err) {
     // In case of any error with cache config, fall back to the default prefix
