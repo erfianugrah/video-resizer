@@ -389,8 +389,8 @@ export const handleVideoRequest = withErrorHandling<
         }
       }
       
-      // Store the response in cache if it's cacheable
-      if (response.headers.get('Cache-Control')?.includes('max-age=')) {
+      // Store the response in cache if it's cacheable and not in debug mode
+      if (response.headers.get('Cache-Control')?.includes('max-age=') && !skipCfCache) {
         // Use a non-blocking cache write to avoid delaying the response
         addBreadcrumb(context, 'Cache', 'Caching response', {
           status: response.status,
@@ -414,8 +414,8 @@ export const handleVideoRequest = withErrorHandling<
             });
           });
         
-        // Also store in KV cache if environment is available
-        if (env && videoOptions) {
+        // Also store in KV cache if environment is available and not in debug mode
+        if (env && videoOptions && !skipCfCache) {
           // Get KV cache configuration
           const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
           const cacheConfig = CacheConfigurationManager.getInstance();
@@ -537,6 +537,13 @@ export const handleVideoRequest = withErrorHandling<
         } else {
           endTimedOperation(context, 'cache-storage');
         }
+      } else if (skipCfCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
+        // Log that we're skipping cache storage due to debug mode
+        debug(context, logger, 'VideoHandler', 'Skipping cache storage due to debug mode', {
+          debugEnabled: context.debugEnabled,
+          hasDebugParam: url.searchParams.has('debug'),
+          debugParamValue: url.searchParams.get('debug')
+        });
       }
 
       // Use ResponseBuilder for consistent response handling including range requests
