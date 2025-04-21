@@ -56,7 +56,7 @@
 		"typescript": "^5.5.2",
 		"typescript-eslint": "^8.26.1",
 		"vitest": "^3.0.8",
-		"wrangler": "^4.10.0"
+		"wrangler": "^4.12.0"
 	},
 	"dependencies": {
 		"aws4fetch": "^1.0.20",
