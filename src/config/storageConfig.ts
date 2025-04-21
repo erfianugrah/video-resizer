@@ -9,11 +9,13 @@ import { z } from 'zod';
 // Auth configuration schema
 export const AuthConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  type: z.enum(['aws-s3', 'bearer', 'header', 'query']).default('header'),
+  type: z.enum(['aws-s3', 'aws-s3-presigned-url', 'bearer', 'header', 'query']).default('header'),
   accessKeyVar: z.string().optional(),
   secretKeyVar: z.string().optional(),
   region: z.string().optional(),
   service: z.string().optional(),
+  expiresInSeconds: z.number().int().positive().optional(),
+  sessionTokenVar: z.string().optional(),
   headers: z.record(z.string()).optional(),
 });
 

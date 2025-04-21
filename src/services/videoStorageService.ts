@@ -59,6 +59,8 @@ interface AuthConfig {
   secretKeyVar?: string;
   region?: string;
   service?: string;
+  expiresInSeconds?: number;
+  sessionTokenVar?: string;
   headers?: Record<string, string>;
 }
 
@@ -403,7 +405,8 @@ async function fetchFromRemoteImpl(
   
   // Check if authentication is required for this origin
   // Set the base URL
-  const finalUrl = new URL(transformedPath, baseUrl).toString();
+  let finalUrl = new URL(transformedPath, baseUrl).toString();
+  const originalFinalUrl = finalUrl; // Store original URL for header signing
   
   // Check if remote auth is enabled specifically for this remote URL
   if (config?.storage?.remoteAuth?.enabled) {
@@ -444,7 +447,7 @@ async function fetchFromRemoteImpl(
             });
             
             // Create a request to sign
-            const signRequest = new Request(finalUrl, {
+            const signRequest = new Request(originalFinalUrl, {
               method: 'GET'
             });
             
@@ -506,6 +509,90 @@ async function fetchFromRemoteImpl(
         logDebug('VideoStorageService', 'AWS S3 auth requires origin-auth to be enabled', {
           url: finalUrl
         });
+      }
+    } else if (remoteAuth.type === 'aws-s3-presigned-url') {
+      // Handle presigned URL generation
+      const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+      const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+      const sessionTokenVar = remoteAuth.sessionTokenVar;
+      
+      // Access environment variables
+      const envRecord = env as unknown as Record<string, string | undefined>;
+      
+      const accessKey = envRecord[accessKeyVar] as string;
+      const secretKey = envRecord[secretKeyVar] as string;
+      const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+      
+      // Get expiration time for presigned URL
+      const expiresIn = remoteAuth.expiresInSeconds ?? 3600;
+      
+      if (accessKey && secretKey) {
+        try {
+          // Import AwsClient
+          const { AwsClient } = await import('aws4fetch');
+          
+          // Setup AWS client
+          const aws = new AwsClient({
+            accessKeyId: accessKey,
+            secretAccessKey: secretKey,
+            sessionToken,
+            service: remoteAuth.service ?? 's3',
+            region: remoteAuth.region ?? 'us-east-1'
+          });
+          
+          // Create a request to sign
+          const signRequest = new Request(originalFinalUrl, {
+            method: 'GET'
+          });
+          
+          // Sign the request with query parameters instead of headers
+          const signedRequest = await aws.sign(signRequest, {
+            aws: {
+              signQuery: true
+            },
+            expiresIn
+          });
+          
+          // Use the signed URL with query parameters
+          finalUrl = signedRequest.url;
+          
+          // Use our helper function for consistent logging
+          logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL', {
+            // Avoid logging the full URL which contains credentials
+            urlLength: finalUrl.length,
+            expiresIn,
+            success: true
+          });
+        } catch (err) {
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'Error generating AWS S3 Presigned URL',
+            err,
+            {
+              url: originalFinalUrl,
+              accessKeyVar,
+              secretKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Fail if we can't generate the presigned URL
+          return null;
+        }
+      } else {
+        // Log error with standardized error handling
+        logErrorWithContext(
+          'AWS credentials not found for presigned URL generation',
+          new Error('Missing credentials'),
+          {
+            accessKeyVar,
+            secretKeyVar
+          },
+          'VideoStorageService'
+        );
+        
+        // Fail if credentials are missing
+        return null;
       }
     } else if (remoteAuth.type === 'bearer') {
       // Implement bearer token auth
@@ -625,7 +712,8 @@ async function fetchFromFallbackImpl(
   });
   
   // Set the base URL
-  const finalUrl = new URL(transformedPath, fallbackUrl).toString();
+  let finalUrl = new URL(transformedPath, fallbackUrl).toString();
+  const originalFinalUrl = finalUrl; // Store original URL for header signing
   
   // Check if fallback auth is enabled specifically for this URL
   if (config?.storage?.fallbackAuth?.enabled) {
@@ -665,7 +753,7 @@ async function fetchFromFallbackImpl(
             });
             
             // Create a request to sign
-            const signRequest = new Request(finalUrl, {
+            const signRequest = new Request(originalFinalUrl, {
               method: 'GET'
             });
             
@@ -721,6 +809,90 @@ async function fetchFromFallbackImpl(
             return null;
           }
         }
+      }
+    } else if (fallbackAuth.type === 'aws-s3-presigned-url') {
+      // Handle presigned URL generation
+      const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+      const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+      const sessionTokenVar = fallbackAuth.sessionTokenVar;
+      
+      // Access environment variables
+      const envRecord = env as unknown as Record<string, string | undefined>;
+      
+      const accessKey = envRecord[accessKeyVar] as string;
+      const secretKey = envRecord[secretKeyVar] as string;
+      const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+      
+      // Get expiration time for presigned URL
+      const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
+      
+      if (accessKey && secretKey) {
+        try {
+          // Import AwsClient
+          const { AwsClient } = await import('aws4fetch');
+          
+          // Setup AWS client
+          const aws = new AwsClient({
+            accessKeyId: accessKey,
+            secretAccessKey: secretKey,
+            sessionToken,
+            service: fallbackAuth.service ?? 's3',
+            region: fallbackAuth.region ?? 'us-east-1'
+          });
+          
+          // Create a request to sign
+          const signRequest = new Request(originalFinalUrl, {
+            method: 'GET'
+          });
+          
+          // Sign the request with query parameters instead of headers
+          const signedRequest = await aws.sign(signRequest, {
+            aws: {
+              signQuery: true
+            },
+            expiresIn
+          });
+          
+          // Use the signed URL with query parameters
+          finalUrl = signedRequest.url;
+          
+          // Use our helper function for consistent logging
+          logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL for fallback', {
+            // Avoid logging the full URL which contains credentials
+            urlLength: finalUrl.length,
+            expiresIn,
+            success: true
+          });
+        } catch (err) {
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'Error generating AWS S3 Presigned URL for fallback',
+            err,
+            {
+              url: originalFinalUrl,
+              accessKeyVar,
+              secretKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Fail if we can't generate the presigned URL
+          return null;
+        }
+      } else {
+        // Log error with standardized error handling
+        logErrorWithContext(
+          'AWS credentials not found for presigned URL generation (fallback)',
+          new Error('Missing credentials'),
+          {
+            accessKeyVar,
+            secretKeyVar
+          },
+          'VideoStorageService'
+        );
+        
+        // Fail if credentials are missing
+        return null;
       }
     } else if (fallbackAuth.type === 'bearer') {
       // Implement bearer token auth
