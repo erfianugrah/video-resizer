@@ -178,6 +178,53 @@ Configuration for URL path matching and processing:
 
 The `CacheConfigurationManager` handles caching behavior and cache profiles.
 
+### TTL Precedence Hierarchy
+
+The video-resizer uses a hierarchy of TTL configurations with clear precedence:
+
+1. **Path Pattern TTLs** (highest priority) - Specific TTL configuration for a matched URL path pattern
+   ```json
+   "pathPatterns": [{
+     "name": "standard",
+     "matcher": "^/(.*\\.(mp4|webm|mov))",
+     "ttl": {
+       "ok": 300,
+       "redirects": 300,
+       "clientError": 60,
+       "serverError": 10
+     }
+   }]
+   ```
+
+2. **Content-type Profile TTLs** (medium priority) - TTL configuration based on content type or URL pattern
+   ```json
+   "profiles": {
+     "videoFiles": {
+       "regex": "\\.(mp4|webm|mov)$",
+       "ttl": {
+         "ok": 300,
+         "redirects": 300,
+         "clientError": 60,
+         "serverError": 10
+       }
+     }
+   }
+   ```
+
+3. **Global Default TTLs** (lowest priority) - Base TTL configuration when no other rules match
+   ```json
+   "cache": {
+     "ttl": {
+       "ok": 300,
+       "redirects": 300,
+       "clientError": 60,
+       "serverError": 10
+     }
+   }
+   ```
+
+When determining which TTL to use, the system first checks if the URL matches a path pattern and uses that TTL if available. If no path pattern matches or the path pattern doesn't specify a TTL, it falls back to a matching content-type profile. If no profile matches, it uses the global default TTL.
+
 ### Cache Method Options
 
 | Option | Description | Default |

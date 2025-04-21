@@ -413,21 +413,50 @@ export const prepareVideoTransformation = withErrorHandling<
     });
     
     // If the path pattern has a specific cache TTL, override the config
-    if (pathPattern.cacheTtl && cacheConfig) {
-      // Create a new cache config with the pattern's TTL for successful responses
+    // Check for both legacy cacheTtl property and modern ttl object structure
+    const hasLegacyTtl = pathPattern.cacheTtl !== undefined;
+    const hasModernTtl = pathPattern.ttl && typeof pathPattern.ttl === 'object';
+    
+    if ((hasLegacyTtl || hasModernTtl) && cacheConfig) {
+      let updatedTtl = { ...cacheConfig.ttl };
+      
+      // Source of TTL value for logging
+      let ttlSource = 'unknown';
+      
+      // Priority: Use ttl object if available, otherwise use cacheTtl
+      if (hasModernTtl && pathPattern.ttl) {
+        // Modern ttl object structure - merge with existing ttl
+        if (pathPattern.ttl.ok !== undefined) {
+          updatedTtl.ok = pathPattern.ttl.ok;
+        }
+        if (pathPattern.ttl.redirects !== undefined) {
+          updatedTtl.redirects = pathPattern.ttl.redirects;
+        }
+        if (pathPattern.ttl.clientError !== undefined) {
+          updatedTtl.clientError = pathPattern.ttl.clientError;
+        }
+        if (pathPattern.ttl.serverError !== undefined) {
+          updatedTtl.serverError = pathPattern.ttl.serverError;
+        }
+        ttlSource = 'ttl object';
+      } else if (hasLegacyTtl && pathPattern.cacheTtl !== undefined) {
+        // Legacy cacheTtl property - only update ok status
+        updatedTtl.ok = pathPattern.cacheTtl;
+        ttlSource = 'legacy cacheTtl';
+      }
+      
+      // Update cache config with new TTL values
       cacheConfig = {
         ...cacheConfig,
-        ttl: {
-          ...cacheConfig.ttl,
-          ok: pathPattern.cacheTtl
-        }
+        ttl: updatedTtl
       };
       
       // Add breadcrumb for path-specific cache TTL
       if (requestContext) {
         addBreadcrumb(requestContext, 'Cache', 'Using path-specific cache TTL', {
           pathName: pathPattern.name,
-          ttl: pathPattern.cacheTtl,
+          ttlSource: ttlSource,
+          ttl: updatedTtl.ok,
           originalTtl: cacheConfig.ttl?.ok || undefined,
           reason: 'Pattern override'
         });
@@ -435,13 +464,16 @@ export const prepareVideoTransformation = withErrorHandling<
       
       logDebug('Using path-specific cache TTL', {
         pathName: pathPattern.name,
-        ttl: pathPattern.cacheTtl
+        ttlSource: ttlSource,
+        ttl: updatedTtl.ok
       });
     }
     
     // Add cache info to diagnostics
     diagnosticsInfo.cacheability = cacheConfig?.cacheability;
-    diagnosticsInfo.cacheTtl = cacheConfig?.ttl.ok;
+    if (cacheConfig?.ttl.ok !== undefined) {
+      diagnosticsInfo.cacheTtl = cacheConfig.ttl.ok;
+    }
     
     // Assign the derivative value here 
     const derivative = options.derivative || '';

@@ -233,8 +233,8 @@
 				"baseUrl": null,
 				"originUrl": null,
 				"ttl": {
-					"ok": 86400,
-					"redirects": 3600,
+					"ok": 300,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				},
@@ -252,7 +252,7 @@
 				"originUrl": "https://videos.erfi.dev",
 				"ttl": {
 					"ok": 604800,
-					"redirects": 3600,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				},
@@ -269,7 +269,7 @@
 				"originUrl": "https://videos.erfi.dev",
 				"ttl": {
 					"ok": 172800,
-					"redirects": 3600,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				},
@@ -286,8 +286,8 @@
 				"baseUrl": null,
 				"originUrl": "https://videos.erfi.dev",
 				"ttl": {
-					"ok": 86400,
-					"redirects": 3600,
+					"ok": 300,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				},
@@ -298,7 +298,7 @@
 	"cache": {
 		"method": "cacheApi",
 		"debug": false,
-		"defaultMaxAge": 86400,
+		"defaultMaxAge": 300,
 		"respectOriginHeaders": true,
 		"cacheEverything": false,
 		"enableCacheTags": true,
@@ -309,7 +309,7 @@
 			"bypass"
 		],
 		"bypassHeaderValue": "no-cache",
-		"enableKVCache": true,
+		"enableKVCache": false,
 		"maxSizeBytes": 26214400,
 		"fallback": {
 			"enabled": true,
@@ -345,8 +345,8 @@
 			]
 		},
 		"ttl": {
-			"ok": 86400,
-			"redirects": 3600,
+			"ok": 300,
+			"redirects": 300,
 			"clientError": 60,
 			"serverError": 10
 		},
@@ -357,8 +357,8 @@
 				"videoCompression": "auto",
 				"useTtlByStatus": true,
 				"ttl": {
-					"ok": 86400,
-					"redirects": 3600,
+					"ok": 300,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				}
@@ -369,8 +369,8 @@
 				"videoCompression": "auto",
 				"useTtlByStatus": true,
 				"ttl": {
-					"ok": 86400,
-					"redirects": 3600,
+					"ok": 300,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				}
@@ -381,8 +381,8 @@
 				"videoCompression": "auto",
 				"useTtlByStatus": true,
 				"ttl": {
-					"ok": 86400,
-					"redirects": 3600,
+					"ok": 300,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				}
@@ -394,7 +394,7 @@
 				"useTtlByStatus": true,
 				"ttl": {
 					"ok": 604800,
-					"redirects": 3600,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				}
@@ -406,7 +406,7 @@
 				"useTtlByStatus": true,
 				"ttl": {
 					"ok": 172800,
-					"redirects": 3600,
+					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
 				}

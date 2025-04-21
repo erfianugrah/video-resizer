@@ -14,7 +14,13 @@ export interface PathPattern {
   baseUrl: string | null;
   originUrl: string | null;
   quality?: string; // Optional quality preset for this path pattern
-  cacheTtl?: number; // Optional custom cache TTL for this path pattern
+  cacheTtl?: number; // Legacy custom cache TTL for this path pattern (for backward compatibility)
+  ttl?: {  // Modern TTL configuration structure
+    ok: number;
+    redirects: number;
+    clientError: number;
+    serverError: number;
+  };
   priority?: number; // Optional priority for pattern matching (higher values checked first)
   transformationOverrides?: Record<string, unknown>; // Optional parameter overrides for this path
   captureGroups?: string[]; // Names for regex capture groups
