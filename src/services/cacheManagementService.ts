@@ -335,14 +335,47 @@ export const cacheResponse = withErrorHandling<
       // If we have an execution context, use waitUntil with specialized error handling
       const cachePutOperation = withErrorHandling(
         async () => {
+          // Log detailed request information before cache put
+          const requestHeaders: Record<string, string> = {};
+          for (const [key, value] of request.headers.entries()) {
+            requestHeaders[key] = value;
+          }
+          
+          // Log detailed response information before cache put
+          const responseHeaders: Record<string, string> = {};
+          for (const [key, value] of responseClone.headers.entries()) {
+            responseHeaders[key] = value;
+          }
+          
+          logDebug('Preparing Cache API put operation (waitUntil)', {
+            url: request.url,
+            method: request.method,
+            status: responseClone.status,
+            contentType: responseClone.headers.get('Content-Type'),
+            contentLength: responseClone.headers.get('Content-Length'),
+            cacheControl: responseClone.headers.get('Cache-Control'),
+            cacheTag: responseClone.headers.get('Cache-Tag'),
+            requestHeaders: Object.keys(requestHeaders),
+            responseHeaders: Object.keys(responseHeaders),
+            requestId: Math.random().toString(36).substring(2, 10),
+            timestamp: new Date().toISOString()
+          });
+          
+          // Execute and time the put operation
+          const putStartTime = Date.now();
           await cache.put(request, responseClone);
+          const putDuration = Date.now() - putStartTime;
           
           logDebug('Stored response in Cloudflare Cache API (waitUntil)', {
             url: request.url,
             method: 'cache-api',
             status: responseClone.status,
             cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag')
+            cacheTag: responseClone.headers.get('Cache-Tag'),
+            contentType: responseClone.headers.get('Content-Type'),
+            contentLength: responseClone.headers.get('Content-Length'),
+            putDurationMs: putDuration,
+            timestamp: new Date().toISOString()
           });
         },
         {
@@ -366,8 +399,36 @@ export const cacheResponse = withErrorHandling<
           // Get the request context if available
           const requestContext = getCurrentContext();
           
-          // Put the response in the cache
+          // Log detailed request information before cache put
+          const requestHeaders: Record<string, string> = {};
+          for (const [key, value] of request.headers.entries()) {
+            requestHeaders[key] = value;
+          }
+          
+          // Log detailed response information before cache put
+          const responseHeaders: Record<string, string> = {};
+          for (const [key, value] of responseClone.headers.entries()) {
+            responseHeaders[key] = value;
+          }
+          
+          logDebug('Preparing Cache API put operation (direct)', {
+            url: request.url,
+            method: request.method,
+            status: responseClone.status,
+            contentType: responseClone.headers.get('Content-Type'),
+            contentLength: responseClone.headers.get('Content-Length'),
+            cacheControl: responseClone.headers.get('Cache-Control'),
+            cacheTag: responseClone.headers.get('Cache-Tag'),
+            requestHeaders: Object.keys(requestHeaders),
+            responseHeaders: Object.keys(responseHeaders),
+            requestId: Math.random().toString(36).substring(2, 10),
+            timestamp: new Date().toISOString()
+          });
+          
+          // Execute and time the put operation
+          const putStartTime = Date.now();
           await cache.put(request, responseClone);
+          const putDuration = Date.now() - putStartTime;
           
           // Add breadcrumb for successful cache store
           if (requestContext) {
@@ -377,7 +438,8 @@ export const cacheResponse = withErrorHandling<
               status: responseClone.status,
               cacheControl: responseClone.headers.get('Cache-Control'),
               contentType: responseClone.headers.get('Content-Type'),
-              contentLength: responseClone.headers.get('Content-Length')
+              contentLength: responseClone.headers.get('Content-Length'),
+              putDurationMs: putDuration
             });
           }
           
@@ -386,7 +448,12 @@ export const cacheResponse = withErrorHandling<
             method: 'cache-api',
             status: responseClone.status,
             cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag')
+            cacheTag: responseClone.headers.get('Cache-Tag'),
+            contentType: responseClone.headers.get('Content-Type'),
+            contentLength: responseClone.headers.get('Content-Length'),
+            putDurationMs: putDuration,
+            timestamp: new Date().toISOString(),
+            success: true
           });
         },
         {
@@ -472,8 +539,26 @@ export const getCachedResponse = withErrorHandling<
         // Get the default cache
         const cache = caches.default;
         
+        // Log detailed request information before cache match
+        const requestHeaders: Record<string, string> = {};
+        for (const [key, value] of request.headers.entries()) {
+          requestHeaders[key] = value;
+        }
+        
+        logDebug('Attempting Cache API match operation', {
+          url: request.url,
+          method: request.method,
+          isRangeRequest,
+          rangeHeader,
+          requestId: Math.random().toString(36).substring(2, 10),
+          headersPresent: Object.keys(requestHeaders),
+          timestamp: new Date().toISOString()
+        });
+
         // Try to find the response in the cache
+        const matchStartTime = Date.now();
         const cachedResponse = await cache.match(request);
+        const matchDuration = Date.now() - matchStartTime;
         
         // Add breadcrumb for cache result
         const requestContext = getCurrentContext();
@@ -483,15 +568,44 @@ export const getCachedResponse = withErrorHandling<
               url: request.url,
               method: 'cache-api',
               status: cachedResponse.status,
-              isRangeRequest
+              isRangeRequest,
+              matchDurationMs: matchDuration
             });
           } else {
             addBreadcrumb(requestContext, 'Cache', 'Cache miss', {
               url: request.url,
               method: 'cache-api',
-              isRangeRequest
+              isRangeRequest,
+              matchDurationMs: matchDuration
             });
           }
+        }
+        
+        // Log detailed result of cache match
+        if (cachedResponse) {
+          // Gather header information from cached response
+          const responseHeaders: Record<string, string> = {};
+          for (const [key, value] of cachedResponse.headers.entries()) {
+            responseHeaders[key] = value;
+          }
+          
+          logDebug('Cache API match operation result: HIT', {
+            url: request.url,
+            status: cachedResponse.status,
+            statusText: cachedResponse.statusText,
+            contentType: cachedResponse.headers.get('Content-Type'),
+            contentLength: cachedResponse.headers.get('Content-Length'),
+            cfCacheStatus: cachedResponse.headers.get('CF-Cache-Status'),
+            etag: cachedResponse.headers.get('ETag'),
+            matchDurationMs: matchDuration,
+            headersPresent: Object.keys(responseHeaders)
+          });
+        } else {
+          logDebug('Cache API match operation result: MISS', {
+            url: request.url,
+            matchDurationMs: matchDuration,
+            timestamp: new Date().toISOString()
+          });
         }
         
         if (cachedResponse) {
