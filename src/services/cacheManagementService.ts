@@ -198,26 +198,136 @@ export const applyCacheHeaders = withErrorHandling<
 );
 
 /**
+ * Prepares a response for caching by creating a new response with the same body but with
+ * enhanced headers for proper range request support and caching
+ * 
+ * @param response - The response to prepare for caching
+ * @returns A new Response object prepared for caching
+ */
+export const prepareResponseForCaching = withErrorHandling<
+  [Response],
+  Promise<Response>
+>(
+  async function prepareResponseForCachingImpl(
+    response: Response
+  ): Promise<Response> {
+    // Clone the response to avoid consuming it
+    const responseClone = response.clone();
+    
+    // Check if this is a video response that needs range support
+    const responseContentType = responseClone.headers.get('content-type') || '';
+    const isVideoResponseType = responseContentType.startsWith('video/') || responseContentType.startsWith('audio/');
+    
+    let enhancedResponse: Response;
+    
+    if (isVideoResponseType) {
+      try {
+        // For video content, fully consume the body and create a completely new response
+        // This ensures we have full control over the response characteristics
+        const arrayBuffer = await responseClone.arrayBuffer();
+        
+        // Create new headers with range request support
+        const headers = new Headers();
+        
+        // Copy all the original headers
+        responseClone.headers.forEach((value, key) => {
+          headers.set(key, value);
+        });
+        
+        // Always set Accept-Ranges for video content
+        headers.set('Accept-Ranges', 'bytes');
+        
+        // Ensure Content-Length is properly set
+        headers.set('Content-Length', arrayBuffer.byteLength.toString());
+        
+        // Add ETag if not present (helps with validation)
+        if (!headers.has('ETag')) {
+          const hashCode = Math.abs(arrayBuffer.byteLength).toString(16);
+          headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+        }
+        
+        // Set Last-Modified if not present
+        if (!headers.has('Last-Modified')) {
+          headers.set('Last-Modified', new Date().toUTCString());
+        }
+        
+        logDebug('Creating fully controlled response for range request support', {
+          contentType: responseContentType,
+          contentLength: arrayBuffer.byteLength,
+          status: responseClone.status,
+          hasEtag: headers.has('ETag'),
+          hasLastModified: headers.has('Last-Modified')
+        });
+        
+        // Create a completely new response with the full body and all headers
+        enhancedResponse = new Response(arrayBuffer, {
+          status: responseClone.status,
+          statusText: responseClone.statusText,
+          headers: headers
+        });
+      } catch (err) {
+        // If there's an error consuming the body, log it and continue with the original response
+        logDebug('Error creating fully controlled response, falling back to header modification', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+        
+        // Fall back to just modifying headers
+        const headers = new Headers(responseClone.headers);
+        
+        // Always set Accept-Ranges for video content
+        if (!headers.has('Accept-Ranges')) {
+          headers.set('Accept-Ranges', 'bytes');
+        }
+        
+        logDebug('Enhanced response headers for video caching with range support', {
+          contentType: responseContentType,
+          acceptRanges: headers.get('Accept-Ranges')
+        });
+        
+        // Create a new response with the enhanced headers
+        enhancedResponse = new Response(responseClone.body, {
+          status: responseClone.status,
+          statusText: responseClone.statusText,
+          headers: headers
+        });
+      }
+    } else {
+      // For non-video content, just use the cloned response as is
+      enhancedResponse = responseClone;
+    }
+    
+    return enhancedResponse;
+  },
+  {
+    functionName: 'prepareResponseForCaching',
+    component: 'CacheManagementService',
+    logErrors: true
+  }
+);
+
+/**
  * Store a response in the Cloudflare cache 
  * Based on configuration, uses either Cache API or cf object
  * 
  * @param request - The original request
  * @param response - The response to cache
  * @param context - Optional execution context for waitUntil
+ * @param isTransformedResponse - Whether this response came from a transformed URL
  * @returns Promise that resolves when caching is complete
  */
 export const cacheResponse = withErrorHandling<
-  [Request, Response, ExecutionContext | undefined],
-  Promise<void>
+  [Request, Response, ExecutionContext | undefined, boolean?],
+  Response | null
 >(
   async function cacheResponseImpl(
     request: Request, 
     response: Response,
-    context?: ExecutionContext
-  ): Promise<void> {
+    context?: ExecutionContext,
+    isTransformedResponse?: boolean
+  ): Promise<Response | null> {
     // Only cache successful GET requests
     if (request.method !== 'GET' || !response.ok) {
-      return;
+      return null;
     }
     
     // Check the content type
@@ -266,7 +376,7 @@ export const cacheResponse = withErrorHandling<
         isError,
         isCacheableContent
       });
-      return;
+      return null;
     }
     
     // Get the cache configuration manager
@@ -284,7 +394,7 @@ export const cacheResponse = withErrorHandling<
           cacheControl: response.headers.get('Cache-Control')
         });
       }
-      return;
+      return null;
     }
     
     // Get the response Cache-Control header to check if we should cache
@@ -294,38 +404,23 @@ export const cacheResponse = withErrorHandling<
         url: request.url,
         cacheControl
       });
-      return;
+      return null;
     }
     
-    // Clone the response to avoid consuming it
-    let responseClone = response.clone();
+    // Ensure we properly handle the case of transformed responses
+    let cacheRequest = request;
+    let responseToCache = response;
     
-    // Check if this is a video response that needs range support
-    const responseContentType = responseClone.headers.get('content-type') || '';
-    const isVideoResponseType = responseContentType.startsWith('video/') || responseContentType.startsWith('audio/');
-    
-    if (isVideoResponseType) {
-      // Create new headers with range request support
-      const headers = new Headers(responseClone.headers);
-      
-      // Always set Accept-Ranges for video content
-      if (!headers.has('Accept-Ranges')) {
-        headers.set('Accept-Ranges', 'bytes');
-      }
-      
-      logDebug('Enhanced response headers for video caching with range support', {
-        url: request.url,
-        contentType: responseContentType,
-        acceptRanges: headers.get('Accept-Ranges')
-      });
-      
-      // Create a new response with the enhanced headers
-      responseClone = new Response(responseClone.body, {
-        status: responseClone.status,
-        statusText: responseClone.statusText,
-        headers: headers
+    if (isTransformedResponse) {
+      logDebug('Handling transformed response for caching', {
+        originalUrl: request.url,
+        contentType: response.headers.get('content-type'),
+        isTransformed: true
       });
     }
+    
+    // Prepare the response with enhanced support for range requests
+    let enhancedResponse = await prepareResponseForCaching(responseToCache);
     
     // Get the default cache
     const cache = caches.default;
@@ -343,37 +438,188 @@ export const cacheResponse = withErrorHandling<
           
           // Log detailed response information before cache put
           const responseHeaders: Record<string, string> = {};
-          for (const [key, value] of responseClone.headers.entries()) {
+          for (const [key, value] of enhancedResponse.headers.entries()) {
             responseHeaders[key] = value;
           }
           
           logDebug('Preparing Cache API put operation (waitUntil)', {
             url: request.url,
             method: request.method,
-            status: responseClone.status,
-            contentType: responseClone.headers.get('Content-Type'),
-            contentLength: responseClone.headers.get('Content-Length'),
-            cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag'),
+            status: enhancedResponse.status,
+            contentType: enhancedResponse.headers.get('Content-Type'),
+            contentLength: enhancedResponse.headers.get('Content-Length'),
+            cacheControl: enhancedResponse.headers.get('Cache-Control'),
+            cacheTag: enhancedResponse.headers.get('Cache-Tag'),
+            acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
+            etag: enhancedResponse.headers.get('ETag'),
+            lastModified: enhancedResponse.headers.get('Last-Modified'),
             requestHeaders: Object.keys(requestHeaders),
             responseHeaders: Object.keys(responseHeaders),
             requestId: Math.random().toString(36).substring(2, 10),
             timestamp: new Date().toISOString()
           });
           
-          // Execute and time the put operation
+          // If this is a transformed response, we need special handling to store it correctly
           const putStartTime = Date.now();
-          await cache.put(request, responseClone);
+          
+          if (isTransformedResponse) {
+            // Create a new request with the original URL to use as a cache key
+            // This is the key to making transformed content available with the original URL
+            const cacheKey = new Request(request.url, {
+              method: request.method,
+              headers: request.headers
+            });
+            
+            // Create a fully controlled response for transformed content
+            let transformedBody;
+            try {
+              // Clone and read the body to ensure we have full control over it
+              transformedBody = await enhancedResponse.clone().arrayBuffer();
+              
+              // Create new headers with proper caching directives
+              const headers = new Headers();
+              
+              // Copy all the original headers
+              enhancedResponse.headers.forEach((value, key) => {
+                headers.set(key, value);
+              });
+              
+              // Always set Accept-Ranges for video content to support byte-range requests
+              headers.set('Accept-Ranges', 'bytes');
+              
+              // Make sure Content-Length is accurate
+              headers.set('Content-Length', transformedBody.byteLength.toString());
+              
+              // Add strong validation headers
+              if (!headers.has('ETag')) {
+                const hashCode = Math.abs(transformedBody.byteLength).toString(16);
+                headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+              }
+              
+              if (!headers.has('Last-Modified')) {
+                headers.set('Last-Modified', new Date().toUTCString());
+              }
+              
+              // Ensure Cache-Control header is set, unless specifically no-store
+              const currentCacheControl = headers.get('Cache-Control');
+              if (!currentCacheControl || currentCacheControl.includes('no-cache')) {
+                // Default to 1 day cache for transformed content
+                headers.set('Cache-Control', 'public, max-age=86400');
+              }
+              
+              // Add a special header to mark this response as prepared for caching
+              headers.set('X-Cache-Prepared', 'true');
+              
+              // Create a new fully controlled response to store in cache
+              const cachableResponse = new Response(transformedBody, {
+                status: enhancedResponse.status,
+                statusText: enhancedResponse.statusText,
+                headers: headers
+              });
+              
+              logDebug('Storing fully controlled transformed response with original URL as key', {
+                originalUrl: request.url,
+                contentType: headers.get('Content-Type'),
+                contentLength: headers.get('Content-Length'),
+                cacheControl: headers.get('Cache-Control'),
+                acceptRanges: headers.get('Accept-Ranges'),
+                etag: headers.get('ETag'),
+                lastModified: headers.get('Last-Modified'),
+                timestamp: new Date().toISOString()
+              });
+              
+              // Store using the original URL as key but with the transformed content
+              await cache.put(cacheKey, cachableResponse.clone());
+              
+              // Double-check that we successfully stored it by trying to retrieve it immediately
+              const verifyResponse = await cache.match(cacheKey);
+              
+              if (verifyResponse) {
+                // Log detailed verification information
+                logDebug('Successfully verified transformed response in cache', {
+                  originalUrl: request.url,
+                  success: true,
+                  status: verifyResponse.status,
+                  contentType: verifyResponse.headers.get('Content-Type'),
+                  contentLength: verifyResponse.headers.get('Content-Length'),
+                  cacheControl: verifyResponse.headers.get('Cache-Control'),
+                  etag: verifyResponse.headers.get('ETag'),
+                  acceptRanges: verifyResponse.headers.get('Accept-Ranges'),
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Update the enhanced response to use our fully controlled cachable version
+                enhancedResponse = cachableResponse;
+              } else {
+                logDebug('Failed to verify cached transformed response - will try again with simpler approach', {
+                  originalUrl: request.url,
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Fallback to simpler approach with minimal manipulation
+                const simpleHeaders = new Headers(enhancedResponse.headers);
+                simpleHeaders.set('Accept-Ranges', 'bytes');
+                simpleHeaders.set('X-Cache-Simple-Fallback', 'true');
+                
+                // Create a simpler response
+                const simpleResponse = new Response(await enhancedResponse.clone().arrayBuffer(), {
+                  status: enhancedResponse.status,
+                  statusText: enhancedResponse.statusText,
+                  headers: simpleHeaders
+                });
+                
+                // Try again with the simpler response
+                await cache.put(cacheKey, simpleResponse.clone());
+                
+                // Verify again
+                const secondVerifyResponse = await cache.match(cacheKey);
+                logDebug('Second verification attempt for cached transformed response', {
+                  originalUrl: request.url,
+                  success: !!secondVerifyResponse,
+                  approach: 'simple',
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Update the enhanced response if successful
+                if (secondVerifyResponse) {
+                  enhancedResponse = simpleResponse;
+                }
+              }
+            } catch (err) {
+              logDebug('Error creating fully controlled response for cache storage, falling back to basic approach', {
+                originalUrl: request.url,
+                error: err instanceof Error ? err.message : String(err),
+                timestamp: new Date().toISOString()
+              });
+              
+              // Fallback to original cache put approach
+              await cache.put(cacheKey, enhancedResponse.clone());
+              
+              // Verify one more time
+              const fallbackVerifyResponse = await cache.match(cacheKey);
+              logDebug('Fallback cache put verification', {
+                originalUrl: request.url,
+                success: !!fallbackVerifyResponse,
+                approach: 'basic-fallback',
+                timestamp: new Date().toISOString()
+              });
+            }
+          } else {
+            // Standard cache put for non-transformed responses
+            await cache.put(request, enhancedResponse.clone());
+          }
+          
           const putDuration = Date.now() - putStartTime;
           
           logDebug('Stored response in Cloudflare Cache API (waitUntil)', {
             url: request.url,
             method: 'cache-api',
-            status: responseClone.status,
-            cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag'),
-            contentType: responseClone.headers.get('Content-Type'),
-            contentLength: responseClone.headers.get('Content-Length'),
+            status: enhancedResponse.status,
+            cacheControl: enhancedResponse.headers.get('Cache-Control'),
+            cacheTag: enhancedResponse.headers.get('Cache-Tag'),
+            contentType: enhancedResponse.headers.get('Content-Type'),
+            contentLength: enhancedResponse.headers.get('Content-Length'),
+            acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
             putDurationMs: putDuration,
             timestamp: new Date().toISOString()
           });
@@ -386,12 +632,15 @@ export const cacheResponse = withErrorHandling<
         {
           url: request.url,
           method: 'waitUntil',
-          status: responseClone.status
+          status: enhancedResponse.status
         }
       );
       
       // Use waitUntil to execute the cache operation
       context.waitUntil(cachePutOperation());
+      
+      // Return the enhanced response
+      return enhancedResponse;
     } else {
       // Without execution context, wrap the put operation with direct error handling
       const directCachePutOperation = withErrorHandling(
@@ -407,27 +656,177 @@ export const cacheResponse = withErrorHandling<
           
           // Log detailed response information before cache put
           const responseHeaders: Record<string, string> = {};
-          for (const [key, value] of responseClone.headers.entries()) {
+          for (const [key, value] of enhancedResponse.headers.entries()) {
             responseHeaders[key] = value;
           }
           
           logDebug('Preparing Cache API put operation (direct)', {
             url: request.url,
             method: request.method,
-            status: responseClone.status,
-            contentType: responseClone.headers.get('Content-Type'),
-            contentLength: responseClone.headers.get('Content-Length'),
-            cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag'),
+            status: enhancedResponse.status,
+            contentType: enhancedResponse.headers.get('Content-Type'),
+            contentLength: enhancedResponse.headers.get('Content-Length'),
+            cacheControl: enhancedResponse.headers.get('Cache-Control'),
+            cacheTag: enhancedResponse.headers.get('Cache-Tag'),
+            acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
+            etag: enhancedResponse.headers.get('ETag'),
+            lastModified: enhancedResponse.headers.get('Last-Modified'),
             requestHeaders: Object.keys(requestHeaders),
             responseHeaders: Object.keys(responseHeaders),
             requestId: Math.random().toString(36).substring(2, 10),
             timestamp: new Date().toISOString()
           });
           
-          // Execute and time the put operation
+          // If this is a transformed response, we need special handling to store it correctly
           const putStartTime = Date.now();
-          await cache.put(request, responseClone);
+          
+          if (isTransformedResponse) {
+            // Create a new request with the original URL to use as a cache key
+            // This is the key to making transformed content available with the original URL
+            const cacheKey = new Request(request.url, {
+              method: request.method,
+              headers: request.headers
+            });
+            
+            // Create a fully controlled response for transformed content
+            let transformedBody;
+            try {
+              // Clone and read the body to ensure we have full control over it
+              transformedBody = await enhancedResponse.clone().arrayBuffer();
+              
+              // Create new headers with proper caching directives
+              const headers = new Headers();
+              
+              // Copy all the original headers
+              enhancedResponse.headers.forEach((value, key) => {
+                headers.set(key, value);
+              });
+              
+              // Always set Accept-Ranges for video content to support byte-range requests
+              headers.set('Accept-Ranges', 'bytes');
+              
+              // Make sure Content-Length is accurate
+              headers.set('Content-Length', transformedBody.byteLength.toString());
+              
+              // Add strong validation headers
+              if (!headers.has('ETag')) {
+                const hashCode = Math.abs(transformedBody.byteLength).toString(16);
+                headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+              }
+              
+              if (!headers.has('Last-Modified')) {
+                headers.set('Last-Modified', new Date().toUTCString());
+              }
+              
+              // Ensure Cache-Control header is set, unless specifically no-store
+              const currentCacheControl = headers.get('Cache-Control');
+              if (!currentCacheControl || currentCacheControl.includes('no-cache')) {
+                // Default to 1 day cache for transformed content
+                headers.set('Cache-Control', 'public, max-age=86400');
+              }
+              
+              // Add a special header to mark this response as prepared for caching
+              headers.set('X-Cache-Prepared', 'true');
+              
+              // Create a new fully controlled response to store in cache
+              const cachableResponse = new Response(transformedBody, {
+                status: enhancedResponse.status,
+                statusText: enhancedResponse.statusText,
+                headers: headers
+              });
+              
+              logDebug('Storing fully controlled transformed response with original URL as key', {
+                originalUrl: request.url,
+                contentType: headers.get('Content-Type'),
+                contentLength: headers.get('Content-Length'),
+                cacheControl: headers.get('Cache-Control'),
+                acceptRanges: headers.get('Accept-Ranges'),
+                etag: headers.get('ETag'),
+                lastModified: headers.get('Last-Modified'),
+                timestamp: new Date().toISOString()
+              });
+              
+              // Store using the original URL as key but with the transformed content
+              await cache.put(cacheKey, cachableResponse.clone());
+              
+              // Double-check that we successfully stored it by trying to retrieve it immediately
+              const verifyResponse = await cache.match(cacheKey);
+              
+              if (verifyResponse) {
+                // Log detailed verification information
+                logDebug('Successfully verified transformed response in cache', {
+                  originalUrl: request.url,
+                  success: true,
+                  status: verifyResponse.status,
+                  contentType: verifyResponse.headers.get('Content-Type'),
+                  contentLength: verifyResponse.headers.get('Content-Length'),
+                  cacheControl: verifyResponse.headers.get('Cache-Control'),
+                  etag: verifyResponse.headers.get('ETag'),
+                  acceptRanges: verifyResponse.headers.get('Accept-Ranges'),
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Update the enhanced response to use our fully controlled cachable version
+                enhancedResponse = cachableResponse;
+              } else {
+                logDebug('Failed to verify cached transformed response - will try again with simpler approach', {
+                  originalUrl: request.url,
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Fallback to simpler approach with minimal manipulation
+                const simpleHeaders = new Headers(enhancedResponse.headers);
+                simpleHeaders.set('Accept-Ranges', 'bytes');
+                simpleHeaders.set('X-Cache-Simple-Fallback', 'true');
+                
+                // Create a simpler response
+                const simpleResponse = new Response(await enhancedResponse.clone().arrayBuffer(), {
+                  status: enhancedResponse.status,
+                  statusText: enhancedResponse.statusText,
+                  headers: simpleHeaders
+                });
+                
+                // Try again with the simpler response
+                await cache.put(cacheKey, simpleResponse.clone());
+                
+                // Verify again
+                const secondVerifyResponse = await cache.match(cacheKey);
+                logDebug('Second verification attempt for cached transformed response', {
+                  originalUrl: request.url,
+                  success: !!secondVerifyResponse,
+                  approach: 'simple',
+                  timestamp: new Date().toISOString()
+                });
+                
+                // Update the enhanced response if successful
+                if (secondVerifyResponse) {
+                  enhancedResponse = simpleResponse;
+                }
+              }
+            } catch (err) {
+              logDebug('Error creating fully controlled response for cache storage, falling back to basic approach', {
+                originalUrl: request.url,
+                error: err instanceof Error ? err.message : String(err),
+                timestamp: new Date().toISOString()
+              });
+              
+              // Fallback to original cache put approach
+              await cache.put(cacheKey, enhancedResponse.clone());
+              
+              // Verify one more time
+              const fallbackVerifyResponse = await cache.match(cacheKey);
+              logDebug('Fallback cache put verification', {
+                originalUrl: request.url,
+                success: !!fallbackVerifyResponse,
+                approach: 'basic-fallback',
+                timestamp: new Date().toISOString()
+              });
+            }
+          } else {
+            // Standard cache put for non-transformed responses
+            await cache.put(request, enhancedResponse.clone());
+          }
+          
           const putDuration = Date.now() - putStartTime;
           
           // Add breadcrumb for successful cache store
@@ -435,10 +834,11 @@ export const cacheResponse = withErrorHandling<
             addBreadcrumb(requestContext, 'Cache', 'Stored response in cache', {
               url: request.url,
               method: 'cache-api',
-              status: responseClone.status,
-              cacheControl: responseClone.headers.get('Cache-Control'),
-              contentType: responseClone.headers.get('Content-Type'),
-              contentLength: responseClone.headers.get('Content-Length'),
+              status: enhancedResponse.status,
+              cacheControl: enhancedResponse.headers.get('Cache-Control'),
+              contentType: enhancedResponse.headers.get('Content-Type'),
+              contentLength: enhancedResponse.headers.get('Content-Length'),
+              acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
               putDurationMs: putDuration
             });
           }
@@ -446,11 +846,12 @@ export const cacheResponse = withErrorHandling<
           logDebug('Stored response in Cloudflare Cache API', {
             url: request.url,
             method: 'cache-api',
-            status: responseClone.status,
-            cacheControl: responseClone.headers.get('Cache-Control'),
-            cacheTag: responseClone.headers.get('Cache-Tag'),
-            contentType: responseClone.headers.get('Content-Type'),
-            contentLength: responseClone.headers.get('Content-Length'),
+            status: enhancedResponse.status,
+            cacheControl: enhancedResponse.headers.get('Cache-Control'),
+            cacheTag: enhancedResponse.headers.get('Cache-Tag'),
+            contentType: enhancedResponse.headers.get('Content-Type'),
+            contentLength: enhancedResponse.headers.get('Content-Length'),
+            acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
             putDurationMs: putDuration,
             timestamp: new Date().toISOString(),
             success: true
@@ -464,11 +865,14 @@ export const cacheResponse = withErrorHandling<
         {
           url: request.url,
           method: 'direct',
-          status: responseClone.status
+          status: enhancedResponse.status
         }
       );
       
       await directCachePutOperation();
+      
+      // Return the enhanced response
+      return enhancedResponse;
     }
   },
   {
@@ -521,12 +925,14 @@ export const getCachedResponse = withErrorHandling<
     // Instead, we rely on Cloudflare's built-in caching with the cf object in fetch
     if (cacheMethod === 'cf') {
       if (cacheConfig.getConfig().debug) {
-        logDebug('Using cf object for caching, skipping explicit cache check', {
+        logDebug('Using cf object for caching, but still checking Cache API for better range request support', {
           url: request.url,
           method: 'cf-object'
         });
       }
-      return null;
+      // Continue checking the Cache API even with cf method and debug mode,
+      // this enables proper range request support even when debug is enabled
+      // Do NOT return null here as we did before
     }
     
     // Check if this is a range request
@@ -557,7 +963,47 @@ export const getCachedResponse = withErrorHandling<
 
         // Try to find the response in the cache
         const matchStartTime = Date.now();
-        const cachedResponse = await cache.match(request);
+        
+        // Check for request cache key
+        let cachedResponse = await cache.match(request);
+        let cacheKeyType = 'original-request';
+        
+        if (!cachedResponse) {
+          // We didn't find anything with the original request as key
+          // Try a second lookup with a transformed-focused key (based on CDN URL pattern match)
+          // This helps with cases where the response might have been stored with a different key
+          const requestUrl = new URL(request.url);
+          
+          // When we have a path that looks like it could be a CDN-CGI transformed URL, try 
+          // a cache lookup with the original URL as well
+          if (requestUrl.pathname.includes('/cdn-cgi/media/') || requestUrl.pathname.includes('/cdn-cgi/image/')) {
+            const originalPath = requestUrl.pathname.replace(/\/cdn-cgi\/(media|image)\/[^/]+\//, '/');
+            
+            if (originalPath !== requestUrl.pathname) {
+              // Create a new URL with the original path
+              const originalUrl = new URL(requestUrl.toString());
+              originalUrl.pathname = originalPath;
+              
+              // Create a new request with this original URL
+              const originalRequest = new Request(originalUrl.toString(), {
+                method: request.method,
+                headers: request.headers
+              });
+              
+              // Try to find in cache with this key instead
+              cachedResponse = await cache.match(originalRequest);
+              if (cachedResponse) {
+                cacheKeyType = 'original-path';
+                logDebug('Found cached response using original path key', {
+                  transformedPath: requestUrl.pathname,
+                  originalPath: originalPath,
+                  success: !!cachedResponse
+                });
+              }
+            }
+          }
+        }
+        
         const matchDuration = Date.now() - matchStartTime;
         
         // Add breadcrumb for cache result
@@ -589,6 +1035,10 @@ export const getCachedResponse = withErrorHandling<
             responseHeaders[key] = value;
           }
           
+          // Check if this is a response from CDN-CGI transformation
+          const isCdnCgiResponse = cachedResponse.headers.has('CF-Media-Transformation') || 
+                                 (cachedResponse.url && cachedResponse.url.includes('/cdn-cgi/media/'));
+                                 
           logDebug('Cache API match operation result: HIT', {
             url: request.url,
             status: cachedResponse.status,
@@ -598,7 +1048,8 @@ export const getCachedResponse = withErrorHandling<
             cfCacheStatus: cachedResponse.headers.get('CF-Cache-Status'),
             etag: cachedResponse.headers.get('ETag'),
             matchDurationMs: matchDuration,
-            headersPresent: Object.keys(responseHeaders)
+            headersPresent: Object.keys(responseHeaders),
+            isCdnCgiResponse
           });
         } else {
           logDebug('Cache API match operation result: MISS', {

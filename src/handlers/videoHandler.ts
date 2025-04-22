@@ -108,7 +108,9 @@ export const handleVideoRequest = withErrorHandling<
       startTimedOperation(context, 'cache-lookup', 'Cache');
       
       // Check both caches in parallel for performance, but prioritize KV if available
-      const skipCfCache = context.debugEnabled || url.searchParams.has('debug');
+      // Only skip caching if debug parameter is explicitly provided
+      // This allows normal caching even when debug mode is enabled in configuration
+      const skipCfCache = url.searchParams.has('debug');
       let kvPromise: Promise<Response | null> = Promise.resolve(null);
       let cfPromise: Promise<Response | null> = Promise.resolve(null);
       
@@ -404,9 +406,18 @@ export const handleVideoRequest = withErrorHandling<
         startTimedOperation(context, 'cache-storage', 'Cache');
         
         // Store in Cloudflare Cache API (edge cache)
-        cacheResponse(request, response.clone(), context.executionContext)
-          .then(() => {
-            debug(context, logger, 'VideoHandler', 'Stored in CF cache');
+        // cacheResponse now returns the enhanced response
+        const cachePromise = cacheResponse(request, response.clone(), context.executionContext);
+        cachePromise.then((enhancedResponse: Response | null) => {
+            if (enhancedResponse && enhancedResponse instanceof Response) {
+              debug(context, logger, 'VideoHandler', 'Stored in CF cache with enhanced response', {
+                acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
+                etag: enhancedResponse.headers.get('ETag'),
+                lastModified: enhancedResponse.headers.get('Last-Modified')
+              });
+            } else {
+              debug(context, logger, 'VideoHandler', 'Stored in CF cache');
+            }
           })
           .catch(err => {
             error(context, logger, 'VideoHandler', 'Error caching in CF cache', {
@@ -538,8 +549,8 @@ export const handleVideoRequest = withErrorHandling<
           endTimedOperation(context, 'cache-storage');
         }
       } else if (skipCfCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
-        // Log that we're skipping cache storage due to debug mode
-        debug(context, logger, 'VideoHandler', 'Skipping cache storage due to debug mode', {
+        // Log that we're skipping cache storage due to debug parameter
+        debug(context, logger, 'VideoHandler', 'Skipping cache storage due to debug parameter', {
           debugEnabled: context.debugEnabled,
           hasDebugParam: url.searchParams.has('debug'),
           debugParamValue: url.searchParams.get('debug')

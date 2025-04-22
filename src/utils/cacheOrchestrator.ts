@@ -336,10 +336,57 @@ export async function withCaching(
           // Get execution context if available
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const ctx = (env as any).executionCtx || (env as any).ctx;
-          await cacheResponse(request, responseClone, ctx);
           
-          // Get from Cache API to ensure range request support
-          const cachedResponse = await getCachedResponse(request);
+          // Check if this is a transformed response from CDN-CGI
+          const isCdnCgiTransformed = responseClone.url && 
+              responseClone.url.includes('/cdn-cgi/media/') &&
+              request.url !== responseClone.url;
+              
+          // Additional detailed logging about the transformed URL
+          if (isCdnCgiTransformed) {
+            logDebug('Detected CDN-CGI transformed response', {
+              originalRequestUrl: request.url,
+              transformedResponseUrl: responseClone.url,
+              requestContentType: request.headers.get('Content-Type'),
+              responseContentType: responseClone.headers.get('Content-Type'),
+              timestamp: new Date().toISOString()
+            });
+          }
+              
+          // Log detailed information about the response
+          logDebug('Processing response for cache storage', {
+            requestUrl: request.url,
+            responseUrl: responseClone.url || 'unknown',
+            isCdnCgiTransformed,
+            contentType: responseClone.headers.get('Content-Type'),
+            contentLength: responseClone.headers.get('Content-Length')
+          });
+              
+          // The cacheResponse function now returns the enhanced response directly
+          // Pass the isTransformedResponse flag if this is a CDN-CGI transformation
+          const enhancedResponse = await cacheResponse(
+            request, 
+            responseClone, 
+            ctx, 
+            isCdnCgiTransformed === true // Ensure it's a boolean
+          );
+          
+          // If we got an enhanced response directly from cacheResponse, use it
+          // Otherwise fall back to getting it from the cache
+          let cachedResponse = enhancedResponse;
+          if (!cachedResponse) {
+            // Get from Cache API to ensure range request support
+            cachedResponse = await getCachedResponse(request);
+            
+            // If we still don't have a cached response, log this unusual case
+            if (!cachedResponse && isCdnCgiTransformed) {
+              logDebug('Failed to retrieve transformed response from cache after storage attempt', {
+                requestUrl: request.url,
+                responseUrl: responseClone.url || 'unknown',
+                contentType: responseClone.headers.get('Content-Type')
+              });
+            }
+          }
           
           if (cachedResponse) {
             logDebug('Successfully serving video from Cache API after storing', {

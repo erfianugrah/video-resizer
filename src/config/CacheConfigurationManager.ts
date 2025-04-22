@@ -283,7 +283,12 @@ export class CacheConfigurationManager {
    * This only checks for specific bypass parameters, not all query parameters
    */
   public shouldBypassCache(url: URL): boolean {
-    // Only check for specific bypass parameters (nocache, bypass, debug)
+    // Always bypass cache if the debug parameter is explicitly provided
+    if (url.searchParams.has('debug')) {
+      return true;
+    }
+    
+    // Check for other bypass parameters (nocache, bypass)
     // Do NOT treat all query parameters (like imwidth) as bypass triggers
     for (const param of this.config.bypassQueryParameters) {
       if (url.searchParams.has(param)) {
