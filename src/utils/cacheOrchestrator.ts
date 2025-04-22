@@ -264,10 +264,10 @@ export async function withCaching(
     logDebug('All caches missed, executing handler');
     const response = await handler();
     
-    // Step 4: Store result in KV if conditions are met
-    // Check if it's a video response and not an error
+    // Step 4: Check if this is a video response that should be proactively cached
     const contentType = response.headers.get('content-type') || '';
     const isError = response.status >= 400;
+    const isRangeRequest = request.headers.has('Range');
     
     // Comprehensive list of video MIME types
     const videoMimeTypes = [
@@ -287,9 +287,10 @@ export async function withCaching(
     
     const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
     
-    if (options && env && response.ok && request.method === 'GET' && !skipCache && isVideoResponse && !isError && kvCacheEnabled) {
+    // SPECIAL HANDLING FOR VIDEO: For video content, we need to ensure we serve from cache
+    // to properly support range requests (even on first access)
+    if (options && env && response.ok && request.method === 'GET' && !skipCache && isVideoResponse && !isError) {
       const sourcePath = url.pathname;
-      const responseClone = response.clone();
       
       // Check if this is an IMQuery request
       const imwidth = url.searchParams.get('imwidth');
@@ -315,56 +316,100 @@ export async function withCaching(
         });
       }
       
-      // Get execution context if available (from Cloudflare Worker environment)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ctx = (env as any).executionCtx || (env as any).ctx;
+      // First try the Cloudflare Cache API for best range request handling
+      try {
+        const cacheApiEnabled = cacheConfig.getConfig().method === 'cacheApi';
+        
+        if (cacheApiEnabled) {
+          const responseClone = response.clone();
+          logDebug('Storing video in Cache API for range request support', {
+            url: request.url,
+            isRangeRequest,
+            contentType,
+            size: responseClone.headers.get('Content-Length')
+          });
+          
+          // Dynamically import cache management service to avoid circular dependencies
+          const { cacheResponse, getCachedResponse } = await import('../services/cacheManagementService');
+          
+          // Store in Cache API synchronously
+          // Get execution context if available
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ctx = (env as any).executionCtx || (env as any).ctx;
+          await cacheResponse(request, responseClone, ctx);
+          
+          // Get from Cache API to ensure range request support
+          const cachedResponse = await getCachedResponse(request);
+          
+          if (cachedResponse) {
+            logDebug('Successfully serving video from Cache API after storing', {
+              url: request.url,
+              size: cachedResponse.headers.get('Content-Length'),
+              status: cachedResponse.status
+            });
+            
+            // If we're here, we have proper range request support!
+            return cachedResponse;
+          }
+          
+          logDebug('Failed to retrieve from Cache API after storing, falling back', {
+            url: request.url
+          });
+        }
+      } catch (err) {
+        logDebug('Error using Cache API for video, trying KV instead', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
       
-      if (ctx && typeof ctx.waitUntil === 'function') {
-        // Store in background with waitUntil
-        logDebug('Storing in KV using waitUntil', { 
-          sourcePath, 
-          contentType,
-          hasIMQuery: Object.keys(customData).length > 0 
-        });
-        
-        ctx.waitUntil(
-          storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery)
-            .then((success: boolean) => {
-              logDebug(success ? 'Stored in KV cache' : 'Failed to store in KV cache', {
-                sourcePath,
-                hasIMQuery: Object.keys(customData).length > 0
-              });
-            })
-            .catch((err) => {
-              logDebug('Error storing in KV cache', {
-                error: err instanceof Error ? err.message : String(err)
-              });
-            })
-        );
-      } else {
-        // No execution context, try to store directly
-        logDebug('No execution context, storing directly', { 
-          sourcePath,
-          hasIMQuery: Object.keys(customData).length > 0
-        });
-        
+      // Fall back to KV if Cache API is disabled or failed
+      if (kvCacheEnabled) {
         try {
-          await storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery);
+          const responseClone = response.clone();
+          
+          logDebug('Storing video in KV for range request support', {
+            url: request.url,
+            contentType,
+            isRangeRequest
+          });
+          
+          // Store synchronously in KV
+          const success = await storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery);
+          
+          if (success) {
+            // Get from KV to ensure range request support
+            const kvResponse = await getFromKVCache(env, sourcePath, optionsWithIMQuery, request);
+            
+            if (kvResponse) {
+              logDebug('Successfully serving video from KV after storing', {
+                url: request.url,
+                size: kvResponse.headers.get('Content-Length'),
+                status: kvResponse.status
+              });
+              
+              // If we're here, we have proper range request support!
+              return kvResponse;
+            }
+          }
+          
+          logDebug('Failed to retrieve from KV after storing, falling back to direct response', {
+            url: request.url
+          });
         } catch (err) {
-          logDebug('Error storing in KV cache', {
+          logDebug('Error using KV for video, falling back to direct response', {
             error: err instanceof Error ? err.message : String(err)
           });
         }
+      } else if (!kvCacheEnabled) {
+        // Explicitly log that we're skipping KV due to being disabled
+        logDebug('Skipped KV storage for video (disabled by configuration)', {
+          path: url.pathname,
+          contentType
+        });
       }
-    } else if (options && env && request.method === 'GET' && !kvCacheEnabled && response.ok && !skipCache && isVideoResponse && !isError) {
-      // Explicitly log that we're skipping due to KV cache being disabled
-      logDebug('Skipped KV storage (disabled by configuration)', {
-        path: url.pathname,
-        contentType
-      });
     } else if (options && env && request.method === 'GET') {
-      // Log reasons for skipping storage
-      logDebug('Skipped KV storage', {
+      // Log reasons for skipping special video handling
+      logDebug('Skipped special video handling', {
         method: request.method,
         isOk: response.ok,
         hasDebug: url.searchParams.has('debug'),
@@ -372,10 +417,12 @@ export async function withCaching(
         isError,
         statusCode: response.status,
         contentType,
-        kvCacheEnabled
+        kvCacheEnabled,
+        skipCache
       });
     }
     
+    // For non-video responses or if all caching attempts failed, return the direct response
     return response;
   } catch (err) {
     logDebug('Error in cache flow', {
