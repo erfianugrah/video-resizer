@@ -410,8 +410,10 @@ export const handleVideoRequest = withErrorHandling<
         startTimedOperation(context, 'cache-storage', 'Cache');
         
         // Store in Cloudflare Cache API (edge cache)
-        // cacheResponse now returns the enhanced response - we need to await it and use it
+        // cacheResponse now checks cache first, then puts if needed
+        // It accepts either a Response or a fetch function as the second parameter
         try {
+          // When passing a Response, cacheResponse will use it directly rather than calling a fetch function
           const enhancedResponse = await cacheResponse(request, response.clone(), context.executionContext);
           
           if (enhancedResponse && enhancedResponse instanceof Response) {

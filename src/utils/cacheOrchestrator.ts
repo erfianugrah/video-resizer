@@ -362,30 +362,20 @@ export async function withCaching(
             contentLength: responseClone.headers.get('Content-Length')
           });
               
-          // The cacheResponse function now returns the enhanced response directly
-          // Pass the isTransformedResponse flag if this is a CDN-CGI transformation
-          const enhancedResponse = await cacheResponse(
+          // The updated cacheResponse function checks cache first, then puts if needed
+          // It accepts either a Response or a fetch function as the second parameter
+          const cachedResponse = await cacheResponse(
             request, 
             responseClone, 
-            ctx, 
-            isCdnCgiTransformed === true // Ensure it's a boolean
+            ctx
           );
           
-          // If we got an enhanced response directly from cacheResponse, use it
-          // Otherwise fall back to getting it from the cache
-          let cachedResponse = enhancedResponse;
-          if (!cachedResponse) {
-            // Get from Cache API to ensure range request support
-            cachedResponse = await getCachedResponse(request);
-            
-            // If we still don't have a cached response, log this unusual case
-            if (!cachedResponse && isCdnCgiTransformed) {
-              logDebug('Failed to retrieve transformed response from cache after storage attempt', {
-                requestUrl: request.url,
-                responseUrl: responseClone.url || 'unknown',
-                contentType: responseClone.headers.get('Content-Type')
-              });
-            }
+          if (isCdnCgiTransformed) {
+            logDebug('Using cached response for transformed content', {
+              requestUrl: request.url,
+              responseUrl: responseClone.url || 'unknown',
+              contentType: responseClone.headers.get('Content-Type')
+            });
           }
           
           if (cachedResponse) {

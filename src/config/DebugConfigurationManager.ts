@@ -51,10 +51,10 @@ export type DebugConfiguration = z.infer<typeof DebugConfigSchema>;
 
 // Default configuration
 const defaultDebugConfig: DebugConfiguration = {
-  enabled: false,
-  verbose: false,
-  includeHeaders: false,
-  includePerformance: false,
+  enabled: true,
+  verbose: true,
+  includeHeaders: true,
+  includePerformance: true,
   dashboardMode: true,
   viewMode: true,
   headerMode: true,
@@ -63,7 +63,7 @@ const defaultDebugConfig: DebugConfiguration = {
   preserveDebugParams: false,
   debugHeaders: ['X-Debug', 'X-Debug-Enabled', 'Debug'],
   renderStaticHtml: true,
-  includeStackTrace: false,
+  includeStackTrace: true,
   maxContentLength: 50000,
   truncationMessage: '... [content truncated]',
   allowedIps: [],

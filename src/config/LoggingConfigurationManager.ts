@@ -62,7 +62,7 @@ export type LoggingConfiguration = z.infer<typeof LoggingConfigSchema>;
 
 // Default configuration
 const defaultLoggingConfig: LoggingConfiguration = {
-  level: 'info',
+  level: 'debug',
   includeTimestamps: true,
   includeComponentName: true,
   format: 'text',
@@ -70,14 +70,14 @@ const defaultLoggingConfig: LoggingConfiguration = {
   enabledComponents: [],
   disabledComponents: [],
   sampleRate: 1,
-  enablePerformanceLogging: false,
+  enablePerformanceLogging: true,
   performanceThresholdMs: 1000,
   breadcrumbs: {
     enabled: true,
     maxItems: 100
   },
   pino: {
-    level: 'info',
+    level: 'debug',
     browser: { asObject: true },
     base: { service: 'video-resizer', env: 'development' }
   }
