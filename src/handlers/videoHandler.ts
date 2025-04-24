@@ -370,11 +370,15 @@ export const handleVideoRequest = withErrorHandling<
       
       // Time the video transformation operation
       startTimedOperation(context, 'video-transformation', 'Transform');
+      // Transform the video
       const response = await transformVideo(request, videoOptions as any, pathPatterns, debugInfo, env);
       endTimedOperation(context, 'video-transformation');
       
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
+      
+      // Initialize finalResponse - this will be our final response to return
+      let finalResponse = response;
       
       // If derivative is present, make a more educated guess about video info
       if (context.diagnostics.derivative && videoOptions?.width && videoOptions?.height) {
@@ -406,24 +410,31 @@ export const handleVideoRequest = withErrorHandling<
         startTimedOperation(context, 'cache-storage', 'Cache');
         
         // Store in Cloudflare Cache API (edge cache)
-        // cacheResponse now returns the enhanced response
-        const cachePromise = cacheResponse(request, response.clone(), context.executionContext);
-        cachePromise.then((enhancedResponse: Response | null) => {
-            if (enhancedResponse && enhancedResponse instanceof Response) {
-              debug(context, logger, 'VideoHandler', 'Stored in CF cache with enhanced response', {
-                acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
-                etag: enhancedResponse.headers.get('ETag'),
-                lastModified: enhancedResponse.headers.get('Last-Modified')
-              });
-            } else {
-              debug(context, logger, 'VideoHandler', 'Stored in CF cache');
-            }
-          })
-          .catch(err => {
-            error(context, logger, 'VideoHandler', 'Error caching in CF cache', {
-              error: err instanceof Error ? err.message : 'Unknown error',
+        // cacheResponse now checks cache first, then puts if needed
+        // It accepts either a Response or a fetch function as the second parameter
+        try {
+          // When passing a Response, cacheResponse will use it directly rather than calling a fetch function
+          const enhancedResponse = await cacheResponse(request, response.clone(), context.executionContext);
+          
+          if (enhancedResponse && enhancedResponse instanceof Response) {
+            // Use the enhanced response from cache as our response to return
+            finalResponse = enhancedResponse;
+            
+            debug(context, logger, 'VideoHandler', 'Using enhanced response from cache', {
+              acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
+              etag: enhancedResponse.headers.get('ETag'),
+              lastModified: enhancedResponse.headers.get('Last-Modified'),
+              cache: 'sync',
+              url: request.url
             });
+          } else {
+            debug(context, logger, 'VideoHandler', 'No enhanced response from cache, using original response');
+          }
+        } catch (err) {
+          error(context, logger, 'VideoHandler', 'Error in synchronous caching, using original response', {
+            error: err instanceof Error ? err.message : 'Unknown error',
           });
+        }
         
         // Also store in KV cache if environment is available and not in debug mode
         if (env && videoOptions && !skipCfCache) {
@@ -574,7 +585,6 @@ export const handleVideoRequest = withErrorHandling<
       });
       
       // Check if we should add cache tags to the final response
-      let finalResponse = response;
       if (finalResponse.ok && finalResponse.status < 300) {
         try {
           // Import necessary functions

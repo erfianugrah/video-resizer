@@ -14,9 +14,6 @@ function logError(message: string, data?: Record<string, unknown>): void {
   console.error(`PinoLogger: ${message}`, data || {});
 }
 
-// Get the logging configuration manager instance
-const loggingConfigManager = LoggingConfigurationManager.getInstance();
-
 // Pretty formatting is configured in the transport options
 
 // Default configuration for Pino
@@ -76,29 +73,67 @@ let samplingConfig = {
   rate: 1.0
 };
 
-// Try to get configuration from the LoggingConfigurationManager
-try {
-  // Get Pino configuration
-  const managerPinoConfig = loggingConfigManager.getPinoConfig();
-  if (managerPinoConfig) {
-    // Merge with default configuration
-    pinoConfig = {
-      ...pinoConfig,
-      ...managerPinoConfig
-    };
+// Track whether we're using default config or have updated from KV
+let isUsingKvConfig = false;
+
+// Function to update logger configuration from LoggingConfigurationManager
+function updateLoggerConfig() {
+  try {
+    // Get the logging configuration manager instance
+    const loggingConfigManager = LoggingConfigurationManager.getInstance();
+    
+    // Get Pino configuration
+    const managerPinoConfig = loggingConfigManager.getPinoConfig();
+    if (managerPinoConfig) {
+      // Log the update for debugging purposes
+      console.debug('Updating Pino logger with config:', JSON.stringify(managerPinoConfig));
+      
+      // Merge with default configuration
+      pinoConfig = {
+        ...pinoConfig,
+        ...managerPinoConfig
+      };
+      
+      // Set flag to indicate we're using configured settings
+      isUsingKvConfig = true;
+    }
+    
+    // Get sampling configuration
+    samplingConfig = loggingConfigManager.getSamplingConfig();
+    
+    // Recreate the logger with updated config
+    recreateBaseLogger();
+    
+    return true;
+  } catch (err) {
+    logError('Error applying Pino configuration from LoggingConfigurationManager', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+    return false;
   }
-  
-  // Get sampling configuration
-  samplingConfig = loggingConfigManager.getSamplingConfig();
-} catch (err) {
-  logError('Error applying Pino configuration from LoggingConfigurationManager', {
-    error: err instanceof Error ? err.message : String(err),
-    stack: err instanceof Error ? err.stack : undefined
-  });
 }
 
-// Create the base logger
-const baseLogger = pino(pinoConfig);
+// Initial logger configuration from defaults
+// This creates a starter logger that will be replaced once config is loaded
+let baseLogger = pino(pinoConfig);
+
+// Function to recreate the base logger with current config
+function recreateBaseLogger() {
+  try {
+    baseLogger = pino(pinoConfig);
+    console.debug('Pino logger recreated with ' + 
+      (isUsingKvConfig ? 'KV configuration' : 'default configuration') + 
+      ` (level: ${pinoConfig.level})`);
+    return true;
+  } catch (err) {
+    console.error('Failed to recreate Pino logger:', err);
+    return false;
+  }
+}
+
+// Try to get initial configuration from the LoggingConfigurationManager
+updateLoggerConfig();
 
 /**
  * Create a request-scoped logger
@@ -116,6 +151,14 @@ export function createLogger(context: RequestContext) {
   }
   
   return childLogger;
+}
+
+/**
+ * Update the Pino logger configuration
+ * This should be called after the configuration has been loaded from KV
+ */
+export function updatePinoLoggerConfig(): boolean {
+  return updateLoggerConfig();
 }
 
 // This section was moved to the top of the file to avoid TS2448 error

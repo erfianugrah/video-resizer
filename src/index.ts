@@ -140,6 +140,17 @@ export default {
                   
                   updateAllConfigFromKV(kvConfig);
                   
+                  // Update Pino logger configuration after KV config is loaded
+                  try {
+                    const { updatePinoLoggerConfig } = await import('./utils/pinoLogger');
+                    const updated = updatePinoLoggerConfig();
+                    logInfo(context, 'Updated Pino logger configuration', { success: updated });
+                  } catch (pinoErr) {
+                    logError(context, 'Error updating Pino logger configuration', {
+                      error: pinoErr instanceof Error ? pinoErr.message : String(pinoErr)
+                    });
+                  }
+                  
                   // Log detailed information about the path patterns after loading from KV
                   try {
                     const { VideoConfigurationManager } = await import('./config/VideoConfigurationManager');
