@@ -322,8 +322,8 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       bypassParams: parseStringArray(env.CACHE_BYPASS_PARAMS, ['nocache', 'bypass']),
       enableKVCache: parseBoolean(env.CACHE_ENABLE_KV, isProduction), // Enable KV by default in production
       kvTtl: {
-        ok: parseNumber(env.CACHE_KV_TTL_OK, 86400), // 24 hours
-        redirects: parseNumber(env.CACHE_KV_TTL_REDIRECTS, 3600), // 1 hour
+        ok: parseNumber(env.CACHE_KV_TTL_OK, 300), // 5 minutes (changed from 24 hours)
+        redirects: parseNumber(env.CACHE_KV_TTL_REDIRECTS, 300), // 5 minutes (changed from 1 hour)
         clientError: parseNumber(env.CACHE_KV_TTL_CLIENT_ERROR, 60), // 1 minute
         serverError: parseNumber(env.CACHE_KV_TTL_SERVER_ERROR, 10), // 10 seconds
       },

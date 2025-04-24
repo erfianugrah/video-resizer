@@ -449,16 +449,27 @@ export function getCacheConfig(envVars?: EnvVariables) {
   // Get environment config
   const envConfig = getEnvironmentConfig(envVars);
   
+  // Get the actual cache configuration from CacheConfigurationManager
+  const cacheManager = CacheConfigurationManager.getInstance();
+  const fullConfig = cacheManager.getConfig();
+  
   // Log the KV cache configuration details for debugging
-  logDebug('KV cache configuration from environment', { 
+  logDebug('KV cache configuration from environment and cache config', { 
     enableKVCache: envConfig.cache.enableKVCache,
-    ttl: envConfig.cache.kvTtl,
+    envTtl: envConfig.cache.kvTtl,
+    configTtl: fullConfig.profiles?.default?.ttl || {},
+    hasProfiles: !!fullConfig.profiles,
+    profileCount: Object.keys(fullConfig.profiles || {}).length,
     isProduction: envConfig.isProduction,
     mode: envConfig.mode
   });
   
+  // Create a properly formatted return object with typed TTL
+  const ttlConfig = fullConfig.profiles?.default?.ttl || envConfig.cache.kvTtl;
+  
   return {
     enableKVCache: envConfig.cache.enableKVCache,
-    ttl: envConfig.cache.kvTtl
+    ttl: ttlConfig,
+    profiles: fullConfig.profiles
   };
 }

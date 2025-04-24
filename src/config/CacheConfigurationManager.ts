@@ -8,8 +8,8 @@ import { ConfigurationError } from '../errors';
 
 // Define Zod schemas for cache TTL configuration
 export const CacheTTLSchema = z.object({
-  ok: z.number().nonnegative().default(86400), // 24 hours for successful responses
-  redirects: z.number().nonnegative().default(3600), // 1 hour for redirects
+  ok: z.number().nonnegative().default(300), // 5 minutes for successful responses (changed from 24 hours)
+  redirects: z.number().nonnegative().default(300), // 5 minutes for redirects (changed from 1 hour)
   clientError: z.number().nonnegative().default(60), // 1 minute for client errors
   serverError: z.number().nonnegative().default(10), // 10 seconds for server errors
 });
@@ -22,8 +22,8 @@ export const CacheProfileSchema = z.object({
   // Whether to use status-based TTLs (cacheTtlByStatus) or a single TTL (cacheTtl)
   useTtlByStatus: z.boolean().optional().default(true),
   ttl: CacheTTLSchema.default({
-    ok: 86400,
-    redirects: 3600,
+    ok: 300,
+    redirects: 300,
     clientError: 60,
     serverError: 10,
   }),
@@ -67,7 +67,7 @@ export const CacheConfigSchema = z.object({
   debug: z.boolean().default(false),
   
   // Default behavior for cache headers
-  defaultMaxAge: z.number().nonnegative().default(86400),
+  defaultMaxAge: z.number().nonnegative().default(300),
   respectOriginHeaders: z.boolean().default(true),
   cacheEverything: z.boolean().default(false),
   
@@ -93,8 +93,8 @@ export const CacheConfigSchema = z.object({
       cacheability: true,
       videoCompression: 'auto',
       ttl: {
-        ok: 86400,
-        redirects: 3600,
+        ok: 300,
+        redirects: 300,
         clientError: 60,
         serverError: 10,
       },
@@ -112,7 +112,7 @@ const defaultCacheConfig: CacheConfiguration = {
   method: 'cf',
   enableKVCache: true,
   debug: false,
-  defaultMaxAge: 86400,
+  defaultMaxAge: 300,
   respectOriginHeaders: true,
   cacheEverything: false,
   enableCacheTags: true,
@@ -152,8 +152,8 @@ const defaultCacheConfig: CacheConfiguration = {
       videoCompression: 'auto',
       useTtlByStatus: true,
       ttl: {
-        ok: 86400,
-        redirects: 3600,
+        ok: 300,
+        redirects: 300,
         clientError: 60,
         serverError: 10,
       },

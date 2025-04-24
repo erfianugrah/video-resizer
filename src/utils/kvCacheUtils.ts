@@ -490,16 +490,81 @@ function determineTTL(response: Response, config: any): number {
   const status = response.status;
   const statusCategory = Math.floor(status / 100);
   
-  // Try to get global defaults from cache configuration
+  // Get request context to access URL path
+  const requestContext = getCurrentContext();
+  const url = requestContext?.url ? new URL(requestContext.url) : null;
+  const path = url?.pathname || '';
+  
+  // Try to get TTL settings from cache profiles based on path pattern
+  let ttlConfig = null;
+  
+  try {
+    // If we have profiles in the config, try to match the path to a profile
+    if (config.profiles) {
+      // Look for a matching profile based on the path
+      for (const [name, profileData] of Object.entries(config.profiles)) {
+        if (name === 'default') continue; // Skip default, we'll use it as fallback
+        
+        // Safely cast the profile to the expected structure
+        const profile = profileData as { 
+          regex?: string; 
+          ttl?: { 
+            ok?: number; 
+            redirects?: number; 
+            clientError?: number; 
+            serverError?: number; 
+          } 
+        };
+        
+        try {
+          if (profile?.regex) {
+            const regex = new RegExp(profile.regex);
+            if (regex.test(path)) {
+              ttlConfig = profile.ttl;
+              logDebug('Found matching cache profile for path', {
+                path,
+                profileName: name,
+                ttl: ttlConfig
+              });
+              break;
+            }
+          }
+        } catch (err) {
+          // If regex is invalid, log and continue
+          logDebug('Invalid regex in cache profile', {
+            profileName: name,
+            regex: profile?.regex,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+      
+      // If no specific profile matched, use the default profile
+      if (!ttlConfig && config.profiles.default?.ttl) {
+        ttlConfig = config.profiles.default.ttl;
+        logDebug('Using default cache profile TTL', {
+          path,
+          ttl: ttlConfig
+        });
+      }
+    }
+  } catch (err) {
+    logDebug('Error finding cache profile for path', {
+      path,
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+  
+  // Hardcoded defaults as last resort - updated to use 300s default
   let defaultTTLs = {
-    ok: 86400,        // 24 hours
-    redirects: 3600,  // 1 hour
-    clientError: 60,  // 1 minute
-    serverError: 10   // 10 seconds
+    ok: 300,         // 5 minutes (changed from 24 hours)
+    redirects: 300,  // 5 minutes (changed from 1 hour)
+    clientError: 60, // 1 minute
+    serverError: 10  // 10 seconds
   };
   
   try {
-    // Get global TTL defaults from cache configuration
+    // Also try to get global TTL defaults from cache configuration
     const cacheSettings = cacheConfig.getConfig();
     // Use the default profile as the source of TTL defaults
     if (cacheSettings.profiles?.default?.ttl) {
@@ -512,18 +577,19 @@ function determineTTL(response: Response, config: any): number {
     });
   }
   
-  // Determine TTL based on status code, using provided config first, then global defaults
+  // Use ttlConfig if found, otherwise try config.ttl, then fall back to defaults
+  // Determine TTL based on status code
   switch (statusCategory) {
     case 2: // Success
-      return config.ttl?.ok || defaultTTLs.ok;
+      return ttlConfig?.ok || config.ttl?.ok || defaultTTLs.ok;
     case 3: // Redirect
-      return config.ttl?.redirects || defaultTTLs.redirects;
+      return ttlConfig?.redirects || config.ttl?.redirects || defaultTTLs.redirects;
     case 4: // Client error
-      return config.ttl?.clientError || defaultTTLs.clientError;
+      return ttlConfig?.clientError || config.ttl?.clientError || defaultTTLs.clientError;
     case 5: // Server error
-      return config.ttl?.serverError || defaultTTLs.serverError;
+      return ttlConfig?.serverError || config.ttl?.serverError || defaultTTLs.serverError;
     default:
-      return config.ttl?.clientError || defaultTTLs.clientError;
+      return ttlConfig?.clientError || config.ttl?.clientError || defaultTTLs.clientError;
   }
 }
 

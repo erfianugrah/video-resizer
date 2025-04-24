@@ -309,7 +309,7 @@
 			"bypass"
 		],
 		"bypassHeaderValue": "no-cache",
-		"enableKVCache": false,
+		"enableKVCache": true,
 		"maxSizeBytes": 26214400,
 		"fallback": {
 			"enabled": true,
