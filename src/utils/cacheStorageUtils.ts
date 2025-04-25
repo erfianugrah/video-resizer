@@ -146,43 +146,31 @@ export const prepareResponseForCaching = withErrorHandling<
 );
 
 /**
- * Helper function to store a response in cache with proper Range request support
- * Creates a consistent cache key and ensures the response has the necessary headers
- * Based on Cloudflare's documentation and best practices for video caching
+ * Helper function to prepare a response for caching with proper Range request support
+ * (This function now just prepares the headers without actually storing in cache)
  * 
- * @param cache - Cache instance to use
- * @param url - URL string to use as the cache key
- * @param response - Response to store in cache
+ * @param url - URL string to use as the cache key (for logging only)
+ * @param response - Response to prepare headers for
  * @param options - Optional extra configuration options
- * @returns Promise that resolves when caching is complete
+ * @returns A prepared response with appropriate headers for range request support
  */
-export async function storeInCacheWithRangeSupport(
-  cache: Cache,
+export async function prepareResponseForRangeSupport(
   url: string,
   response: Response,
   options?: {
     isTransformed?: boolean;
     logPrefix?: string;
   }
-): Promise<void> {
+): Promise<Response> {
   const isTransformed = options?.isTransformed || false;
   const logPrefix = options?.logPrefix || 'CacheHelper';
   
-  // Create an extremely minimal cache key for maximum consistency
-  // Strip query parameters from the URL to make cache key even more stable
+  // Strip query parameters from the URL for logging
   const urlObj = new URL(url);
   const baseUrl = urlObj.origin + urlObj.pathname;
   
-  // According to Cloudflare docs, requests with Range headers won't match
-  // cache entries created with requests that don't have Range headers
-  // We're using the most minimal cache key possible - just the URL with no headers
-  const simpleCacheKey = new Request(baseUrl, { 
-    method: 'GET',
-    // No headers at all for maximum consistency
-  });
-  
-  // Log the cache key details
-  logDebug(`SYNC_CACHE: ${logPrefix}: Using super-simplified cache key`, {
+  // Log details
+  logDebug(`${logPrefix}: Preparing response for range support`, {
     originalUrl: url,
     simplifiedUrl: baseUrl,
     hasQueryParams: url.includes('?')
@@ -194,8 +182,7 @@ export async function storeInCacheWithRangeSupport(
   // Critical for Range request support
   headers.set('Accept-Ranges', 'bytes');
   
-  // Remove headers that prevent caching according to Cloudflare docs
-  // Set-Cookie header completely prevents caching
+  // Remove headers that prevent caching
   headers.delete('set-cookie');
   
   // Vary: * prevents caching; other complex Vary values can make caching unreliable
@@ -227,73 +214,11 @@ export async function storeInCacheWithRangeSupport(
   }
   
   // Create a clean, cacheable response
-  const cachableResponse = new Response(body, {
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: headers
   });
-  
-  // Log detailed information about what we're about to store
-  logDebug(`SYNC_CACHE: ${logPrefix}: BEFORE cache.put - Preparing to store response in cache with key ${url}`, {
-    isTransformed,
-    cacheKeyUrl: simpleCacheKey.url,
-    cacheKeyMethod: simpleCacheKey.method,
-    cacheKeyHasHeaders: Array.from(simpleCacheKey.headers.entries()).length > 0,
-    responseStatus: cachableResponse.status,
-    responseContentType: headers.get('Content-Type'),
-    responseContentLength: headers.get('Content-Length'),
-    responseCacheControl: headers.get('Cache-Control'),
-    responseAcceptRanges: headers.get('Accept-Ranges'),
-    responseHasEtag: headers.has('ETag'),
-    responseEtag: headers.get('ETag'),
-    responseHasLastModified: headers.has('Last-Modified'),
-    responseLastModified: headers.get('Last-Modified'),
-    timestamp: new Date().toISOString(),
-    allHeadersCount: Array.from(headers.keys()).length,
-    allHeaderKeys: Array.from(headers.keys()),
-    operationId: Math.random().toString(36).substring(2, 10)
-  });
-  
-  // Track time taken for cache.put operation
-  const putStartTime = Date.now();
-  
-  // Store with the simple cache key
-  await cache.put(simpleCacheKey, cachableResponse);
-  
-  // Log the completed operation details
-  const putDuration = Date.now() - putStartTime;
-  logDebug(`SYNC_CACHE: ${logPrefix}: AFTER cache.put - Completed storing in cache with key ${url}`, {
-    duration: putDuration,
-    cacheKeyUrl: simpleCacheKey.url,
-    timestamp: new Date().toISOString()
-  });
-  
-  // Verify the cache.put was successful by immediately trying to retrieve it
-  try {
-    const verifyStartTime = Date.now();
-    const verifyResponse = await cache.match(simpleCacheKey);
-    const verifyDuration = Date.now() - verifyStartTime;
-    
-    if (verifyResponse) {
-      logDebug(`SYNC_CACHE: ${logPrefix}: Immediate verification successful - entry found in cache`, {
-        verifyDuration,
-        url: simpleCacheKey.url,
-        status: verifyResponse.status,
-        contentType: verifyResponse.headers.get('Content-Type'),
-        contentLength: verifyResponse.headers.get('Content-Length')
-      });
-    } else {
-      logDebug(`SYNC_CACHE: ${logPrefix}: Immediate verification failed - entry not found in cache`, {
-        verifyDuration,
-        url: simpleCacheKey.url
-      });
-    }
-  } catch (error) {
-    logDebug(`SYNC_CACHE: ${logPrefix}: Error during immediate verification`, {
-      url: simpleCacheKey.url,
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
 }
 
 /**

@@ -129,7 +129,7 @@ export const videoConfig = {
 
   // Default caching configuration - overridden at runtime
   caching: {
-    method: 'cacheApi',
+    method: 'kv',
     debug: false,
     fallback: {
       enabled: true,

@@ -112,7 +112,7 @@ describe('ConfigurationService', () => {
       },
       pathPatterns: [],
       caching: {
-        method: 'cacheApi',
+        method: 'kv',
         debug: false,
         fallback: {
           enabled: true,
@@ -123,7 +123,7 @@ describe('ConfigurationService', () => {
       cache: {}
     },
     cache: {
-      method: 'cacheApi',
+      method: 'kv',
       debug: false,
       defaultMaxAge: 86400,
       respectOriginHeaders: true,
@@ -197,7 +197,7 @@ describe('ConfigurationService', () => {
       expect(config).toBeDefined();
       expect(config?.version).toBe('1.0.0');
       expect(config?.video.derivatives).toHaveProperty('high');
-      expect(config?.cache.method).toBe('cacheApi');
+      expect(config?.cache.method).toBe('kv');
     });
 
     it('should return cached configuration when available', async () => {

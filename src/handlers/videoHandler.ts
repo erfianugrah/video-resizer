@@ -97,29 +97,24 @@ export const handleVideoRequest = withErrorHandling<
       const { CacheConfigurationManager } = await import('../config');
       const { getFromKVCache, storeInKVCache } = await import('../utils/kvCacheUtils');
 
-      // Try to get the response from cache first
-      addBreadcrumb(context, 'Cache', 'Checking cache', {
+      // Try to get the response from KV cache
+      addBreadcrumb(context, 'Cache', 'Checking KV cache', {
         url: request.url,
-        method: 'cache-api',
         bypassParams: CacheConfigurationManager.getInstance().getConfig().bypassQueryParameters?.join(',')
       });
       
       // Time the cache lookup operation
       startTimedOperation(context, 'cache-lookup', 'Cache');
       
-      // Check both caches in parallel for performance, but prioritize KV if available
-      // Only skip caching if debug parameter is explicitly provided
-      // This allows normal caching even when debug mode is enabled in configuration
-      const skipCfCache = url.searchParams.has('debug');
-      let kvPromise: Promise<Response | null> = Promise.resolve(null);
-      let cfPromise: Promise<Response | null> = Promise.resolve(null);
+      // Only check KV cache if available and not in debug mode
+      const skipCache = url.searchParams.has('debug');
+      let kvResponse: Response | null = null;
       
       // Start timing operations
       startTimedOperation(context, 'kv-cache-lookup', 'KVCache');
-      startTimedOperation(context, 'cf-cache-lookup', 'Cache');
       
-      // Prepare KV cache check if env is available
-      if (env) {
+      // Prepare KV cache check if env is available and not skipped
+      if (env && !skipCache) {
         const sourcePath = url.pathname;
         const videoOptions = determineVideoOptions(request, url.searchParams, path);
         
@@ -142,40 +137,31 @@ export const handleVideoRequest = withErrorHandling<
             hasQuery: url.search.length > 0
           });
           
-          // Start KV lookup with request for range handling support
-          kvPromise = getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
+          try {
+            // Check KV cache with request for range handling support
+            kvResponse = await getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
+          } catch (err) {
+            debug(context, logger, 'KVCacheUtils', 'Error checking KV cache', {
+              error: err instanceof Error ? err.message : String(err),
+              sourcePath
+            });
+          }
         } else {
           debug(context, logger, 'KVCacheUtils', 'Skipping KV cache (disabled by configuration)', {
             sourcePath: sourcePath,
             enableKVCache: false
           });
         }
-      }
-      
-      // Start CF cache check in parallel if not skipped
-      if (!skipCfCache) {
-        addBreadcrumb(context, 'Cache', 'Checking CF cache', {
-          url: request.url,
-          method: 'cache-api'
+      } else if (skipCache) {
+        debug(context, logger, 'VideoHandler', 'Skipping KV cache due to debug mode', {
+          debugEnabled: context.debugEnabled,
+          hasDebugParam: url.searchParams.has('debug')
         });
-        
-        // Make sure we call getCachedResponse directly to avoid Promise nesting
-        cfPromise = getCachedResponse(request).then(response => response);
       }
       
-      // Wait for both lookups to complete
-      const [kvResponse, cfResponse] = await Promise.all([
-        kvPromise.then(response => {
-          endTimedOperation(context, 'kv-cache-lookup');
-          return response;
-        }),
-        cfPromise.then(response => {
-          endTimedOperation(context, 'cf-cache-lookup');
-          return response;
-        })
-      ]);
+      endTimedOperation(context, 'kv-cache-lookup');
       
-      // Prioritize KV cache if available
+      // If KV cache hit, return the response
       if (kvResponse) {
         // Get cache details from headers
         const cacheAge = kvResponse.headers.get('X-KV-Cache-Age') || 'unknown';
@@ -234,78 +220,11 @@ export const handleVideoRequest = withErrorHandling<
         return await responseBuilder.withDebugInfo().build();
       }
       
-      // Fall back to CF cache if KV cache missed
-      if (cfResponse) {
-        // Get cache details from headers if available
-        const cacheControl = cfResponse.headers.get('Cache-Control') || 'unknown';
-        const cacheStatus = cfResponse.headers.get('CF-Cache-Status') || 'unknown';
-        const cfRay = cfResponse.headers.get('CF-Ray') || 'unknown';
-        const contentType = cfResponse.headers.get('Content-Type') || 'unknown';
-        const contentLength = cfResponse.headers.get('Content-Length') || 'unknown';
-        
-        info(context, logger, 'VideoHandler', 'Serving from CF cache', {
-          url: url.toString(),
-          cacheControl: cacheControl,
-          cacheStatus: cacheStatus,
-          cfRay: cfRay,
-          contentType: contentType,
-          contentLength: contentLength,
-          fromCfCache: true // Explicit flag to indicate CF cache hit
-        });
-        
-        addBreadcrumb(context, 'Cache', 'CF cache hit', {
-          url: url.toString(),
-          cacheStatus: cacheStatus,
-          contentType: contentType,
-          contentLength: contentLength
-        });
-        
-        // End overall cache lookup timing
-        endTimedOperation(context, 'cache-lookup');
-        
-        // Ensure debug configuration is applied to the context
-        const { DebugConfigurationManager } = await import('../config/DebugConfigurationManager');
-        const debugConfig = DebugConfigurationManager.getInstance();
-        
-        // Override context debug flags with current configuration
-        context.debugEnabled = debugConfig.isDebugEnabled() || context.debugEnabled;
-        context.verboseEnabled = debugConfig.isVerboseEnabled() || context.verboseEnabled;
-        
-        debug(context, logger, 'ResponseBuilder', 'Building CF cached response with debug configuration', {
-          debugEnabled: context.debugEnabled,
-          verboseEnabled: context.verboseEnabled
-        });
-        
-        // Create a new response with the same body but mutable headers
-        const headers = new Headers(cfResponse.headers);
-        headers.set('X-Cache-Source', 'CloudflareCache');
-        const mutableResponse = new Response(cfResponse.body, {
-          status: cfResponse.status,
-          statusText: cfResponse.statusText,
-          headers: headers
-        });
-        
-        // Return the CF cached response with debug headers
-        const responseBuilder = new ResponseBuilder(mutableResponse, context);
-        return await responseBuilder.withDebugInfo().build();
-      }
-      
       // If no cache hit, proceed with transformation
-      // Log cache misses
-      if (env) {  // Only log KV cache miss if we attempted KV cache lookup
+      // Log KV cache miss if we attempted lookup
+      if (env && !skipCache) {
         addBreadcrumb(context, 'KVCache', 'KV cache miss', {
           path: url.pathname
-        });
-      }
-      
-      if (!skipCfCache) {  // Only log CF cache miss if we attempted CF cache lookup
-        addBreadcrumb(context, 'Cache', 'CF cache miss', {
-          url: url.toString()
-        });
-      } else if (skipCfCache) {
-        debug(context, logger, 'VideoHandler', 'Skipping CF cache due to debug mode', {
-          debugEnabled: context.debugEnabled,
-          hasDebugParam: url.searchParams.has('debug')
         });
       }
       
@@ -395,49 +314,21 @@ export const handleVideoRequest = withErrorHandling<
         }
       }
       
-      // Store the response in cache if it's cacheable and not in debug mode
-      if (response.headers.get('Cache-Control')?.includes('max-age=') && !skipCfCache) {
+      // Store the response in KV cache if it's cacheable and not in debug mode
+      if (response.headers.get('Cache-Control')?.includes('max-age=') && !skipCache) {
         // Use a non-blocking cache write to avoid delaying the response
-        addBreadcrumb(context, 'Cache', 'Caching response', {
+        addBreadcrumb(context, 'Cache', 'Preparing to store in KV cache', {
           status: response.status,
           cacheControl: response.headers.get('Cache-Control'),
           contentType: response.headers.get('Content-Type'),
-          contentLength: response.headers.get('Content-Length') || undefined,
-          cfCacheStatus: response.headers.get('CF-Cache-Status') || undefined
+          contentLength: response.headers.get('Content-Length') || undefined
         });
         
         // Time the cache storage operation
         startTimedOperation(context, 'cache-storage', 'Cache');
         
-        // Store in Cloudflare Cache API (edge cache)
-        // cacheResponse now checks cache first, then puts if needed
-        // It accepts either a Response or a fetch function as the second parameter
-        try {
-          // When passing a Response, cacheResponse will use it directly rather than calling a fetch function
-          const enhancedResponse = await cacheResponse(request, response.clone(), context.executionContext);
-          
-          if (enhancedResponse && enhancedResponse instanceof Response) {
-            // Use the enhanced response from cache as our response to return
-            finalResponse = enhancedResponse;
-            
-            debug(context, logger, 'VideoHandler', 'Using enhanced response from cache', {
-              acceptRanges: enhancedResponse.headers.get('Accept-Ranges'),
-              etag: enhancedResponse.headers.get('ETag'),
-              lastModified: enhancedResponse.headers.get('Last-Modified'),
-              cache: 'sync',
-              url: request.url
-            });
-          } else {
-            debug(context, logger, 'VideoHandler', 'No enhanced response from cache, using original response');
-          }
-        } catch (err) {
-          error(context, logger, 'VideoHandler', 'Error in synchronous caching, using original response', {
-            error: err instanceof Error ? err.message : 'Unknown error',
-          });
-        }
-        
         // Also store in KV cache if environment is available and not in debug mode
-        if (env && videoOptions && !skipCfCache) {
+        if (env && videoOptions && !skipCache) {
           // Get KV cache configuration
           const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
           const cacheConfig = CacheConfigurationManager.getInstance();
@@ -559,7 +450,7 @@ export const handleVideoRequest = withErrorHandling<
         } else {
           endTimedOperation(context, 'cache-storage');
         }
-      } else if (skipCfCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
+      } else if (skipCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
         // Log that we're skipping cache storage due to debug parameter
         debug(context, logger, 'VideoHandler', 'Skipping cache storage due to debug parameter', {
           debugEnabled: context.debugEnabled,

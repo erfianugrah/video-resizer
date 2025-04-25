@@ -228,7 +228,7 @@ export default {
           context,
           `Initialized video-resizer v${
             env.VERSION || '1.0.0'
-          } in ${runtimeConfig.mode} mode with ${runtimeConfig.cache.method} caching method`,
+          } in ${runtimeConfig.mode} mode with KV caching`,
           {
             loggingLevel: LoggingConfigurationManager.getInstance().getLogLevel(),
             breadcrumbsEnabled: LoggingConfigurationManager.getInstance().areBreadcrumbsEnabled(),
