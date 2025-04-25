@@ -7,7 +7,7 @@ import { withCaching } from '../utils/cacheOrchestrator';
 import { transformVideo } from '../services/videoTransformationService';
 import { getVideoPathPatterns } from '../config';
 import { createLogger } from '../utils/pinoLogger';
-import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
+import { getCurrentContext, addBreadcrumb, createRequestContext, setCurrentContext } from '../utils/requestContext';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 
 /**
@@ -58,12 +58,7 @@ export const handleRequestWithCaching = withErrorHandling<
     fps: url.searchParams.has('fps') ? parseInt(url.searchParams.get('fps') || '', 10) : undefined
   };
   
-  // Import dynamically to avoid circular references
   try {
-    // Use dynamic import to access the context modules
-    const { createRequestContext, setCurrentContext, addBreadcrumb, getCurrentContext } = 
-      await import('../utils/requestContext');
-    
     // Create a request context if one doesn't exist
     let requestContext = getCurrentContext();
     
@@ -117,11 +112,11 @@ export const handleRequestWithCaching = withErrorHandling<
     }, 'VideoHandlerWithCache');
   }
   
-  // Wrap with caching middleware
+  // Wrap with caching middleware using versioned caching
   return withCaching(
     request,
     env,
-    () => transformVideo(request, videoOptions, pathPatterns, debugInfo, env),
+    (requestToUse) => transformVideo(requestToUse, videoOptions, pathPatterns, debugInfo, env),
     videoOptions
   );
 },

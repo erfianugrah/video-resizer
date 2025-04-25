@@ -132,14 +132,14 @@ function generateKVKeyImpl(
 }
 
 /**
- * Generate a KV key for a transformed video variant
+ * Generate a base KV key (without version) for a transformed video variant
  * Handles errors by returning a fallback key
  * 
  * @param sourcePath - The original video source path
  * @param options - Transformation options
- * @returns A unique key for the KV store
+ * @returns A base key for the KV store (without version)
  */
-export const generateKVKey = tryOrDefault<
+export const generateBaseKVKey = tryOrDefault<
   [string, {
     mode?: string | null;
     width?: number | null;
@@ -158,12 +158,33 @@ export const generateKVKey = tryOrDefault<
 >(
   generateKVKeyImpl,
   {
-    functionName: 'generateKVKey',
+    functionName: 'generateBaseKVKey',
     component: 'KVStorageService',
     logErrors: true
   },
   'video:error:fallback-key' // Default fallback key if generation fails
 );
+
+/**
+ * Generate a versioned KV key for a transformed video variant
+ * 
+ * @param baseKey - The base key without version
+ * @param version - The version number to append
+ * @returns A versioned key for the KV store
+ */
+export function generateVersionedKVKey(baseKey: string, version: number): string {
+  return `${baseKey}:v${version}`;
+}
+
+/**
+ * Generate a versioned KV key for backward compatibility
+ * This function is maintained for backward compatibility with existing code
+ * 
+ * @param sourcePath - The original video source path
+ * @param options - Transformation options
+ * @returns A unique key for the KV store (without version)
+ */
+export const generateKVKey = generateBaseKVKey;
 
 /**
  * Implementation of storeTransformedVideo with proper error handling

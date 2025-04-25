@@ -197,6 +197,7 @@ export interface EnvVariables {
   VIDEOS_BUCKET?: R2Bucket | undefined;
   VIDEO_TRANSFORMS_KV?: KVNamespace | undefined;
   VIDEO_TRANSFORMATIONS_CACHE?: KVNamespace | undefined;
+  VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
   VIDEO_CONFIGURATION_STORE?: KVNamespace | undefined;
   
   // API Authentication

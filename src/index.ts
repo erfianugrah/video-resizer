@@ -9,6 +9,7 @@
  */
 
 import { handleVideoRequest } from './handlers/videoHandler';
+import { handleRequestWithCaching } from './handlers/videoHandlerWithCache';
 import { handleConfigUpload, handleConfigGet } from './handlers/configHandler';
 import { getEnvironmentConfig, EnvironmentConfig, EnvVariables } from './config/environmentConfig';
 import { initializeConfiguration } from './config';
@@ -376,7 +377,8 @@ export default {
       const shouldSkip = skipPatterns.some((pattern) => pattern(request.headers));
 
       if (!shouldSkip && runtimeConfig) {
-        return handleVideoRequest(request, runtimeConfig, env, ctx);
+        // Use versioned KV caching for better cache control and range request handling
+        return handleRequestWithCaching(request, env, ctx);
       }
 
       logInfo(context, 'Skipping video processing, passing through request');
