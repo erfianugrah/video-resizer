@@ -4,6 +4,10 @@
 
 The KV caching system enhances video-resizer by storing transformed video variants in Cloudflare KV, enabling faster retrieval of previously transformed content. This multi-layered caching approach complements Cloudflare's Cache API for improved performance.
 
+## Comprehensive Documentation
+
+For a complete guide to the KV caching system, see our [KV Cache System Guide](./KV_CACHE_SYSTEM_GUIDE.md), which provides detailed information on all aspects of the caching system in a single document.
+
 ## Architecture
 
 ![KV Caching Architecture](https://i.imgur.com/b7vmQGa.png)
@@ -30,6 +34,8 @@ The KV caching system follows a multi-layered approach:
 
 ## Table of Contents
 
+- [Complete KV Cache System Guide](./KV_CACHE_SYSTEM_GUIDE.md) - Comprehensive documentation covering all aspects
+- [KV Caching Strategy](./strategy.md) - Strategic rationale and alternatives considered
 - [Implementation Details](./implementation.md)
 - [Configuration Guide](./configuration.md)
 - [Testing Guide](./testing.md)

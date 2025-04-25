@@ -2,7 +2,7 @@
 
 Welcome to the Video Resizer documentation. This document serves as a central hub for all the documentation related to the Video Resizer project.
 
-*Last Updated: April 14, 2025*
+*Last Updated: April 25, 2025*
 
 ## Core Documentation
 
@@ -29,6 +29,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
   - [Testing Guide](./kv-caching/testing.md)
   - [Performance Considerations](./kv-caching/performance.md)
   - [Cache Filtering](./kv-caching/cache-filtering.md)
+  - [Cache Versioning](./kv-caching/cache-versioning.md)
 
 - **[Storage System](./storage/README.md)**: Documentation on storage backends and origins
   - [Origin Consolidation](./storage/origin-consolidation.md)
@@ -44,9 +45,9 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 ## Features Documentation
 
 - **[Features Overview](./features/README.md)**: Documentation for specific features
-  - **[Video Transformation Modes](./features/transformation-modes.md)**: Overview of video, frame and spritesheet modes *[New]*
-    - **[Frame Extraction](./features/frame/README.md)**: Video frame extraction feature *[New]*
-    - **[Spritesheet Generation](./features/spritesheet/README.md)**: Video spritesheet generation feature *[New]*
+  - **[Video Transformation Modes](./features/transformation-modes.md)**: Overview of video, frame and spritesheet modes
+    - **[Frame Extraction](./features/frame/README.md)**: Video frame extraction feature
+    - **[Spritesheet Generation](./features/spritesheet/README.md)**: Video spritesheet generation feature
   - **[Akamai Integration](./features/akamai/README.md)**: Compatibility with Akamai image format
     - [Akamai Integration Completion](./features/akamai/akamai-integration-completion.md)
     - [Akamai Translation Enhancement](./features/akamai/akamai-translation-enhancement.md)
@@ -54,7 +55,7 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
     - [Client Detection Improvements](./features/client-detection/CLIENT_DETECTION_IMPROVEMENT.md)
   - **[Debug UI](./features/debug-ui/README.md)**: Debugging interface for troubleshooting
     - [Debug Headers](./features/debug-ui/DEBUG_HEADERS.md)
-    - [Debug View Mode](./features/debug-ui/DEBUG_VIEW_MODE.md) *[New]*
+    - [Debug View Mode](./features/debug-ui/DEBUG_VIEW_MODE.md)
     - [Debug UI Enhancement Plan](./features/debug-ui/debug-ui-enhancement-plan.md)
   - **[IMQuery Support](./features/imquery/README.md)**: Support for IMQuery responsive image parameters
     - [IMQuery Caching](./features/imquery/IMQUERY_CACHING.md)
@@ -79,14 +80,21 @@ Welcome to the Video Resizer documentation. This document serves as a central hu
 
 ## Tools Documentation
 
-- **[Configuration Upload Tool](../tools/README.md)**: Tool for managing dynamic configuration *[Updated]*
+- **[Tools Overview](./tools/README.md)**: Documentation for utility tools
+  - [Comprehensive Tools Guide](./tools/TOOLS_GUIDE.md): Detailed documentation of all tools
 - **[Debug UI Documentation](../debug-ui/README.md)**: Debug interface for monitoring and diagnostics
+
+## Documentation Resources
+
+- **[Documentation Glossary](./documentation-glossary.md)**: Standardized terminology used throughout documentation
+- **[Documentation Roadmap](./documentation-roadmap.md)**: Future documentation priorities and maintenance plan
 
 ## Documentation Structure
 
-For information about the documentation organization and cleanup efforts:
+For information about the documentation organization:
 
-- [Documentation Structure](./structure/README.md) - Overview of documentation organization
+- [Documentation Summary](./documentation-summary.md) - Overview of documentation organization and standards
+- [Documentation Structure](./structure/README.md) - Detailed documentation structure
 - [Documentation Cleanup Plan](./structure/CLEANUP_PLAN.md) - Plan for documentation cleanup
 - [Documentation Overview](./structure/DOCUMENTATION.md) - General documentation information
 
@@ -109,3 +117,5 @@ The following significant changes have recently been implemented:
 3. **Enhanced Configuration Tool**: Improved error handling, security, and validation in the config-upload.js tool
 4. **Fixed Fallback URL Construction**: Corrected CDN-CGI URL extraction for fallback sources
 5. **Documentation Reorganization**: Cleaned up and reorganized documentation to fix broken links and inconsistencies
+6. **Enhanced Tools Documentation**: Created comprehensive guide for utility tools and improved organization
+7. **KV Cache Versioning**: Implemented KV cache versioning system with dedicated namespace

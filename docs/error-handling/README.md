@@ -428,15 +428,17 @@ Remember: Good error handling is about more than just preventing crashes - it's 
 
 ## Additional Documentation
 
-For comprehensive documentation on the error handling implementation, see the [error-handling](./error-handling/) directory, which contains:
+For a comprehensive guide to error handling in the Video Resizer, see our detailed [Error Handling Guide](./ERROR_HANDLING_GUIDE.md), which covers all aspects of the error handling system in a single document.
 
-1. [**Implementation Plan**](./error-handling/implementation-plan.md) - The original plan and phases for implementing standardized error handling
-2. [**Developer Guidelines**](./error-handling/developer-guidelines.md) - Guidelines for implementing standardized error handling in new code
-3. [**Test Improvements**](./error-handling/test-improvements.md) - Recommended test improvements to validate error handling
-4. [**Monitoring Plan**](./error-handling/monitoring-plan.md) - Plan for monitoring error handling effectiveness
-5. [**Summary**](./error-handling/summary.md) - Overall summary of the error handling implementation
+Other documentation on the error handling implementation includes:
 
-For implementation details of specific components, see the [implementations](./error-handling/implementations/) subdirectory, particularly:
+1. [**Implementation Plan**](./implementation-plan.md) - The original plan and phases for implementing standardized error handling
+2. [**Developer Guidelines**](./developer-guidelines.md) - Guidelines for implementing standardized error handling in new code
+3. [**Test Improvements**](./test-improvements.md) - Recommended test improvements to validate error handling
+4. [**Monitoring Plan**](./monitoring-plan.md) - Plan for monitoring error handling effectiveness
+5. [**Summary**](./summary.md) - Overall summary of the error handling implementation
 
-1. [**Video Storage Implementation**](./error-handling/implementations/video-storage.md) - Details on the enhanced fallback mechanism
-2. [**Cache Utils Implementation**](./error-handling/implementations/cache-utils.md) - Cache-related error handling and fallback caching
+For implementation details of specific components, see the [implementations](./implementations/) subdirectory, particularly:
+
+1. [**Video Storage Implementation**](./implementations/video-storage.md) - Details on the enhanced fallback mechanism
+2. [**Cache Utils Implementation**](./implementations/cache-utils.md) - Cache-related error handling and fallback caching
