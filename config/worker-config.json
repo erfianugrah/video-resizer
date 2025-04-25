@@ -296,7 +296,6 @@
 		]
 	},
 	"cache": {
-		"method": "cacheApi",
 		"debug": false,
 		"defaultMaxAge": 300,
 		"respectOriginHeaders": true,

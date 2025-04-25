@@ -122,7 +122,6 @@ function applyEnvironmentVariables(env: EnvVariables): void {
   
   // Cache configuration from environment
   CacheConfigurationManager.getInstance().updateConfig({
-    method: envConfig.cache.method,
     debug: envConfig.cache.debug,
     defaultMaxAge: envConfig.cache.defaultTtl,
     respectOriginHeaders: envConfig.cache.respectOrigin,

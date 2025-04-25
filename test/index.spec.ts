@@ -23,7 +23,7 @@ vi.mock('../src/config', () => ({
   VideoConfigurationManager: {
     getInstance: vi.fn().mockReturnValue({
       getCachingConfig: vi.fn().mockReturnValue({
-        method: 'cacheApi', 
+        method: 'kv', 
         debug: false
       })
     })
@@ -34,7 +34,7 @@ vi.mock('../src/config/environmentConfig', () => ({
   getEnvironmentConfig: vi.fn().mockReturnValue({
     mode: 'development',
     debug: { enabled: true },
-    cache: { method: 'cacheApi', debug: false },
+    cache: { method: 'kv', debug: false },
   }),
 }));
 

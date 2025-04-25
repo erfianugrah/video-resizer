@@ -57,9 +57,6 @@ export const MimeTypesSchema = z.object({
 
 // Define schema for cache configuration
 export const CacheConfigSchema = z.object({
-  // Caching method: 'cf' for Cloudflare-managed cache, 'cacheApi' for Cache API
-  method: z.enum(['cf', 'cacheApi']).default('cacheApi'),
-  
   // Enable/disable KV cache operations
   enableKVCache: z.boolean().default(true),
   
@@ -109,7 +106,6 @@ export type CacheProfileConfiguration = z.infer<typeof CacheProfileSchema>;
 
 // Default configuration
 const defaultCacheConfig: CacheConfiguration = {
-  method: 'cf',
   enableKVCache: true,
   debug: false,
   defaultMaxAge: 300,
@@ -258,10 +254,10 @@ export class CacheConfigurationManager {
   }
 
   /**
-   * Get the cache method (cf or cacheApi)
+   * Get the cache method (always returns 'kv' now that we only use KV for caching)
    */
   public getCacheMethod(): string {
-    return this.config.method;
+    return 'kv';
   }
 
   /**

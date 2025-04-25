@@ -57,6 +57,7 @@ export interface DiagnosticsInfo {
   cacheability?: boolean;
   cacheTtl?: number;
   cacheTags?: string[];
+  cacheVersion?: number;
   
   // Errors and warnings
   errors?: string[];

@@ -17,6 +17,17 @@ import {
   tryOrDefault 
 } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';
+import { 
+  getCacheKeyVersion, 
+  getNextCacheKeyVersion, 
+  storeCacheKeyVersion 
+} from './cacheVersionService';
+import { 
+  normalizeUrlForCaching, 
+  addVersionToUrl, 
+  getVersionFromUrl 
+} from '../utils/urlVersionUtils';
+import { EnvVariables } from '../config/environmentConfig';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -48,6 +59,8 @@ export interface TransformationMetadata {
   derivative?: string | null;
   // Cache information
   cacheTags: string[];
+  // Cache versioning
+  cacheVersion?: number;
   // Content information
   contentType: string;
   contentLength: number;
@@ -194,6 +207,8 @@ async function storeTransformedVideoImpl(
     rows?: number | null;
     interval?: string | null;
     customData?: Record<string, unknown>;
+    version?: number; // Version from TransformationService
+    env?: EnvVariables; // Add env for version operations
   },
   ttl?: number
 ): Promise<boolean> {
@@ -209,8 +224,12 @@ async function storeTransformedVideoImpl(
     sourcePath,
     derivative: options.derivative,
     width: options.width,
-    height: options.height
+    height: options.height,
+    version: options.version || 1
   });
+  
+  // Use version from TransformationService if available, or default to 1
+  let cacheVersion = options.version || 1;
   
   // Create metadata object
   const metadata: TransformationMetadata = {
@@ -221,6 +240,7 @@ async function storeTransformedVideoImpl(
     compression: options.compression,
     derivative: options.derivative,
     cacheTags: generateCacheTags(sourcePath, options, response.headers),
+    cacheVersion, // Add version to metadata
     contentType: response.headers.get('Content-Type') || 'video/mp4',
     contentLength: parseInt(response.headers.get('Content-Length') || '0', 10),
     createdAt: Date.now(),
@@ -278,11 +298,44 @@ async function storeTransformedVideoImpl(
     await namespace.put(key, videoData, { metadata });
   }
   
+  // If env is provided but version isn't in options, ensure the version is stored in KV
+  // This helps keep the version service and KV storage in sync
+  if (options.env?.VIDEO_CACHE_KEY_VERSIONS && !options.version) {
+    try {
+      // Store the version with double the content TTL for persistence
+      const versionTtl = ttl ? ttl * 2 : undefined;
+      
+      // Use waitUntil if available for non-blocking operation
+      if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
+        (options.env as any).executionCtx.waitUntil(
+          storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl)
+        );
+      } else {
+        // Fallback to direct await if executionCtx not available
+        await storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl);
+      }
+      
+      logDebug('Stored cache version in KV', {
+        key,
+        cacheVersion,
+        versionTtl: versionTtl !== undefined ? versionTtl : 'indefinite'
+      });
+    } catch (err) {
+      // Log the error but continue - version storage is not critical for the content to be stored
+      logDebug('Error storing cache version in KV', {
+        key,
+        cacheVersion,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+  
   // Log success
   logDebug('Stored transformed video in KV', {
     key,
     size: metadata.contentLength,
-    ttl: ttl || 'indefinite'
+    ttl: ttl || 'indefinite',
+    cacheVersion
   });
   
   // Add breadcrumb for successful KV storage
@@ -292,8 +345,14 @@ async function storeTransformedVideoImpl(
       key,
       contentType: metadata.contentType,
       contentLength: metadata.contentLength,
-      ttl: ttl || 'indefinite'
+      ttl: ttl || 'indefinite',
+      cacheVersion
     });
+    
+    // Add version to diagnostics if available
+    if (requestContext.diagnostics) {
+      requestContext.diagnostics.cacheVersion = cacheVersion;
+    }
   }
   
   return true;
@@ -331,6 +390,8 @@ export const storeTransformedVideo = withErrorHandling<
       rows?: number | null;
       interval?: string | null;
       customData?: Record<string, unknown>;
+      version?: number; // Version from TransformationService
+      env?: EnvVariables; // Environment variables for versioning
     },
     number | undefined
   ],
@@ -390,6 +451,8 @@ async function getTransformedVideoImpl(
     columns?: number | null;
     rows?: number | null;
     interval?: string | null;
+    version?: number; // Version from TransformationService
+    env?: EnvVariables; // Environment variables for versioning
   },
   request?: Request // Add request parameter for range support
 ): Promise<{ response: Response; metadata: TransformationMetadata } | null> {
@@ -403,6 +466,7 @@ async function getTransformedVideoImpl(
     derivative: options.derivative,
     width: options.width,
     height: options.height,
+    version: options.version,
     hasRangeRequest: request?.headers.has('Range')
   });
   
@@ -411,6 +475,42 @@ async function getTransformedVideoImpl(
   
   if (!value || !metadata) {
     logDebug('Transformed video not found in KV', { key });
+    
+    // Increment version on cache miss if env is provided
+    if (options.env?.VIDEO_CACHE_KEY_VERSIONS) {
+      try {
+        // Force increment on cache miss
+        const nextVersion = await getNextCacheKeyVersion(options.env, key, true);
+        
+        // Calculate a reasonable TTL (will be overwritten when content is stored)
+        const cacheConfig = CacheConfigurationManager.getInstance();
+        const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
+        
+        // Store updated version in background if possible
+        if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
+          (options.env as any).executionCtx.waitUntil(
+            storeCacheKeyVersion(options.env, key, nextVersion, versionTtl)
+          );
+        } else {
+          // Fall back to direct storage
+          await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+        }
+        
+        logDebug('Incremented version on cache miss', {
+          key,
+          previousVersion: nextVersion - 1,
+          nextVersion,
+          ttl: versionTtl
+        });
+      } catch (err) {
+        // Log error but continue - version incrementation is not critical for get operations
+        logDebug('Error incrementing version on cache miss', {
+          key,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+    
     return null;
   }
   
@@ -448,6 +548,15 @@ async function getTransformedVideoImpl(
   headers.set('X-Cache-Status', 'HIT');
   headers.set('X-Cache-Source', 'KV');
   
+  // Add version information to headers if available
+  // Get version from metadata, options, or default to 1
+  let cacheVersion = metadata.cacheVersion || options.version || 1;
+  
+  // If we have a cache version, add it to headers
+  if (cacheVersion) {
+    headers.set('X-Cache-Version', cacheVersion.toString());
+  }
+  
   // Add derivative and other option information for analytics
   if (options.derivative) {
     headers.set('X-Video-Derivative', options.derivative);
@@ -473,7 +582,8 @@ async function getTransformedVideoImpl(
         range: rangeHeader,
         totalSize,
         contentType: metadata.contentType,
-        url: request.url
+        url: request.url,
+        cacheVersion
       });
       
       const range = parseRangeHeader(rangeHeader, totalSize);
@@ -497,7 +607,8 @@ async function getTransformedVideoImpl(
           end: range.end,
           total: range.total,
           sliceSize: slicedBody.byteLength,
-          bytesSent: range.end - range.start + 1
+          bytesSent: range.end - range.start + 1,
+          cacheVersion
         });
         
         // Add breadcrumb for range response
@@ -508,7 +619,8 @@ async function getTransformedVideoImpl(
             contentRange: `bytes ${range.start}-${range.end}/${range.total}`,
             contentLength: slicedBody.byteLength,
             age: cacheAge + 's',
-            rangeRequest: rangeHeader || ''
+            rangeRequest: rangeHeader || '',
+            cacheVersion
           });
           
           // Add diagnostic information to request context
@@ -524,6 +636,9 @@ async function getTransformedVideoImpl(
             bytes: range.end - range.start + 1,
             source: 'kv-cache'
           };
+          
+          // Add version to diagnostics
+          requestContext.diagnostics.cacheVersion = cacheVersion;
         }
         
         response = new Response(slicedBody, { 
@@ -537,7 +652,8 @@ async function getTransformedVideoImpl(
           key,
           range: rangeHeader,
           totalSize,
-          contentType: metadata.contentType
+          contentType: metadata.contentType,
+          cacheVersion
         });
         
         // Add breadcrumb for unsatisfiable range
@@ -547,7 +663,8 @@ async function getTransformedVideoImpl(
             key,
             contentType: metadata.contentType,
             totalSize,
-            range: rangeHeader
+            range: rangeHeader,
+            cacheVersion
           });
           
           // Add diagnostic information to request context
@@ -561,6 +678,9 @@ async function getTransformedVideoImpl(
             total: totalSize,
             source: 'kv-cache'
           };
+          
+          // Add version to diagnostics
+          requestContext.diagnostics.cacheVersion = cacheVersion;
         }
         
         response = createUnsatisfiableRangeResponse(totalSize);
@@ -569,7 +689,8 @@ async function getTransformedVideoImpl(
       logDebug('Error processing range request, falling back to full response', {
         key,
         error: err instanceof Error ? err.message : String(err),
-        range: request.headers.get('Range')
+        range: request.headers.get('Range'),
+        cacheVersion
       });
       
       // Add error to diagnostics
@@ -578,7 +699,8 @@ async function getTransformedVideoImpl(
         addBreadcrumb(requestContext, 'Error', 'Range processing error in KV cache', {
           key,
           error: err instanceof Error ? err.message : 'Unknown error',
-          range: request.headers.get('Range')
+          range: request.headers.get('Range'),
+          cacheVersion
         });
         
         // Add diagnostic information to request context
@@ -591,6 +713,9 @@ async function getTransformedVideoImpl(
           error: err instanceof Error ? err.message : 'Unknown error',
           source: 'kv-cache'
         };
+        
+        // Add version to diagnostics
+        requestContext.diagnostics.cacheVersion = cacheVersion;
       }
       
       // Fall back to sending full response
@@ -609,7 +734,8 @@ async function getTransformedVideoImpl(
     size: metadata.contentLength,
     age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's',
     status: response.status,
-    isRanged: response.status === 206
+    isRanged: response.status === 206,
+    cacheVersion
   });
   
   // Add breadcrumb for successful KV retrieval
@@ -620,8 +746,14 @@ async function getTransformedVideoImpl(
       contentType: metadata.contentType,
       contentLength: metadata.contentLength,
       age: Math.floor((Date.now() - metadata.createdAt) / 1000) + 's',
-      status: response.status
+      status: response.status,
+      cacheVersion
     });
+    
+    // Add version to diagnostics
+    if (requestContext.diagnostics) {
+      requestContext.diagnostics.cacheVersion = cacheVersion;
+    }
   }
   
   return { response, metadata };
@@ -653,6 +785,8 @@ export const getTransformedVideo = withErrorHandling<
       columns?: number | null;
       rows?: number | null;
       interval?: string | null;
+      version?: number; // Version from TransformationService
+      env?: EnvVariables; // Environment variables for versioning
     },
     Request | undefined // Add optional request parameter
   ],
@@ -678,6 +812,53 @@ export const getTransformedVideo = withErrorHandling<
         });
       }
       
+      // Increment version on error if env is provided
+      // This ensures cache busting occurs on errors
+      if (options.env?.VIDEO_CACHE_KEY_VERSIONS) {
+        try {
+          const key = generateKVKey(sourcePath, options);
+          
+          // Force increment on error
+          const nextVersion = await getNextCacheKeyVersion(options.env, key, true);
+          
+          // Calculate TTL - use double the default for persistence
+          const cacheConfig = CacheConfigurationManager.getInstance();
+          const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
+          
+          // Store updated version in background if possible
+          if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
+            (options.env as any).executionCtx.waitUntil(
+              storeCacheKeyVersion(options.env, key, nextVersion, versionTtl)
+            );
+            
+            // Log in background
+            logDebug('Incremented version on KV retrieval error (background)', {
+              key,
+              previousVersion: nextVersion - 1,
+              nextVersion,
+              ttl: versionTtl
+            });
+          } else {
+            // Fall back to direct storage
+            await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+            
+            // Log direct operation
+            logDebug('Incremented version on KV retrieval error (direct)', {
+              key,
+              previousVersion: nextVersion - 1,
+              nextVersion,
+              ttl: versionTtl
+            });
+          }
+        } catch (versionErr) {
+          // Log error but continue - version incrementation is not critical
+          logDebug('Error incrementing version on KV retrieval error', {
+            sourcePath,
+            error: versionErr instanceof Error ? versionErr.message : String(versionErr)
+          });
+        }
+      }
+      
       // Log via standardized error handling but return null to allow fallback to origin
       logErrorWithContext(
         'Failed to retrieve transformed video from KV',
@@ -686,7 +867,8 @@ export const getTransformedVideo = withErrorHandling<
           sourcePath,
           options,
           hasRangeRequest: request?.headers.has('Range'),
-          key: generateKVKey(sourcePath, options)
+          key: generateKVKey(sourcePath, options),
+          version: options.version
         },
         'KVStorageService'
       );
@@ -707,11 +889,13 @@ export const getTransformedVideo = withErrorHandling<
  * 
  * @param namespace - The KV namespace to use
  * @param sourcePath - Original video path
+ * @param env - Optional environment variables for version lookup
  * @returns Array of keys and their metadata
  */
 async function listVariantsImpl(
   namespace: KVNamespace,
-  sourcePath: string
+  sourcePath: string,
+  env?: EnvVariables
 ): Promise<{ key: string; metadata: TransformationMetadata }[]> {
   // Normalize the path
   const normalizedPath = sourcePath.replace(/^\/+/, '');
@@ -733,6 +917,31 @@ async function listVariantsImpl(
       const { metadata } = await namespace.getWithMetadata<TransformationMetadata>(key.name);
       
       if (metadata) {
+        // If env is provided and the KV version binding exists,
+        // try to get the latest version for this key
+        if (env?.VIDEO_CACHE_KEY_VERSIONS && !metadata.cacheVersion) {
+          try {
+            // Get the current version - don't increment
+            const currentVersion = await getCacheKeyVersion(env, key.name);
+            
+            // Add version to metadata if found
+            if (currentVersion !== null) {
+              metadata.cacheVersion = currentVersion;
+              
+              logDebug('Added version info to variant metadata', {
+                key: key.name,
+                version: currentVersion
+              });
+            }
+          } catch (err) {
+            // Log error but continue
+            logDebug('Error retrieving version for variant', {
+              key: key.name,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
+        
         variants.push({ key: key.name, metadata });
       }
     }
@@ -741,7 +950,8 @@ async function listVariantsImpl(
   // Log success
   logDebug('Listed video variants', {
     sourcePath,
-    variantCount: variants.length
+    variantCount: variants.length,
+    hasVersions: variants.some(v => v.metadata.cacheVersion !== undefined)
   });
   
   return variants;
@@ -753,24 +963,29 @@ async function listVariantsImpl(
  * 
  * @param namespace - The KV namespace to use
  * @param sourcePath - Original video path
+ * @param env - Optional environment variables for version lookup
  * @returns Array of keys and their metadata, or empty array on error
  */
 export const listVariants = withErrorHandling<
-  [KVNamespace, string],
+  [KVNamespace, string, EnvVariables?],
   Promise<{ key: string; metadata: TransformationMetadata }[]>
 >(
   async function listVariantsWrapper(
     namespace,
-    sourcePath
+    sourcePath,
+    env
   ): Promise<{ key: string; metadata: TransformationMetadata }[]> {
     try {
-      return await listVariantsImpl(namespace, sourcePath);
+      return await listVariantsImpl(namespace, sourcePath, env);
     } catch (err) {
       // Log via standardized error handling but return empty array
       logErrorWithContext(
         'Failed to list video variants',
         err,
-        { sourcePath },
+        { 
+          sourcePath,
+          hasVersionKv: !!env?.VIDEO_CACHE_KEY_VERSIONS
+        },
         'KVStorageService'
       );
       

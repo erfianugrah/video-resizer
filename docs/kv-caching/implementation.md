@@ -6,6 +6,7 @@
    - Core service for KV operations
    - Handles key generation, storage, and retrieval
    - Manages metadata association with stored content
+   - Integrates with cache versioning system
 
 2. **kvCacheUtils.ts**
    - Helper utilities for the KV caching system
@@ -26,6 +27,12 @@
    - Extracts transformation options from requests
    - Wraps the transformation service with caching
 
+5. **cacheVersionService.ts**
+   - Manages version numbers for cached content
+   - Stores versions in dedicated KV namespace
+   - Provides version incrementation on cache misses
+   - Enables automatic cache busting via URL parameters
+
 ## Metadata Structure
 
 Each KV entry includes detailed metadata:
@@ -45,6 +52,7 @@ interface TransformationMetadata {
   
   // Cache information
   cacheTags: string[];
+  cacheVersion?: number;
   
   // Content information
   contentType: string;
@@ -81,6 +89,18 @@ For example:
 - `video:videos/sample.mp4:w=640:h=360:f=mp4:q=high` (specific transformation)
 
 This schema allows for efficient storage and retrieval of specific video variants.
+
+### Version Keys
+
+For cache versioning, a separate key structure is used in the dedicated VIDEO_CACHE_KEY_VERSIONS namespace:
+
+```
+version-<cache_key>
+```
+
+Where `<cache_key>` is the sanitized version of the main content cache key. This separate versioning system enables cache busting even when cached content is deleted, since version information persists independently.
+
+For more details on versioning, see the [Cache Versioning System](./cache-versioning.md) documentation.
 
 ## TTL Management
 

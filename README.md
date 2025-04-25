@@ -62,6 +62,14 @@ A Cloudflare Worker for performing on-the-fly video transformations by transpare
 
 ### Recent Updates
 
+#### Cache Versioning System (April 2025)
+- Implemented a dedicated KV cache versioning system using VIDEO_CACHE_KEY_VERSIONS namespace
+- Added automatic version incrementation on cache misses and errors
+- Enhanced URLs with version parameters for cache busting
+- Integrated versioning with KV storage and transformation services
+- Added version information to response headers and diagnostics
+- [Documentation](./docs/kv-caching/cache-versioning.md)
+
 #### Production Deployment Fixes
 - Fixed storage configuration integration in VideoConfigurationManager
 - Fixed fallback URL construction in TransformVideoCommand

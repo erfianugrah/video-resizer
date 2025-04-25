@@ -148,7 +148,7 @@ export const VideoConfigSchema = z.object({
   }).optional(),
   pathPatterns: z.array(PathPatternSchema),
   caching: z.object({
-    method: z.enum(['cf', 'cacheApi']),
+    method: z.enum(['kv']),
     debug: z.boolean(),
     fallback: z.object({
       enabled: z.boolean(),
@@ -522,7 +522,7 @@ export class VideoConfigurationManager {
     
     // Default caching fallback
     return {
-      method: 'cacheApi',
+      method: 'kv',
       debug: false,
       fallback: {
         enabled: true,

@@ -59,7 +59,6 @@ export interface EnvironmentConfig {
     excludedPaths: string[];
   };
   cache: {
-    method: 'cf' | 'cacheApi';
     debug: boolean;
     defaultTtl: number;
     respectOrigin: boolean;
@@ -122,7 +121,6 @@ export interface EnvVariables {
   DEBUG_EXCLUDED_PATHS?: string;
   
   // Cache Configuration
-  CACHE_METHOD?: string;
   CACHE_DEBUG?: string;
   CACHE_DEFAULT_TTL?: string;
   CACHE_RESPECT_ORIGIN?: string;
@@ -198,6 +196,7 @@ export interface EnvVariables {
   VIDEO_TRANSFORMS_KV?: KVNamespace | undefined;
   VIDEO_TRANSFORMATIONS_CACHE?: KVNamespace | undefined;
   VIDEO_CONFIGURATION_STORE?: KVNamespace | undefined;
+  VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
   
   // API Authentication
   CONFIG_API_TOKEN?: string;
@@ -312,7 +311,6 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
     
     // Cache settings
     cache: {
-      method: (env.CACHE_METHOD?.toLowerCase() === 'cf') ? 'cf' : 'cacheApi',
       debug: parseBoolean(env.CACHE_DEBUG),
       defaultTtl: parseNumber(env.CACHE_DEFAULT_TTL, 86400),
       respectOrigin: parseBoolean(env.CACHE_RESPECT_ORIGIN, true),
@@ -405,7 +403,7 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
   logDebug('Environment configuration completed', {
     mode: config.mode,
     hasPathPatterns: !!config.pathPatterns,
-    cacheMethod: config.cache.method,
+    enableKVCache: config.cache.enableKVCache,
     logLevel: config.logging.level
   });
   

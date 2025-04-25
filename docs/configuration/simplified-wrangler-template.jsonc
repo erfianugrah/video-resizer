@@ -17,6 +17,11 @@
       "binding": "VIDEO_CONFIGURATION_STORE",
       "id": "ddaf6d5142af4f79b39defe745dac556",
       "preview_id": "ddaf6d5142af4f79b39defe745dac556"
+    },
+    {
+      "binding": "VIDEO_CACHE_KEY_VERSIONS",
+      "id": "949610c936b8480bad5b61f3aa934de1",
+      "preview_id": "949610c936b8480bad5b61f3aa934de1"
     }
   ],
   "r2_buckets": [
@@ -55,6 +60,10 @@
         {
           "binding": "VIDEO_CONFIGURATION_STORE",
           "id": "ddaf6d5142af4f79b39defe745dac556"
+        },
+        {
+          "binding": "VIDEO_CACHE_KEY_VERSIONS",
+          "id": "949610c936b8480bad5b61f3aa934de1"
         }
       ],
       "r2_buckets": [

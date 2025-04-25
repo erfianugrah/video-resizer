@@ -5,10 +5,11 @@
 import { getCacheConfig } from '../config';
 import { cacheConfig } from '../config/CacheConfigurationManager';
 import { EnvVariables } from '../config/environmentConfig';
-import { getTransformedVideo, storeTransformedVideo } from '../services/kvStorageService';
+import { getTransformedVideo, storeTransformedVideo, generateKVKey } from '../services/kvStorageService';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
+import { normalizeUrlForCaching } from './urlVersionUtils';
 
 /**
  * Helper for logging debug messages
@@ -45,7 +46,11 @@ export interface TransformOptions {
   columns?: number | null;
   rows?: number | null;
   interval?: string | null;
+  // Version information for cache busting
+  version?: number;
   customData?: Record<string, unknown>;
+  // Diagnostics information
+  diagnosticsInfo?: Record<string, any>;
   [key: string]: unknown;
 }
 
@@ -86,10 +91,16 @@ export async function getFromKVCache(
     return null;
   }
   
+  // Normalize the source path for caching (remove v parameter)
+  const normalizedPath = normalizeUrlForCaching(sourcePath);
+  
   // Check if we should bypass cache for this request
-  const shouldBypass = await shouldBypassKVCache(sourcePath);
+  const shouldBypass = await shouldBypassKVCache(normalizedPath);
   if (shouldBypass) {
-    logDebug('Bypassing KV cache by configuration', { sourcePath });
+    logDebug('Bypassing KV cache by configuration', { 
+      originalPath: sourcePath,
+      normalizedPath: normalizedPath !== sourcePath ? normalizedPath : undefined 
+    });
     return null;
   }
   
@@ -109,7 +120,7 @@ export async function getFromKVCache(
     
     const result = await getTransformedVideo(
       kvNamespace,
-      sourcePath,
+      normalizedPath, // Use normalized path for consistent cache keys
       options,
       request // Pass the request through for range handling
     );
@@ -181,6 +192,8 @@ export async function storeInKVCache(
   response: Response,
   options: TransformOptions
 ): Promise<boolean> {
+  // Normalize the source path for caching (remove v parameter)
+  const normalizedPath = normalizeUrlForCaching(sourcePath);
   // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
   const config = getCacheConfig(env);
   // Check for either KV namespace binding
@@ -366,7 +379,7 @@ export async function storeInKVCache(
         ctx.waitUntil(
           storeTransformedVideo(
             kvNamespace,
-            sourcePath,
+            normalizedPath, // Use normalized path for consistent cache keys
             responseClone,
             options,
             ttl
@@ -376,12 +389,13 @@ export async function storeInKVCache(
             // Include mode in the key format for consistency
             const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
             const mode = options.mode || 'video';
-            const storageKeyLog = `${mode}:${sourcePath.replace(/^\//g, '')}:${
+            const storageKeyLog = `${mode}:${normalizedPath.replace(/^\//g, '')}:${
               options.derivative ? `derivative=${options.derivative}` : 'default'
             }`;
             
             logDebug('Async KV storage operation completed', {
               sourcePath,
+              normalizedPath: normalizedPath !== sourcePath ? normalizedPath : undefined,
               mode,
               derivative: options.derivative,
               hasIMQuery: !!hasIMQuery,
@@ -427,7 +441,7 @@ export async function storeInKVCache(
         // Fall back to blocking operation if waitUntil isn't available
         success = await storeTransformedVideo(
           kvNamespace,
-          sourcePath,
+          normalizedPath, // Use normalized path for consistent cache keys
           responseClone,
           options,
           ttl

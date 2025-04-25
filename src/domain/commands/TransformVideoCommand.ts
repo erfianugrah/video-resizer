@@ -77,6 +77,12 @@ export interface VideoTransformOptions {
   // IMQuery reference parameter
   imref?: string | null;
   
+  // Cache versioning
+  version?: number;
+  
+  // Diagnostics information
+  diagnosticsInfo?: Record<string, any>;
+  
   // Custom data for additional metadata (like IMQuery parameters)
   customData?: Record<string, unknown>;
 }
@@ -715,102 +721,45 @@ export class TransformVideoCommand {
       const fetchOptions: {
         method: string;
         headers: Headers;
-        cf?: Record<string, unknown>;
       } = {
         method: request.method,
         headers: request.headers,
       };
       
-      // Get the configuration manager
-      const configManager = VideoConfigurationManager.getInstance();
-      
-      // Determine caching method based only on configuration, independent of cacheability
-      const cacheMethod = configManager.getCachingConfig().method;
-      
       // Add breadcrumb for caching method
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
         addBreadcrumb(this.requestContext, 'Cache', 'Setting up caching method', {
-          method: cacheMethod,
+          method: 'kv',
           ttl: cacheConfig?.ttl?.ok,
           cacheability: cacheConfig?.cacheability,
           useTtlByStatus: cacheConfig?.useTtlByStatus
         });
       }
       
-      // Always use the configured method regardless of debug mode
-      if (cacheMethod === 'cf') {
-        // Import createCfObjectParams dynamically to avoid circular dependencies
-        const { createCfObjectParams } = await import('../../services/cacheManagementService');
-        
-        // Determine expected content type for caching decisions
-        let expectedContentType: string | undefined;
-        
-        // Use format or mode to guess the expected content type
-        if (options.format) {
-          // Map format to content type
-          const formatContentTypeMap: Record<string, string> = {
-            'mp4': 'video/mp4',
-            'webm': 'video/webm',
-            'gif': 'image/gif'
-          };
-          expectedContentType = formatContentTypeMap[options.format] || 'video/mp4';
-        } else if (options.mode === 'frame') {
-          // Frame mode produces images
-          expectedContentType = 'image/jpeg';
-        } else if (options.mode === 'spritesheet') {
-          // Spritesheet mode produces images
-          expectedContentType = 'image/jpeg';
-        } else {
-          // Default to video/mp4 for video mode
-          expectedContentType = 'video/mp4';
-        }
-        
-        // Always use cf object when configured, even if cacheability is false
-        // createCfObjectParams will handle cacheability internally
-        const cfParams = createCfObjectParams(
-          200, // Assuming OK status for initial fetch parameters
-          cacheConfig,
-          source,
-          derivative,
-          expectedContentType
-        );
-        
-        // Only assign cf params if we got a valid object back (convert null to {})
-        fetchOptions.cf = cfParams || {};
-        
-        // Log caching configuration
-        await logDebug('TransformVideoCommand', 'Using cf object for caching', {
-          cfObject: fetchOptions.cf,
-          cacheability: cacheConfig?.cacheability
-        });
-        
-        // Add to diagnostics info - always use cf-object when method is cf
-        diagnosticsInfo.cachingMethod = 'cf-object';
-      } else {
-        // When method is cacheApi, use Cache API for caching mechanism
-        // cacheability will be handled by cache service logic
-        // Log caching configuration
-        await logDebug('TransformVideoCommand', 'Using Cache API for caching', {
-          cacheability: cacheConfig?.cacheability
-        });
-        
-        // Add to diagnostics info
-        diagnosticsInfo.cachingMethod = 'cache-api';
-      }
+      // Log caching configuration
+      await logDebug('TransformVideoCommand', 'Using KV for caching', {
+        cacheability: cacheConfig?.cacheability
+      });
+      
+      // Add to diagnostics info
+      diagnosticsInfo.cachingMethod = 'kv';
       
       // Create a fetch request to the CDN-CGI URL
       if (this.requestContext) {
         const { addBreadcrumb } = await import('../../utils/requestContext');
         addBreadcrumb(this.requestContext, 'Transform', 'Fetching transformed video from CDN-CGI', {
           url: cdnCgiUrl.split('?')[0], // Don't include query parameters for security
-          method: request.method,
-          hasCf: !!fetchOptions.cf
+          method: request.method
         });
       }
       
-      // Fetch transformation response from CDN-CGI
-      const response = await fetch(cdnCgiUrl, fetchOptions);
+      // Fetch transformation response from CDN-CGI with range support
+      // Import the cache management to handle range requests properly
+      const { cacheResponse } = await import('../../services/cacheManagementService');
+      
+      // Use cacheResponse instead of direct fetch to ensure range requests are handled correctly
+      const response = await cacheResponse(request, async () => fetch(cdnCgiUrl, fetchOptions));
       
       // Extract all headers for detailed logging
       const responseHeaders: Record<string, string> = {};
@@ -913,8 +862,9 @@ export class TransformVideoCommand {
               adjustedCdnCgiUrl: adjustedCdnCgiUrl.split('?')[0] // Don't include query parameters for security
             });
             
-            // Retry the fetch with the adjusted URL
-            const retryResponse = await fetch(adjustedCdnCgiUrl);
+            // Retry the fetch with the adjusted URL - using cacheResponse for range support
+            const { cacheResponse } = await import('../../services/cacheManagementService');
+            const retryResponse = await cacheResponse(request, async () => fetch(adjustedCdnCgiUrl));
             
             // Log detailed retry response
             const retryResponseHeaders: Record<string, string> = {};
@@ -1183,13 +1133,13 @@ export class TransformVideoCommand {
                       (url.searchParams.get('debug') === 'view' || 
                         url.searchParams.get('debug') === 'true');
       
-      // Debug mode disables cache storage but keeps the method for debugging purposes
+      // Debug mode disables cache storage
       if (url.searchParams.has('debug')) {
         // Log debug mode disabling cache storage
         await logDebug('TransformVideoCommand', 'Debug mode active - cache storage disabled', {
           url: url.toString(),
-          cacheMethod: diagnosticsInfo.cachingMethod,
-          cacheability: false // Debug forces no caching, but keeps the method
+          cachingMethod: 'kv',
+          cacheability: false // Debug forces no caching
         });
         
         // Add to warnings if not already present
@@ -1300,14 +1250,11 @@ export class TransformVideoCommand {
       
       // Debug mode disables cache storage but keeps the method for debugging purposes
       if (url.searchParams.has('debug')) {
-        // Get the video configuration manager
-        const videoConfigManager = VideoConfigurationManager.getInstance();
-        
         // Log debug mode for error case
         await logDebug('TransformVideoCommand', 'Debug mode active - cache storage disabled (error case)', {
           url: url.toString(),
           status: 500,
-          cacheMethod: videoConfigManager.getCachingConfig().method
+          cachingMethod: 'kv'
         });
         
         // Add to warnings if not already present
