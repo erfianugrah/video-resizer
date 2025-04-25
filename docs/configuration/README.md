@@ -45,7 +45,16 @@ The configuration system is made up of several specialized managers:
 3. [Debug Configuration](./debug-configuration.md) - Controls debugging features
 4. **Logging Configuration** - Configures logging behavior (see [Features/Logging](../features/logging/README.md))
 
-For a complete reference of all configuration options and their details, see the [Configuration Reference](./CONFIGURATION_REFERENCE.md) document.
+For detailed guidance on configuring the video-resizer, see the [Configuration Guide](./CONFIGURATION_GUIDE.md). For a complete reference of all configuration options and their details, see the [Configuration Reference](./CONFIGURATION_REFERENCE.md) document.
+
+## Configuration Management Tools
+
+For tools that help manage and update configuration:
+
+- **[Configuration Tools Guide](../tools/TOOLS_GUIDE.md)**: Comprehensive documentation of configuration tools
+- **[Configuration Upload Tool](../tools/README.md#configuration-upload-tool-config-uploadjs)**: Quick reference for the upload tool
+- **[Configuration Debug Tool](../tools/README.md#configuration-debug-tool-config-debugjs)**: Quick reference for the debug tool
+- **[Configuration Check Tool](../tools/README.md#configuration-check-tool-check-configjs)**: Quick reference for the config validation tool
 
 ## Advanced Configuration Topics
 

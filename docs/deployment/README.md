@@ -164,3 +164,14 @@ node tools/config-upload.js --env production --token YOUR_PROD_TOKEN
 ```
 
 For more information on the dynamic configuration system, see [Dynamic Configuration](../configuration/dynamic-configuration.md).
+
+## Deployment Tools
+
+The video-resizer project includes several utility tools to help with deployment and configuration management:
+
+- **[Configuration Tools Guide](../tools/TOOLS_GUIDE.md)**: Comprehensive documentation of all deployment tools
+- **[Configuration Upload Tool](../tools/README.md#configuration-upload-tool-config-uploadjs)**: Tool for updating configuration without redeployment
+- **[Configuration Debug Tool](../tools/README.md#configuration-debug-tool-config-debugjs)**: Tool for testing configuration API connectivity
+- **[Configuration Check Tool](../tools/README.md#configuration-check-tool-check-configjs)**: Tool for validating configuration files locally
+
+See the [Tools Documentation](../tools/README.md) for detailed information on using these tools.
