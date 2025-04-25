@@ -12,6 +12,7 @@ import { addBreadcrumb } from '../utils/requestContext';
 import { generateBaseKVKey } from '../services/kvStorageService';
 import { getCurrentVersion, incrementVersion } from '../services/versionManagerService';
 import { CacheConfigurationManager } from '../config/CacheConfigurationManager';
+import { parseRangeHeader, createUnsatisfiableRangeResponse } from '../utils/httpUtils';
 
 /**
  * Cache orchestrator that uses versioned KV caching
@@ -215,7 +216,98 @@ export async function withCaching(
       }
     }
     
-    // Return the original response
+    // Step 10: Check if original request has Range header and handle range slicing
+    if (request.headers.has('Range') && response.ok) {
+      try {
+        const rangeHeader = request.headers.get('Range');
+        const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+        
+        // Log detailed information about the range request
+        logDebug('Processing range request from media proxy response', { 
+          baseKey, 
+          range: rangeHeader,
+          contentLength,
+          contentType: response.headers.get('content-type'),
+          url: request.url
+        });
+        
+        // Clone the response to ensure we don't consume it
+        const responseToSlice = response.clone();
+        
+        // Get the response as array buffer
+        const buffer = await responseToSlice.arrayBuffer();
+        const totalSize = buffer.byteLength;
+        
+        const range = parseRangeHeader(rangeHeader, totalSize);
+        
+        if (range) {
+          // Valid range request - create a 206 Partial Content response
+          const slicedBody = buffer.slice(range.start, range.end + 1);
+          const rangeHeaders = new Headers(response.headers);
+          rangeHeaders.set('Content-Range', `bytes ${range.start}-${range.end}/${range.total}`);
+          rangeHeaders.set('Content-Length', slicedBody.byteLength.toString());
+          
+          // Add debug headers to verify range handling
+          rangeHeaders.set('X-Range-Handled-By', 'Cache-Orchestrator');
+          rangeHeaders.set('X-Range-Request', rangeHeader || '');
+          rangeHeaders.set('X-Range-Bytes', `${range.start}-${range.end}/${range.total}`);
+          
+          logDebug('Serving ranged response from media proxy', { 
+            baseKey,
+            range: rangeHeader,
+            start: range.start,
+            end: range.end,
+            total: range.total,
+            sliceSize: slicedBody.byteLength,
+            bytesSent: range.end - range.start + 1
+          });
+          
+          // Add breadcrumb for range response
+          addCacheBreadcrumb('Serving partial content from media proxy', {
+            contentRange: `bytes ${range.start}-${range.end}/${range.total}`,
+            contentLength: slicedBody.byteLength,
+            rangeRequest: rangeHeader || ''
+          });
+          
+          return new Response(slicedBody, { 
+            status: 206, 
+            statusText: 'Partial Content',
+            headers: rangeHeaders 
+          });
+        } else {
+          // Invalid or unsatisfiable range - return 416
+          logDebug('Unsatisfiable range requested for media proxy response', {
+            baseKey,
+            range: rangeHeader,
+            totalSize,
+            contentType: response.headers.get('content-type')
+          });
+          
+          // Add breadcrumb for unsatisfiable range
+          addCacheBreadcrumb('Unsatisfiable range requested', {
+            contentType: response.headers.get('content-type'),
+            totalSize,
+            range: rangeHeader
+          });
+          
+          return createUnsatisfiableRangeResponse(totalSize);
+        }
+      } catch (err) {
+        logDebug('Error processing range request, falling back to full response', {
+          baseKey,
+          error: err instanceof Error ? err.message : String(err),
+          range: request.headers.get('Range')
+        });
+        
+        // Add error breadcrumb
+        addCacheBreadcrumb('Range processing error', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+          range: request.headers.get('Range')
+        });
+      }
+    }
+    
+    // Return the original response if no range processing was done
     return response;
   } catch (err) {
     logDebug('Error in versioned cache flow', {

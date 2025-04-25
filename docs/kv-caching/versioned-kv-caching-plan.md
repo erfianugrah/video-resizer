@@ -1,17 +1,17 @@
-# Versioned KV Caching Implementation Plan
+# Versioned KV Caching Implementation
 
 ## Overview
 
-This document outlines the plan to implement a versioned KV caching system for video-resizer. The approach will:
+This document outlines the implementation of a versioned KV caching system for the video-resizer project. The approach:
 
-1. Replace the current Cache API and CF object caching with a pure KV-based solution
-2. Add version tracking for cache keys to enable controlled invalidation
-3. Use the media proxy's native caching and range request handling capabilities
-4. Simplify the caching configuration and implementation
+1. Replaces the combination of Cache API and CF object caching with a simpler KV-based solution
+2. Utilizes version tracking for cache keys to enable controlled invalidation
+3. Maintains proper range request handling with manual slicing on both cached and uncached content
+4. Simplifies the caching configuration and implementation
 
-## Current Implementation Status
+## Implementation Status
 
-The implementation is in progress. The following components have been completed:
+The following components have been implemented:
 
 1. ✅ Added `VIDEO_CACHE_KEY_VERSIONS` KV namespace to wrangler.jsonc
 2. ✅ Updated environment types to include the new KV namespace
@@ -19,20 +19,46 @@ The implementation is in progress. The following components have been completed:
 4. ✅ Modified KV key generation to support versioning
 5. ✅ Updated cache orchestrator to use versioned approach
 6. ✅ Updated video handler to use versioned caching
-7. ✅ Created tests for versioned caching
+7. ✅ Implemented manual range slicing for both cached content and fresh media proxy responses
+8. ✅ Created tests to verify the implementation
 
-## Current Issues
+## Issues Addressed
 
-- Current caching is complex with multiple layers (Cache API, CF object cache, KV)
-- Cache invalidation requires purging multiple caches
-- Range request handling adds complexity to our implementation
+- Eliminated complexity with multiple caching layers (Cache API, CF object cache, KV)
+- Simplified cache invalidation using version-based approach
+- Maintained proper range request handling with manual slicing
+- Reduced code complexity by removing Cache API and CF object caching dependencies
 
 ## Solution Benefits
 
 - **Simplified Architecture**: Single caching layer with versioning
 - **Controlled Cache Invalidation**: Version updates automatically invalidate cached content
-- **Better Range Request Handling**: Delegate to the media proxy's native capabilities
-- **Reduced Code Complexity**: Remove Cache API-related code and simplify configuration
+- **Robust Range Request Handling**: Manual range slicing for both cached and uncached content
+- **Reduced Code Complexity**: Removed Cache API-related code and simplified configuration
+
+## Key Components
+
+1. **Version Tracking**:
+   - Versions are stored in a dedicated KV namespace (`VIDEO_CACHE_KEY_VERSIONS`)
+   - Each cache key has an associated version number
+   - Version incrementation serves as the primary cache invalidation mechanism
+
+2. **Cache Key Structure**:
+   - Base key format: `{mode}:{path}:{params}`
+   - Versioned key format: `{mode}:{path}:{params}:v{version}`
+   - Parameters include transformation options like derivative, width, height, etc.
+
+3. **Cache Flow**:
+   1. Check KV for content with current version
+   2. On cache hit: Return cached content (with range slicing if needed)
+   3. On cache miss: Increment version, append version to URL for media proxy, fetch, store in KV
+
+4. **Range Request Handling**:
+   - KV cache hit: Slice directly from KV stored content using parseRangeHeader
+   - KV cache miss: 
+     1. Fetch full content from media proxy
+     2. Store full content in KV using waitUntil for non-blocking operation
+     3. Manually slice the response according to Range header before returning to client
 
 ## Implementation Steps
 
