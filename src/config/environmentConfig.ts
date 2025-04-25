@@ -196,6 +196,7 @@ export interface EnvVariables {
   VIDEO_TRANSFORMS_KV?: KVNamespace | undefined;
   VIDEO_TRANSFORMATIONS_CACHE?: KVNamespace | undefined;
   VIDEO_CONFIGURATION_STORE?: KVNamespace | undefined;
+  VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
   
   // API Authentication
   CONFIG_API_TOKEN?: string;

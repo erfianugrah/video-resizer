@@ -34,6 +34,7 @@ The KV caching system follows a multi-layered approach:
 - [Configuration Guide](./configuration.md)
 - [Testing Guide](./testing.md)
 - [Performance Considerations](./performance.md)
+- [Cache Versioning System](./cache-versioning.md)
 
 ## Key Benefits
 
@@ -42,6 +43,8 @@ The KV caching system follows a multi-layered approach:
 - **Origin traffic reduction**: Minimizes requests to origin storage services
 - **Variant management**: Cache specific variants based on transformation parameters
 - **Purge flexibility**: Support for cache tags to purge related cached content
+- **Automatic cache busting**: Version parameters ensure clients receive fresh content after updates
+- **Version persistence**: Dedicated version storage system survives content deletion or expiration
 
 ## Enabling/Disabling KV Cache
 
@@ -67,6 +70,18 @@ CACHE_ENABLE_KV=true  # Set to false to disable KV cache
 ```
 
 ## Recent Updates
+
+### Cache Versioning System (April 2025)
+
+Implemented a dedicated KV cache versioning system to address cache staleness issues:
+
+1. Added new `VIDEO_CACHE_KEY_VERSIONS` KV namespace for version tracking
+2. Implemented version increment logic on cache misses and errors
+3. Added URL versioning for automatic cache busting
+4. Integrated with KV storage and transformation services
+5. Enhanced diagnostics with version information in headers and debug UI
+
+For full details, see the [Cache Versioning System](./cache-versioning.md) documentation.
 
 ### enableKVCache Flag Fix (April 2025)
 

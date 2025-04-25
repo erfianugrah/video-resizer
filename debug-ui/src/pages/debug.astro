@@ -436,6 +436,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
             })
           );
           
+          // Cache Version
+          if (diagnosticsData.cacheVersion !== undefined) {
+            const cacheVersionRow = document.createElement('div');
+            cacheInfoContent.appendChild(cacheVersionRow);
+            const cacheVersionInstance = createRoot(cacheVersionRow);
+            cacheVersionInstance.render(
+              React.createElement(InfoRow, { 
+                label: 'Version:', 
+                value: React.createElement(Badge, { variant: "info" }, `v${diagnosticsData.cacheVersion}`)
+              })
+            );
+          }
+          
           // Cache TTL
           if (diagnosticsData.cacheTtl !== undefined) {
             const cacheTtlRow = document.createElement('div');

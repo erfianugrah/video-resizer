@@ -77,6 +77,12 @@ export interface VideoTransformOptions {
   // IMQuery reference parameter
   imref?: string | null;
   
+  // Cache versioning
+  version?: number;
+  
+  // Diagnostics information
+  diagnosticsInfo?: Record<string, any>;
+  
   // Custom data for additional metadata (like IMQuery parameters)
   customData?: Record<string, unknown>;
 }

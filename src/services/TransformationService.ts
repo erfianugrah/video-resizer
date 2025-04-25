@@ -11,6 +11,10 @@ import { addBreadcrumb } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';
+import { getCacheKeyVersion, getNextCacheKeyVersion, storeCacheKeyVersion } from './cacheVersionService';
+import { addVersionToUrl, normalizeUrlForCaching } from '../utils/urlVersionUtils';
+import { generateKVKey } from './kvStorageService';
+import { EnvVariables } from '../config/environmentConfig';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -46,7 +50,7 @@ import { VideoConfigurationManager } from '../config';
  * @returns Transformation result with URL and cache configuration
  */
 export const prepareVideoTransformation = withErrorHandling<
-  [Request, VideoTransformOptions, PathPattern[], DebugInfo | undefined, { ASSETS?: { fetch: (request: Request) => Promise<Response> } } | undefined],
+  [Request, VideoTransformOptions, PathPattern[], DebugInfo | undefined, EnvVariables | undefined],
   {
     cdnCgiUrl: string;
     cacheConfig: CacheConfig;
@@ -59,11 +63,7 @@ export const prepareVideoTransformation = withErrorHandling<
     options: VideoTransformOptions,
     pathPatterns: PathPattern[],
     debugInfo?: DebugInfo,
-    env?: { 
-      ASSETS?: { 
-        fetch: (request: Request) => Promise<Response> 
-      } 
-    }
+    env?: EnvVariables
   ): Promise<{
     cdnCgiUrl: string;
     cacheConfig: CacheConfig;
@@ -263,7 +263,130 @@ export const prepareVideoTransformation = withErrorHandling<
     // Build the CDN-CGI media URL
     // Pass parameters: transformation options, origin URL, and request URL
     // This ensures we use the request host while accessing content from origin URL
-    const cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+    let cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+    
+    // Get cache configuration for the video URL
+    let cacheConfig = determineCacheConfig(videoUrl);
+    
+    // Check if we should attempt to get previous version for cache busting
+    const skipCache = url.searchParams.has('debug') || !cacheConfig?.cacheability;
+    
+    // Only proceed with versioning if env is available and we're not skipping cache
+    if (env && !skipCache) {
+      try {
+        // Generate a consistent cache key for this transformation
+        const cacheKey = generateKVKey(normalizeUrlForCaching(videoUrl), options);
+        
+        // Check if the content exists in the cache
+        let shouldIncrement = false;
+        
+        if (env.VIDEO_TRANSFORMATIONS_CACHE) {
+          try {
+            // Check if the entry exists by trying to get it
+            // We'll use list with a prefix to be more efficient and avoid fetching the actual data
+            const keys = await env.VIDEO_TRANSFORMATIONS_CACHE.list({ prefix: cacheKey, limit: 1 });
+            const exists = keys.keys.length > 0;
+            
+            // If the entry doesn't exist, we should increment the version
+            shouldIncrement = !exists;
+            
+            logDebug('Checking if cache entry exists for version increment', {
+              cacheKey,
+              exists,
+              shouldIncrement,
+              checkMethod: 'head request'
+            });
+          } catch (err) {
+            // If error occurs during check, assume cache miss to be safe
+            shouldIncrement = true;
+            logDebug('Error checking cache existence, assuming cache miss', {
+              cacheKey,
+              error: err instanceof Error ? err.message : String(err),
+              shouldIncrement: true
+            });
+          }
+        }
+        
+        // Get next version number - if shouldIncrement is true, we'll force an increment
+        const nextVersion = await getNextCacheKeyVersion(env, cacheKey, shouldIncrement);
+        
+        // Calculate TTL - double the video cache TTL for longer persistence
+        const versionTtl = (cacheConfig?.ttl?.ok || 300) * 2;
+
+        // ALWAYS store the updated version in KV when it changes
+        if (shouldIncrement) {
+          logDebug('Storing incremented version in KV', {
+            cacheKey,
+            previousVersion: nextVersion - 1,
+            nextVersion,
+            ttl: versionTtl
+          });
+          
+          // Store updated version in background if possible
+          if (env && 'executionCtx' in env && (env as any).executionCtx?.waitUntil) {
+            (env as any).executionCtx.waitUntil(
+              storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl)
+            );
+          } else {
+            // Fall back to direct storage
+            await storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl);
+          }
+        }
+        
+        // Only add version param for version > 1 to avoid unnecessary params
+        if (nextVersion > 1) {
+          // Create a modified URL with version parameter
+          const versionedCdnCgiUrl = addVersionToUrl(cdnCgiUrl, nextVersion);
+          
+          // Log the version addition
+          logDebug('Added version parameter for cache busting', {
+            originalUrl: cdnCgiUrl,
+            versionedUrl: versionedCdnCgiUrl,
+            cacheKey,
+            nextVersion,
+            shouldIncrement
+          });
+          
+          // Add a breadcrumb for tracking
+          if (requestContext) {
+            addBreadcrumb(requestContext, 'Cache', 'Added version for cache busting', {
+              cacheKey, 
+              nextVersion,
+              path,
+              originalUrl: url.toString()
+            });
+          }
+          
+          // Add version info to diagnostics
+          diagnosticsInfo.cacheVersion = nextVersion;
+          
+          // Store version in options for use in kvStorageService
+          options.version = nextVersion;
+          
+          // Update the URL with version
+          cdnCgiUrl = versionedCdnCgiUrl;
+        } else {
+          // First version - add to diagnostics but don't modify URL
+          // Store version in options
+          options.version = nextVersion;
+          
+          // Add version info to diagnostics
+          diagnosticsInfo.cacheVersion = nextVersion;
+          
+          logDebug('Using first version (no URL parameter needed)', {
+            cacheKey,
+            version: nextVersion,
+            url: cdnCgiUrl
+          });
+        }
+      } catch (err) {
+        // Log error but continue with unversioned URL
+        logDebug('Error adding version parameter', {
+          error: err instanceof Error ? err.message : String(err),
+          path
+        });
+      }
+    }
 
     // Add timing information for transformation operation
     const transformationTime = performance.now() - (requestContext?.startTime || 0);
@@ -300,9 +423,6 @@ export const prepareVideoTransformation = withErrorHandling<
     const cdnParamsFormatted = Object.entries(cdnParams)
       .map(([key, value]) => `${key}=${value}`)
       .join(',');
-      
-    // Get cache configuration for the video URL
-    let cacheConfig = determineCacheConfig(videoUrl);
     
     // Setup source for cache tagging
     const source = pathPattern.name;
@@ -346,7 +466,18 @@ export const prepareVideoTransformation = withErrorHandling<
         }
         
         // Rebuild the CDN-CGI media URL with the derivative's dimensions
-        const updatedCdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+        let updatedCdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+        
+        // Apply versioning if available
+        if (diagnosticsInfo.cacheVersion && diagnosticsInfo.cacheVersion > 1) {
+          updatedCdnCgiUrl = addVersionToUrl(updatedCdnCgiUrl, diagnosticsInfo.cacheVersion);
+          
+          // Log version application to IMQuery URL
+          logDebug('Applied version to IMQuery URL', {
+            version: diagnosticsInfo.cacheVersion,
+            url: updatedCdnCgiUrl
+          });
+        }
         
         // We need to reassign cdnCgiUrl to a variable that's not a constant
         let finalCdnCgiUrl = updatedCdnCgiUrl;

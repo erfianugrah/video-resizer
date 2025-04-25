@@ -201,6 +201,11 @@ export function addDebugHeaders(
     headers.set('X-Cache-TTL', diagnosticsInfo.cacheTtl.toString());
   }
   
+  // Add cache version if available
+  if (diagnosticsInfo.cacheVersion !== undefined) {
+    headers.set('X-Cache-Version', diagnosticsInfo.cacheVersion.toString());
+  }
+  
   // Add cache tags info
   if (diagnosticsInfo.cacheTags && diagnosticsInfo.cacheTags.length > 0) {
     // Add as X-Cache-Tags header for debugging
