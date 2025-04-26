@@ -174,4 +174,10 @@ The video-resizer project includes several utility tools to help with deployment
 - **[Configuration Debug Tool](../tools/README.md#configuration-debug-tool-config-debugjs)**: Tool for testing configuration API connectivity
 - **[Configuration Check Tool](../tools/README.md#configuration-check-tool-check-configjs)**: Tool for validating configuration files locally
 
-See the [Tools Documentation](../tools/README.md) for detailed information on using these tools.
+See the [Tools Documentation](../tools/README.md) for detailed information on using these tools.\n> Note: This document contains merged content from DEPLOY.md
+\n## Additional Deployment Information\n
+# Video Resizer Deployment Process
+
+This document has been moved to [README.md](./README.md) to consolidate deployment documentation.
+
+Please refer to the [Deployment Guide](./README.md) for complete information on deploying the Video Resizer application.

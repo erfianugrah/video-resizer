@@ -1,117 +1,23 @@
-# Video Resizer Configuration Reference
+# Configuration Reference
 
-This document provides a comprehensive reference for all configuration options available in the video-resizer project. The configuration system is divided into several managers, each responsible for a specific area of functionality.
+> This is the comprehensive reference guide for all configuration options in the video-resizer project.
+> This document was created by consolidating multiple configuration documentation files.
 
 ## Table of Contents
 
-- [Configuration System Overview](#configuration-system-overview)
 - [Video Configuration](#video-configuration)
 - [Cache Configuration](#cache-configuration)
-- [Logging Configuration](#logging-configuration)
 - [Debug Configuration](#debug-configuration)
-- [Environment Variables](#environment-variables)
+- [Logging Configuration](#logging-configuration)
+- [Path Pattern Matching](#path-pattern-matching)
+- [S3 Authentication](#s3-authentication)
 
-## Configuration System Overview
+\n## Video Configuration\n
+# Video Configuration
 
-The video-resizer uses a centralized configuration management system based on Zod schema validation. Each configuration manager is implemented as a singleton and provides type-safe access to configuration values.
+The `VideoConfigurationManager` handles all video transformation settings and options. It manages video derivatives, default options, and path patterns for URL matching.
 
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
-flowchart TD
-    A[Environment Variables] -->|Override| B[Default Configuration]
-    C[wrangler.jsonc] -->|Override| B
-    
-    B --> D[Zod Schema Validation]
-    D --> E[Configuration Manager Singletons]
-    
-    E --> F[VideoConfigurationManager]
-    E --> G[CacheConfigurationManager]
-    E --> H[DebugConfigurationManager]
-    E --> I[LoggingConfigurationManager]
-    
-    F --> J{Application Services}
-    G --> J
-    H --> J
-    I --> J
-    
-    J --> K[Worker Behavior]
-    
-    style A fill:#5D8AA8,stroke:#333,stroke-width:2px
-    style B fill:#006400,stroke:#333,stroke-width:2px
-    style C fill:#5D8AA8,stroke:#333,stroke-width:2px
-    style D fill:#7B68EE,stroke:#333,stroke-width:2px
-    style E fill:#7B68EE,stroke:#333,stroke-width:2px
-    style F fill:#F8B229,stroke:#333,stroke-width:2px
-    style G fill:#F8B229,stroke:#333,stroke-width:2px
-    style H fill:#F8B229,stroke:#333,stroke-width:2px
-    style I fill:#F8B229,stroke:#333,stroke-width:2px
-    style J fill:#006400,stroke:#333,stroke-width:2px
-    style K fill:#5D8AA8,stroke:#333,stroke-width:2px
-```
-
-### Key Features
-
-- **Runtime Validation**: All configuration is validated at runtime using Zod schemas
-- **Type Safety**: Full TypeScript type support with inferred types from Zod schemas
-- **Centralized Management**: Configuration accessed through manager classes
-- **Environment Variable Support**: Configuration can be overridden with environment variables
-- **Default Values**: Sensible defaults for all configuration options
-
-### Usage Example
-
-```typescript
-import { VideoConfigurationManager } from './config';
-
-// Get an instance of the configuration manager
-const configManager = VideoConfigurationManager.getInstance();
-
-// Access configuration
-const paramMapping = configManager.getParamMapping();
-const isValidOption = configManager.isValidOption('fit', 'contain');
-```
-
-## Video Configuration
-
-The `VideoConfigurationManager` handles all video transformation settings and options.
-
-### Non-MP4 File Passthrough
-
-The video-resizer includes a configurable passthrough capability for non-MP4 video files:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `passthrough.enabled` | boolean | true | Enable passthrough for non-MP4 files |
-| `passthrough.whitelistedFormats` | string[] | [] | File extensions to process even if not MP4 |
-
-Example configuration in wrangler.jsonc:
-
-```jsonc
-{
-  "video": {
-    "passthrough": {
-      "enabled": true,
-      "whitelistedFormats": [".webm"]
-    }
-  }
-}
-```
-
-Or when using the Configuration API:
-
-```json
-{
-  "video": {
-    "passthrough": {
-      "enabled": true,
-      "whitelistedFormats": [".webm"]
-    }
-  }
-}
-```
-
-**Note**: Cloudflare Media Transformation only fully supports MP4 files with H.264 encoded video and AAC or MP3 encoded audio. Attempting to process other formats may result in errors.
-
-### Video Derivatives
+## Video Derivatives
 
 Preset configurations for different use cases:
 
@@ -125,7 +31,96 @@ Preset configurations for different use cases:
 | `preview`  | Short preview clip | Hover previews, loading animations |
 | `animation`| GIF-like animation | Short animated preview |
 
-### Video Default Options
+## Non-MP4 File Passthrough
+
+The video-resizer includes a configurable passthrough capability for non-MP4 video files. This is important because Cloudflare Media Transformation primarily supports MP4 files with H.264 encoded video and AAC or MP3 encoded audio. Attempting to process other formats may result in errors (such as 522 timeout errors).
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `passthrough.enabled` | boolean | true | Enable passthrough for non-MP4 files |
+| `passthrough.whitelistedFormats` | string[] | [] | File extensions to process even if not MP4 |
+
+Example configuration:
+
+```json
+{
+  "passthrough": {
+    "enabled": true,
+    "whitelistedFormats": [".webm"]
+  }
+}
+```
+
+When a request is received for a non-MP4 file (e.g., `.webm`, `.mov`, `.avi`), and passthrough is enabled, the request will be passed directly to the origin server without any transformation. This prevents timeouts and errors when processing unsupported formats.
+
+All static assets (`.png`, `.jpg`, `.svg`, `.css`, `.js`, `.ico`, etc.) are also automatically handled by this passthrough mechanism, as they are identified as non-MP4 files. This provides an efficient fast-path for all non-video content.
+
+If you want to allow certain non-MP4 formats to be processed despite the risks, you can add them to the `whitelistedFormats` array.
+
+## Transformation Modes
+
+The `mode` parameter specifies what type of output the Cloudflare Media Transformation service will generate:
+
+1. **Video Mode (`mode=video`)**
+   - Default mode when not specified
+   - Outputs an optimized MP4 video file with H.264 video and AAC audio
+   - Preserves motion and audio from the original video
+   - Allows control over playback parameters (loop, autoplay, muted, preload)
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=video&width=640&height=360`
+
+2. **Frame Mode (`mode=frame`)**
+   - Outputs a single still image from the video at the specified time
+   - Useful for generating video thumbnails or previews
+   - Requires the `time` parameter to specify which frame to extract
+   - Supports different output formats (jpg, png, webp) using the `format` parameter
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=frame&time=30s&format=jpg&width=640`
+
+3. **Spritesheet Mode (`mode=spritesheet`)**
+   - Outputs a JPEG image containing a grid of thumbnails from the video
+   - Each thumbnail represents a frame from the video at regular intervals
+   - Useful for video scrubbing interfaces, preview thumbnails, and video navigation
+   - Can specify a time range using `time` (start) and `duration` parameters
+   - Playback parameters (loop, autoplay, muted, preload) are incompatible with this mode
+   - Example: `https://cdn.erfi.dev/white-fang.mp4?mode=spritesheet&width=640&height=480&duration=10s`
+   
+   **Spritesheet-specific Parameters:**
+   
+   | Parameter | Description | Default | Example |
+   |-----------|-------------|---------|---------|
+   | `time` | Starting time for the spritesheet range | `0s` | `time=30s` |
+   | `duration` | Duration of video to include in spritesheet | `10s` | `duration=60s` |
+   | `width` | Width of the entire spritesheet | Required | `width=800` |
+   | `height` | Height of the entire spritesheet | Required | `height=600` |
+   | `fit` | How to fit thumbnails within the grid | `contain` | `fit=cover` |
+   
+   **Technical Notes:**
+   - Cloudflare will automatically determine the grid size based on the video length
+   - The maximum input video size is 40MB
+   - For best results, use videos with uniform motion or scene changes
+   - Playback parameters will cause validation errors if explicitly set
+   - Spritesheet mode is best for short to medium-length videos (up to a few minutes)
+   
+   **Example URLs:**
+   ```
+   # Basic spritesheet for first 10 seconds
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600
+   
+   # Custom time range spritesheet (30s to 90s)
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600&time=30s&duration=60s
+   
+   # Spritesheet with cover fit (crops to fill cells completely)
+   https://cdn.erfi.dev/video.mp4?mode=spritesheet&width=800&height=600&fit=cover
+   ```
+
+### Technical Requirements
+
+According to Cloudflare's documentation:
+- Input videos must be less than 40MB in size
+- Input videos should preferably be in MP4 format
+- Input videos should use H.264 video encoding and AAC/MP3 audio encoding
+- Width and height parameters must be between 10-2000 pixels
+
+## Video Default Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -144,7 +139,9 @@ Preset configurations for different use cases:
 | `autoplay` | boolean | null | Whether video should autoplay |
 | `muted` | boolean | null | Whether video should be muted |
 
-### Path Patterns
+> Note: Playback parameters (`loop`, `autoplay`, `muted`, `preload`) are only applicable to `mode=video` and will cause validation errors if used with other modes.
+
+## Path Patterns
 
 Configuration for URL path matching and processing:
 
@@ -156,11 +153,68 @@ Configuration for URL path matching and processing:
 | `baseUrl` | string | Base URL for transformations |
 | `originUrl` | string | Origin URL for fetching content |
 | `quality` | string | Quality preset for this pattern |
-| `cacheTtl` | number | Cache TTL in seconds |
-| `priority` | number | Processing priority |
+| `ttl` | object | TTL settings object (replaces deprecated `cacheTtl`) |
+| `useTtlByStatus` | boolean | Whether to use status-specific TTL values |
+| `priority` | number | Processing priority (higher values are evaluated first) |
 | `captureGroups` | string[] | Named capture groups in the matcher |
+| `transformationOverrides` | object | Override default transformation parameters |
 
-### Methods
+### Example Path Patterns
+
+Standard pattern to match all MP4 files at the root:
+
+```json
+{
+  "name": "standard",
+  "matcher": "^/(.*\\.mp4)",
+  "processPath": true,
+  "baseUrl": null,
+  "originUrl": "https://videos.example.com",
+  "ttl": {
+    "ok": 86400,
+    "redirects": 3600,
+    "clientError": 60,
+    "serverError": 10
+  },
+  "useTtlByStatus": true
+}
+```
+
+Pattern with path prefix and named capture groups:
+
+```json
+{
+  "name": "videos",
+  "matcher": "^/videos/([a-z0-9-]+)",
+  "processPath": true,
+  "baseUrl": null,
+  "originUrl": "https://media.example.com",
+  "ttl": {
+    "ok": 3600,
+    "redirects": 300,
+    "clientError": 60,
+    "serverError": 10
+  },
+  "captureGroups": ["videoId"],
+  "quality": "high",
+  "transformationOverrides": {
+    "fit": "cover",
+    "compression": "low"
+  }
+}
+```
+
+> **Important:** When writing path patterns, ensure that regular expressions in the `matcher` property are properly escaped. For example, to match a literal period in a file extension, use `\\.` in the pattern string. For example, `^/(.*\\.mp4)` will match paths like `/example.mp4`.
+
+### Pattern Matching Behavior
+
+Path patterns are evaluated in order of their `priority` value (highest first). If no priority is specified, patterns are evaluated in the order they appear in the configuration. The first pattern that matches the request path will be used.
+
+If the matching pattern has `processPath: true`, the video will be transformed according to the pattern and derivative settings. If `processPath: false` or no matching pattern is found, the request will be passed through to the origin without transformation.
+
+## Configuration Methods
+
+The `VideoConfigurationManager` provides the following methods:
 
 - `getConfig()`: Get the entire configuration
 - `getDerivative(name)`: Get a derivative configuration
@@ -174,65 +228,120 @@ Configuration for URL path matching and processing:
 - `getResponsiveConfig()`: Get responsive design configuration
 - `addPathPattern(pattern)`: Add a new path pattern
 
-## Cache Configuration
+## Environment Variables
 
-The `CacheConfigurationManager` handles caching behavior and cache profiles.
+| Variable | Type | Description |
+|----------|------|-------------|
+| `PATH_PATTERNS` | JSON | JSON array of path patterns |
+| `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
+| `VIDEO_DEFAULT_COMPRESSION` | string | Default compression level |
 
-### TTL Precedence Hierarchy
+## Query Parameter Handling
 
-The video-resizer uses a hierarchy of TTL configurations with clear precedence:
+The video-resizer service processes transformation-specific query parameters and excludes them from the origin request to ensure clean URLs when fetching from the origin server.
 
-1. **Path Pattern TTLs** (highest priority) - Specific TTL configuration for a matched URL path pattern
-   ```json
-   "pathPatterns": [{
-     "name": "standard",
-     "matcher": "^/(.*\\.(mp4|webm|mov))",
-     "ttl": {
-       "ok": 300,
-       "redirects": 300,
-       "clientError": 60,
-       "serverError": 10
-     }
-   }]
-   ```
+### Transformation Parameters
 
-2. **Content-type Profile TTLs** (medium priority) - TTL configuration based on content type or URL pattern
-   ```json
-   "profiles": {
-     "videoFiles": {
-       "regex": "\\.(mp4|webm|mov)$",
-       "ttl": {
-         "ok": 300,
-         "redirects": 300,
-         "clientError": 60,
-         "serverError": 10
-       }
-     }
-   }
-   ```
+The following query parameters are recognized by the service and excluded from origin requests:
 
-3. **Global Default TTLs** (lowest priority) - Base TTL configuration when no other rules match
-   ```json
-   "cache": {
-     "ttl": {
-       "ok": 300,
-       "redirects": 300,
-       "clientError": 60,
-       "serverError": 10
-     }
-   }
-   ```
+#### Basic Dimension and Quality Parameters
+- `width` - Video width in pixels
+- `height` - Video height in pixels
+- `bitrate` - Target bitrate for the video
+- `quality` - Quality level (low, medium, high)
+- `format` - Output format (mp4, webm, etc.)
+- `segment` - Video segment identifier
+- `time` - Timestamp for frame extraction
+- `derivative` - Predefined transformation profile
+- `duration` - Duration for clip extraction
+- `compression` - Compression level
 
-When determining which TTL to use, the system first checks if the URL matches a path pattern and uses that TTL if available. If no path pattern matches or the path pattern doesn't specify a TTL, it falls back to a matching content-type profile. If no profile matches, it uses the global default TTL.
+#### Video Transformation Method Parameters
+- `mode` - Transformation mode (video, frame, spritesheet)
+- `fit` - Scaling method (contain, cover, scale-down)
+- `crop` - Crop dimensions
+- `rotate` - Rotation angle
+- `imref` - Image reference identifier
 
-### Cache Method Options
+#### Playback Control Parameters
+- `loop` - Enable video looping
+- `preload` - Preload behavior (none, metadata, auto)
+- `autoplay` - Enable autoplay
+- `muted` - Mute audio
+
+#### Additional Cloudflare Parameters
+- `speed` - Playback speed
+- `audio` - Audio configuration
+- `fps` - Frames per second
+- `keyframe` - Keyframe interval
+- `codec` - Video codec selection
+
+#### IMQuery Parameters
+- `imwidth` - Requested image width
+- `imheight` - Requested image height
+- `im-viewwidth` - Viewport width
+- `im-viewheight` - Viewport height
+- `im-density` - Device pixel density
+- `imref` - IMQuery reference parameter
+
+### Example
+
+For a request like:
+```
+https://example.com/videos/sample.mp4?width=640&height=480&quality=high&tracking=abc123
+```
+
+The URL sent to the origin server will be:
+```
+https://example.com/videos/sample.mp4?tracking=abc123
+```
+
+This ensures that only parameters not related to video transformation are passed to the origin server.
+
+## Example Usage
+
+```typescript
+import { VideoConfigurationManager } from './config';
+
+const videoConfig = VideoConfigurationManager.getInstance();
+
+// Get a derivative configuration
+const mobileConfig = videoConfig.getDerivative('mobile');
+console.log(mobileConfig); // { width: 360, height: 640, ... }
+
+// Check if an option is valid
+if (videoConfig.isValidOption('fit', 'cover')) {
+  // Use the option
+}
+
+// Get path patterns matching a URL
+const patterns = videoConfig.getPathPatterns();
+const matchingPattern = patterns.find(pattern => 
+  new RegExp(pattern.matcher).test('/videos/example.mp4')
+);
+```\n## Cache Configuration\n
+# Cache Configuration
+
+The `CacheConfigurationManager` handles caching behavior and cache profiles. It provides methods to control how content is cached, including cache methods, TTLs, and profiles for different content types.
+
+## Multi-Level Caching Strategy
+
+The video-resizer implements a multi-level caching strategy to optimize performance and reduce costs:
+
+1. **Cloudflare Cache API** (Edge Cache): First level of cache, checked for all requests
+2. **KV Storage Cache** (Global Persistent Cache): Second level cache, checked on Cloudflare cache misses
+3. **Origin + Transformation**: Only executed if both caches miss
+
+For examples of cache hit logging and a detailed request flow, see [KV Cache Logging Example](./kv-cache-logging-example.md).
+
+## Cache Method Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `cf` | Use Cloudflare's built-in caching with CF object (recommended) | ✓ |
 | `cacheApi` | Use the Cache API directly (alternative) | |
 
-### Cache Profiles
+## Cache Profiles
 
 Each profile configures caching behavior for a specific content pattern:
 
@@ -243,7 +352,7 @@ Each profile configures caching behavior for a specific content pattern:
 | `videoCompression` | string | Compression for this profile |
 | `ttl` | object | TTL settings (see below) |
 
-### TTL Configuration
+## TTL Configuration
 
 TTL (Time To Live) settings based on response status:
 
@@ -254,13 +363,13 @@ TTL (Time To Live) settings based on response status:
 | `clientError` | number | 60 | TTL for client errors (400-499) |
 | `serverError` | number | 10 | TTL for server errors (500-599) |
 
-### KV Cache Configuration
+## KV Cache Configuration
 
 The cache system also supports storing transformed video variants in Cloudflare KV for faster retrieval:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enableKVCache` | boolean | false | Enable KV storage for transformed variants |
+| `enableKVCache` | boolean | true | Enable KV storage for transformed variants |
 | `kvTtl.ok` | number | 86400 | TTL for 2xx responses in KV storage |
 | `kvTtl.redirects` | number | 3600 | TTL for 3xx responses in KV storage |
 | `kvTtl.clientError` | number | 60 | TTL for 4xx responses in KV storage |
@@ -277,9 +386,37 @@ The KV cache system requires a KV namespace binding:
 ]
 ```
 
-For detailed documentation on the KV caching system, see [docs/KV_CACHING.md](./docs/KV_CACHING.md).
+### KV Cache Enable/Disable Behavior
 
-### Default Profiles
+When `enableKVCache` is set to `false`, the worker will:
+
+1. Not read from KV cache when processing video requests
+2. Not write to KV cache when transforming videos
+3. Log that KV cache operations were skipped
+4. Continue to use the Cloudflare Cache API for regular caching
+
+You can disable KV cache in two ways:
+
+1. Via configuration loaded from KV:
+   ```json
+   {
+     "cache": {
+       "enableKVCache": false,
+       "method": "cf",
+       "enableCacheTags": true,
+       ...
+     }
+   }
+   ```
+
+2. Via environment variable:
+   ```bash
+   CACHE_ENABLE_KV=false
+   ```
+
+For detailed documentation on the KV caching system, see [KV Caching Guide](../kv-caching/README.md).
+
+## Default Profiles
 
 | Profile | Description | TTL (OK) |
 |---------|-------------|----------|
@@ -288,7 +425,7 @@ For detailed documentation on the KV caching system, see [docs/KV_CACHING.md](./
 | `shortForm` | Short-form video content | 2 days |
 | `dynamic` | Dynamic or live content | 5 minutes |
 
-### Methods
+## Configuration Methods
 
 - `getConfig()`: Get the entire cache configuration
 - `getCacheMethod()`: Get the current cache method
@@ -297,11 +434,185 @@ For detailed documentation on the KV caching system, see [docs/KV_CACHING.md](./
 - `getProfileForPath(path)`: Get cache profile for a URL path
 - `addProfile(name, profile)`: Add a new cache profile
 
-## Logging Configuration
+## Environment Variables
 
-The `LoggingConfigurationManager` handles logging levels, formats, and behavior.
+| Variable | Type | Description | Default |
+|----------|------|-------------|---------|
+| `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' | 'cf' |
+| `CACHE_DEBUG` | boolean | Enable cache debugging | false |
+| `CACHE_ENABLE_KV` | boolean | Enable KV storage for transformed variants | false |
+| `CACHE_KV_TTL_OK` | number | TTL for 2xx responses in seconds | 86400 |
+| `CACHE_KV_TTL_REDIRECTS` | number | TTL for 3xx responses in seconds | 3600 |
+| `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for 4xx responses in seconds | 60 |
+| `CACHE_KV_TTL_SERVER_ERROR` | number | TTL for 5xx responses in seconds | 10 |
 
-### Logging Options
+## Example Usage
+
+```typescript
+import { CacheConfigurationManager } from './config';
+
+const cacheConfig = CacheConfigurationManager.getInstance();
+
+// Get the current cache method
+const method = cacheConfig.getCacheMethod();
+console.log(method); // 'cf' or 'cacheApi'
+
+// Check if cache should be bypassed for a URL
+const shouldBypass = cacheConfig.shouldBypassCache('https://example.com/video.mp4?debug=true');
+console.log(shouldBypass); // true if cache should be bypassed
+
+// Get cache profile for a specific path
+const profile = cacheConfig.getProfileForPath('/videos/example.mp4');
+console.log(profile.ttl.ok); // 86400 (24 hours)
+```\n## Debug Configuration\n
+# Debug Configuration
+
+The `DebugConfigurationManager` handles debugging capabilities and settings. It provides methods to control debugging features, including debug views, headers, and diagnostic information.
+
+## Debug Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | false | Enable debug mode globally |
+| `verbose` | boolean | false | Enable verbose debug output |
+| `includeHeaders` | boolean | false | Include headers in debug info |
+| `includePerformance` | boolean | false | Include performance metrics |
+| `dashboardMode` | boolean | true | Enable debug dashboard |
+| `viewMode` | boolean | true | Enable debug view |
+| `headerMode` | boolean | true | Enable debug headers |
+| `debugQueryParam` | string | 'debug' | Query parameter to enable debug |
+| `debugViewParam` | string | 'view' | Value for debug view parameter |
+| `preserveDebugParams` | boolean | false | Whether to preserve debug parameters in transformed URLs |
+| `debugHeaders` | string[] | [...] | Headers that enable debugging |
+| `renderStaticHtml` | boolean | true | Render static HTML for debug views |
+| `includeStackTrace` | boolean | false | Include stack traces in debug info |
+| `maxContentLength` | number | 50000 | Maximum debug content length |
+| `allowedIps` | string[] | [] | IPs allowed to see debug info |
+| `excludedPaths` | string[] | [] | Paths excluded from debugging |
+
+## Debug View
+
+When enabled, the debug view provides a comprehensive HTML interface for analyzing video transformations:
+
+1. **Performance Metrics**:
+   - Processing time in milliseconds
+   - Cache status indication
+   - Device detection information
+
+2. **Video Transformation Details**:
+   - All applied parameters and their values
+   - Source video information
+   - Path pattern matching details
+   - Transformation mode and settings
+
+3. **Client Information**:
+   - Device type detection (mobile, tablet, desktop)
+   - Client hints support status
+   - Network quality estimation
+   - Browser video capabilities
+
+4. **Interactive Features**:
+   - Live preview of the transformed video
+   - Expandable/collapsible JSON data
+   - Copyable diagnostic information
+   - Visual indicators for important settings
+
+## Debug Headers
+
+When header mode is enabled, the service adds detailed debug headers to the response:
+
+- `X-Video-Resizer-Debug`: Indicates debug mode is enabled
+- `X-Processing-Time-Ms`: Time taken to process the request
+- `X-Transform-Source`: Source of the transformation
+- `X-Device-Type`: Detected device type
+- `X-Network-Quality`: Estimated network quality
+- `X-Cache-Enabled`: Cache status
+- `X-Cache-TTL`: Cache time-to-live
+
+## Configuration Methods
+
+- `getConfig()`: Get the entire debug configuration
+- `isEnabled()`: Check if debugging is enabled
+- `isVerbose()`: Check if verbose debugging is enabled
+- `shouldPreserveDebugParams()`: Check if debug parameters should be preserved in URLs
+- `shouldIncludeHeaders()`: Check if headers should be included
+- `shouldIncludePerformance()`: Check if performance metrics should be included
+- `shouldEnableForRequest(request)`: Check if debug should be enabled for a request
+- `isDebugViewRequested(request)`: Check if debug view is requested
+- `addAllowedIp(ip)`: Add an allowed IP address
+- `addExcludedPath(path)`: Add an excluded path
+
+## Environment Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `DEBUG_ENABLED` | boolean | Enable debug mode |
+| `DEBUG_VERBOSE` | boolean | Enable verbose debug output |
+| `DEBUG_INCLUDE_HEADERS` | boolean | Include headers in debug info |
+| `DEBUG_PERFORMANCE` | boolean | Include performance metrics |
+
+## Example Usage
+
+```typescript
+import { DebugConfigurationManager } from './config';
+
+const debugConfig = DebugConfigurationManager.getInstance();
+
+// Check if debugging is enabled
+if (debugConfig.isEnabled()) {
+  console.log('Debug mode is enabled');
+}
+
+// Check if debug should be enabled for a specific request
+const shouldEnableDebug = debugConfig.shouldEnableForRequest(request);
+if (shouldEnableDebug) {
+  // Enable debugging for this request
+}
+
+// Check if debug view was requested
+const isDebugView = debugConfig.isDebugViewRequested(request);
+if (isDebugView) {
+  // Return debug view HTML instead of processed video
+}
+
+// Check if debug parameters should be preserved in transformed URLs
+const preserveDebugParams = debugConfig.shouldPreserveDebugParams();
+if (preserveDebugParams) {
+  // Keep debug parameters in transformed URLs
+  // This is useful for maintaining debug=view in CDN-CGI URLs
+}
+```
+
+## Accessing the Debug Interface
+
+Add `?debug=view` to any video URL to access the debug interface:
+```
+https://your-domain.com/videos/sample.mp4?width=720&height=480&debug=view
+```
+
+## Security Considerations
+
+For production environments, it's recommended to:
+
+1. Restrict debug access to specific IP addresses:
+   ```typescript
+   debugConfig.addAllowedIp('192.168.1.100');
+   ```
+
+2. Exclude sensitive paths from debugging:
+   ```typescript
+   debugConfig.addExcludedPath('^/admin/.*');
+   ```
+
+3. Disable stack traces in production:
+   ```typescript
+   debugConfig.setIncludeStackTrace(false);
+   ```\n## Logging Configuration\n
+# Logging Configuration
+
+The `LoggingConfigurationManager` handles logging levels, formats, and behavior. It provides methods to control logging output, including log levels, component filtering, and performance logging.
+
+## Logging Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -316,7 +627,59 @@ The `LoggingConfigurationManager` handles logging levels, formats, and behavior.
 | `enablePerformanceLogging` | boolean | false | Enable performance metrics |
 | `performanceThresholdMs` | number | 1000 | Threshold for performance warnings |
 
-### Methods
+## Log Levels
+
+| Level | Priority | Description |
+|-------|----------|-------------|
+| `debug` | 1 | Detailed debugging information |
+| `info` | 2 | General informational messages |
+| `warn` | 3 | Warning conditions |
+| `error` | 4 | Error conditions |
+
+Log messages are only shown if their level is >= the configured level.
+
+## Log Formats
+
+| Format | Description | Example |
+|--------|-------------|---------|
+| `text` | Human-readable text format | `[INFO] [VideoHandler] Processing video request` |
+| `json` | JSON structured format | `{"level":"info","component":"VideoHandler","message":"Processing video request","timestamp":"2023-09-15T12:34:56Z"}` |
+
+## Component Filtering
+
+You can filter logs by component name:
+
+1. **Enable specific components**:
+   ```typescript
+   enabledComponents: ['VideoHandler', 'CacheService']
+   ```
+
+2. **Disable specific components**:
+   ```typescript
+   disabledComponents: ['StorageService']
+   ```
+
+If `enabledComponents` is empty, all components are enabled except those in `disabledComponents`.
+
+## Log Sampling
+
+The `sampleRate` option allows you to reduce log volume:
+
+- `sampleRate: 1` - Log every message (default)
+- `sampleRate: 0.1` - Log approximately 10% of messages
+- `sampleRate: 0.01` - Log approximately 1% of messages
+
+This is useful for high-traffic production environments.
+
+## Performance Logging
+
+When `enablePerformanceLogging` is true:
+
+1. Tracks execution time of key operations
+2. Logs warnings when operations exceed `performanceThresholdMs`
+3. Provides detailed performance breakdowns
+
+## Configuration Methods
 
 - `getConfig()`: Get the entire logging configuration
 - `getLogLevel()`: Get the current log level
@@ -325,68 +688,7 @@ The `LoggingConfigurationManager` handles logging levels, formats, and behavior.
 - `shouldLogPerformance()`: Check if performance should be logged
 - `getPerformanceThreshold()`: Get the performance threshold
 
-## Debug Configuration
-
-The `DebugConfigurationManager` handles debugging capabilities and settings.
-
-### Debug Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | boolean | false | Enable debug mode globally |
-| `verbose` | boolean | false | Enable verbose debug output |
-| `includeHeaders` | boolean | false | Include headers in debug info |
-| `includePerformance` | boolean | false | Include performance metrics |
-| `dashboardMode` | boolean | true | Enable debug dashboard |
-| `viewMode` | boolean | true | Enable debug view |
-| `headerMode` | boolean | true | Enable debug headers |
-| `debugQueryParam` | string | 'debug' | Query parameter to enable debug |
-| `debugViewParam` | string | 'view' | Value for debug view parameter |
-| `debugHeaders` | string[] | [...] | Headers that enable debugging |
-| `renderStaticHtml` | boolean | true | Render static HTML for debug views |
-| `includeStackTrace` | boolean | false | Include stack traces in debug info |
-| `maxContentLength` | number | 50000 | Maximum debug content length |
-| `allowedIps` | string[] | [] | IPs allowed to see debug info |
-| `excludedPaths` | string[] | [] | Paths excluded from debugging |
-
-### Methods
-
-- `getConfig()`: Get the entire debug configuration
-- `isEnabled()`: Check if debugging is enabled
-- `isVerbose()`: Check if verbose debugging is enabled
-- `shouldIncludeHeaders()`: Check if headers should be included
-- `shouldIncludePerformance()`: Check if performance metrics should be included
-- `shouldEnableForRequest(request)`: Check if debug should be enabled for a request
-- `isDebugViewRequested(request)`: Check if debug view is requested
-- `addAllowedIp(ip)`: Add an allowed IP address
-- `addExcludedPath(path)`: Add an excluded path
-
 ## Environment Variables
-
-Environment variables can be used to override configuration values at runtime. The following variables are supported:
-
-### Debug Configuration
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `DEBUG_ENABLED` | boolean | Enable debug mode |
-| `DEBUG_VERBOSE` | boolean | Enable verbose debug output |
-| `DEBUG_INCLUDE_HEADERS` | boolean | Include headers in debug info |
-| `DEBUG_PERFORMANCE` | boolean | Include performance metrics |
-
-### Cache Configuration
-
-| Variable | Type | Description | Default |
-|----------|------|-------------|---------|
-| `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' | 'cf' |
-| `CACHE_DEBUG` | boolean | Enable cache debugging | false |
-| `CACHE_ENABLE_KV` | boolean | Enable KV storage for transformed variants | false |
-| `CACHE_KV_TTL_OK` | number | TTL for 2xx responses in seconds | 86400 |
-| `CACHE_KV_TTL_REDIRECTS` | number | TTL for 3xx responses in seconds | 3600 |
-| `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for 4xx responses in seconds | 60 |
-| `CACHE_KV_TTL_SERVER_ERROR` | number | TTL for 5xx responses in seconds | 10 |
-
-### Logging Configuration
 
 | Variable | Type | Description |
 |----------|------|-------------|
@@ -395,148 +697,32 @@ Environment variables can be used to override configuration values at runtime. T
 | `LOG_INCLUDE_TIMESTAMPS` | boolean | Include timestamps in logs |
 | `LOG_PERFORMANCE` | boolean | Enable performance logging |
 
-### Video Configuration
+## Example Usage
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `PATH_PATTERNS` | JSON | JSON array of path patterns |
-| `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
+```typescript
+import { LoggingConfigurationManager } from './config';
+import { logger } from './utils/logger';
 
-### Storage Configuration
+const loggingConfig = LoggingConfigurationManager.getInstance();
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `STORAGE_CONFIG` | JSON | Configuration for multiple storage backends |
-| `VIDEOS_BUCKET` | binding | R2 bucket binding for video storage |
-| `VIDEO_TRANSFORMATIONS_CACHE` | binding | KV namespace binding for transformed video variants |
-| `VIDEO_TRANSFORMS_KV` | binding | Alternative KV namespace binding name |
-| `AWS_ACCESS_KEY_ID` | string | AWS access key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
-| `AWS_SECRET_ACCESS_KEY` | string | AWS secret key for S3-compatible storage (recommended to use Cloudflare Worker secrets) |
+// Check if we should log for a component
+if (loggingConfig.shouldLogComponent('VideoHandler')) {
+  logger.info('VideoHandler', 'Processing video request');
+}
 
-The `STORAGE_CONFIG` object supports the following structure:
+// Log with sampling
+if (loggingConfig.shouldSampleLog()) {
+  logger.debug('CacheService', 'Cache hit for key: ' + key);
+}
 
-```json
-{
-  "priority": ["r2", "remote", "fallback"],
-  "r2": {
-    "enabled": true,
-    "bucketBinding": "VIDEOS_BUCKET"
-  },
-  "remoteUrl": "https://videos.example.com",
-  "remoteAuth": {
-    "enabled": false,
-    "type": "header",
-    "headers": {
-      "Authorization": "Bearer YOUR_TOKEN"
-    }
-  },
-  "fallbackUrl": "https://cdn.example.com",
-  "fallbackAuth": {
-    "enabled": true,
-    "type": "aws-s3",
-    "accessKeyVar": "AWS_ACCESS_KEY_ID",
-    "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
-    "region": "us-east-1",
-    "service": "s3"
-  },
-  "fetchOptions": {
-    "userAgent": "Cloudflare-Video-Resizer/1.0"
-  },
-  "pathTransforms": {
-    "videos": {
-      "r2": {
-        "removePrefix": true,
-        "prefix": ""
-      },
-      "remote": {
-        "removePrefix": true,
-        "prefix": "videos/"
-      }
-    }
+// Performance logging
+if (loggingConfig.shouldLogPerformance()) {
+  const startTime = Date.now();
+  // ... perform operation ...
+  const duration = Date.now() - startTime;
+  
+  if (duration > loggingConfig.getPerformanceThreshold()) {
+    logger.warn('Performance', `Slow operation: ${duration}ms`);
   }
 }
 ```
-
-### General Configuration
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `ENVIRONMENT` | string | Environment: 'production', 'staging', 'development' |
-| `VERSION` | string | Application version |
-
-## AWS S3 Authentication Options
-
-The video-resizer supports AWS S3 compatible authentication for storage providers like Cloudflare R2, AWS S3, and Google Cloud Storage (with S3 API compatibility). This enables secure access to these storage systems.
-
-### Authentication Types
-
-The `aws-s3` authentication type uses the [aws4fetch](https://github.com/mhart/aws4fetch) library to sign requests according to AWS's Signature Version 4 process. This works with:
-
-- **Cloudflare R2**: Set region to "auto" 
-- **Amazon S3**: Set region to your S3 bucket region (e.g., "us-east-1")
-- **Google Cloud Storage**: Set region to match your GCS location and use the "s3" service
-
-### Configuration Example
-
-```jsonc
-"remoteAuth": {
-  "enabled": true,
-  "type": "aws-s3",
-  "accessKeyVar": "AWS_ACCESS_KEY_ID",       // Environment variable name for access key
-  "secretKeyVar": "AWS_SECRET_ACCESS_KEY",   // Environment variable name for secret key
-  "region": "us-east-1",                    // AWS region or "auto" for R2
-  "service": "s3"                           // Service identifier (always "s3" for S3-compatible APIs)
-}
-```
-
-### Security Best Practices
-
-For production deployments, it's strongly recommended to use Cloudflare Worker secrets instead of storing credentials directly in wrangler.jsonc:
-
-```bash
-# Set AWS credentials as Cloudflare Worker secrets
-wrangler secret put AWS_ACCESS_KEY_ID
-wrangler secret put AWS_SECRET_ACCESS_KEY
-```
-
-This ensures your keys are stored securely and not committed to version control.
-
-### Provider-Specific Configuration
-
-1. **Cloudflare R2**
-   ```jsonc
-   "remoteAuth": {
-     "enabled": true,
-     "type": "aws-s3",
-     "accessKeyVar": "R2_ACCESS_KEY_ID",
-     "secretKeyVar": "R2_SECRET_ACCESS_KEY",
-     "region": "auto",
-     "service": "s3"
-   }
-   ```
-
-2. **AWS S3**
-   ```jsonc
-   "remoteAuth": {
-     "enabled": true,
-     "type": "aws-s3",
-     "accessKeyVar": "AWS_ACCESS_KEY_ID",
-     "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
-     "region": "us-east-1",  // Replace with your bucket's region
-     "service": "s3"
-   }
-   ```
-
-3. **Google Cloud Storage with S3 API**
-   ```jsonc
-   "remoteAuth": {
-     "enabled": true,
-     "type": "aws-s3",
-     "accessKeyVar": "GCS_ACCESS_KEY_ID",
-     "secretKeyVar": "GCS_SECRET_ACCESS_KEY",
-     "region": "us-central1",  // Match your GCS location
-     "service": "s3"
-   }
-   ```
-
-You can apply these same patterns to `fallbackAuth` as well.

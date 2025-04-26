@@ -1,121 +1,26 @@
-# Video Resizer Configuration Guide
+# Configuration Guide
 
-This document provides a comprehensive reference for all configuration options available in the video-resizer project. The configuration system is divided into several managers, each responsible for a specific area of functionality.
+> This guide provides an overview of the configuration system for the video-resizer project.
 
-## Configuration System Overview
+## Quick Links
 
-The video-resizer uses a centralized configuration management system based on Zod schema validation. Each configuration manager is implemented as a singleton and provides type-safe access to configuration values.
+- [Complete Configuration Reference](./CONFIGURATION_REFERENCE.md) - Comprehensive documentation of all configuration options
+- [Path Pattern Matching](./path-pattern-matching.md) - Detailed guide on URL pattern matching
+- [Dynamic Configuration](./dynamic-configuration.md) - How to use KV-based configuration updates
+- [Updating Configuration](./updating-configuration.md) - Practical guide for making configuration changes
 
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#5D8AA8', 'primaryTextColor': '#fff', 'primaryBorderColor': '#5D8AA8', 'lineColor': '#F8B229', 'secondaryColor': '#006400', 'tertiaryColor': '#3E3E3E' }}}%%
-flowchart TD
-    A[Environment Variables] -->|Override| B[Default Configuration]
-    C[wrangler.jsonc] -->|Override| B
-    
-    B --> D[Zod Schema Validation]
-    D --> E[Configuration Manager Singletons]
-    
-    E --> F[VideoConfigurationManager]
-    E --> G[CacheConfigurationManager]
-    E --> H[DebugConfigurationManager]
-    E --> I[LoggingConfigurationManager]
-    
-    F --> J{Application Services}
-    G --> J
-    H --> J
-    I --> J
-    
-    J --> K[Worker Behavior]
-```
+## Overview
 
-### Key Features
+The video-resizer project uses a modular configuration system with the following components:
 
-- **Runtime Validation**: All configuration is validated at runtime using Zod schemas
-- **Type Safety**: Full TypeScript type support with inferred types from Zod schemas
-- **Centralized Management**: Configuration accessed through manager classes
-- **Environment Variable Support**: Configuration can be overridden with environment variables
-- **Default Values**: Sensible defaults for all configuration options
+1. **Wrangler Configuration** - Core environment settings in wrangler.jsonc
+2. **KV Configuration** - Dynamic configuration stored in Cloudflare KV
+3. **Path Pattern Matching** - URL pattern matching system for processing requests
 
-## Configuration Managers
+See the [Configuration Reference](./CONFIGURATION_REFERENCE.md) for complete details on all available options.
 
-The configuration system is made up of several specialized managers:
+## Environment-Specific Configuration
 
-1. [Video Configuration](./video-configuration.md) - Controls video transformation options
-2. [Cache Configuration](./cache-configuration.md) - Manages caching behavior
-3. [Debug Configuration](./debug-configuration.md) - Controls debugging features
-4. **Logging Configuration** - Configures logging behavior (see [Features/Logging](../features/logging/README.md))
+Configuration can be customized per environment (development, staging, production).
+See [dynamic-configuration.md](./dynamic-configuration.md) for details.
 
-For detailed guidance on configuring the video-resizer, see the [Configuration Guide](./CONFIGURATION_GUIDE.md). For a complete reference of all configuration options and their details, see the [Configuration Reference](./CONFIGURATION_REFERENCE.md) document.
-
-## Configuration Management Tools
-
-For tools that help manage and update configuration:
-
-- **[Configuration Tools Guide](../tools/TOOLS_GUIDE.md)**: Comprehensive documentation of configuration tools
-- **[Configuration Upload Tool](../tools/README.md#configuration-upload-tool-config-uploadjs)**: Quick reference for the upload tool
-- **[Configuration Debug Tool](../tools/README.md#configuration-debug-tool-config-debugjs)**: Quick reference for the debug tool
-- **[Configuration Check Tool](../tools/README.md#configuration-check-tool-check-configjs)**: Quick reference for the config validation tool
-
-## Advanced Configuration Topics
-
-1. [Configuration Loading Process](./configuration-loading.md) - How configurations are loaded and applied
-2. [Path Pattern Matching System](./path-pattern-matching.md) - Comprehensive documentation of the path pattern matching system
-3. [Path Pattern Troubleshooting](./path-pattern-troubleshooting.md) - Debugging path pattern matching issues
-4. [Updating Configuration](./updating-configuration.md) - How to update configuration at runtime
-5. [Wrangler vs KV Configuration](./wrangler-vs-kv-config.md) - Understanding different configuration sources
-6. [Dynamic Configuration](./dynamic-configuration.md) - Using KV for dynamic configuration
-7. [IMQuery Support](../features/imquery/README.md) - Support for responsive image parameters and caching
-
-## Environment Variables
-
-Environment variables can be used to override configuration values at runtime:
-
-| Category | Variable | Type | Description |
-|----------|----------|------|-------------|
-| **Debug** | `DEBUG_ENABLED` | boolean | Enable debug mode |
-| **Debug** | `DEBUG_VERBOSE` | boolean | Enable verbose debug output |
-| **Debug** | `DEBUG_INCLUDE_HEADERS` | boolean | Include headers in debug info |
-| **Cache** | `CACHE_METHOD` | string | Cache method: 'cf' or 'cacheApi' |
-| **Cache** | `CACHE_DEBUG` | boolean | Enable cache debugging |
-| **Cache** | `CACHE_ENABLE_KV` | boolean | Enable KV storage for transformed variants |
-| **Logging** | `LOG_LEVEL` | string | Log level: 'debug', 'info', 'warn', 'error' |
-| **Video** | `VIDEO_DEFAULT_QUALITY` | string | Default video quality |
-| **General** | `ENVIRONMENT` | string | Environment: 'production', 'staging', 'development' |
-
-## Usage Example
-
-```typescript
-import { VideoConfigurationManager } from './config';
-
-// Get an instance of the configuration manager
-const configManager = VideoConfigurationManager.getInstance();
-
-// Access configuration
-const paramMapping = configManager.getParamMapping();
-const isValidOption = configManager.isValidOption('fit', 'contain');
-```
-
-## Basic Configuration Flow
-
-1. **Default Configuration**: Initial values are defined in each manager (e.g., `videoConfig.ts`)
-2. **Static Configuration**: Values from wrangler.jsonc are applied as the first level of overrides
-3. **Environment Variables**: Environment variables override both wrangler.jsonc and defaults
-4. **KV Configuration**: On first request, configuration is loaded from KV storage (if available)
-5. **Validation**: All configuration is validated against Zod schemas to ensure type safety
-6. **Configuration Application**: Valid configuration is applied to the appropriate managers
-7. **Runtime Access**: Manager singletons provide typed access to the validated configuration
-
-This multi-layered approach allows for flexibility in how configuration is managed, from hardcoded defaults to dynamically updated values via KV storage.
-
-## Recommended Practices
-
-1. **Environment-Specific Configurations**: Use different configurations for development, staging, and production
-2. **Secure Sensitive Information**: Keep API keys and secrets in environment variables or Worker secrets
-3. **Validate Before Deployment**: Test configuration changes in development or staging before production
-4. **Use Manager Interfaces**: Access configuration through manager methods rather than raw objects
-5. **Monitor Configuration Loading**: Enable logging during configuration updates to verify successful loading
-6. **Debug Configuration Issues**: Use the `?debug=true` parameter to troubleshoot configuration-related problems
-7. **Regular Expression Testing**: Carefully test path pattern regular expressions before deployment
-8. **Include Fallback Patterns**: Always include a catch-all pattern with lowest priority as a fallback
-9. **Proper Escaping**: Remember to properly escape special characters in regex patterns (e.g., `\\.` for literal periods)
-10. **Respect Initialization Order**: Be aware that configuration may not be fully loaded on the first few requests
