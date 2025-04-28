@@ -919,20 +919,26 @@ export class TransformVideoCommand {
         const path = url.pathname;
         const isServerError = response.status >= 500 && response.status < 600;
         
+        // Check if this is a file size limit error
+        const isFileSizeError = parsedError.errorType === 'file_size_limit' || errorText.includes('file size limit');
+        
         // Add breadcrumb with more specific information about error type
         if (this.requestContext) {
           const { addBreadcrumb } = await import('../../utils/requestContext');
           addBreadcrumb(this.requestContext, 'Error', 
-            isServerError ? 
-              'Transformation proxy failed with server error - fetching original directly' : 
-              'Transformation proxy returned client error - using fallback',
+            isFileSizeError ?
+              'File size limit error detected - using direct source fallback' :
+              isServerError ? 
+                'Transformation proxy failed with server error - fetching original directly' : 
+                'Transformation proxy returned client error - using fallback',
             {
               path,
               errorStatus: response.status,
               errorText: errorText.substring(0, 100), // Limit error text length for safety
               specificError: parsedError.specificError,
               errorType: parsedError.errorType || 'CDN-CGIError',
-              isServerError
+              isServerError,
+              isFileSizeError
             }
           );
         }
@@ -951,16 +957,19 @@ export class TransformVideoCommand {
           originalUrl: url.toString(),
         });
         
-        // For server errors (500s), try to fetch the original content directly
+        // For server errors (500s) or file size errors, try to fetch the original content directly
         // Use the source URL that was used for transformation
         let fallbackResponse: Response | undefined;
         
-        if (isServerError) {
-          // Log the direct fetch attempt
-          await logDebug('TransformVideoCommand', 'Server error - fetching original directly', {
-            path,
-            cdnCgiUrl: cdnCgiUrl.split('?')[0],
-            serverError: response.status
+        if (isServerError || isFileSizeError) {
+          // Log the direct fetch attempt with specific error type
+          await logDebug('TransformVideoCommand', isFileSizeError ? 
+            'File size limit error - using original directly' : 
+            'Server error - fetching original directly', {
+              path,
+              errorType: isFileSizeError ? 'file_size_limit' : 'server_error',
+              cdnCgiUrl: cdnCgiUrl.split('?')[0],
+              serverError: response.status
           });
           
           // Use our pre-computed fallback origin URL if available,
@@ -1014,9 +1023,13 @@ export class TransformVideoCommand {
           }
         }
         
-        // If this is a client error OR the direct fetch for server error failed,
-        // use the videoStorageService for fallback
-        if (!isServerError || !fallbackResponse || !fallbackResponse.ok) {
+        // Only use storage service if:
+        // 1. For server errors: direct fetch failed or wasn't attempted
+        // 2. For file size errors: direct fetch failed or wasn't attempted
+        // 3. For other client errors: by default (we never tried direct fetch for other client errors)
+        // This ensures we don't needlessly go to storage if we already have a successful direct fetch
+        if ((!isServerError && !isFileSizeError) || 
+            ((isServerError || isFileSizeError) && (!fallbackResponse || !fallbackResponse.ok))) {
           // Import the videoStorageService to fetch the original content
           const { fetchVideo } = await import('../../services/videoStorageService');
           
@@ -1055,6 +1068,11 @@ export class TransformVideoCommand {
           fallbackResponse = storageResult.response;
         }
         
+        // Ensure we have a fallback response before proceeding
+        if (!fallbackResponse) {
+          throw new Error(`Unable to get fallback content: No fallback response available.`);
+        }
+        
         // Create new headers for the fallback response
         const headers = new Headers(fallbackResponse.headers);
         
@@ -1075,9 +1093,15 @@ export class TransformVideoCommand {
           headers.set('X-Invalid-Parameter', parsedError.parameter);
         }
         
-        // Legacy headers for backward compatibility
+        // Add specific headers for file size errors
         if (parsedError.errorType === 'file_size_limit') {
           headers.set('X-Video-Too-Large', 'true');
+          headers.set('X-File-Size-Error', 'true');
+          
+          // If we used direct fetch for file size error, mark it
+          if (isFileSizeError && fallbackResponse && fallbackResponse.ok) {
+            headers.set('X-Direct-Source-Used', 'true');
+          }
         }
         
         // Include original error status for debugging

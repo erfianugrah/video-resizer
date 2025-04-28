@@ -57,6 +57,7 @@ export const prepareVideoTransformation = withErrorHandling<
     source: string;
     derivative: string;
     diagnosticsInfo: DiagnosticsInfo;
+    originSourceUrl: string;  // Added to return the specific origin URL used for transformation
   }
 >(async function prepareVideoTransformationImpl(
     request: Request,
@@ -70,6 +71,7 @@ export const prepareVideoTransformation = withErrorHandling<
     source: string;
     derivative: string;
     diagnosticsInfo: DiagnosticsInfo;
+    originSourceUrl: string;
   }> {
   // Log transformation startup
   logDebug('Starting video transformation preparation', {
@@ -514,7 +516,8 @@ export const prepareVideoTransformation = withErrorHandling<
           cacheConfig,
           source,
           derivative: options.derivative,
-          diagnosticsInfo
+          diagnosticsInfo,
+          originSourceUrl: videoUrl  // Include the original source URL
         };
       }
     }
@@ -609,13 +612,17 @@ export const prepareVideoTransformation = withErrorHandling<
     // Assign the derivative value here 
     const derivative = options.derivative || '';
 
+    // Store the original source URL used for this transformation
+    const originSourceUrl = videoUrl;
+
     // Return the transformation result
     return {
       cdnCgiUrl,
       cacheConfig,
       source,
       derivative,
-      diagnosticsInfo
+      diagnosticsInfo,
+      originSourceUrl
     };
 },
 {

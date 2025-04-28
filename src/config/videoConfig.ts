@@ -136,6 +136,13 @@ export const videoConfig = {
       badRequestOnly: false, // Allow fallback for all errors, including 500s
       preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag'],
       maxRetries: 2, // Maximum number of retries for 500 errors
+      // File size error handling with direct source fallback
+      // When file size limits are exceeded in CDN-CGI transformation:
+      // 1. Uses originSourceUrl from TransformationService if available
+      // 2. Falls back to pattern's originUrl otherwise
+      // 3. Final fallback to videoStorageService if direct sources fail
+      // Adds X-File-Size-Error and X-Direct-Source-Used headers for tracking
+      fileSizeErrorHandling: true, // Feature flag for direct source fallback on file size errors
     },
   },
 

@@ -153,7 +153,9 @@ export const VideoConfigSchema = z.object({
     fallback: z.object({
       enabled: z.boolean(),
       badRequestOnly: z.boolean(),
-      preserveHeaders: z.array(z.string()).optional()
+      preserveHeaders: z.array(z.string()).optional(),
+      fileSizeErrorHandling: z.boolean().optional(),
+      maxRetries: z.number().optional()
     }),
   }).optional(), // Make caching optional
   cache: z.record(CacheConfigSchema).optional(), // Make cache optional
