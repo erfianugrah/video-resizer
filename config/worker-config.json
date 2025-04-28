@@ -293,7 +293,67 @@
 				},
 				"useTtlByStatus": true
 			}
-		]
+		],
+		"storage": {
+			"priority": [
+				"r2",
+				"remote",
+				"fallback"
+			],
+			"r2": {
+				"enabled": true,
+				"bucketBinding": "VIDEOS_BUCKET"
+			},
+			"remoteUrl": "https://videos.erfi.dev",
+			"remoteAuth": {
+				"enabled": true,
+				"type": "aws-s3",
+				"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
+			"auth": {
+				"useOriginAuth": true,
+				"securityLevel": "strict"
+			},
+			"fallbackUrl": "https://cdn.erfi.dev",
+			"fallbackAuth": {
+				"enabled": false,
+				"type": "aws-s3",
+				"accessKeyVar": "AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
+			"fetchOptions": {
+				"userAgent": "Cloudflare-Video-Resizer/1.0"
+			},
+			"pathTransforms": {
+				"videos": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": ""
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "videos/"
+					}
+				},
+				"popular": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "popular/"
+					}
+				},
+				"shorts": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "shorts/"
+					}
+				}
+			}
+		}
 	},
 	"cache": {
 		"debug": false,
@@ -461,66 +521,6 @@
 			"base": {
 				"service": "video-resizer",
 				"env": "production"
-			}
-		}
-	},
-	"storage": {
-		"priority": [
-			"r2",
-			"remote",
-			"fallback"
-		],
-		"r2": {
-			"enabled": true,
-			"bucketBinding": "VIDEOS_BUCKET"
-		},
-		"remoteUrl": "https://videos.erfi.dev",
-		"remoteAuth": {
-			"enabled": true,
-			"type": "aws-s3",
-			"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
-			"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
-			"region": "us-east-1",
-			"service": "s3"
-		},
-		"auth": {
-			"useOriginAuth": true,
-			"securityLevel": "strict"
-		},
-		"fallbackUrl": "https://cdn.erfi.dev",
-		"fallbackAuth": {
-			"enabled": false,
-			"type": "aws-s3",
-			"accessKeyVar": "AWS_ACCESS_KEY_ID",
-			"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
-			"region": "us-east-1",
-			"service": "s3"
-		},
-		"fetchOptions": {
-			"userAgent": "Cloudflare-Video-Resizer/1.0"
-		},
-		"pathTransforms": {
-			"videos": {
-				"r2": {
-					"removePrefix": true,
-					"prefix": ""
-				},
-				"remote": {
-					"removePrefix": true,
-					"prefix": "videos/"
-				}
-			},
-			"popular": {
-				"r2": {
-					"removePrefix": true,
-					"prefix": "popular/"
-				}
-			},
-			"shorts": {
-				"r2": {
-					"removePrefix": true,
-					"prefix": "shorts/"
-				}
 			}
 		}
 	}
