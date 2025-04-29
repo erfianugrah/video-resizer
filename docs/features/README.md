@@ -29,7 +29,9 @@ For a comprehensive comparison of these modes, see the [Transformation Modes Ove
 | **Responsive Sizing** | Automatic adaptation to device screen dimensions | [Video Mode: Responsive Behavior](./video-mode.md#responsive-behavior) |
 | **Derivatives** | Preset optimization configurations for common use cases | [Video Mode: Derivatives](./video-mode.md#video-derivatives) |
 | **Compression Controls** | Fine-grained control over video compression levels | [Parameter Compatibility](../configuration/parameter-compatibility.md) |
-| **Cache Management** | Multi-layered caching with KV storage for variants | [KV Caching System](../kv-caching/README.md) |
+| **Cache Management** | Multi-layered caching with KV storage and TTL handling | [KV Caching System](../kv-caching/README.md) |
+| **Smart TTL Renewal** | Automatic TTL extension for frequently accessed content | [Range Request Support](./range-request-support.md#automatic-ttl-renewal) |
+| **Range Request Support** | Enhanced video seeking with expiration-aware buffering | [Range Request Support](./range-request-support.md) |
 
 ## Developer Experience 
 
@@ -66,6 +68,10 @@ This matrix shows which features can be used with each transformation mode:
 - [Frame Extraction Documentation](./frame/README.md) - Still image extraction
 - [Spritesheet Generation Documentation](./spritesheet/README.md) - Thumbnail grid creation
 
+### Performance Features
+- [Range Request Support](./range-request-support.md) - Enhanced video seeking and streaming
+- [KV Caching System](../kv-caching/README.md) - Efficient multi-layered caching
+
 ### Integration Features
 - [Akamai Integration](./akamai/README.md) - Akamai-compatible URL and parameter translation
 - [IMQuery Support](./imquery/README.md) - Responsive image parameter support
@@ -81,6 +87,8 @@ This matrix shows which features can be used with each transformation mode:
 
 | Feature | Update | Date | Status |
 |---------|--------|------|--------|
+| **Cache TTL Renewal** | Implemented automatic TTL extension for frequently accessed content | April 29, 2025 | ✅ Production |
+| **Range Requests** | Added Cache API integration with TTL-aware buffering | April 29, 2025 | ✅ Production |
 | **Video Playback** | Added loop parameter support | April 2025 | ✅ Production |
 | **KV Caching** | Implemented cache versioning system | April 2025 | ✅ Production |
 | **Storage Configuration** | Fixed storage integration in ConfigManager | April 2025 | ✅ Production |
@@ -92,4 +100,4 @@ For technical implementation details about these features, see the [Architecture
 
 ## Last Updated
 
-*April 25, 2025*
+*April 29, 2025*

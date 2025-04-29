@@ -7,6 +7,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { DiagnosticsInfo } from '../types/diagnostics';
 import { debug as pinoDebug, warn as pinoWarn } from './pinoLogger';
+import { hasClientHints, getNetworkQuality } from './clientHints';
+import { hasCfDeviceType } from './deviceUtils';
+import { detectBrowserVideoCapabilities, getDeviceTypeFromUserAgent } from './userAgentUtils';
 
 /**
  * Unified logging functions that avoid circular dependencies
@@ -434,4 +437,42 @@ export function getCurrentContext(): RequestContext | undefined {
     logDebug('getCurrentContext called but no context is set');
   }
   return currentRequestContext;
+}
+
+/**
+ * Interface for client diagnostics information
+ */
+export interface ClientDiagnosticsInfo {
+  browserCapabilities: Record<string, boolean>;
+  hasClientHints: boolean;
+  deviceType?: string;
+  networkQuality?: string;
+}
+
+/**
+ * Get client-related diagnostics information from the request
+ * Centralizes client capability detection logic in one place
+ * 
+ * @param request The HTTP request
+ * @returns Client-related diagnostics information
+ */
+export function getClientDiagnostics(request: Request): ClientDiagnosticsInfo {
+  const userAgent = request.headers.get('User-Agent') || '';
+  const browserCapabilities = detectBrowserVideoCapabilities(userAgent);
+  const clientHints = hasClientHints(request);
+  const networkInfo = getNetworkQuality(request);
+
+  let deviceType: string | undefined;
+  if (hasCfDeviceType(request)) {
+    deviceType = request.headers.get('CF-Device-Type')?.toLowerCase() || undefined;
+  } else {
+    deviceType = getDeviceTypeFromUserAgent(userAgent);
+  }
+
+  return {
+    browserCapabilities,
+    hasClientHints: clientHints,
+    deviceType,
+    networkQuality: networkInfo.quality
+  };
 }

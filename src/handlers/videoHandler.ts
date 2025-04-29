@@ -296,8 +296,42 @@ export const handleVideoRequest = withErrorHandling<
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
       
-      // Initialize finalResponse - this will be our final response to return
+      // Check for range request and handle it for initial access
       let finalResponse = response;
+      
+      // Handle range requests for first access before KV caching occurs
+      if (request.headers.has('Range') && finalResponse.headers.get('Content-Type')?.includes('video/')) {
+        const { handleRangeRequestForInitialAccess } = await import('../utils/httpUtils');
+        
+        addBreadcrumb(context, 'RangeRequest', 'Processing range request for initial access', {
+          range: request.headers.get('Range'),
+          contentLength: finalResponse.headers.get('Content-Length'),
+          contentType: finalResponse.headers.get('Content-Type')
+        });
+        
+        startTimedOperation(context, 'initial-range-handling', 'RangeRequest');
+        
+        try {
+          // Process range request on first access
+          finalResponse = await handleRangeRequestForInitialAccess(response, request);
+          
+          // Log the result
+          addBreadcrumb(context, 'RangeRequest', 'Range request handled for initial access', {
+            originalStatus: response.status,
+            newStatus: finalResponse.status,
+            contentRange: finalResponse.headers.get('Content-Range'),
+            contentLength: finalResponse.headers.get('Content-Length')
+          });
+        } catch (err) {
+          // Log error but continue with the full response
+          error(context, logger, 'VideoHandler', 'Error handling range request for initial access', {
+            error: err instanceof Error ? err.message : String(err),
+            range: request.headers.get('Range')
+          });
+        }
+        
+        endTimedOperation(context, 'initial-range-handling');
+      }
       
       // If derivative is present, make a more educated guess about video info
       if (context.diagnostics.derivative && videoOptions?.width && videoOptions?.height) {

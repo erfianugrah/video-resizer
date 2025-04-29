@@ -7,7 +7,7 @@ import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
-import { addBreadcrumb } from '../utils/requestContext';
+import { addBreadcrumb, RequestContext } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';
@@ -15,6 +15,7 @@ import { getCacheKeyVersion, getNextCacheKeyVersion, storeCacheKeyVersion } from
 import { addVersionToUrl, normalizeUrlForCaching } from '../utils/urlVersionUtils';
 import { generateKVKey } from './kvStorageService';
 import { EnvVariables } from '../config/environmentConfig';
+import { cacheResponse } from './cacheManagementService';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -759,3 +760,99 @@ const constructVideoUrl = tryOrNull<
   },
   null // default return value when error occurs
 );
+
+/**
+ * Interface for executing transformation parameters
+ */
+export interface ExecuteTransformParams {
+  request: Request;
+  options: VideoTransformOptions;
+  pathPatterns: PathPattern[];
+  env: EnvVariables;
+  requestContext: RequestContext;
+  diagnosticsInfo: DiagnosticsInfo;
+  debugInfo?: DebugInfo;
+}
+
+/**
+ * Result structure for executeTransformation
+ */
+export interface ExecuteTransformResult {
+  response: Response;
+  cacheConfig: CacheConfig | null;
+  source?: string;
+  derivative?: string;
+  cdnCgiUrl: string; // URL used for the fetch
+}
+
+/**
+ * Executes the core video transformation process
+ * 
+ * This function prepares and executes the transformation, handling the actual
+ * fetch from the CDN-CGI endpoint. It is responsible for:
+ * 1. Preparing the transformation URL and parameters
+ * 2. Making the fetch request
+ * 3. Returning the response with all required metadata for further processing
+ * 
+ * @param params Parameters for executing the transformation
+ * @returns Transformation result including response and metadata
+ */
+export async function executeTransformation({
+  request,
+  options,
+  pathPatterns,
+  env,
+  requestContext,
+  diagnosticsInfo,
+  debugInfo
+}: ExecuteTransformParams): Promise<ExecuteTransformResult> {
+  addBreadcrumb(requestContext, 'Transform', 'Executing core transformation');
+
+  // Prepare the transformation URL and get cache config
+  const {
+    cdnCgiUrl,
+    cacheConfig,
+    source,
+    derivative,
+    diagnosticsInfo: transformDiagnostics
+  } = await prepareVideoTransformation(
+    request, options, pathPatterns, debugInfo, env
+  );
+
+  // Merge diagnostics information
+  Object.assign(diagnosticsInfo, transformDiagnostics);
+  
+  addBreadcrumb(requestContext, 'Transform', 'Transformation prepared', { 
+    cdnUrl: cdnCgiUrl.split('?')[0], 
+    source, 
+    derivative 
+  });
+
+  // Fetch from CDN-CGI using cacheResponse for range support
+  const fetchOptions = { method: request.method, headers: request.headers };
+  
+  addBreadcrumb(requestContext, 'Transform', 'Fetching from CDN-CGI', { 
+    url: cdnCgiUrl.split('?')[0] 
+  });
+
+  // Use the original request as the key for cacheResponse
+  const response = await cacheResponse(request, async () => fetch(cdnCgiUrl, fetchOptions));
+
+  addBreadcrumb(requestContext, 'Response', 'CDN-CGI response received', { 
+    status: response.status,
+    contentType: response.headers.get('Content-Type'),
+    contentLength: response.headers.get('Content-Length'),
+    isRangeRequest: response.status === 206 || response.headers.has('Content-Range'),
+    cfRay: response.headers.get('CF-Ray'),
+    cacheStatus: response.headers.get('CF-Cache-Status')
+  });
+
+  // Return the response along with data needed for post-processing
+  return { 
+    response, 
+    cacheConfig, 
+    source, 
+    derivative, 
+    cdnCgiUrl 
+  };
+}

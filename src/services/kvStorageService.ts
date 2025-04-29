@@ -291,11 +291,74 @@ async function storeTransformedVideoImpl(
   // Get response body as ArrayBuffer for storage
   const videoData = await responseClone.arrayBuffer();
   
-  // Store the video data with metadata
-  if (ttl) {
-    await namespace.put(key, videoData, { metadata, expirationTtl: ttl });
-  } else {
-    await namespace.put(key, videoData, { metadata });
+  // Store the video data with metadata using retry with exponential backoff
+  // This handles Cloudflare KV's rate limiting (1 write per second per key)
+  const maxRetries = 3;
+  let attemptCount = 0;
+  let success = false;
+  let lastError: Error | null = null;
+
+  while (attemptCount < maxRetries && !success) {
+    try {
+      attemptCount++;
+      
+      if (ttl) {
+        await namespace.put(key, videoData, { metadata, expirationTtl: ttl });
+      } else {
+        await namespace.put(key, videoData, { metadata });
+      }
+      
+      success = true;
+      
+      // Log retries if we needed more than one attempt
+      if (attemptCount > 1) {
+        logDebug('KV put succeeded after retries', {
+          key,
+          attempts: attemptCount,
+          size: metadata.contentLength
+        });
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const isRateLimitError = 
+        lastError.message.includes('429') || 
+        lastError.message.includes('409') || 
+        lastError.message.includes('rate limit') ||
+        lastError.message.includes('conflict');
+      
+      if (!isRateLimitError || attemptCount >= maxRetries) {
+        // Either not a rate limit error or we've exhausted our retries
+        throw lastError;
+      }
+      
+      // Log the retry attempt
+      logDebug('KV rate limit hit, retrying with backoff', {
+        key,
+        attempt: attemptCount,
+        maxRetries,
+        error: lastError.message
+      });
+      
+      // Add breadcrumb for retry operation
+      const requestContext = getCurrentContext();
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'KV', 'Retrying KV operation after rate limit', {
+          key,
+          attempt: attemptCount,
+          maxRetries,
+          error: lastError.message
+        });
+      }
+      
+      // Exponential backoff: 200ms, 400ms, 800ms, etc.
+      const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+  
+  // If we still failed after all retries, throw the last error
+  if (!success && lastError) {
+    throw lastError;
   }
   
   // If env is provided but version isn't in options, ensure the version is stored in KV
@@ -305,14 +368,118 @@ async function storeTransformedVideoImpl(
       // Store the version with double the content TTL for persistence
       const versionTtl = ttl ? ttl * 2 : undefined;
       
-      // Use waitUntil if available for non-blocking operation
+      // Use waitUntil if available for non-blocking operation with retry
       if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
         (options.env as any).executionCtx.waitUntil(
-          storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl)
+          (async () => {
+            const maxRetries = 3;
+            let attemptCount = 0;
+            let success = false;
+            let lastError: Error | null = null;
+            
+            while (attemptCount < maxRetries && !success) {
+              try {
+                attemptCount++;
+                await storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl);
+                success = true;
+                
+                // Only log if we needed retries
+                if (attemptCount > 1) {
+                  logDebug('Successfully stored cache version after retries', {
+                    key,
+                    cacheVersion,
+                    attempts: attemptCount,
+                    versionTtl: versionTtl !== undefined ? versionTtl : 'indefinite'
+                  });
+                }
+              } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                const isRateLimitError = 
+                  lastError.message.includes('429') || 
+                  lastError.message.includes('409') || 
+                  lastError.message.includes('rate limit') ||
+                  lastError.message.includes('conflict');
+                
+                if (!isRateLimitError || attemptCount >= maxRetries) {
+                  logDebug('Error storing cache version in KV', {
+                    key,
+                    cacheVersion,
+                    error: lastError.message,
+                    attempts: attemptCount
+                  });
+                  return; // Exit the async function within waitUntil
+                }
+                
+                // Log the retry attempt
+                logDebug('KV rate limit hit during version storage, retrying with backoff', {
+                  key,
+                  attempt: attemptCount,
+                  maxRetries,
+                  error: lastError.message
+                });
+                
+                // Exponential backoff: 200ms, 400ms, 800ms, etc.
+                const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+              }
+            }
+          })()
         );
-      } else {
-        // Fallback to direct await if executionCtx not available
-        await storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl);
+      } else if (options.env) { // Check that env exists before using it
+        // Fallback to direct await with retry if executionCtx not available
+        const maxRetries = 3;
+        let attemptCount = 0;
+        let success = false;
+        let lastError: Error | null = null;
+        
+        while (attemptCount < maxRetries && !success) {
+          try {
+            attemptCount++;
+            // options.env is guaranteed to be defined here
+            await storeCacheKeyVersion(options.env, key, cacheVersion, versionTtl);
+            success = true;
+            
+            // Only log if we needed retries
+            if (attemptCount > 1) {
+              logDebug('Successfully stored cache version after retries (direct)', {
+                key,
+                cacheVersion,
+                attempts: attemptCount,
+                versionTtl: versionTtl !== undefined ? versionTtl : 'indefinite'
+              });
+            }
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+            const isRateLimitError = 
+              lastError.message.includes('429') || 
+              lastError.message.includes('409') || 
+              lastError.message.includes('rate limit') ||
+              lastError.message.includes('conflict');
+            
+            if (!isRateLimitError || attemptCount >= maxRetries) {
+              // Log the error and break out
+              logDebug('Error storing cache version in KV (direct)', {
+                key,
+                cacheVersion,
+                error: lastError.message,
+                attempts: attemptCount
+              });
+              break; // Exit the loop but don't throw - version storage is not critical
+            }
+            
+            // Log the retry attempt
+            logDebug('KV rate limit hit during version storage, retrying with backoff (direct)', {
+              key,
+              attempt: attemptCount,
+              maxRetries,
+              error: lastError.message
+            });
+            
+            // Exponential backoff: 200ms, 400ms, 800ms, etc.
+            const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
+        }
       }
       
       logDebug('Stored cache version in KV', {
@@ -486,14 +653,117 @@ async function getTransformedVideoImpl(
         const cacheConfig = CacheConfigurationManager.getInstance();
         const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
         
-        // Store updated version in background if possible
+        // Store updated version in background if possible, with retry logic
         if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
           (options.env as any).executionCtx.waitUntil(
-            storeCacheKeyVersion(options.env, key, nextVersion, versionTtl)
+            (async () => {
+              const maxRetries = 3;
+              let attemptCount = 0;
+              let success = false;
+              let lastError: Error | null = null;
+              
+              while (attemptCount < maxRetries && !success) {
+                try {
+                  attemptCount++;
+                  await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+                  success = true;
+                  
+                  // Only log if we needed retries
+                  if (attemptCount > 1) {
+                    logDebug('Successfully incremented version on cache miss after retries', {
+                      key,
+                      previousVersion: nextVersion - 1,
+                      nextVersion,
+                      attempts: attemptCount,
+                      ttl: versionTtl
+                    });
+                  }
+                } catch (err) {
+                  lastError = err instanceof Error ? err : new Error(String(err));
+                  const isRateLimitError = 
+                    lastError.message.includes('429') || 
+                    lastError.message.includes('409') || 
+                    lastError.message.includes('rate limit') ||
+                    lastError.message.includes('conflict');
+                  
+                  if (!isRateLimitError || attemptCount >= maxRetries) {
+                    logDebug('Error incrementing version on cache miss', {
+                      key,
+                      error: lastError.message,
+                      attempts: attemptCount
+                    });
+                    return; // Exit the async function within waitUntil
+                  }
+                  
+                  // Log the retry attempt
+                  logDebug('KV rate limit hit during version increment, retrying with backoff', {
+                    key,
+                    attempt: attemptCount,
+                    maxRetries,
+                    error: lastError.message
+                  });
+                  
+                  // Exponential backoff: 200ms, 400ms, 800ms, etc.
+                  const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+                  await new Promise(resolve => setTimeout(resolve, backoffMs));
+                }
+              }
+            })()
           );
-        } else {
-          // Fall back to direct storage
-          await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+        } else if (options.env) { // Check that env exists before using it
+          // Fall back to direct storage with retry logic
+          const maxRetries = 3;
+          let attemptCount = 0;
+          let success = false;
+          let lastError: Error | null = null;
+          
+          while (attemptCount < maxRetries && !success) {
+            try {
+              attemptCount++;
+              // options.env is guaranteed to be defined here
+              await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+              success = true;
+              
+              // Only log if we needed retries
+              if (attemptCount > 1) {
+                logDebug('Successfully incremented version on cache miss after retries (direct)', {
+                  key,
+                  previousVersion: nextVersion - 1,
+                  nextVersion,
+                  attempts: attemptCount,
+                  ttl: versionTtl
+                });
+              }
+            } catch (err) {
+              lastError = err instanceof Error ? err : new Error(String(err));
+              const isRateLimitError = 
+                lastError.message.includes('429') || 
+                lastError.message.includes('409') || 
+                lastError.message.includes('rate limit') ||
+                lastError.message.includes('conflict');
+              
+              if (!isRateLimitError || attemptCount >= maxRetries) {
+                logDebug('Error incrementing version on cache miss (direct)', {
+                  key,
+                  error: lastError.message,
+                  attempts: attemptCount
+                });
+                break; // Exit the loop but don't throw - version storage is not critical
+              }
+              
+              // Log the retry attempt
+              logDebug('KV rate limit hit during version increment, retrying with backoff (direct)', {
+                key,
+                attempt: attemptCount,
+                maxRetries,
+                error: lastError.message
+              });
+              
+              // Exponential backoff: 200ms, 400ms, 800ms, etc.
+              const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+            }
+          }
         }
         
         logDebug('Incremented version on cache miss', {
@@ -754,6 +1024,105 @@ async function getTransformedVideoImpl(
     if (requestContext.diagnostics) {
       requestContext.diagnostics.cacheVersion = cacheVersion;
     }
+    
+    // Refresh TTL on cache hit using waitUntil if available
+    // This extends the expiration time for frequently accessed content
+    if (requestContext.executionContext?.waitUntil) {
+      // Calculate fresh TTL - use the original TTL if possible
+      const originalTtl = metadata.expiresAt ? 
+        Math.floor((metadata.expiresAt - metadata.createdAt) / 1000) : 
+        cacheTtl;
+      
+      // Only refresh if reasonably old (>25% of TTL elapsed) and not about to expire
+      const elapsed = Math.floor((Date.now() - metadata.createdAt) / 1000);
+      const remaining = metadata.expiresAt ? Math.floor((metadata.expiresAt - Date.now()) / 1000) : 0;
+      
+      if (elapsed > originalTtl * 0.25 && remaining > 60) {
+        // Log the TTL refresh
+        logDebug('Refreshing KV cache TTL on hit', {
+          key,
+          originalTtl,
+          elapsed: elapsed + 's',
+          remaining: remaining + 's',
+          createdAt: new Date(metadata.createdAt).toISOString()
+        });
+        
+        // Clone value and metadata for re-storing
+        const clonedMetadata = { ...metadata };
+        clonedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
+        
+        // Use waitUntil with retry logic to avoid blocking response
+        requestContext.executionContext.waitUntil(
+          (async () => {
+            const maxRetries = 3;
+            let attemptCount = 0;
+            let success = false;
+            let lastError: Error | null = null;
+            
+            while (attemptCount < maxRetries && !success) {
+              try {
+                attemptCount++;
+                
+                await namespace.put(key, value, { 
+                  metadata: clonedMetadata, 
+                  expirationTtl: originalTtl 
+                });
+                
+                success = true;
+                
+                // Log success with retry info if needed
+                if (attemptCount > 1) {
+                  logDebug('Successfully refreshed KV TTL after retries', { 
+                    key, 
+                    attempts: attemptCount,
+                    newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined' 
+                  });
+                } else {
+                  logDebug('Successfully refreshed KV TTL', { 
+                    key, 
+                    newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined' 
+                  });
+                }
+              } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                const isRateLimitError = 
+                  lastError.message.includes('429') || 
+                  lastError.message.includes('409') || 
+                  lastError.message.includes('rate limit') ||
+                  lastError.message.includes('conflict');
+                
+                if (!isRateLimitError || attemptCount >= maxRetries) {
+                  logDebug('Error refreshing KV TTL', {
+                    key,
+                    error: lastError.message,
+                    attempts: attemptCount
+                  });
+                  return; // Exit the async function within waitUntil
+                }
+                
+                // Log the retry attempt
+                logDebug('KV rate limit hit during TTL refresh, retrying with backoff', {
+                  key,
+                  attempt: attemptCount,
+                  maxRetries,
+                  error: lastError.message
+                });
+                
+                // Exponential backoff: 200ms, 400ms, 800ms, etc.
+                const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+              }
+            }
+          })()
+        );
+        
+        addBreadcrumb(requestContext, 'KV', 'Refreshing cache TTL on hit', {
+          key,
+          originalTtl,
+          newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined'
+        });
+      }
+    }
   }
   
   return { response, metadata };
@@ -825,30 +1194,131 @@ export const getTransformedVideo = withErrorHandling<
           const cacheConfig = CacheConfigurationManager.getInstance();
           const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
           
-          // Store updated version in background if possible
+          // Store updated version in background if possible, with retry logic
           if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
             (options.env as any).executionCtx.waitUntil(
-              storeCacheKeyVersion(options.env, key, nextVersion, versionTtl)
+              (async () => {
+                const maxRetries = 3;
+                let attemptCount = 0;
+                let success = false;
+                let lastError: Error | null = null;
+                
+                while (attemptCount < maxRetries && !success) {
+                  try {
+                    attemptCount++;
+                    await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+                    success = true;
+                    
+                    // Only log if we needed retries
+                    if (attemptCount > 1) {
+                      logDebug('Successfully incremented version on KV retrieval error after retries (background)', {
+                        key,
+                        previousVersion: nextVersion - 1,
+                        nextVersion,
+                        attempts: attemptCount,
+                        ttl: versionTtl
+                      });
+                    } else {
+                      logDebug('Incremented version on KV retrieval error (background)', {
+                        key,
+                        previousVersion: nextVersion - 1,
+                        nextVersion,
+                        ttl: versionTtl
+                      });
+                    }
+                  } catch (err) {
+                    lastError = err instanceof Error ? err : new Error(String(err));
+                    const isRateLimitError = 
+                      lastError.message.includes('429') || 
+                      lastError.message.includes('409') || 
+                      lastError.message.includes('rate limit') ||
+                      lastError.message.includes('conflict');
+                    
+                    if (!isRateLimitError || attemptCount >= maxRetries) {
+                      logDebug('Error incrementing version on KV retrieval error (background)', {
+                        key,
+                        error: lastError.message,
+                        attempts: attemptCount
+                      });
+                      return; // Exit the async function within waitUntil
+                    }
+                    
+                    // Log the retry attempt
+                    logDebug('KV rate limit hit during error version increment, retrying with backoff (background)', {
+                      key,
+                      attempt: attemptCount,
+                      maxRetries,
+                      error: lastError.message
+                    });
+                    
+                    // Exponential backoff: 200ms, 400ms, 800ms, etc.
+                    const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+                    await new Promise(resolve => setTimeout(resolve, backoffMs));
+                  }
+                }
+              })()
             );
+          } else if (options.env) { // Check that env exists before using it
+            // Fall back to direct storage with retry logic
+            const maxRetries = 3;
+            let attemptCount = 0;
+            let success = false;
+            let lastError: Error | null = null;
             
-            // Log in background
-            logDebug('Incremented version on KV retrieval error (background)', {
-              key,
-              previousVersion: nextVersion - 1,
-              nextVersion,
-              ttl: versionTtl
-            });
-          } else {
-            // Fall back to direct storage
-            await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
-            
-            // Log direct operation
-            logDebug('Incremented version on KV retrieval error (direct)', {
-              key,
-              previousVersion: nextVersion - 1,
-              nextVersion,
-              ttl: versionTtl
-            });
+            while (attemptCount < maxRetries && !success) {
+              try {
+                attemptCount++;
+                // options.env is guaranteed to be defined here
+                await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
+                success = true;
+                
+                // Only log if we needed retries
+                if (attemptCount > 1) {
+                  logDebug('Successfully incremented version on KV retrieval error after retries (direct)', {
+                    key,
+                    previousVersion: nextVersion - 1,
+                    nextVersion,
+                    attempts: attemptCount,
+                    ttl: versionTtl
+                  });
+                } else {
+                  logDebug('Incremented version on KV retrieval error (direct)', {
+                    key,
+                    previousVersion: nextVersion - 1,
+                    nextVersion,
+                    ttl: versionTtl
+                  });
+                }
+              } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                const isRateLimitError = 
+                  lastError.message.includes('429') || 
+                  lastError.message.includes('409') || 
+                  lastError.message.includes('rate limit') ||
+                  lastError.message.includes('conflict');
+                
+                if (!isRateLimitError || attemptCount >= maxRetries) {
+                  logDebug('Error incrementing version on KV retrieval error (direct)', {
+                    key,
+                    error: lastError.message,
+                    attempts: attemptCount
+                  });
+                  break; // Exit the loop but don't throw - version storage is not critical
+                }
+                
+                // Log the retry attempt
+                logDebug('KV rate limit hit during error version increment, retrying with backoff (direct)', {
+                  key,
+                  attempt: attemptCount,
+                  maxRetries,
+                  error: lastError.message
+                });
+                
+                // Exponential backoff: 200ms, 400ms, 800ms, etc.
+                const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+              }
+            }
           }
         } catch (versionErr) {
           // Log error but continue - version incrementation is not critical

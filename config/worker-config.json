@@ -357,7 +357,7 @@
 	},
 	"cache": {
 		"debug": false,
-		"defaultMaxAge": 300,
+		"defaultMaxAge": 60,
 		"respectOriginHeaders": true,
 		"cacheEverything": false,
 		"enableCacheTags": true,

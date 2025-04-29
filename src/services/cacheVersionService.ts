@@ -50,11 +50,11 @@ interface VersionMetadata {
  * @returns The current version number or null if not found
  */
 export const getCacheKeyVersion = withErrorHandling<
-  [EnvVariables, string],
+  [EnvVariables | undefined, string],
   Promise<number | null>
 >(
-  async function getCacheKeyVersionImpl(env: EnvVariables, cacheKey: string): Promise<number | null> {
-    if (!env.VIDEO_CACHE_KEY_VERSIONS) {
+  async function getCacheKeyVersionImpl(env: EnvVariables | undefined, cacheKey: string): Promise<number | null> {
+    if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
       logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
       return null;
     }
@@ -100,16 +100,16 @@ export const getCacheKeyVersion = withErrorHandling<
  * @returns true if successful, false otherwise
  */
 export const storeCacheKeyVersion = withErrorHandling<
-  [EnvVariables, string, number, number?],
+  [EnvVariables | undefined, string, number, number?],
   Promise<boolean>
 >(
   async function storeCacheKeyVersionImpl(
-    env: EnvVariables,
+    env: EnvVariables | undefined,
     cacheKey: string,
     version: number,
     ttl?: number
   ): Promise<boolean> {
-    if (!env.VIDEO_CACHE_KEY_VERSIONS) {
+    if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
       logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
       return false;
     }
@@ -170,14 +170,19 @@ export const storeCacheKeyVersion = withErrorHandling<
  * @returns The next version number (1 if no previous version)
  */
 export const getNextCacheKeyVersion = withErrorHandling<
-  [EnvVariables, string, boolean?],
+  [EnvVariables | undefined, string, boolean?],
   Promise<number>
 >(
   async function getNextCacheKeyVersionImpl(
-    env: EnvVariables, 
+    env: EnvVariables | undefined, 
     cacheKey: string,
     forceIncrement: boolean = false
   ): Promise<number> {
+    if (!env) {
+      logDebug('Environment variables not available, returning version 1');
+      return 1;
+    }
+    
     const currentVersion = await getCacheKeyVersion(env, cacheKey);
     
     // If no version exists, start with 1
