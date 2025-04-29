@@ -11,7 +11,13 @@ import {
   tryOrNull,
   tryOrDefault
 } from '../utils/errorHandlingUtils';
-import { addBreadcrumb } from '../utils/requestContext';
+import { RequestContext, addBreadcrumb } from '../utils/requestContext';
+import { parseErrorMessage, isDurationLimitError, adjustDuration, storeTransformationLimit } from '../utils/transformationUtils';
+import { fetchVideo } from './videoStorageService';
+import { VideoConfigurationManager } from '../config';
+import { prepareVideoTransformation } from './TransformationService';
+import { cacheResponse } from './cacheManagementService';
+import { VideoTransformContext } from '../domain/commands/TransformVideoCommand';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -771,3 +777,236 @@ export const createErrorResponse = withErrorHandling<
     operation: 'create_error_response'
   }
 );
+
+/**
+ * Handles transformation errors, including fallback logic and retries
+ * 
+ * @param params Error handling parameters
+ * @returns Response with appropriate error handling or fallback content
+ */
+export async function handleTransformationError({
+  errorResponse,
+  originalRequest,
+  context,
+  requestContext,
+  diagnosticsInfo,
+  fallbackOriginUrl,
+  cdnCgiUrl,
+  source
+}: {
+  errorResponse: Response;
+  originalRequest: Request;
+  context: VideoTransformContext;
+  requestContext: RequestContext;
+  diagnosticsInfo: DiagnosticsInfo;
+  fallbackOriginUrl: string | null;
+  cdnCgiUrl: string;
+  source?: string;
+}): Promise<Response> {
+  // Get logger from context or create one if needed
+  const logger = context.logger || createLogger(requestContext);
+
+  const errorText = await errorResponse.text();
+  const parsedError = parseErrorMessage(errorText);
+  const status = errorResponse.status;
+  const isServerError = status >= 500 && status < 600;
+  const isFileSizeError = parsedError.errorType === 'file_size_limit' || errorText.includes('file size limit');
+
+  // Log the initial error
+  logErrorWithContext(`Transformation proxy returned ${status}`, { message: errorText }, { requestId: requestContext.requestId, url: cdnCgiUrl }, 'handleTransformationError');
+  addBreadcrumb(requestContext, 'Error', 'Transformation Proxy Error', { status, errorText: errorText.substring(0, 100), parsedError });
+
+  // --- Duration Limit Retry Logic ---
+  if (isDurationLimitError(errorText) && context.options?.duration) {
+    const originalDuration = context.options.duration;
+    // Extract the exact upper limit from the error message if possible
+    const limitMatch = errorText.match(/between \d+\w+ and ([\d.]+)(\w+)/);
+    let adjustedDuration: string | null = null;
+    
+    if (limitMatch && limitMatch.length >= 3) {
+      // Use exactly what the error tells us is the maximum
+      const maxValue = parseFloat(limitMatch[1]);
+      const unit = limitMatch[2];
+      // Use the exact value from the error message
+      const exactValue = Math.floor(maxValue); // Just convert to integer for clean values
+      if (exactValue > 0) {
+        adjustedDuration = `${exactValue}${unit}`;
+        // Store this limit for future use
+        storeTransformationLimit('duration', 'max', exactValue);
+        
+        pinoDebug(requestContext, logger, 'handleTransformationError', 'Extracted exact duration limit', { 
+          maxValue, 
+          unit, 
+          exactValue, 
+          adjustedDuration,
+          originalDuration,
+          errorMessage: errorText.substring(0, 100)
+        });
+      }
+    }
+    
+    // If we couldn't extract the limit from the error, fall back to the standard adjustment
+    if (!adjustedDuration) {
+      adjustedDuration = adjustDuration(originalDuration);
+      pinoDebug(requestContext, logger, 'handleTransformationError', 'Using standard duration adjustment', { 
+        originalDuration, 
+        adjustedDuration 
+      });
+    }
+
+    if (adjustedDuration && adjustedDuration !== originalDuration) {
+      pinoDebug(requestContext, logger, 'handleTransformationError', 'Attempting retry with adjusted duration', { originalDuration, adjustedDuration });
+      addBreadcrumb(requestContext, 'Retry', 'Adjusting duration', { originalDuration, adjustedDuration });
+
+      const adjustedOptions = { ...context.options, duration: adjustedDuration };
+      try {
+        const transformResult = await prepareVideoTransformation(
+          context.request, adjustedOptions, context.pathPatterns, context.debugInfo, context.env
+        );
+        const adjustedCdnCgiUrl = transformResult.cdnCgiUrl;
+
+        const retryResponse = await cacheResponse(originalRequest, async () => fetch(adjustedCdnCgiUrl));
+
+        if (retryResponse.ok) {
+          pinoDebug(requestContext, logger, 'handleTransformationError', 'Retry successful', { adjustedDuration });
+          addBreadcrumb(requestContext, 'Retry', 'Duration adjustment successful', { status: retryResponse.status });
+          
+          // Add adjustment headers and return
+          const headers = new Headers(retryResponse.headers);
+          headers.set('X-Duration-Adjusted', 'true');
+          headers.set('X-Original-Duration', originalDuration);
+          headers.set('X-Adjusted-Duration', adjustedDuration);
+          headers.set('X-Duration-Limit-Applied', 'true');
+          
+          return new Response(retryResponse.body, { 
+            status: retryResponse.status, 
+            statusText: retryResponse.statusText, 
+            headers 
+          });
+        } else {
+          logErrorWithContext('Retry with adjusted duration failed', new Error(`Status: ${retryResponse.status}`), { requestId: requestContext.requestId, url: adjustedCdnCgiUrl }, 'handleTransformationError');
+          addBreadcrumb(requestContext, 'Retry', 'Duration adjustment failed', { status: retryResponse.status });
+        }
+      } catch (retryError) {
+        logErrorWithContext('Error during duration retry logic', retryError, { requestId: requestContext.requestId }, 'handleTransformationError');
+        addBreadcrumb(requestContext, 'Error', 'Duration retry preparation failed', { error: retryError instanceof Error ? retryError.message : String(retryError) });
+      }
+    }
+  }
+
+  // --- Fallback Logic (Direct Fetch or Storage Service) ---
+  let fallbackResponse: Response | undefined;
+  const sourceUrlForDirectFetch = fallbackOriginUrl || source; // Prefer pattern-based fallback URL
+
+  // Attempt direct fetch for Server Errors or File Size Errors
+  if ((isServerError || isFileSizeError) && sourceUrlForDirectFetch) {
+    pinoDebug(requestContext, logger, 'handleTransformationError', 'Attempting direct source fetch', { 
+      sourceUrl: sourceUrlForDirectFetch.substring(0,50), 
+      reason: isServerError ? 'Server Error' : 'File Size Error' 
+    });
+    addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch', { 
+      reason: isServerError ? 'Server Error' : 'File Size Error' 
+    });
+    
+    try {
+      // Use original request's method and headers for direct fetch
+      const directRequest = new Request(sourceUrlForDirectFetch, {
+        method: originalRequest.method,
+        headers: originalRequest.headers,
+        redirect: 'follow' // Important for potential redirects at origin
+      });
+      
+      fallbackResponse = await fetch(directRequest);
+      
+      if (!fallbackResponse.ok) {
+        pinoDebug(requestContext, logger, 'handleTransformationError', 'Direct source fetch failed', { status: fallbackResponse.status });
+        addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed', { status: fallbackResponse.status });
+        fallbackResponse = undefined; // Reset to trigger storage service fallback
+      } else {
+        pinoDebug(requestContext, logger, 'handleTransformationError', 'Direct source fetch successful', { status: fallbackResponse.status });
+        addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful', { status: fallbackResponse.status });
+      }
+    } catch (directFetchError) {
+      logErrorWithContext('Error fetching directly from source', directFetchError, { sourceUrl: sourceUrlForDirectFetch }, 'handleTransformationError');
+      addBreadcrumb(requestContext, 'Error', 'Direct fetch exception', { error: directFetchError instanceof Error ? directFetchError.message : String(directFetchError) });
+      fallbackResponse = undefined;
+    }
+  }
+
+  // Use storage service if direct fetch wasn't applicable, wasn't attempted, or failed
+  if (!fallbackResponse) {
+    pinoDebug(requestContext, logger, 'handleTransformationError', 'Using storage service for fallback');
+    addBreadcrumb(requestContext, 'Fallback', 'Using storage service');
+    
+    try {
+      const videoConfigManager = VideoConfigurationManager.getInstance();
+      const videoConfig = videoConfigManager.getConfig();
+      const storageResult = await fetchVideo(
+        new URL(originalRequest.url).pathname,
+        videoConfig,
+        context.env || {},
+        originalRequest
+      );
+
+      if (storageResult.sourceType !== 'error') {
+        fallbackResponse = storageResult.response;
+        pinoDebug(requestContext, logger, 'handleTransformationError', 'Storage service fallback successful', { status: fallbackResponse.status });
+        addBreadcrumb(requestContext, 'Fallback', 'Storage service successful', { status: fallbackResponse.status });
+      } else {
+        logErrorWithContext('Failed to get fallback content via storage service', storageResult.error, { path: new URL(originalRequest.url).pathname }, 'handleTransformationError');
+        addBreadcrumb(requestContext, 'Error', 'Storage service fallback failed', { error: storageResult.error?.message });
+      }
+    } catch (storageError) {
+      logErrorWithContext('Error using storage service for fallback', storageError, { path: new URL(originalRequest.url).pathname }, 'handleTransformationError');
+      addBreadcrumb(requestContext, 'Error', 'Storage service exception', { error: storageError instanceof Error ? storageError.message : String(storageError) });
+    }
+  }
+
+  // --- Finalize Fallback Response ---
+  if (fallbackResponse) {
+    const headers = new Headers(fallbackResponse.headers);
+    
+    // Add fallback-specific headers
+    headers.set('X-Fallback-Applied', 'true');
+    headers.set('X-Fallback-Reason', parsedError.specificError || errorText.substring(0, 100));
+    headers.set('X-Original-Error-Status', String(status));
+    
+    if (parsedError.errorType) headers.set('X-Error-Type', parsedError.errorType);
+    if (parsedError.parameter) headers.set('X-Invalid-Parameter', parsedError.parameter);
+    
+    // Add specific headers for file size errors
+    if (isFileSizeError || parsedError.errorType === 'file_size_limit' || errorText.includes('file size limit')) {
+      headers.set('X-File-Size-Error', 'true');
+      headers.set('X-Video-Too-Large', 'true'); // Required for backward compatibility
+    }
+    
+    if (isServerError) headers.set('X-Server-Error-Fallback', 'true');
+    
+    // For storage service fallback, add storage source header for backward compatibility
+    if (!((isServerError || isFileSizeError) && sourceUrlForDirectFetch && fallbackResponse.url === sourceUrlForDirectFetch)) {
+      // If we didn't use direct fetch, assume it came from storage service
+      headers.set('X-Storage-Source', 'remote');
+    } else {
+      // Indicate if direct source was successfully used for fallback
+      headers.set('X-Direct-Source-Used', 'true');
+    }
+
+    headers.set('Cache-Control', 'no-store'); // Ensure fallback isn't cached
+
+    return new Response(fallbackResponse.body, {
+      status: fallbackResponse.status,
+      statusText: fallbackResponse.statusText,
+      headers
+    });
+  }
+
+  // If all fallbacks fail, return a generic error response
+  logErrorWithContext('All fallback mechanisms failed', new Error('No fallback content available'), { requestId: requestContext.requestId }, 'handleTransformationError');
+  addBreadcrumb(requestContext, 'Error', 'All fallbacks failed');
+  
+  // Return a generic 500
+  return new Response(`Transformation failed and fallback could not be retrieved. Original error status: ${status}`, {
+    status: 500,
+    headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }
+  });
+}

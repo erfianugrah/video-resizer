@@ -291,5 +291,33 @@ describe('Transformation Utils', () => {
       const underLimitResult = adjustDuration('30s');
       expect(underLimitResult).toBe('30s');
     });
+    
+    // Test for duration limit detection and extraction
+    it('should extract exact duration limits from error messages', () => {
+      // Mock error message from Cloudflare
+      const errorMessage = 'duration: attribute must be between 100ms and 46.066933s';
+      
+      // Test isDurationLimitError
+      expect(isDurationLimitError(errorMessage)).toBe(true);
+      
+      // Test parseErrorMessage with duration limit error
+      const parsedError = parseErrorMessage(errorMessage);
+      expect(parsedError.errorType).toBe('duration_limit');
+      expect(parsedError.specificError).toContain('Duration must be between');
+      expect(parsedError.limitType).toBe('duration');
+      
+      // Test the regex match from errorHandlerService
+      const limitMatch = errorMessage.match(/between \d+\w+ and ([\d.]+)(\w+)/);
+      expect(limitMatch).not.toBeNull();
+      if (limitMatch) {
+        expect(limitMatch[1]).toBe('46.066933');
+        expect(limitMatch[2]).toBe('s');
+        
+        // Test the exact value extraction
+        const maxValue = parseFloat(limitMatch[1]);
+        const exactValue = Math.floor(maxValue); // Just convert to integer for clean values
+        expect(exactValue).toBe(46);
+      }
+    });
   });
 });

@@ -208,6 +208,35 @@ To optimize video loading:
 - Consider `audio=false` for purely visual videos to reduce file size
 - Use appropriate derivatives for different devices
 
+### Range Request Support
+
+Video-resizer provides optimized support for range requests, which enables:
+- Seeking through videos without downloading the entire file
+- Fast forward/rewind operations in video players
+- Improved playback experience on both first and subsequent views
+- Efficient resumption of interrupted downloads
+
+Range requests are supported in the following scenarios:
+- First access to a video (via Cache API with transparent fallback)
+- KV-cached responses (supported automatically)
+- All standard video formats (mp4, webm)
+
+The implementation handles range requests efficiently by:
+1. Storing the full video in temporary Cache API storage on first access
+2. Using the Cache API's built-in range request support for immediate seeking
+3. Preserving all standard range-related HTTP headers
+4. Providing multiple fallback mechanisms for reliability
+
+#### Expiration and TTL Handling
+
+Range request support is integrated with the system's expiration handling:
+- TTL values for Cache API storage align with KV cache configuration
+- Both temporary (Cache API) and persistent (KV) storage respect the same TTL values
+- Expiration is determined based on response status, content type, and path-based caching profiles
+- TTL values are extracted from Cache-Control headers or determined from configuration
+
+For detailed implementation information, see the [Range Request Support](./range-request-support.md) documentation.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -246,7 +275,28 @@ Video mode is implemented in the `VideoStrategy` class, which:
 4. Constructs the CDN-CGI transformation URL
 5. Handles caching configuration
 
-For more implementation details, see the `VideoStrategy.ts` file in the source code.
+The video handling pipeline includes several optimizations:
+
+### Caching Architecture
+- Initial responses are stored in KV storage using non-blocking waitUntil
+- Subsequent requests with identical parameters are served directly from KV
+- Storage keys use path and normalized parameters to maximize cache hits
+
+### Range Request Handling
+- The system uses a multi-layered approach for range requests:
+  1. **Cache API Layer**: Temporarily stores videos in the Cache API for range support
+  2. **KV Cache Layer**: Provides persistent caching with range support
+  3. **Manual Fallback**: Direct ArrayBuffer manipulation when necessary
+- For first-time video access with range requests, the system:
+  1. Stores the full video in the Cache API
+  2. Uses the Cache API's native range request support for immediate seeking
+  3. Simultaneously stores the video in KV cache for persistent storage
+  4. Gracefully falls back to manual range handling if Cache API is unavailable
+
+For more implementation details, see:
+- `VideoStrategy.ts` - Core transformation logic
+- `videoHandler.ts` - Request handling and caching coordination
+- `httpUtils.ts` - Range request handling and Cache API integration
 
 ## Related Documentation
 
@@ -257,4 +307,4 @@ For more implementation details, see the `VideoStrategy.ts` file in the source c
 
 ## Last Updated
 
-*April 25, 2025*
+*April 29, 2025*
