@@ -24,6 +24,16 @@ export interface PathPattern {
   priority?: number; // Optional priority for pattern matching (higher values checked first)
   transformationOverrides?: Record<string, unknown>; // Optional parameter overrides for this path
   captureGroups?: string[]; // Names for regex capture groups
+  auth?: {  // Auth configuration for this path pattern
+    type: string;
+    enabled?: boolean;
+    accessKeyVar?: string;
+    secretKeyVar?: string;
+    region?: string;
+    service?: string;
+    expiresInSeconds?: number;
+    sessionTokenVar?: string;
+  };
 }
 
 /**
@@ -262,7 +272,7 @@ export function createQualityPath(originalPath: string, quality: string): string
 }
 
 /**
- * Builds a CDN-CGI media transformation URL
+ * Builds a CDN-CGI media transformation URL synchronously (without presigning)
  * @param options Transformation options
  * @param originUrl Full URL to the origin video (content source URL)
  * @param requestUrl The original request URL (host will be used for the CDN-CGI path)
@@ -273,6 +283,51 @@ export function buildCdnCgiMediaUrl(
   originUrl: string,
   requestUrl?: string
 ): string {
+  const result = buildCdnCgiMediaUrlImpl(options, originUrl, requestUrl, false);
+  // Ensure we're returning a string, not a Promise
+  if (typeof result === 'string') {
+    return result;
+  }
+  throw new Error('Unexpected Promise returned from synchronous buildCdnCgiMediaUrl');
+}
+
+/**
+ * Builds a CDN-CGI media transformation URL with async support for presigning
+ * @param options Transformation options
+ * @param originUrl Full URL to the origin video (content source URL)
+ * @param requestUrl The original request URL (host will be used for the CDN-CGI path)
+ * @param env The environment variables needed for presigning
+ * @param matchedPattern Optional matched path pattern for context
+ * @returns Promise resolving to a CDN-CGI media transformation URL
+ */
+export async function buildCdnCgiMediaUrlAsync(
+  options: TransformParams,
+  originUrl: string,
+  requestUrl?: string,
+  env?: any,
+  matchedPattern?: PathPattern | null // <-- ADDED
+): Promise<string> {
+  return buildCdnCgiMediaUrlImpl(options, originUrl, requestUrl, true, env, matchedPattern);
+}
+
+/**
+ * Implementation of buildCdnCgiMediaUrl that can work synchronously or asynchronously
+ * @param options Transformation options
+ * @param originUrl Full URL to the origin video (content source URL)
+ * @param requestUrl The original request URL (host will be used for the CDN-CGI path)
+ * @param waitForPresigning Whether to wait for presigning to complete (async mode)
+ * @param environment The environment variables needed for presigning
+ * @param matchedPattern Optional matched path pattern for context
+ * @returns A CDN-CGI media transformation URL or Promise resolving to one
+ */
+function buildCdnCgiMediaUrlImpl(
+  options: TransformParams,
+  originUrl: string,
+  requestUrl?: string,
+  waitForPresigning: boolean = false,
+  environment?: any,
+  matchedPattern?: PathPattern | null // <-- ADDED: Matched pattern context
+): string | Promise<string> {
   const configManager = VideoConfigurationManager.getInstance();
   const { basePath } = configManager.getCdnCgiConfig();
 
@@ -280,6 +335,16 @@ export function buildCdnCgiMediaUrl(
   let logDebug: (message: string, data?: Record<string, unknown>) => void = (message, data) => {
     console.debug(`[PathUtils] ${message}`, data || {});
   };
+  
+  // Quick check for URLs that likely need presigning (without importing presignedUrlUtils)
+  const likelyNeedsPresigning = originUrl.includes('s3.') || 
+                              originUrl.includes('amazonaws.com') ||
+                              originUrl.includes('prod-eu-west-1-mcdc-media') ||
+                              originUrl.includes('blob.core.windows.net') ||
+                              originUrl.includes('storage.googleapis.com');
+  
+  // Force the async path if the URL looks like it might need presigning
+  const shouldUseAsyncPath = waitForPresigning || likelyNeedsPresigning;
   
   // Try to use the proper logger if possible
   try {
@@ -315,160 +380,254 @@ export function buildCdnCgiMediaUrl(
   const baseUrlSource = requestUrl || originUrl;
   const baseUrlObj = new URL(baseUrlSource);
   const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
-
-  // Filter out transformation parameters from the origin URL
-  const transformationUrlObj = new URL(originUrl);
   
-  // List of video-specific params to exclude
-  const videoParams = [
-    // Basic dimension and quality parameters
-    'width',
-    'height',
-    'bitrate',
-    'quality',
-    'format',
-    'segment',
-    'time',
-    'derivative',
-    'duration',
-    'compression',
+  // Helper function to build the final CDN-CGI URL
+  const buildFinalUrl = (url: string): string => {
+    const finalUrl = `${baseUrl}${basePath}/${optionsString}/${url}`;
     
-    // Video transformation method parameters
-    'mode',
-    'fit',
-    'crop',
-    'rotate',
-    'imref',
+    // Log the transformation details (critical for debugging)
+    logDebug('Building CDN-CGI media URL', {
+      cdnCgiBasePath: basePath,
+      transformParams: validOptions,
+      parameterString: optionsString,
+      originalOriginUrl: originUrl,
+      finalOriginUrl: url,
+      requestUrl: requestUrl || 'not provided',
+      baseUrl: baseUrl,
+      transformedUrl: finalUrl,
+      paramCount: Object.keys(validOptions).length,
+      keyParams: {
+        width: validOptions.width,
+        height: validOptions.height,
+        format: validOptions.format,
+        quality: validOptions.quality,
+        mode: validOptions.mode,
+        fit: validOptions.fit,
+        compression: validOptions.compression,
+        duration: validOptions.duration,
+        time: validOptions.time
+      },
+      hasDuration: 'duration' in validOptions
+    });
     
-    // Playback control parameters
-    'loop',
-    'preload',
-    'autoplay',
-    'muted',
-    
-    // Additional Cloudflare parameters
-    'speed',
-    'audio',
-    'fps',
-    'keyframe',
-    'codec',
-    
-    // IMQuery parameters
-    'imwidth',
-    'imheight',
-    'im-viewwidth',
-    'im-viewheight',
-    'im-density',
-    
-    // Debug parameters
-    'debug',
-  ];
-
-  // Create a new URL object for filtered origin URL
-  const filteredOriginUrlObj = new URL(transformationUrlObj.toString());
+    return finalUrl;
+  };
   
-  // Clear search params to rebuild without transformation parameters
-  filteredOriginUrlObj.search = '';
-  
-  // Check if we should preserve the debug parameter
-  // This is a direct approach that doesn't depend on async imports
-  const hasDebugParam = transformationUrlObj.searchParams.has('debug');
-  const debugParamValue = hasDebugParam ? transformationUrlObj.searchParams.get('debug') : null;
-  
-  // Copy over search params, excluding video-specific ones
-  transformationUrlObj.searchParams.forEach((value, key) => {
-    // Standard filter: Keep params that aren't in the videoParams list
-    if (!videoParams.includes(key)) {
-      filteredOriginUrlObj.searchParams.set(key, value);
+  // Helper function to add breadcrumb
+  const addBreadcrumbForUrl = (url: string, finalUrl: string) => {
+    try {
+      // Using dynamic import to avoid circular dependencies
+      import('../utils/requestContext').then(({ getCurrentContext, addBreadcrumb }) => {
+        const context = getCurrentContext();
+        if (context) {
+          addBreadcrumb(context, 'CDN-CGI', 'Built media transformation URL', {
+            // Include the full parameters for debugging
+            params: validOptions,
+            paramCount: Object.keys(validOptions).length,
+            // Include key parameters individually for easier filtering
+            width: validOptions.width,
+            height: validOptions.height,
+            format: validOptions.format,
+            quality: validOptions.quality,
+            mode: validOptions.mode,
+            fit: validOptions.fit,
+            compression: validOptions.compression,
+            duration: validOptions.duration,
+            time: validOptions.time,
+            hasDuration: 'duration' in validOptions,
+            // Include URL details
+            basePath,
+            baseUrl,
+            // Include source and transformation URLs
+            originalOriginUrl: originUrl,
+            finalOriginUrl: url,
+            requestUrl: requestUrl || 'not provided',
+            baseUrlSource: baseUrlSource,
+            // Include the complete URL for debugging
+            completeUrl: finalUrl
+          });
+        }
+      }).catch(() => {
+        // Silent fail if we can't add the breadcrumb
+      });
+    } catch (err) {
+      // Silent fail if requestContext isn't available
     }
-  });
+  };
   
-  // Explicitly handle debug parameter - we want to preserve it for "debug=view" case
-  // This ensures debug views will work in CDN-CGI transformed URLs
-  if (hasDebugParam && debugParamValue === 'view') {
-    filteredOriginUrlObj.searchParams.set('debug', debugParamValue);
-    logDebug('Preserving debug=view parameter for debug view functionality');
-  }
-  
-  // Use the filtered origin URL
-  const filteredOriginUrl = filteredOriginUrlObj.toString();
-  
-  // Build the CDN-CGI media URL with the correct URLs:
-  // - Use request host for the base part
-  // - Use filtered origin URL for the content source
-  const cdnCgiUrl = `${baseUrl}${basePath}/${optionsString}/${filteredOriginUrl}`;
-  
-  // Log the transformation details (critical for debugging)
-  logDebug('Building CDN-CGI media URL', {
-    cdnCgiBasePath: basePath,
-    transformParams: validOptions,
-    parameterString: optionsString,
-    originalOriginUrl: originUrl,
-    filteredOriginUrl: filteredOriginUrl,
-    requestUrl: requestUrl || 'not provided',
-    baseUrl: baseUrl,
-    transformedUrl: cdnCgiUrl,
-    paramCount: Object.keys(validOptions).length,
-    filteredParams: Array.from(transformationUrlObj.searchParams.keys())
-      .filter(key => videoParams.includes(key)),
-    retainedParams: Array.from(filteredOriginUrlObj.searchParams.keys()),
-    keyParams: {
-      width: validOptions.width,
-      height: validOptions.height,
-      format: validOptions.format,
-      quality: validOptions.quality,
-      mode: validOptions.mode,
-      fit: validOptions.fit,
-      compression: validOptions.compression,
-      duration: validOptions.duration,
-      time: validOptions.time
-    },
-    hasDuration: 'duration' in validOptions
-  });
-  
-  // Try to add a breadcrumb to the request context if it exists
-  try {
-    // Using dynamic import to avoid circular dependencies
-    import('../utils/requestContext').then(({ getCurrentContext, addBreadcrumb }) => {
-      const context = getCurrentContext();
-      if (context) {
-        addBreadcrumb(context, 'CDN-CGI', 'Built media transformation URL', {
-          // Include the full parameters for debugging
-          params: validOptions,
-          paramCount: Object.keys(validOptions).length,
-          // Include key parameters individually for easier filtering
-          width: validOptions.width,
-          height: validOptions.height,
-          format: validOptions.format,
-          quality: validOptions.quality,
-          mode: validOptions.mode,
-          fit: validOptions.fit,
-          compression: validOptions.compression,
-          duration: validOptions.duration,
-          time: validOptions.time,
-          hasDuration: 'duration' in validOptions,
-          // Include URL details (safe version)
-          basePath,
-          baseUrl,
-          // Include source and transformation URLs
-          originalOriginUrl: originUrl,
-          filteredOriginUrl: filteredOriginUrl,
-          requestUrl: requestUrl || 'not provided',
-          baseUrlSource: baseUrlSource,
-          // Include parameter filtering information
-          filteredParams: Array.from(transformationUrlObj.searchParams.keys())
-            .filter(key => videoParams.includes(key)),
-          retainedParams: Array.from(filteredOriginUrlObj.searchParams.keys()),
-          // Include the complete URL for debugging (essential for troubleshooting)
-          completeUrl: cdnCgiUrl
+  // For S3 URLs or any that likely need presigning, we need to handle the presigning FIRST
+  if (shouldUseAsyncPath) {
+    try {
+      // Use the passed environment parameter instead of trying to access it from globalThis
+      const env = environment;
+      if (env) {
+        // Handle the async path
+        return Promise.resolve().then(async () => {
+          try {
+            // Log what we're doing
+            logDebug('URL likely needs presigning for CDN-CGI transformation', {
+              originalUrl: originUrl,
+              likelyNeedsPresigning
+            });
+            
+            // Dynamically import the presignedUrlUtils module
+            const presignedUrlUtils = await import('./presignedUrlUtils');
+            
+            // Get video config containing storage configuration
+            const videoConfig = configManager.getConfig().storage;
+            
+            // Log video config for debugging
+            logDebug('Video storage config for presigning', {
+              hasVideoConfig: !!videoConfig,
+              storageInfo: videoConfig ? {
+                remoteUrl: videoConfig.remoteUrl,
+                fallbackUrl: videoConfig.fallbackUrl,
+                hasRemoteAuth: !!videoConfig.remoteAuth,
+                hasFallbackAuth: !!videoConfig.fallbackAuth
+              } : 'none'
+            });
+            
+            // Import the PresigningPatternContext type
+            type PresigningPatternContext = {
+              originUrl: string | null;
+              auth: { 
+                type: string;
+                region?: string;
+                service?: string;
+                expiresInSeconds?: number;
+                accessKeyVar?: string;
+                secretKeyVar?: string;
+                sessionTokenVar?: string;
+              } | null;
+              name: string;
+            };
+            
+            // Prepare pattern context for presigning
+            const patternContextForPresigning: PresigningPatternContext | null = matchedPattern ? {
+              originUrl: matchedPattern.originUrl,
+              auth: matchedPattern.auth || null, // Pass pattern's auth config
+              name: matchedPattern.name
+            } : null;
+
+            // Check if presigning is needed using the specific pattern context if available
+            const needsSigning = matchedPattern
+              ? presignedUrlUtils.needsPresigning(originUrl, videoConfig, patternContextForPresigning) // Pass context here too
+              : presignedUrlUtils.needsPresigning(originUrl, videoConfig); // Fallback if no pattern
+
+            if (videoConfig && needsSigning) {
+              try {
+                // Generate the presigned URL first, passing the pattern context
+                const presignedUrl = await presignedUrlUtils.getOrGeneratePresignedUrl(
+                  env,
+                  originUrl, // Pass the constructed origin URL
+                  videoConfig,
+                  patternContextForPresigning // <-- Pass the specific pattern context
+                );
+                
+                if (presignedUrl && presignedUrl !== originUrl) {
+                  // We need to properly encode the presigned URL for use in the CDN-CGI URL
+                  // The CDN-CGI service needs the proper encoding to correctly access the content
+                  
+                  // Call the encodePresignedUrl utility to handle proper encoding
+                  const encodedPresignedUrl = presignedUrlUtils.encodePresignedUrl(presignedUrl);
+                  
+                  logDebug('Using encoded presigned URL for CDN-CGI transformation', {
+                    hasPresignedUrl: true,
+                    originalUrlLength: originUrl.length,
+                    presignedUrlLength: presignedUrl.length,
+                    encodedUrlLength: encodedPresignedUrl.length,
+                    signaturePresent: presignedUrl.includes('X-Amz-Signature') || presignedUrl.includes('Signature='),
+                    useEncoding: presignedUrl !== encodedPresignedUrl
+                  });
+                  
+                  // Build the CDN-CGI URL with the properly encoded presigned URL
+                  const finalUrl = buildFinalUrl(encodedPresignedUrl);
+                  addBreadcrumbForUrl(presignedUrl, finalUrl);
+                  return finalUrl;
+                }
+              } catch (err) {
+                logDebug('Error generating presigned URL for Media Transformation', {
+                  error: err instanceof Error ? err.message : String(err),
+                  url: originUrl
+                });
+              }
+            } else {
+              logDebug('URL does not need presigning', {
+                url: originUrl,
+                needsPresigning: false
+              });
+            }
+            
+            // For URLs that don't need presigning or if presigning failed, filter video-specific params
+            // Create a new URL object for filtered origin URL
+            const filteredOriginUrlObj = new URL(originUrl);
+            
+            // Clear search params to rebuild without transformation parameters
+            filteredOriginUrlObj.search = '';
+            
+            // List of video-specific params to exclude
+            const videoParams = [
+              'width', 'height', 'bitrate', 'quality', 'format', 'segment', 'time',
+              'derivative', 'duration', 'compression', 'mode', 'fit', 'crop', 'rotate',
+              'imref', 'loop', 'preload', 'autoplay', 'muted', 'speed', 'audio', 'fps',
+              'keyframe', 'codec', 'imwidth', 'imheight', 'im-viewwidth', 'im-viewheight',
+              'im-density', 'debug'
+            ];
+            
+            // Copy over search params, excluding video-specific ones
+            new URL(originUrl).searchParams.forEach((value, key) => {
+              if (!videoParams.includes(key)) {
+                filteredOriginUrlObj.searchParams.set(key, value);
+              }
+            });
+            
+            // Preserve debug=view parameter if present
+            const hasDebugParam = new URL(originUrl).searchParams.has('debug');
+            const debugParamValue = hasDebugParam ? new URL(originUrl).searchParams.get('debug') : null;
+            if (hasDebugParam && debugParamValue === 'view') {
+              filteredOriginUrlObj.searchParams.set('debug', debugParamValue);
+              logDebug('Preserving debug=view parameter');
+            }
+            
+            // Use the filtered URL
+            const filteredOriginUrl = filteredOriginUrlObj.toString();
+            
+            // Build the final URL with the filtered non-presigned URL
+            const finalUrl = buildFinalUrl(filteredOriginUrl);
+            addBreadcrumbForUrl(filteredOriginUrl, finalUrl);
+            return finalUrl;
+          } catch (err) {
+            // Error in the async path, log it and fall back to the sync path
+            logDebug('Error in async path of buildCdnCgiMediaUrlImpl', {
+              error: err instanceof Error ? err.message : String(err)
+            });
+            
+            // Filter and build URL for fallback
+            const filteredOriginUrlObj = new URL(originUrl);
+            filteredOriginUrlObj.search = '';
+            const filteredOriginUrl = filteredOriginUrlObj.toString();
+            
+            const finalUrl = buildFinalUrl(filteredOriginUrl);
+            addBreadcrumbForUrl(filteredOriginUrl, finalUrl);
+            return finalUrl;
+          }
         });
       }
-    }).catch(() => {
-      // Silent fail if we can't add the breadcrumb
-    });
-  } catch (err) {
-    // Silent fail if requestContext isn't available
+    } catch (err) {
+      // Error accessing env or other setup, log it
+      logDebug('Error setting up async path', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
-
-  return cdnCgiUrl;
+  
+  // Sync path (for URLs that don't need presigning)
+  // Filter out transformation parameters from the origin URL
+  const filteredOriginUrlObj = new URL(originUrl);
+  filteredOriginUrlObj.search = ''; // Remove all params by default for non-presigned URLs
+  
+  const filteredOriginUrl = filteredOriginUrlObj.toString();
+  const finalUrl = buildFinalUrl(filteredOriginUrl);
+  addBreadcrumbForUrl(filteredOriginUrl, finalUrl);
+  return finalUrl;
 }

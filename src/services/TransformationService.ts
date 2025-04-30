@@ -263,10 +263,20 @@ export const prepareVideoTransformation = withErrorHandling<
     const extractedVideoId = extractVideoId(path, pathPattern);
     diagnosticsInfo.videoId = extractedVideoId || undefined;
 
-    // Build the CDN-CGI media URL
-    // Pass parameters: transformation options, origin URL, and request URL
+    // Import path utils module to get buildCdnCgiMediaUrlAsync
+    const { buildCdnCgiMediaUrlAsync } = await import('../utils/pathUtils');
+    
+    // Build the CDN-CGI media URL asynchronously, passing the matched pattern
     // This ensures we use the request host while accessing content from origin URL
-    let cdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+    // and properly presigns the URL if needed for S3 access
+    // Pass the environment variables and path pattern to enable presigned URL generation with proper context
+    let cdnCgiUrl = await buildCdnCgiMediaUrlAsync(
+      cdnParams,
+      videoUrl, // Pass the *constructed* origin URL
+      url.toString(),
+      env,
+      pathPattern // <-- Pass the matched pattern here
+    );
     
     // Get cache configuration for the video URL
     let cacheConfig = determineCacheConfig(videoUrl);
@@ -468,8 +478,15 @@ export const prepareVideoTransformation = withErrorHandling<
           cdnParams.height = derivativeDimensions.height;
         }
         
-        // Rebuild the CDN-CGI media URL with the derivative's dimensions
-        let updatedCdnCgiUrl = buildCdnCgiMediaUrl(cdnParams, videoUrl, url.toString());
+        // Rebuild the CDN-CGI media URL with the derivative's dimensions using async function
+        // Pass the environment variables and path pattern for presigning
+        let updatedCdnCgiUrl = await buildCdnCgiMediaUrlAsync(
+          cdnParams, 
+          videoUrl, 
+          url.toString(), 
+          env,
+          pathPattern // <-- Pass the matched pattern here
+        );
         
         // Apply versioning if available
         if (diagnosticsInfo.cacheVersion && diagnosticsInfo.cacheVersion > 1) {

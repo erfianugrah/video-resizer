@@ -17,6 +17,13 @@ import {
   tryOrDefault 
 } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';
+import { 
+  getPresignedUrl, 
+  storePresignedUrl, 
+  isUrlExpiring, 
+  refreshPresignedUrl, 
+  UrlGeneratorFunction 
+} from './presignedUrlCacheService';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -511,88 +518,225 @@ async function fetchFromRemoteImpl(
         });
       }
     } else if (remoteAuth.type === 'aws-s3-presigned-url') {
-      // Handle presigned URL generation
-      const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
-      const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
-      const sessionTokenVar = remoteAuth.sessionTokenVar;
-      
-      // Access environment variables
-      const envRecord = env as unknown as Record<string, string | undefined>;
-      
-      const accessKey = envRecord[accessKeyVar] as string;
-      const secretKey = envRecord[secretKeyVar] as string;
-      const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
-      
-      // Get expiration time for presigned URL
-      const expiresIn = remoteAuth.expiresInSeconds ?? 3600;
-      
-      if (accessKey && secretKey) {
+      // Check for cached presigned URL first if we have a KV namespace
+      if (env.PRESIGNED_URLS) {
         try {
-          // Import AwsClient
-          const { AwsClient } = await import('aws4fetch');
+          const cachedEntry = await getPresignedUrl(
+            env.PRESIGNED_URLS,
+            transformedPath,
+            {
+              storageType: 'remote',
+              authType: 'aws-s3-presigned-url',
+              region: remoteAuth.region ?? 'us-east-1',
+              service: remoteAuth.service ?? 's3',
+              env
+            }
+          );
           
-          // Setup AWS client
-          const aws = new AwsClient({
-            accessKeyId: accessKey,
-            secretAccessKey: secretKey,
-            sessionToken,
-            service: remoteAuth.service ?? 's3',
-            region: remoteAuth.region ?? 'us-east-1'
-          });
-          
-          // Create a request to sign
-          const signRequest = new Request(originalFinalUrl, {
-            method: 'GET'
-          });
-          
-          // Sign the request with query parameters instead of headers
-          const signedRequest = await aws.sign(signRequest, {
-            aws: {
-              signQuery: true
-            },
-            expiresIn
-          });
-          
-          // Use the signed URL with query parameters
-          finalUrl = signedRequest.url;
-          
-          // Use our helper function for consistent logging
-          logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL', {
-            // Avoid logging the full URL which contains credentials
-            urlLength: finalUrl.length,
-            expiresIn,
-            success: true
-          });
+          if (cachedEntry) {
+            // Use the cached URL
+            finalUrl = cachedEntry.url;
+            
+            // Log cache hit
+            logDebug('VideoStorageService', 'Using cached AWS S3 Presigned URL', {
+              path: transformedPath,
+              expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
+              urlLength: cachedEntry.url.length
+            });
+            
+            // Add breadcrumb for the cache hit
+            const requestContext = getCurrentContext();
+            if (requestContext) {
+              addBreadcrumb(requestContext, 'Cache', 'Presigned URL cache hit', {
+                path: transformedPath,
+                storageType: 'remote',
+                expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's'
+              });
+            }
+            
+            // Check if URL is close to expiration and refresh in background
+            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && env.PRESIGNED_URLS) {
+              // Create URL generator function for refreshing
+              const generateAwsUrl: UrlGeneratorFunction = async (path: string): Promise<string> => {
+                const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+                const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+                const sessionTokenVar = remoteAuth.sessionTokenVar;
+                const envRecord = env as unknown as Record<string, string | undefined>;
+                const accessKey = envRecord[accessKeyVar] as string;
+                const secretKey = envRecord[secretKeyVar] as string;
+                const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+                const expiresIn = remoteAuth.expiresInSeconds ?? 3600;
+                
+                // Generate new URL
+                const { AwsClient } = await import('aws4fetch');
+                const aws = new AwsClient({
+                  accessKeyId: accessKey,
+                  secretAccessKey: secretKey,
+                  sessionToken,
+                  service: remoteAuth.service ?? 's3',
+                  region: remoteAuth.region ?? 'us-east-1'
+                });
+                
+                const pathUrl = new URL(path, baseUrl).toString();
+                const signRequest = new Request(pathUrl, { method: 'GET' });
+                const signedRequest = await aws.sign(signRequest, {
+                  aws: { signQuery: true },
+                  expiresIn
+                });
+                
+                return signedRequest.url;
+              };
+              
+              // Use waitUntil for non-blocking refresh
+              env.executionCtx.waitUntil(
+                (async () => {
+                  if (env.PRESIGNED_URLS) {
+                    await refreshPresignedUrl(
+                      env.PRESIGNED_URLS,
+                      cachedEntry,
+                      {
+                        thresholdSeconds: 600, // 10 minutes threshold
+                        env,
+                        generateUrlFn: generateAwsUrl
+                      }
+                    );
+                  }
+                })()
+              );
+            }
+            
+            // Skip normal URL generation since we have a cached URL
+          } else {
+            // No cached URL found, generate a new one
+            logDebug('VideoStorageService', 'No cached presigned URL found, generating new one', {
+              path: transformedPath
+            });
+          }
         } catch (err) {
+          // Log error but continue with normal URL generation
+          logDebug('VideoStorageService', 'Error retrieving cached presigned URL', {
+            path: transformedPath,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+      
+      // If no cached URL was found, or cache lookup failed, generate a new one
+      if (finalUrl === originalFinalUrl) {
+        // Handle presigned URL generation
+        const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+        const secretKeyVar = remoteAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+        const sessionTokenVar = remoteAuth.sessionTokenVar;
+        
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        
+        const accessKey = envRecord[accessKeyVar] as string;
+        const secretKey = envRecord[secretKeyVar] as string;
+        const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+        
+        // Get expiration time for presigned URL
+        const expiresIn = remoteAuth.expiresInSeconds ?? 3600;
+        
+        if (accessKey && secretKey) {
+          try {
+            // Import AwsClient
+            const { AwsClient } = await import('aws4fetch');
+            
+            // Setup AWS client
+            const aws = new AwsClient({
+              accessKeyId: accessKey,
+              secretAccessKey: secretKey,
+              sessionToken,
+              service: remoteAuth.service ?? 's3',
+              region: remoteAuth.region ?? 'us-east-1'
+            });
+            
+            // Create a request to sign
+            const signRequest = new Request(originalFinalUrl, {
+              method: 'GET'
+            });
+            
+            // Sign the request with query parameters instead of headers
+            const signedRequest = await aws.sign(signRequest, {
+              aws: {
+                signQuery: true
+              },
+              expiresIn
+            });
+            
+            // Use the signed URL with query parameters
+            finalUrl = signedRequest.url;
+            
+            // Use our helper function for consistent logging
+            logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL', {
+              // Avoid logging the full URL which contains credentials
+              urlLength: finalUrl.length,
+              expiresIn,
+              success: true
+            });
+            
+            // Cache the generated URL if KV binding exists
+            if (env.PRESIGNED_URLS) {
+              try {
+                await storePresignedUrl(
+                  env.PRESIGNED_URLS,
+                  transformedPath,
+                  finalUrl,
+                  originalFinalUrl,
+                  {
+                    storageType: 'remote',
+                    expiresInSeconds: expiresIn,
+                    authType: 'aws-s3-presigned-url',
+                    region: remoteAuth.region ?? 'us-east-1',
+                    service: remoteAuth.service ?? 's3',
+                    env
+                  }
+                );
+                
+                logDebug('VideoStorageService', 'Cached new presigned URL', {
+                  path: transformedPath,
+                  expiresIn
+                });
+              } catch (cacheErr) {
+                // Log but continue - caching failure shouldn't stop the request
+                logDebug('VideoStorageService', 'Error caching presigned URL', {
+                  path: transformedPath,
+                  error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr)
+                });
+              }
+            }
+          } catch (err) {
+            // Log error with standardized error handling
+            logErrorWithContext(
+              'Error generating AWS S3 Presigned URL',
+              err,
+              {
+                url: originalFinalUrl,
+                accessKeyVar,
+                secretKeyVar
+              },
+              'VideoStorageService'
+            );
+            
+            // Fail if we can't generate the presigned URL
+            return null;
+          }
+        } else {
           // Log error with standardized error handling
           logErrorWithContext(
-            'Error generating AWS S3 Presigned URL',
-            err,
+            'AWS credentials not found for presigned URL generation',
+            new Error('Missing credentials'),
             {
-              url: originalFinalUrl,
               accessKeyVar,
               secretKeyVar
             },
             'VideoStorageService'
           );
           
-          // Fail if we can't generate the presigned URL
+          // Fail if credentials are missing
           return null;
         }
-      } else {
-        // Log error with standardized error handling
-        logErrorWithContext(
-          'AWS credentials not found for presigned URL generation',
-          new Error('Missing credentials'),
-          {
-            accessKeyVar,
-            secretKeyVar
-          },
-          'VideoStorageService'
-        );
-        
-        // Fail if credentials are missing
-        return null;
       }
     } else if (remoteAuth.type === 'bearer') {
       // Implement bearer token auth
@@ -655,7 +799,7 @@ async function fetchFromRemoteImpl(
  * Fetch a video from a remote URL
  * Uses standardized error handling for consistent logging and error propagation
  */
-const fetchFromRemote = withErrorHandling<
+export const fetchFromRemote = withErrorHandling<
   [string, string, VideoResizerConfig, EnvVariables],
   Promise<StorageResult | null>
 >(
@@ -811,88 +955,225 @@ async function fetchFromFallbackImpl(
         }
       }
     } else if (fallbackAuth.type === 'aws-s3-presigned-url') {
-      // Handle presigned URL generation
-      const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
-      const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
-      const sessionTokenVar = fallbackAuth.sessionTokenVar;
-      
-      // Access environment variables
-      const envRecord = env as unknown as Record<string, string | undefined>;
-      
-      const accessKey = envRecord[accessKeyVar] as string;
-      const secretKey = envRecord[secretKeyVar] as string;
-      const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
-      
-      // Get expiration time for presigned URL
-      const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
-      
-      if (accessKey && secretKey) {
+      // Check for cached presigned URL first if we have a KV namespace
+      if (env.PRESIGNED_URLS) {
         try {
-          // Import AwsClient
-          const { AwsClient } = await import('aws4fetch');
+          const cachedEntry = await getPresignedUrl(
+            env.PRESIGNED_URLS,
+            transformedPath,
+            {
+              storageType: 'fallback',
+              authType: 'aws-s3-presigned-url',
+              region: fallbackAuth.region ?? 'us-east-1',
+              service: fallbackAuth.service ?? 's3',
+              env
+            }
+          );
           
-          // Setup AWS client
-          const aws = new AwsClient({
-            accessKeyId: accessKey,
-            secretAccessKey: secretKey,
-            sessionToken,
-            service: fallbackAuth.service ?? 's3',
-            region: fallbackAuth.region ?? 'us-east-1'
-          });
-          
-          // Create a request to sign
-          const signRequest = new Request(originalFinalUrl, {
-            method: 'GET'
-          });
-          
-          // Sign the request with query parameters instead of headers
-          const signedRequest = await aws.sign(signRequest, {
-            aws: {
-              signQuery: true
-            },
-            expiresIn
-          });
-          
-          // Use the signed URL with query parameters
-          finalUrl = signedRequest.url;
-          
-          // Use our helper function for consistent logging
-          logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL for fallback', {
-            // Avoid logging the full URL which contains credentials
-            urlLength: finalUrl.length,
-            expiresIn,
-            success: true
-          });
+          if (cachedEntry) {
+            // Use the cached URL
+            finalUrl = cachedEntry.url;
+            
+            // Log cache hit
+            logDebug('VideoStorageService', 'Using cached AWS S3 Presigned URL for fallback', {
+              path: transformedPath,
+              expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
+              urlLength: cachedEntry.url.length
+            });
+            
+            // Add breadcrumb for the cache hit
+            const requestContext = getCurrentContext();
+            if (requestContext) {
+              addBreadcrumb(requestContext, 'Cache', 'Presigned URL cache hit for fallback', {
+                path: transformedPath,
+                storageType: 'fallback',
+                expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's'
+              });
+            }
+            
+            // Check if URL is close to expiration and refresh in background
+            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && env.PRESIGNED_URLS) {
+              // Create URL generator function for refreshing
+              const generateAwsUrl: UrlGeneratorFunction = async (path: string): Promise<string> => {
+                const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+                const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+                const sessionTokenVar = fallbackAuth.sessionTokenVar;
+                const envRecord = env as unknown as Record<string, string | undefined>;
+                const accessKey = envRecord[accessKeyVar] as string;
+                const secretKey = envRecord[secretKeyVar] as string;
+                const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+                const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
+                
+                // Generate new URL
+                const { AwsClient } = await import('aws4fetch');
+                const aws = new AwsClient({
+                  accessKeyId: accessKey,
+                  secretAccessKey: secretKey,
+                  sessionToken,
+                  service: fallbackAuth.service ?? 's3',
+                  region: fallbackAuth.region ?? 'us-east-1'
+                });
+                
+                const pathUrl = new URL(path, fallbackUrl).toString();
+                const signRequest = new Request(pathUrl, { method: 'GET' });
+                const signedRequest = await aws.sign(signRequest, {
+                  aws: { signQuery: true },
+                  expiresIn
+                });
+                
+                return signedRequest.url;
+              };
+              
+              // Use waitUntil for non-blocking refresh
+              env.executionCtx.waitUntil(
+                (async () => {
+                  if (env.PRESIGNED_URLS) {
+                    await refreshPresignedUrl(
+                      env.PRESIGNED_URLS,
+                      cachedEntry,
+                      {
+                        thresholdSeconds: 600, // 10 minutes threshold
+                        env,
+                        generateUrlFn: generateAwsUrl
+                      }
+                    );
+                  }
+                })()
+              );
+            }
+            
+            // Skip normal URL generation since we have a cached URL
+          } else {
+            // No cached URL found, generate a new one
+            logDebug('VideoStorageService', 'No cached presigned URL found for fallback, generating new one', {
+              path: transformedPath
+            });
+          }
         } catch (err) {
+          // Log error but continue with normal URL generation
+          logDebug('VideoStorageService', 'Error retrieving cached presigned URL for fallback', {
+            path: transformedPath,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+      
+      // If no cached URL was found, or cache lookup failed, generate a new one
+      if (finalUrl === originalFinalUrl) {
+        // Handle presigned URL generation
+        const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
+        const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
+        const sessionTokenVar = fallbackAuth.sessionTokenVar;
+        
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        
+        const accessKey = envRecord[accessKeyVar] as string;
+        const secretKey = envRecord[secretKeyVar] as string;
+        const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+        
+        // Get expiration time for presigned URL
+        const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
+        
+        if (accessKey && secretKey) {
+          try {
+            // Import AwsClient
+            const { AwsClient } = await import('aws4fetch');
+            
+            // Setup AWS client
+            const aws = new AwsClient({
+              accessKeyId: accessKey,
+              secretAccessKey: secretKey,
+              sessionToken,
+              service: fallbackAuth.service ?? 's3',
+              region: fallbackAuth.region ?? 'us-east-1'
+            });
+            
+            // Create a request to sign
+            const signRequest = new Request(originalFinalUrl, {
+              method: 'GET'
+            });
+            
+            // Sign the request with query parameters instead of headers
+            const signedRequest = await aws.sign(signRequest, {
+              aws: {
+                signQuery: true
+              },
+              expiresIn
+            });
+            
+            // Use the signed URL with query parameters
+            finalUrl = signedRequest.url;
+            
+            // Use our helper function for consistent logging
+            logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL for fallback', {
+              // Avoid logging the full URL which contains credentials
+              urlLength: finalUrl.length,
+              expiresIn,
+              success: true
+            });
+            
+            // Cache the generated URL if KV binding exists
+            if (env.PRESIGNED_URLS) {
+              try {
+                await storePresignedUrl(
+                  env.PRESIGNED_URLS,
+                  transformedPath,
+                  finalUrl,
+                  originalFinalUrl,
+                  {
+                    storageType: 'fallback',
+                    expiresInSeconds: expiresIn,
+                    authType: 'aws-s3-presigned-url',
+                    region: fallbackAuth.region ?? 'us-east-1',
+                    service: fallbackAuth.service ?? 's3',
+                    env
+                  }
+                );
+                
+                logDebug('VideoStorageService', 'Cached new presigned URL for fallback', {
+                  path: transformedPath,
+                  expiresIn
+                });
+              } catch (cacheErr) {
+                // Log but continue - caching failure shouldn't stop the request
+                logDebug('VideoStorageService', 'Error caching presigned URL for fallback', {
+                  path: transformedPath,
+                  error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr)
+                });
+              }
+            }
+          } catch (err) {
+            // Log error with standardized error handling
+            logErrorWithContext(
+              'Error generating AWS S3 Presigned URL for fallback',
+              err,
+              {
+                url: originalFinalUrl,
+                accessKeyVar,
+                secretKeyVar
+              },
+              'VideoStorageService'
+            );
+            
+            // Fail if we can't generate the presigned URL
+            return null;
+          }
+        } else {
           // Log error with standardized error handling
           logErrorWithContext(
-            'Error generating AWS S3 Presigned URL for fallback',
-            err,
+            'AWS credentials not found for presigned URL generation (fallback)',
+            new Error('Missing credentials'),
             {
-              url: originalFinalUrl,
               accessKeyVar,
               secretKeyVar
             },
             'VideoStorageService'
           );
           
-          // Fail if we can't generate the presigned URL
+          // Fail if credentials are missing
           return null;
         }
-      } else {
-        // Log error with standardized error handling
-        logErrorWithContext(
-          'AWS credentials not found for presigned URL generation (fallback)',
-          new Error('Missing credentials'),
-          {
-            accessKeyVar,
-            secretKeyVar
-          },
-          'VideoStorageService'
-        );
-        
-        // Fail if credentials are missing
-        return null;
       }
     } else if (fallbackAuth.type === 'bearer') {
       // Implement bearer token auth

@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { ConfigurationError } from '../errors';
 import { videoConfig as defaultConfig } from './videoConfig';
+import { AuthConfigSchema, StorageConfigSchema } from './storageConfig';
 
 // Define Zod schemas for each part of the configuration
 
@@ -52,6 +53,8 @@ const BrowserCapabilitySchema = z.object({
   exclusions: z.array(z.string()).optional(),
 });
 
+// Auth schema is imported at the top of the file
+
 // Path Pattern Schema
 export const PathPatternSchema = z.object({
   name: z.string(),
@@ -68,6 +71,8 @@ export const PathPatternSchema = z.object({
   priority: z.number().optional(),
   transformationOverrides: z.record(z.unknown()).optional(),
   captureGroups: z.array(z.string()).optional(),
+  // Add auth configuration to path patterns
+  auth: AuthConfigSchema.optional(),
 });
 
 // Video Derivatives Schema
@@ -95,8 +100,7 @@ const ResponsiveBreakpointSchema = z.object({
   derivative: z.string()
 });
 
-// Import StorageConfigSchema to include storage config in video config
-import { StorageConfigSchema } from './storageConfig';
+// StorageConfigSchema is imported at the top of the file
 
 // Complete Video Configuration Schema
 export const VideoConfigSchema = z.object({
