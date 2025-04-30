@@ -666,20 +666,28 @@ const constructVideoUrl = tryOrNull<
   // Create a new URL with the pattern's origin
   const videoUrl = new URL(pattern.originUrl);
   
+  // Preserve the original path from the origin URL
+  const originalPathname = videoUrl.pathname;
+  
   // Use advanced path matching logic
   if (pattern.captureGroups && pathMatch.captures) {
     // Check if we have a videoId capture
     if (pathMatch.captures['videoId']) {
-      // Use videoId in the origin URL's format
-      videoUrl.pathname = `/videos/${pathMatch.captures['videoId']}`;
+      // Append videoId to the origin URL's path, preserving the original path
+      const separator = originalPathname.endsWith('/') ? '' : '/';
+      videoUrl.pathname = `${originalPathname}${separator}${pathMatch.captures['videoId']}`;
     }
     // Check if we have a category capture
     else if (pathMatch.captures['category'] && pathMatch.captures['filename']) {
-      videoUrl.pathname = `/${pathMatch.captures['category']}/${pathMatch.captures['filename']}`;
+      // Append category/filename to the origin URL's path, preserving the original path
+      const separator = originalPathname.endsWith('/') ? '' : '/';
+      videoUrl.pathname = `${originalPathname}${separator}${pathMatch.captures['category']}/${pathMatch.captures['filename']}`;
     }
     // We have captures but no special handling, use first capture
     else if (pathMatch.captures['1']) {
-      videoUrl.pathname = pathMatch.captures['1'];
+      // Append the first capture to the origin URL's path, preserving the original path
+      const separator = originalPathname.endsWith('/') ? '' : '/';
+      videoUrl.pathname = `${originalPathname}${separator}${pathMatch.captures['1']}`;
     }
   }
   // Legacy behavior - use regex match directly
@@ -692,15 +700,19 @@ const constructVideoUrl = tryOrNull<
 
       // If there's a captured group, use it as the path
       if (match.length > 1) {
-        // Use the first capture group if available
-        videoUrl.pathname = match[1];
+        // Append the first capture group to the origin URL's path, preserving the original path
+        const separator = originalPathname.endsWith('/') ? '' : '/';
+        videoUrl.pathname = `${originalPathname}${separator}${match[1]}`;
       } else {
-        // Otherwise use the full matched path
-        videoUrl.pathname = matchedPath;
+        // Otherwise append the full matched path
+        const separator = originalPathname.endsWith('/') ? '' : '/';
+        videoUrl.pathname = `${originalPathname}${separator}${matchedPath.replace(/^\//, '')}`;
       }
     } else {
-      // Fallback to the original path
-      videoUrl.pathname = path;
+      // Fallback to appending the original path
+      const separator = originalPathname.endsWith('/') ? '' : '/';
+      const cleanPath = path.replace(/^\//, ''); // Remove leading slash to avoid double slashes
+      videoUrl.pathname = `${originalPathname}${separator}${cleanPath}`;
     }
   }
 
