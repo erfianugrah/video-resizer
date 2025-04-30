@@ -619,21 +619,12 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
  * @returns Properly encoded URL for use in a CDN-CGI transformation URL
  */
 export function encodePresignedUrl(url: string): string {
-  // For AWS presigned URLs, we need to carefully preserve the exact format
-  // WITHOUT encoding most of the URL, as the CDN-CGI proxy needs to see
-  // the original presigned URL exactly as AWS requires it
-  
-  // Check if this is an AWS presigned URL with the expected signature parameters
-  const isAwsPresignedUrl = url.includes('X-Amz-Credential') && 
-                            url.includes('X-Amz-Signature');
-  
-  // For AWS presigned URLs, we return the URL unchanged - this is essential for the
-  // CDN-CGI proxy to correctly pass the presigned URL to S3
-  if (isAwsPresignedUrl) {
+  // Leave AWS presigned URLs completely unmodified to preserve the signature
+  if (url.includes('X-Amz-Credential') && url.includes('X-Amz-Signature')) {
     return url;
   }
   
-  // For non-AWS URLs, fall back to the original encoding behavior
+  // For non-AWS URLs, apply standard encoding
   const [baseUrl, query] = url.split('?');
   
   if (!query) {

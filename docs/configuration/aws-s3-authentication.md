@@ -58,6 +58,8 @@ S3_HEADER_SECRET_KEY = "your-aws-secret-key"
 
 Presigned URL authentication generates AWS Signature Version 4 signatures as query parameters directly in the URL. This method doesn't require Cloudflare Origin Authentication and can be used in more flexible deployment scenarios.
 
+For detailed implementation details including caching strategy, integration with Cloudflare Media Transformation, and monitoring, see [Presigned URL Guide](./presigned-url-guide.md).
+
 ### Configuration Example
 
 ```json

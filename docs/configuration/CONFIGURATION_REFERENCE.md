@@ -726,3 +726,11 @@ if (loggingConfig.shouldLogPerformance()) {
   }
 }
 ```
+## S3 Authentication
+
+The video-resizer supports two methods for authenticating with AWS S3:
+
+1. **Header-based signing** (using Cloudflare Origin Authentication)
+2. **Presigned URL** (query parameter-based signing) - See [Presigned URL Guide](./presigned-url-guide.md) for details
+
+For complete documentation on AWS S3 authentication, see [AWS S3 Authentication](./aws-s3-authentication.md).

@@ -78,8 +78,11 @@ describe('presignedUrlUtils', () => {
       // Fallback URL
       expect(getStorageType('https://fallback-bucket.s3.amazonaws.com/video.mp4', mockStorageConfig)).toBe('fallback');
       
-      // Non-configured URL
-      expect(getStorageType('https://other-bucket.s3.amazonaws.com/video.mp4', mockStorageConfig)).toBeNull();
+      // Non-configured URL but matches S3 pattern
+      expect(getStorageType('https://other-bucket.s3.amazonaws.com/video.mp4', mockStorageConfig)).toBe('remote');
+      
+      // URL with no S3 pattern
+      expect(getStorageType('https://example.com/video.mp4', mockStorageConfig)).toBeNull();
     });
     
     it('should handle undefined config', () => {
@@ -118,22 +121,30 @@ describe('presignedUrlUtils', () => {
   });
   
   describe('encodePresignedUrl', () => {
-    it('should properly encode a presigned URL for inclusion in another URL', () => {
+    it('should return AWS presigned URLs unchanged', () => {
       // Test with a typical AWS presigned URL
-      const presignedUrl = 'https://bucket.s3.amazonaws.com/file.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=key%2F20230101%2Fregion%2Fs3%2Faws4_request&X-Amz-Date=20230101T000000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=signature';
+      const presignedUrl = 'https://bucket.s3.amazonaws.com/file.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=key%2F20230101%2Fregion%2Fs3%2Faws4_request&X-Amz-Date=20230101T000000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=signature&custom=value with spaces';
       
       const encodedUrl = encodePresignedUrl(presignedUrl);
+      
+      // Should return the exact same URL without any modifications
+      expect(encodedUrl).toBe(presignedUrl);
+      
+      // The URL should still be valid
+      expect(() => new URL(encodedUrl)).not.toThrow();
+    });
+    
+    it('should properly encode regular URLs with query parameters', () => {
+      // Test with a regular URL with special characters in query
+      const url = 'https://example.com/video.mp4?param=value with spaces&other=special@chars';
+      const encodedUrl = encodePresignedUrl(url);
       
       // The URL should still be valid
       expect(() => new URL(encodedUrl)).not.toThrow();
       
-      // The encoded URL should have encoded the query parameters
-      expect(encodedUrl).toContain('X-Amz-Algorithm=AWS4-HMAC-SHA256');
-      expect(encodedUrl).toContain('X-Amz-Credential=key%2F20230101%2Fregion%2Fs3%2Faws4_request');
-      expect(encodedUrl).toContain('X-Amz-Signature=signature');
-      
-      // The base URL should remain unchanged
-      expect(encodedUrl.startsWith('https://bucket.s3.amazonaws.com/file.mp4?')).toBe(true);
+      // Parameters should be properly encoded
+      expect(encodedUrl).toContain('param=value%20with%20spaces');
+      expect(encodedUrl).toContain('other=special%40chars');
     });
     
     it('should handle URLs without query parameters', () => {

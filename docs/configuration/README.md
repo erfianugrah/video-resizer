@@ -29,11 +29,14 @@ See [dynamic-configuration.md](./dynamic-configuration.md) for details.
 
 ## Presigned URL Documentation
 
-For the presigned URL system, see these detailed documents:
+For the presigned URL system, see this comprehensive guide:
 
-- [Presigned URL Implementation Guide](./presigned-url-implementation-guide.md) - Comprehensive overview and implementation details
-- [Presigned URL Monitoring Plan](./presigned-url-monitoring-plan.md) - Metrics, monitoring, and operational procedures
-- [Presigned URL Implementation Plan](./presigned-url-implementation-plan.md) - Original implementation plan
-- [Presigned URL Implementation Steps](./presigned-url-implementation-steps.md) - Step-by-step implementation guide
-- [Presigned URL Cache](./presigned-url-cache.md) - Overview of presigned URL caching
+- [Presigned URL Guide](./presigned-url-guide.md) - Complete implementation guide including architecture, caching, integration with Cloudflare Media Transformation, monitoring, and operational guidelines
+
+**Legacy Documentation** (for reference only):
+- [Presigned URL Implementation Guide](./presigned-url-implementation-guide.md)
+- [Presigned URL Monitoring Plan](./presigned-url-monitoring-plan.md)
+- [Presigned URL Transformation Integration](./presigned-url-transformation-integration.md)
+- [Presigned URL Implementation](./presigned-url-implementation.md)
+- [Presigned URL Caching](./presigned-url-caching.md)
 
