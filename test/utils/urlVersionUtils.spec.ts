@@ -57,6 +57,16 @@ describe('urlVersionUtils', () => {
       const result = addVersionToUrl(url, 2);
       expect(result).toBe('not-a-url?v=2');
     });
+    
+    it('should not add version parameter to AWS presigned URLs', () => {
+      const url = 'https://s3.amazonaws.com/bucket/video.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=KEY&X-Amz-Date=20250430&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123';
+      const versioned = addVersionToUrl(url, 10);
+      
+      // Presigned URL should remain completely unchanged
+      expect(versioned).toBe(url);
+      // No v=10 at the end of the URL
+      expect(versioned).not.toContain('X-Amz-Signature=abc123&v=10');
+    });
   });
 
   describe('getVersionFromUrl', () => {

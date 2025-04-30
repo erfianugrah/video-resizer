@@ -197,6 +197,13 @@ export interface EnvVariables {
   VIDEO_TRANSFORMATIONS_CACHE?: KVNamespace | undefined;
   VIDEO_CONFIGURATION_STORE?: KVNamespace | undefined;
   VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
+  PRESIGNED_URLS?: KVNamespace | undefined;
+  
+  // Worker Execution Context
+  executionCtx?: {
+    waitUntil: (promise: Promise<any>) => void;
+    passThroughOnException: () => void;
+  };
   
   // API Authentication
   CONFIG_API_TOKEN?: string;

@@ -409,4 +409,61 @@ describe('pathUtils', () => {
       expect(parsedUrl.searchParams.get('test')).toBe('value');
     });
   });
+  
+  describe('buildCdnCgiMediaUrlAsync', () => {
+    it('should build a CDN-CGI media URL asynchronously', async () => {
+      // Import the async function
+      const { buildCdnCgiMediaUrlAsync } = await import('../../src/utils/pathUtils');
+      
+      // Arrange
+      const options = {
+        width: 640,
+        height: 360,
+        mode: 'video',
+        fit: 'contain',
+        audio: true,
+      };
+      const videoUrl = 'https://example.com/videos/sample.mp4';
+
+      // Act
+      const cdnCgiUrl = await buildCdnCgiMediaUrlAsync(options, videoUrl);
+
+      // Assert
+      expect(cdnCgiUrl).toEqual('https://example.com/cdn-cgi/media/width=640,height=360,mode=video,fit=contain,audio=true/https://example.com/videos/sample.mp4');
+      expect(cdnCgiUrl).toContain('https://example.com/cdn-cgi/media/');
+      expect(cdnCgiUrl).toContain('width=640');
+      expect(cdnCgiUrl).toContain('height=360');
+      expect(cdnCgiUrl).toContain('mode=video');
+      expect(cdnCgiUrl).toContain('fit=contain');
+      expect(cdnCgiUrl).toContain('audio=true');
+      expect(cdnCgiUrl).toContain(videoUrl);
+    });
+    
+    it('should filter out null and undefined options in async mode', async () => {
+      // Import the async function
+      const { buildCdnCgiMediaUrlAsync } = await import('../../src/utils/pathUtils');
+      
+      // Arrange
+      const options = {
+        width: 640,
+        height: null,
+        mode: 'video',
+        fit: undefined,
+        audio: null,
+      };
+      const videoUrl = 'https://example.com/videos/sample.mp4';
+
+      // Act
+      const cdnCgiUrl = await buildCdnCgiMediaUrlAsync(options, videoUrl);
+
+      // Assert
+      expect(cdnCgiUrl).toEqual('https://example.com/cdn-cgi/media/width=640,mode=video/https://example.com/videos/sample.mp4');
+      expect(cdnCgiUrl).toContain('width=640');
+      expect(cdnCgiUrl).toContain('mode=video');
+      expect(cdnCgiUrl).not.toContain('height=');
+      expect(cdnCgiUrl).not.toContain('fit=');
+      expect(cdnCgiUrl).not.toContain('audio=');
+      expect(cdnCgiUrl).toContain(videoUrl);
+    });
+  });
 });

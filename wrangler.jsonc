@@ -33,6 +33,10 @@
 				{
 					"binding": "VIDEO_CACHE_KEY_VERSIONS",
 					"id": "949610c936b8480bad5b61f3aa934de1"
+				},
+				{
+					"binding": "PRESIGNED_URLS",
+					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
 				}
 			],
 			"r2_buckets": [
@@ -63,6 +67,10 @@
 				{
 					"binding": "VIDEO_CACHE_KEY_VERSIONS",
 					"id": "949610c936b8480bad5b61f3aa934de1"
+				},
+				{
+					"binding": "PRESIGNED_URLS",
+					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
 				}
 			],
 			"r2_buckets": [
@@ -99,6 +107,10 @@
 				{
 					"binding": "VIDEO_CACHE_KEY_VERSIONS",
 					"id": "949610c936b8480bad5b61f3aa934de1"
+				},
+				{
+					"binding": "PRESIGNED_URLS",
+					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
 				}
 			],
 			"r2_buckets": [

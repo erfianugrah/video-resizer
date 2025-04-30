@@ -27,6 +27,13 @@ export function normalizeUrlForCaching(url: string): string {
  * @returns URL with version parameter
  */
 export function addVersionToUrl(url: string, version: number): string {
+  // Skip adding version parameters to AWS presigned URLs entirely
+  // Presigned URLs naturally expire and change, so no versioning is needed
+  if (url.includes('X-Amz-Signature=')) {
+    return url; // Return unmodified for AWS presigned URLs
+  }
+  
+  // Standard approach for regular URLs
   try {
     const parsedUrl = new URL(url);
     parsedUrl.searchParams.set('v', version.toString());
