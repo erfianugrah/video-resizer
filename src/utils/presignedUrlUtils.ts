@@ -12,6 +12,9 @@ import { addBreadcrumb } from '../utils/requestContext';
 import {
   getPresignedUrl,
   storePresignedUrl,
+  refreshPresignedUrl,
+  isUrlExpiring,
+  verifyPresignedUrl,
   PresignedUrlCacheEntry
 } from '../services/presignedUrlCacheService';
 
@@ -39,6 +42,7 @@ interface AwsAuthConfig {
   service?: string;
   expiresInSeconds?: number;
   sessionTokenVar?: string;
+  verifyBeforeUse?: boolean; // Whether to verify URLs with HEAD requests before using
 }
 
 /**
@@ -358,6 +362,12 @@ export function extractPath(url: string, baseUrl: string): string {
   }
 }
 
+// Import the token utility functions from the separate file
+import { extractAuthToken, reconstructPresignedUrl } from './urlTokenUtils';
+
+// Re-export the functions for backward compatibility
+export { extractAuthToken, reconstructPresignedUrl };
+
 /**
  * Get or generate a presigned URL for an asset
  * 
@@ -462,12 +472,7 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
       );
       
       if (cachedEntry) {
-        // Use the cached URL
-        logDebug('Using cached AWS S3 Presigned URL', {
-          path,
-          expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
-          urlLength: cachedEntry.url.length
-        });
+        // verifyPresignedUrl is already imported at the top
         
         // Add breadcrumb for the cache hit
         const requestContext = getCurrentContext();
@@ -479,7 +484,85 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
           });
         }
         
-        return cachedEntry.url;
+        // Check if we should verify the URL validity with a HEAD request
+        const shouldVerifyUrl = authConfigForPresigning.verifyBeforeUse === true;
+        let isValid = true;
+        
+        if (shouldVerifyUrl) {
+          logDebug('Verifying cached presigned URL validity', { path });
+          isValid = await verifyPresignedUrl(cachedEntry.url);
+          
+          if (!isValid) {
+            logDebug('Cached presigned URL is invalid, regenerating', { path });
+            
+            // Regenerate URL in the background (using waitUntil if available)
+            if (env.executionCtx?.waitUntil) {
+              const refreshOperation = refreshPresignedUrl(
+                env.PRESIGNED_URLS,
+                cachedEntry,
+                {
+                  env,
+                  generateUrlFn: async () => {
+                    // This will trigger a new URL generation below
+                    return 'pending-regeneration';
+                  },
+                  verifyUrl: true
+                }
+              );
+              
+              env.executionCtx.waitUntil(refreshOperation);
+            }
+            
+            // Continue to generate a new URL below
+          } else {
+            logDebug('Cached presigned URL verification successful', { path });
+            
+            // Check if it's close to expiration and refresh in the background if needed
+            if (isUrlExpiring(cachedEntry)) {
+              logDebug('Cached presigned URL is valid but expiring soon, refreshing in background', { path });
+              
+              // Refresh in the background if execution context is available
+              if (env.executionCtx?.waitUntil) {
+                const refreshOperation = refreshPresignedUrl(
+                  env.PRESIGNED_URLS,
+                  cachedEntry,
+                  {
+                    env,
+                    generateUrlFn: async (refreshPath) => {
+                      // Generate a new URL for refreshing - this is a recursive call but safe
+                      // because it will only happen in the background
+                      return await getOrGeneratePresignedUrlImpl(env, cachedEntry.originalUrl, storageConfig, patternContext);
+                    },
+                    verifyUrl: true
+                  }
+                );
+                
+                env.executionCtx.waitUntil(refreshOperation);
+              }
+              
+              // Continue to use the current valid URL
+              return cachedEntry.url;
+            }
+            
+            // Use the cached and verified URL
+            logDebug('Using cached verified AWS S3 Presigned URL', {
+              path,
+              expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
+              urlLength: cachedEntry.url.length
+            });
+            
+            return cachedEntry.url;
+          }
+        } else {
+          // Not verifying, just use the cached URL
+          logDebug('Using cached AWS S3 Presigned URL', {
+            path,
+            expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
+            urlLength: cachedEntry.url.length
+          });
+          
+          return cachedEntry.url;
+        }
       }
       
       // No cached URL found, generate a new one

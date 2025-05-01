@@ -38,7 +38,8 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
  * Interface for presigned URL cache entry
  */
 export interface PresignedUrlCacheEntry {
-  url: string;                        // The presigned URL
+  url: string;                        // The full presigned URL
+  authToken?: string;                 // Just the auth/query params part of the URL
   originalUrl: string;                // The original URL without signing
   createdAt: number;                  // When the URL was generated
   expiresAt: number;                  // When the URL will expire
@@ -132,6 +133,12 @@ async function storePresignedUrlImpl(
   const now = Date.now();
   const expiresAt = now + (options.expiresInSeconds * 1000);
   
+  // Import the extractAuthToken function from the utility file
+  const { extractAuthToken } = await import('../utils/urlTokenUtils');
+  
+  // Extract only the authentication token/query part of the URL
+  const authToken = extractAuthToken(presignedUrl);
+  
   // Get version from cache version service if available
   let version = 1;
   if (options.env?.VIDEO_CACHE_KEY_VERSIONS) {
@@ -145,9 +152,10 @@ async function storePresignedUrlImpl(
     }
   }
   
-  // Create entry for the cached URL
-  const entry: PresignedUrlCacheEntry = {
-    url: presignedUrl,
+  // Create entry for the cached URL metadata
+  const metadata: PresignedUrlCacheEntry = {
+    url: presignedUrl, // Keep the full URL in metadata for convenience
+    authToken: authToken, // New field to store just the auth token
     originalUrl,
     createdAt: now,
     expiresAt,
@@ -173,7 +181,11 @@ async function storePresignedUrlImpl(
   while (attemptCount < maxRetries && !success) {
     try {
       attemptCount++;
-      await namespace.put(key, JSON.stringify(entry), { expirationTtl: ttl });
+      // Store with empty value and use metadata for all information
+      await namespace.put(key, "", { 
+        expirationTtl: ttl,
+        metadata // Store all URL information in metadata
+      });
       success = true;
       
       // Log retries if needed
@@ -236,18 +248,19 @@ async function storePresignedUrlImpl(
   }
   
   // Log success
-  logDebug('Stored presigned URL in cache', {
+  logDebug('Stored presigned URL token in cache metadata', {
     key,
     path,
     expiresIn: options.expiresInSeconds,
     ttl,
-    version
+    version,
+    tokenLength: authToken.length
   });
   
   // Add breadcrumb for successful KV storage
   const requestContext = getCurrentContext();
   if (requestContext) {
-    addBreadcrumb(requestContext, 'KV', 'Stored presigned URL in KV cache', {
+    addBreadcrumb(requestContext, 'KV', 'Stored presigned URL token in KV cache metadata', {
       key,
       path,
       expiresIn: options.expiresInSeconds,
@@ -310,15 +323,18 @@ async function getPresignedUrlImpl(
   // Generate a key for this presigned URL
   const key = generatePresignedUrlKey(path, options);
   
-  // Get the cached entry
-  const cachedData = await namespace.get(key);
-  if (!cachedData) {
-    logDebug('Presigned URL not found in cache', { key, path });
-    return null;
-  }
-  
   try {
-    const entry = JSON.parse(cachedData) as PresignedUrlCacheEntry;
+    // Get the cached entry with metadata
+    const { value, metadata } = await namespace.getWithMetadata(key, 'text');
+    
+    // If no entry found
+    if (!metadata) {
+      logDebug('Presigned URL not found in cache', { key, path });
+      return null;
+    }
+    
+    // Get entry from metadata
+    const entry = metadata as PresignedUrlCacheEntry;
     const now = Date.now();
     
     // Check if already expired
@@ -349,7 +365,7 @@ async function getPresignedUrlImpl(
     
     // Log success
     const remainingSeconds = Math.floor((entry.expiresAt - now) / 1000);
-    logDebug('Retrieved presigned URL from cache', {
+    logDebug('Retrieved presigned URL from cache metadata', {
       key,
       remainingSeconds,
       expiresAt: new Date(entry.expiresAt).toISOString(),
@@ -360,7 +376,7 @@ async function getPresignedUrlImpl(
     // Add breadcrumb for successful KV retrieval
     const requestContext = getCurrentContext();
     if (requestContext) {
-      addBreadcrumb(requestContext, 'KV', 'Retrieved presigned URL from KV cache', {
+      addBreadcrumb(requestContext, 'KV', 'Retrieved presigned URL from KV cache metadata', {
         key,
         path,
         remainingSeconds,
@@ -370,7 +386,7 @@ async function getPresignedUrlImpl(
     
     return entry;
   } catch (err) {
-    logDebug('Error parsing cached presigned URL', {
+    logDebug('Error retrieving cached presigned URL', {
       key,
       error: err instanceof Error ? err.message : String(err)
     });
@@ -426,7 +442,55 @@ export function isUrlExpiring(
 export type UrlGeneratorFunction = (path: string) => Promise<string>;
 
 /**
- * Refresh a presigned URL if it's close to expiration
+ * Verify if a presigned URL is still valid by making a HEAD request
+ * 
+ * @param url The presigned URL to verify
+ * @returns True if the URL is valid, false otherwise
+ */
+async function verifyPresignedUrlImpl(url: string): Promise<boolean> {
+  try {
+    // Perform a HEAD request to check URL validity
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'manual' // Don't follow redirects
+    });
+    
+    // Check if response is successful (200-299) or a redirect
+    const isValid = response.ok || (response.status >= 300 && response.status < 400);
+    
+    logDebug('Verified presigned URL validity', {
+      urlLength: url.length,
+      status: response.status,
+      isValid
+    });
+    
+    return isValid;
+  } catch (err) {
+    logDebug('Error verifying presigned URL', {
+      error: err instanceof Error ? err.message : String(err)
+    });
+    return false; // Consider it invalid if the request fails
+  }
+}
+
+/**
+ * Error-handled version of verifyPresignedUrl
+ */
+export const verifyPresignedUrl = tryOrDefault<
+  [string],
+  Promise<boolean>
+>(
+  verifyPresignedUrlImpl,
+  {
+    functionName: 'verifyPresignedUrl',
+    component: 'PresignedUrlCacheService',
+    logErrors: true
+  },
+  Promise.resolve(false)
+);
+
+/**
+ * Refresh a presigned URL if it's close to expiration or invalid
  * This should be called using waitUntil to avoid blocking
  * 
  * @param namespace KV namespace for storage
@@ -441,12 +505,35 @@ async function refreshPresignedUrlImpl(
     thresholdSeconds?: number;
     env?: EnvVariables;
     generateUrlFn: UrlGeneratorFunction;
+    verifyUrl?: boolean; // Whether to verify URL before using it
   }
 ): Promise<boolean> {
   const threshold = options.thresholdSeconds || 300; // Default 5 minutes
+  const shouldVerify = options.verifyUrl ?? false;
+  let needsRefresh = false;
   
-  if (!isUrlExpiring(entry, threshold)) {
-    return false; // Not expiring soon, no need to refresh
+  // Check if URL is expiring soon
+  if (isUrlExpiring(entry, threshold)) {
+    needsRefresh = true;
+    logDebug('Presigned URL is expiring soon, refreshing', {
+      path: entry.path,
+      remainingSeconds: Math.floor((entry.expiresAt - Date.now()) / 1000)
+    });
+  }
+  
+  // Verify URL validity if required
+  if (shouldVerify && !needsRefresh) {
+    const isValid = await verifyPresignedUrl(entry.url);
+    if (!isValid) {
+      needsRefresh = true;
+      logDebug('Presigned URL verification failed, refreshing', {
+        path: entry.path
+      });
+    }
+  }
+  
+  if (!needsRefresh) {
+    return false; // Not expiring soon and still valid, no need to refresh
   }
   
   try {
@@ -455,6 +542,17 @@ async function refreshPresignedUrlImpl(
     
     // Generate new presigned URL
     const newUrl = await options.generateUrlFn(entry.path);
+    
+    // Verify the new URL works before storing it (if verification is enabled)
+    if (shouldVerify) {
+      const isValid = await verifyPresignedUrl(newUrl);
+      if (!isValid) {
+        logDebug('Newly generated presigned URL verification failed', {
+          path: entry.path
+        });
+        return false;
+      }
+    }
     
     // Store the new URL
     await storePresignedUrl(
@@ -472,11 +570,12 @@ async function refreshPresignedUrlImpl(
       }
     );
     
-    logDebug('Refreshed expiring presigned URL', {
+    logDebug('Refreshed presigned URL', {
       path: entry.path,
       storageType: entry.storageType,
       originalExpiration: new Date(entry.expiresAt).toISOString(),
-      newDuration: originalDuration
+      newDuration: originalDuration,
+      reason: isUrlExpiring(entry, threshold) ? 'expiring' : 'invalid'
     });
     
     return true;
@@ -500,6 +599,7 @@ export const refreshPresignedUrl = withErrorHandling<
       thresholdSeconds?: number;
       env?: EnvVariables;
       generateUrlFn: UrlGeneratorFunction;
+      verifyUrl?: boolean;
     }
   ],
   Promise<boolean>
