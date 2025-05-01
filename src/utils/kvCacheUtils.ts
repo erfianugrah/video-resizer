@@ -10,6 +10,7 @@ import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
 import { normalizeUrlForCaching } from './urlVersionUtils';
+import { determineTTL } from './determineTTL';
 
 /**
  * Helper for logging debug messages
@@ -495,120 +496,8 @@ export async function storeInKVCache(
   }
 }
 
-/**
- * Determine the TTL for a cached response
- * 
- * @param response - The response to cache
- * @param config - Cache configuration
- * @returns TTL in seconds
- */
-function determineTTL(response: Response, config: any): number {
-  // Get status and category
-  const status = response.status;
-  const statusCategory = Math.floor(status / 100);
-  
-  // Get request context to access URL path
-  const requestContext = getCurrentContext();
-  const url = requestContext?.url ? new URL(requestContext.url) : null;
-  const path = url?.pathname || '';
-  
-  // Try to get TTL settings from cache profiles based on path pattern
-  let ttlConfig = null;
-  
-  try {
-    // If we have profiles in the config, try to match the path to a profile
-    if (config.profiles) {
-      // Look for a matching profile based on the path
-      for (const [name, profileData] of Object.entries(config.profiles)) {
-        if (name === 'default') continue; // Skip default, we'll use it as fallback
-        
-        // Safely cast the profile to the expected structure
-        const profile = profileData as { 
-          regex?: string; 
-          ttl?: { 
-            ok?: number; 
-            redirects?: number; 
-            clientError?: number; 
-            serverError?: number; 
-          } 
-        };
-        
-        try {
-          if (profile?.regex) {
-            const regex = new RegExp(profile.regex);
-            if (regex.test(path)) {
-              ttlConfig = profile.ttl;
-              logDebug('Found matching cache profile for path', {
-                path,
-                profileName: name,
-                ttl: ttlConfig
-              });
-              break;
-            }
-          }
-        } catch (err) {
-          // If regex is invalid, log and continue
-          logDebug('Invalid regex in cache profile', {
-            profileName: name,
-            regex: profile?.regex,
-            error: err instanceof Error ? err.message : String(err)
-          });
-        }
-      }
-      
-      // If no specific profile matched, use the default profile
-      if (!ttlConfig && config.profiles.default?.ttl) {
-        ttlConfig = config.profiles.default.ttl;
-        logDebug('Using default cache profile TTL', {
-          path,
-          ttl: ttlConfig
-        });
-      }
-    }
-  } catch (err) {
-    logDebug('Error finding cache profile for path', {
-      path,
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-  
-  // Hardcoded defaults as last resort - updated to use 300s default
-  let defaultTTLs = {
-    ok: 300,         // 5 minutes (changed from 24 hours)
-    redirects: 300,  // 5 minutes (changed from 1 hour)
-    clientError: 60, // 1 minute
-    serverError: 10  // 10 seconds
-  };
-  
-  try {
-    // Also try to get global TTL defaults from cache configuration
-    const cacheSettings = cacheConfig.getConfig();
-    // Use the default profile as the source of TTL defaults
-    if (cacheSettings.profiles?.default?.ttl) {
-      defaultTTLs = { ...defaultTTLs, ...cacheSettings.profiles.default.ttl };
-    }
-  } catch (err) {
-    // Continue with hardcoded defaults
-    logDebug('Error getting TTL defaults from configuration', {
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-  
-  // Use ttlConfig if found, otherwise try config.ttl, then fall back to defaults
-  // Determine TTL based on status code
-  switch (statusCategory) {
-    case 2: // Success
-      return ttlConfig?.ok || config.ttl?.ok || defaultTTLs.ok;
-    case 3: // Redirect
-      return ttlConfig?.redirects || config.ttl?.redirects || defaultTTLs.redirects;
-    case 4: // Client error
-      return ttlConfig?.clientError || config.ttl?.clientError || defaultTTLs.clientError;
-    case 5: // Server error
-      return ttlConfig?.serverError || config.ttl?.serverError || defaultTTLs.serverError;
-    default:
-      return ttlConfig?.clientError || config.ttl?.clientError || defaultTTLs.clientError;
-  }
-}
+// Import determineTTL from dedicated module instead of having it inline
+// This function is now defined in src/utils/determineTTL.ts
 
 /**
  * Check if KV cache should be bypassed based on configuration settings
