@@ -304,7 +304,8 @@
 				"name": "images",
 				"matcher": "\\.(jpe?g|png|gif|webp|avif)$",
 				"processPath": true,
-				"baseUrl": null,
+				"baseUrl": "",
+				"originUrl": "",
 				"ttl": {
 					"ok": 300,
 					"redirects": 300,
@@ -317,6 +318,8 @@
 				"name": "default",
 				"matcher": ".*",
 				"processPath": false,
+				"baseUrl": "",
+				"originUrl": "",
 				"ttl": {
 					"ok": 300,
 					"redirects": 300,
