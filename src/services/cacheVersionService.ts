@@ -195,9 +195,9 @@ export const getNextCacheKeyVersion = withErrorHandling<
       return 1;
     }
     
-    // ALWAYS increment if forceIncrement is true (cache miss), regardless of current version
-    // Otherwise, only automatically increment if it's already > 1
-    const shouldIncrement = forceIncrement || currentVersion > 1;
+    // Only increment if forceIncrement is true (explicit cache miss)
+    // Do NOT automatically increment just because the version is > 1
+    const shouldIncrement = forceIncrement;
     const nextVersion = shouldIncrement ? currentVersion + 1 : currentVersion;
     
     logDebug('Generated next cache key version', { 
@@ -206,7 +206,9 @@ export const getNextCacheKeyVersion = withErrorHandling<
       nextVersion,
       forceIncrement,
       shouldIncrement,
-      reasonForNoIncrement: !shouldIncrement ? 'First version and no cache miss' : undefined
+      versionChanged: currentVersion !== nextVersion,
+      reasonForIncrement: shouldIncrement ? 'Explicit cache miss/force increment' : undefined,
+      reasonForNoIncrement: !shouldIncrement ? 'No explicit cache miss' : undefined
     });
     
     return nextVersion;

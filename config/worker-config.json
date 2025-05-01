@@ -403,7 +403,7 @@
 			]
 		},
 		"ttl": {
-			"ok": 300,
+			"ok": 86400,
 			"redirects": 300,
 			"clientError": 60,
 			"serverError": 10
