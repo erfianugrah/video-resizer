@@ -284,21 +284,12 @@
 				"matcher": "^/(.*\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv))",
 				"processPath": true,
 				"baseUrl": null,
-				"originUrl": "https://prod-eu-west-1-mcdc-media.s3.eu-west-1.amazonaws.com/videos/",
+				"originUrl": "https://videos.erfi.dev",
 				"ttl": {
-					"ok": 300,
+					"ok": 86400,
 					"redirects": 300,
 					"clientError": 60,
 					"serverError": 10
-				},
-				"auth": {
-					"enabled": true,
-					"type": "aws-s3-presigned-url",
-					"accessKeyVar": "STANDARD_AWS_ACCESS_KEY_ID",
-					"secretKeyVar": "STANDARD_AWS_SECRET_ACCESS_KEY",
-					"region": "eu-west-1",
-					"service": "s3",
-					"expiresInSeconds": 86400
 				}
 			}
 		],
