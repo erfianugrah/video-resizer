@@ -1,310 +1,243 @@
 # Video Mode
 
-Video mode is the default transformation mode in video-resizer, optimizing and transforming video files while preserving motion and audio. This document covers all aspects of using video mode for responsive and adaptive video delivery.
+*Last Updated: May 1, 2025*
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Video Transformation Parameters](#video-transformation-parameters)
+- [Playback Parameters](#playback-parameters)
+- [Quality Settings](#quality-settings)
+- [Video Derivatives](#video-derivatives)
+- [Responsive Behavior](#responsive-behavior)
+- [Format Options](#format-options)
+- [Example URLs](#example-urls)
+- [Technical Limitations](#technical-limitations)
+- [Best Practices](#best-practices)
+- [Advanced Usage](#advanced-usage)
 
 ## Overview
 
-When no `mode` parameter is specified, video-resizer processes the video in standard video mode, which allows for:
-- Resizing and reformatting videos
-- Adjusting quality and compression
-- Configuring playback behavior
-- Extracting specific video segments
-- Adapting videos to different devices and networks
-
-## Basic Usage
-
-To transform a video, simply add query parameters to the video URL:
+Video mode is the default transformation mode in the Video Resizer. It processes complete videos, preserving motion and audio while allowing for resizing, compression adjustments, and format conversion. This mode outputs optimized MP4 video files with H.264 video and AAC audio.
 
 ```
-https://cdn.example.com/videos/sample.mp4?width=854&height=480&quality=medium
+https://cdn.example.com/videos/sample.mp4?width=720&height=480&quality=high
 ```
 
-## Parameters
+In video mode, you can:
+- Resize videos to specific dimensions
+- Control quality and compression levels
+- Apply different fit modes (contain, cover, etc.)
+- Configure playback behavior (loop, autoplay, muted, preload)
+- Convert between supported formats
 
-### Dimension Parameters
+## Video Transformation Parameters
 
-| Parameter | Description | Values | Default | Example |
-|-----------|-------------|--------|---------|---------|
-| `width` | Video width in pixels | 10-2000 | Original width | `width=854` |
-| `height` | Video height in pixels | 10-2000 | Original height | `height=480` |
-| `fit` | How to resize the video | `contain`, `cover`, `scale-down` | `contain` | `fit=cover` |
+| Parameter | Type | Default | Description | Example |
+|-----------|------|---------|-------------|---------|
+| `width` | number | null | Width in pixels (10-2000) | `width=720` |
+| `height` | number | null | Height in pixels (10-2000) | `height=480` |
+| `fit` | string | 'contain' | Resize behavior | `fit=cover` |
+| `format` | string | 'mp4' | Output format | `format=webm` |
+| `quality` | string | null | Quality level | `quality=high` |
+| `compression` | string | null | Compression level | `compression=low` |
+| `bitrate` | number | null | Target bitrate (bps) | `bitrate=3000000` |
 
-### Quality Parameters
+### Fit Modes
 
-| Parameter | Description | Values | Default | Example |
-|-----------|-------------|--------|---------|---------|
-| `quality` | Video quality preset | `low`, `medium`, `high`, `auto` | `auto` | `quality=high` |
-| `compression` | Compression level | `low`, `medium`, `high`, `auto` | `auto` | `compression=medium` |
-| `format` | Output format | `mp4`, `webm` | Matches input | `format=webm` |
-| `derivative` | Preset configuration | See derivatives below | None | `derivative=mobile` |
+The `fit` parameter controls how the video fits within the specified dimensions:
 
-### Time Range Parameters
+| Value | Description | Use Case |
+|-------|-------------|----------|
+| `contain` | Maintains aspect ratio, fits entirely within dimensions | Preserving full content |
+| `cover` | Maintains aspect ratio, fills dimensions (may crop) | Filling UI containers |
+| `scale-down` | Like contain, but never scales up smaller videos | Avoiding quality loss |
+| `pad` | Like contain, adds padding to fill dimensions | Consistent dimensions |
+| `crop` | Centers and crops to exact dimensions | Exact sizing |
 
-| Parameter | Description | Values | Default | Example |
-|-----------|-------------|--------|---------|---------|
-| `time` | Start timestamp | `0s`-`<end>` | `0s` (start) | `time=30s` |
-| `duration` | Clip duration | Positive seconds | Full video | `duration=15s` |
+## Playback Parameters
 
-### Playback Parameters
+Video mode supports several parameters that control video playback behavior:
 
-| Parameter | Description | Values | Default | Example |
-|-----------|-------------|--------|---------|---------|
-| `loop` | Enable video looping | `true`, `false` | `false` | `loop=true` |
-| `autoplay` | Auto-start playback | `true`, `false` | `false` | `autoplay=true` |
-| `muted` | Mute audio | `true`, `false` | `false` | `muted=true` |
-| `preload` | Loading behavior | `none`, `metadata`, `auto` | `auto` | `preload=metadata` |
-| `audio` | Include audio track | `true`, `false` | `true` | `audio=false` |
+| Parameter | Type | Default | Description | Example |
+|-----------|------|---------|-------------|---------|
+| `loop` | boolean | false | Whether the video should loop | `loop=true` |
+| `autoplay` | boolean | false | Whether video should autoplay | `autoplay=true` |
+| `muted` | boolean | false | Whether audio should be muted | `muted=true` |
+| `preload` | string | 'auto' | Preload behavior | `preload=metadata` |
+
+> Note: These parameters only apply to video mode and will cause validation errors if used with frame or spritesheet modes.
+
+### Preload Options
+
+The `preload` parameter accepts the following values:
+
+| Value | Description | Use Case |
+|-------|-------------|----------|
+| `none` | Doesn't preload any data | Bandwidth conservation |
+| `metadata` | Preloads metadata only | Quick preview loading |
+| `auto` | Browser decides what to preload | General usage |
+
+## Quality Settings
+
+The `quality` parameter provides presets for video quality:
+
+| Value | Description | Approximate Bitrate |
+|-------|-------------|---------------------|
+| `low` | Low quality, high compression | ~500 Kbps |
+| `medium` | Balanced quality and size | ~1.5 Mbps |
+| `high` | High quality, less compression | ~3 Mbps |
+| `auto` | Adapts based on client capabilities | Varies |
+
+The `compression` parameter provides more granular control:
+
+| Value | Description | Use Case |
+|-------|-------------|----------|
+| `low` | Minimal compression | High-quality preservation |
+| `medium` | Balanced compression | General usage |
+| `high` | Strong compression | Bandwidth-constrained scenarios |
+| `auto` | Adapts based on client capabilities | Responsive delivery |
 
 ## Video Derivatives
 
-Derivatives are preset configurations that apply multiple parameters at once. Use the `derivative` parameter to apply these presets:
+Derivatives are preset configurations optimized for specific use cases:
 
-| Derivative | Description | Width | Height | Quality | Compression | Other |
-|------------|-------------|-------|--------|---------|-------------|-------|
-| `desktop` | High quality for large screens | 1920 | 1080 | high | low | - |
-| `tablet` | Medium quality for mid-size | 1280 | 720 | medium | medium | - |
-| `mobile` | Optimized for mobile devices | 854 | 640 | low | high | - |
-| `animation` | Looping video clip | 480 | 270 | medium | medium | loop=true, audio=false |
-| `preview` | Short preview clip | 480 | 270 | low | high | duration=5s, audio=false |
+| Derivative | Width | Height | Quality | Other Settings | Use Case |
+|------------|-------|--------|---------|----------------|----------|
+| `high` | 1920 | 1080 | high | compression=low | Desktop, high-bandwidth |
+| `medium` | 1280 | 720 | medium | compression=medium | Default for most devices |
+| `low` | 854 | 480 | low | compression=high | Mobile, low-bandwidth |
+| `mobile` | 640 | 360 | low | compression=high | Small screens |
+| `thumbnail` | 640 | 360 | low | compression=high, time=5s, mode=frame | Video previews |
+| `preview` | 320 | 180 | low | compression=high, duration=5s | Hover previews |
+| `animation` | 320 | 180 | low | compression=high, duration=3s, loop=true | Animated previews |
 
-Example:
+To use a derivative:
+
 ```
 https://cdn.example.com/videos/sample.mp4?derivative=mobile
 ```
 
 ## Responsive Behavior
 
-### Client Hints Integration
+Video mode automatically adapts to client capabilities through several mechanisms:
 
-Video-resizer can use Client Hints headers to automatically optimize videos for the viewer's device:
+1. **Client Hints Detection**:
+   - Uses client hint headers to detect device capabilities
+   - Automatically adapts quality based on device type
+   - Adjusts dimensions based on viewport size
 
-| Client Hint | Effect on Video |
-|-------------|-----------------|
-| `Sec-CH-DPR` | Adjusts effective resolution based on device pixel ratio |
-| `Sec-CH-Viewport-Width` | Helps determine appropriate video dimensions |
-| `Sec-CH-Viewport-Height` | Helps optimize for vertical/horizontal viewing |
-| `Sec-CH-Width` | Used for responsive dimension calculation |
+2. **IMQuery Integration**:
+   - Supports responsive width parameters (`imwidth`, `im-viewwidth`)
+   - Maps responsive dimensions to appropriate derivatives
+   - Example: `https://cdn.example.com/sample.mp4?imwidth=400&im-viewwidth=1200`
 
-### IMQuery Support
+3. **Network Quality Estimation**:
+   - Estimates client network capabilities
+   - Adjusts compression for slower connections
+   - Enables quality fallbacks
 
-The service supports IMQuery parameters for responsive video delivery:
+## Format Options
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `imwidth` | Target width for responsive sizing | `imwidth=800` |
-| `imheight` | Target height for responsive sizing | `imheight=450` |
-| `im-viewwidth` | Viewport width for responsive decisions | `im-viewwidth=1200` |
-| `im-density` | Device pixel ratio (similar to DPR) | `im-density=2` |
+The `format` parameter controls the output video format:
 
-Example:
-```
-https://cdn.example.com/videos/sample.mp4?imwidth=800
-```
+| Value | Description | Support | Use Case |
+|-------|-------------|---------|----------|
+| `mp4` | MP4 with H.264/AAC | Universal | General compatibility |
+| `webm` | WebM format | Most modern browsers | Better compression |
 
-## Advanced Usage Examples
+## Example URLs
 
-### Basic Responsive Video
-
-```
-https://cdn.example.com/videos/sample.mp4?width=854&height=480
-```
-
-### Mobile-Optimized Video
+### Basic Transformation
 
 ```
-https://cdn.example.com/videos/sample.mp4?derivative=mobile&muted=true&autoplay=true
+https://cdn.example.com/videos/sample.mp4?width=720&height=480
 ```
 
-### Custom Video Clip
+### Quality Control
 
 ```
-https://cdn.example.com/videos/sample.mp4?time=45s&duration=30s&width=640&height=360
+https://cdn.example.com/videos/sample.mp4?quality=high&compression=low
 ```
 
-### Looping Animation
+### Responsive Transformation
 
 ```
-https://cdn.example.com/videos/sample.mp4?width=480&height=270&loop=true&muted=true&autoplay=true&audio=false
+https://cdn.example.com/videos/sample.mp4?imwidth=400&im-viewwidth=1200
 ```
 
-### High-Quality Presentation Video
+### Playback Configuration
 
 ```
-https://cdn.example.com/videos/sample.mp4?derivative=desktop&audio=true&preload=auto
+https://cdn.example.com/videos/sample.mp4?loop=true&autoplay=true&muted=true
 ```
 
-### Responsive Video with IMQuery
+### Combined Parameters
 
 ```
-https://cdn.example.com/videos/sample.mp4?imwidth=1024&quality=auto
+https://cdn.example.com/videos/sample.mp4?width=1280&height=720&quality=high&fit=cover&loop=true&muted=true
 ```
 
-## HTML Integration
+### Using Derivatives
 
-### Basic Video Tag
-
-```html
-<video src="https://cdn.example.com/videos/sample.mp4?width=854&height=480" 
-       controls>
-</video>
+```
+https://cdn.example.com/videos/sample.mp4?derivative=mobile
 ```
 
-### Advanced Video Tag with Attributes
+## Technical Limitations
 
-```html
-<video width="854" height="480" controls autoplay muted loop>
-  <source src="https://cdn.example.com/videos/sample.mp4?quality=high" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+- **Input Video Size**: Maximum input video size is 40MB
+- **Dimensions**: Width and height must be between 10-2000 pixels
+- **Input Format**: Cloudflare Media Transformation primarily supports MP4 files with H.264 video and AAC/MP3 audio
+- **Processing Time**: Initial transformations may take 500-2000ms (subsequent requests use cached versions)
+- **Duration**: Long videos may have higher processing times and resource usage
+
+## Best Practices
+
+1. **Use Derivatives**:
+   - Derivatives provide optimized presets for common use cases
+   - More consistent experience across videos
+   - Better cache efficiency (many URLs map to fewer transformations)
+
+2. **Enable Responsive Features**:
+   - Use IMQuery parameters for responsive sizing
+   - Allow client detection to optimize for device
+   - Consider the target device when selecting quality
+
+3. **Optimize for Caching**:
+   - Use consistent parameters to improve cache hit rates
+   - Consider cache TTL settings in path patterns
+   - Avoid unnecessary parameter variations
+
+4. **Performance Considerations**:
+   - For initial page load, consider using the frame mode for thumbnails
+   - Preload only metadata for non-primary videos
+   - Use muted for autoplay compatibility on mobile
+
+## Advanced Usage
+
+### Combining with Other Features
+
+Video mode works well with other Video Resizer features:
+
+1. **Cache Versioning**:
+   - Control cache invalidation with version parameters
+   - Example: `https://cdn.example.com/videos/sample.mp4?width=720&cache-version=2`
+
+2. **Debug Mode**:
+   - Add `debug=view` to see transformation details
+   - Example: `https://cdn.example.com/videos/sample.mp4?width=720&debug=view`
+
+3. **Range Request Support**:
+   - Video mode supports range requests for seeking
+   - No special parameters needed, handled automatically
+
+### Custom Transformations
+
+For advanced use cases, you can combine parameters for custom transformations:
+
+```
+https://cdn.example.com/videos/sample.mp4?width=1280&height=720&quality=high&compression=low&fit=cover&format=webm&loop=true&muted=true
 ```
 
-### Responsive Video
-
-```html
-<video width="100%" height="auto" controls>
-  <source src="https://cdn.example.com/videos/sample.mp4?imwidth=1280" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-```
-
-### Picture Element for Art Direction
-
-```html
-<picture>
-  <!-- Mobile -->
-  <source media="(max-width: 640px)" 
-          srcset="https://cdn.example.com/videos/sample.mp4?derivative=mobile">
-  
-  <!-- Tablet -->
-  <source media="(max-width: 1024px)" 
-          srcset="https://cdn.example.com/videos/sample.mp4?derivative=tablet">
-  
-  <!-- Desktop -->
-  <source srcset="https://cdn.example.com/videos/sample.mp4?derivative=desktop">
-  
-  <!-- Fallback -->
-  <video width="100%" height="auto" controls>
-    <source src="https://cdn.example.com/videos/sample.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</picture>
-```
-
-## Performance Considerations
-
-### File Size Optimization
-
-To optimize video file size:
-- Use appropriate dimensions for the intended display size
-- Set quality parameter based on content type (lower for animations, higher for detailed content)
-- Consider using the `compression=high` parameter for mobile devices
-- Use derivatives to apply tested optimization settings
-
-### Loading Optimization
-
-To optimize video loading:
-- Use `preload="metadata"` for videos not immediately visible
-- Add `muted` and `autoplay` attributes for background videos
-- Consider `audio=false` for purely visual videos to reduce file size
-- Use appropriate derivatives for different devices
-
-### Range Request Support
-
-Video-resizer provides optimized support for range requests, which enables:
-- Seeking through videos without downloading the entire file
-- Fast forward/rewind operations in video players
-- Improved playback experience on both first and subsequent views
-- Efficient resumption of interrupted downloads
-
-Range requests are supported in the following scenarios:
-- First access to a video (via Cache API with transparent fallback)
-- KV-cached responses (supported automatically)
-- All standard video formats (mp4, webm)
-
-The implementation handles range requests efficiently by:
-1. Storing the full video in temporary Cache API storage on first access
-2. Using the Cache API's built-in range request support for immediate seeking
-3. Preserving all standard range-related HTTP headers
-4. Providing multiple fallback mechanisms for reliability
-
-#### Expiration and TTL Handling
-
-Range request support is integrated with the system's expiration handling:
-- TTL values for Cache API storage align with KV cache configuration
-- Both temporary (Cache API) and persistent (KV) storage respect the same TTL values
-- Expiration is determined based on response status, content type, and path-based caching profiles
-- TTL values are extracted from Cache-Control headers or determined from configuration
-
-For detailed implementation information, see the [Range Request Support](./range-request-support.md) documentation.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Video quality is too low**
-   - Try increasing `quality` parameter (medium or high)
-   - Ensure dimensions are appropriate for display size
-   - If using derivatives, try one with higher quality
-
-2. **Video loads slowly**
-   - Try reducing dimensions or quality
-   - Use `compression=high` parameter
-   - Consider using a derivative like `mobile`
-
-3. **Playback issues on mobile**
-   - Ensure video has `muted=true` for autoplay to work
-   - Check if the device supports the video format
-   - Try using `derivative=mobile` for optimized settings
-
-4. **Black borders around video**
-   - This is caused by `fit=contain` (default) preserving aspect ratio
-   - Use `fit=cover` to fill the frame (may crop sides)
-   - Adjust both width and height to match the video's aspect ratio
-
-5. **Video doesn't autoplay**
-   - Most browsers require `muted=true` for autoplay
-   - Make sure both `autoplay=true` and `muted=true` are set
-   - Some mobile browsers restrict autoplay regardless of settings
-
-## Technical Implementation
-
-Video mode is implemented in the `VideoStrategy` class, which:
-1. Validates all input parameters
-2. Applies derivatives if specified
-3. Processes playback parameters
-4. Constructs the CDN-CGI transformation URL
-5. Handles caching configuration
-
-The video handling pipeline includes several optimizations:
-
-### Caching Architecture
-- Initial responses are stored in KV storage using non-blocking waitUntil
-- Subsequent requests with identical parameters are served directly from KV
-- Storage keys use path and normalized parameters to maximize cache hits
-
-### Range Request Handling
-- The system uses a multi-layered approach for range requests:
-  1. **Cache API Layer**: Temporarily stores videos in the Cache API for range support
-  2. **KV Cache Layer**: Provides persistent caching with range support
-  3. **Manual Fallback**: Direct ArrayBuffer manipulation when necessary
-- For first-time video access with range requests, the system:
-  1. Stores the full video in the Cache API
-  2. Uses the Cache API's native range request support for immediate seeking
-  3. Simultaneously stores the video in KV cache for persistent storage
-  4. Gracefully falls back to manual range handling if Cache API is unavailable
-
-For more implementation details, see:
-- `VideoStrategy.ts` - Core transformation logic
-- `videoHandler.ts` - Request handling and caching coordination
-- `httpUtils.ts` - Range request handling and Cache API integration
-
-## Related Documentation
-
-- [Transformation Modes Overview](./transformation-modes.md) - Comparison of all transformation modes
-- [Parameter Compatibility](../configuration/parameter-compatibility.md) - Complete parameter reference
-- [Video Configuration](../configuration/video-configuration.md) - Configuration options
-- [IMQuery Support](./imquery/README.md) - Details on responsive parameters
-
-## Last Updated
-
-*April 29, 2025*
+This transforms the video to 1280x720, high quality with low compression, using cover fit, outputs in WebM format, and sets it to loop and be muted.

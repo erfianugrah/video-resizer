@@ -23,9 +23,17 @@ Comprehensive documentation is available in the [docs directory](./docs/README.m
 3. Start development server with `npm run dev` or `wrangler dev`
 4. Deploy to Cloudflare with `npm run deploy` or `wrangler deploy`
 
+For more detailed instructions, see the [Quickstart Guide](./docs/guides/quickstart.md).
+
+## Guides
+
+- [Configuration Guide](./docs/guides/configuration.md) - Practical configuration examples
+- [Troubleshooting Guide](./docs/guides/troubleshooting.md) - Common issues and solutions
+- [Performance Tuning Guide](./docs/guides/performance-tuning.md) - Optimization tips
+
 ## Configuration
 
-See the [Configuration Reference](./docs/configuration/CONFIGURATION_REFERENCE.md) for detailed configuration options.
+See the [Configuration Guide](./docs/configuration/README.md) for detailed configuration options.
 
 ## License
 
