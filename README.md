@@ -28,22 +28,22 @@ flowchart TB
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef config fill:#FFF8E1,stroke:#F57F17,color:#000000;
-    
+
     %% Request handling
     A([HTTP Request]) --> B[Worker Entry Point]
     B --> C[Video Handler]
     C --> D{Cache Hit?}
-    
+
     %% Response paths
     D -->|Yes| E([Cached Response])
     D -->|No| F[Transform Process]
     F --> G([Generated Response])
-    
+
     %% Core components
     F -.-> H[Command Pattern]
     H -.-> I[Strategy Pattern]
     F -.-> J[KV Cache Storage]
-    
+
     %% Configuration
     subgraph Config [Configuration System]
     direction TB
@@ -51,9 +51,9 @@ flowchart TB
     K --> M[Cache Config]
     K --> N[Debug Config]
     end
-    
+
     Config -.-> B
-    
+
     %% Apply styles
     class A request
     class B,C,F,H,I,J process
@@ -73,17 +73,17 @@ flowchart LR
     classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef success fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    
+
     %% Request flow
     A([Request]) --> B{CDN-CGI Path?}
     B -->|Yes| C([Passthrough])
     B -->|No| D{KV Cache Hit?}
     D -->|Yes| E([Return Cached])
     D -->|No| F[Transform Video]
-    
+
     F --> G[Store in KV]
     F --> H([Return Response])
-    
+
     %% Apply styles
     class A request
     class B,D decision
@@ -102,7 +102,7 @@ flowchart TB
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef success fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-    
+
     %% Command flow
     A[VideoHandler] --> B[TransformVideoCommand]
     B --> C[Execute Method]
@@ -113,7 +113,7 @@ flowchart TB
     F -->|No| H[Handle Error]
     G --> I([Return Response])
     H --> I
-    
+
     %% Apply styles
     class A,B,C,D,E process
     class F decision
@@ -133,21 +133,21 @@ flowchart TB
     classDef concrete fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef factory fill:#FFF8E1,stroke:#F57F17,color:#000000;
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
-    
+
     %% Strategy hierarchy
-    A["TransformationStrategy\n(Interface)"] --> B[VideoStrategy]
+    A["TransformationStrategy (Interface)"] --> B[VideoStrategy]
     A --> C[FrameStrategy]
     A --> D[SpritesheetStrategy]
-    
+
     %% Factory
     E[StrategyFactory] --> F{Mode?}
     F -->|video| B
     F -->|frame| C
     F -->|spritesheet| D
-    
+
     %% Implementation
     B & C & D --> G[Transform Video URL]
-    
+
     %% Apply styles
     class A interface
     class B,C,D,G concrete
@@ -165,23 +165,23 @@ flowchart TB
     classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef params fill:#FFF8E1,stroke:#F57F17,color:#000000;
-    
+
     %% Options flow
     A[Determine Options] --> B{IMQuery Params?}
-    
+
     %% IMQuery branch
     B -->|Yes| C[Process IMQuery]
     C --> D{Match Derivative?}
     D -->|Yes| E[Apply Derivative]
     D -->|No| F[Use Direct Dimensions]
-    
+
     %% Standard params branch
     B -->|No| G{Derivative Param?}
     G -->|Yes| H[Apply Derivative]
     G -->|No| I{URL Dimensions?}
     I -->|Yes| J[Use Explicit Dimensions]
     I -->|No| K[Apply Responsive Sizing]
-    
+
     %% Apply styles
     class A,C,E,F,H,J,K process
     class B,D,G,I decision
@@ -199,7 +199,7 @@ flowchart TB
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef cache fill:#ECEFF1,stroke:#455A64,color:#000000;
     classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    
+
     %% Range flow
     A([Video Request]) --> B{Has Range Header?}
     B -->|No| C([Return Full Response])
@@ -211,7 +211,7 @@ flowchart TB
     H --> I{Range Valid?}
     I -->|Yes| J([Return 206 Response])
     I -->|No| K([Return 416 Error])
-    
+
     %% Apply styles
     class A request
     class B,F,I decision
@@ -234,7 +234,7 @@ flowchart TB
     classDef storage fill:#ECEFF1,stroke:#455A64,color:#000000;
     classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-    
+
     %% Config API flow
     A([/admin/config Request]) --> B{Method?}
     B -->|GET| C{Auth Valid?}
@@ -248,7 +248,7 @@ flowchart TB
     H -->|Yes| J([Return Config JSON])
     H -->|No| K([Return 404 Not Found])
     I --> L([Return Success Response])
-    
+
     %% Apply styles
     class A request
     class B,C,D,H decision
@@ -270,7 +270,7 @@ flowchart TB
     classDef asset fill:#FFF8E1,stroke:#F57F17,color:#000000;
     classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-    
+
     %% Debug UI flow
     A([Request with debug=view]) --> B[Gather Diagnostics Info]
     B --> C{ASSETS Available?}
@@ -280,7 +280,7 @@ flowchart TB
     F -->|No| G([Return Error HTML])
     F -->|Yes| H[Add Diagnostics as JSON]
     H --> I([Return Debug UI Response])
-    
+
     %% Apply styles
     class A request
     class B,E,H process
@@ -301,14 +301,14 @@ flowchart LR
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef cache fill:#ECEFF1,stroke:#455A64,color:#000000;
     classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    
+
     %% Cache flow
     A([Request]) --> B{Check Cache}
     B -->|Hit| C([Return Cached])
     B -->|Miss| D[Process Request]
     D --> E[(KV Storage)]
     D --> F([Return Response])
-    
+
     %% Apply styles
     class A request
     class B decision
@@ -327,20 +327,20 @@ flowchart TB
     classDef root fill:#FFF8E1,stroke:#F57F17,color:#000000;
     classDef config fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef settings fill:#ECEFF1,stroke:#455A64,color:#000000;
-    
+
     %% Config hierarchy
     A[Environment Config] --> B[Video Config]
     A --> C[Cache Config]
     A --> D[Debug Config]
     A --> E[Logging Config]
-    
+
     %% Settings
     B --> F[Path Patterns]
     B --> G[Video Derivatives]
     C --> H[Cache Settings]
     D --> I[Debug Options]
     E --> J[Log Settings]
-    
+
     %% Apply styles
     class A root
     class B,C,D,E config
