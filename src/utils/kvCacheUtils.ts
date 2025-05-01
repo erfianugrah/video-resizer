@@ -144,7 +144,8 @@ export async function getFromKVCache(
         createdAt: new Date(result.metadata.createdAt).toISOString(),
         expiresAt: result.metadata.expiresAt ? new Date(result.metadata.expiresAt).toISOString() : 'unknown',
         contentLength: result.metadata.contentLength,
-        contentType: result.metadata.contentType
+        contentType: result.metadata.contentType,
+        cacheVersion: result.metadata.cacheVersion || options.version || 'unversioned'
       });
       
       return result.response;
@@ -163,6 +164,8 @@ export async function getFromKVCache(
     logDebug('KV cache miss', {
       sourcePath,
       derivative: options.derivative,
+      requestedVersion: options.version || 'none',
+      normalizedPath: normalizedPath !== sourcePath ? normalizedPath : undefined,
       options: JSON.stringify(options)
     });
     

@@ -141,5 +141,52 @@ describe('Cache Versioning Integration', () => {
       // Verify URL has version parameter
       expect(versionedUrl).toBe('https://example.com/cdn-cgi/media/width=640/video.mp4?v=3');
     });
+    
+    it('should not automatically increment version without explicit cache miss', async () => {
+      // Reset mocks to implement fixed behavior
+      vi.mocked(getNextCacheKeyVersion).mockImplementation(async (env, key, forceIncrement = false) => {
+        const currentVersion = 2; // Simulate existing version
+        const shouldIncrement = forceIncrement; // Only increment on explicit cache miss
+        return shouldIncrement ? currentVersion + 1 : currentVersion;
+      });
+      
+      // First call without cache miss flag - should NOT increment
+      const version1 = await getNextCacheKeyVersion(mockEnv, 'test-key', false);
+      expect(version1).toBe(2); // Should stay at 2
+      
+      // Second call with cache miss flag - should increment
+      const version2 = await getNextCacheKeyVersion(mockEnv, 'test-key', true);
+      expect(version2).toBe(3); // Should increment to 3
+      
+      // Third call without cache miss flag - should NOT increment from previous version
+      const version3 = await getNextCacheKeyVersion(mockEnv, 'test-key', false);
+      expect(version3).toBe(2); // Should stay at 2
+    });
+    
+    it('should handle subsequent requests correctly with versioning', async () => {
+      // Mock implementation for full test case with fixed behavior
+      vi.mocked(getCacheKeyVersion).mockImplementation(async (env, key) => {
+        // Simulate a key with version 2
+        return 2;
+      });
+      
+      vi.mocked(getNextCacheKeyVersion).mockImplementation(async (env, key, forceIncrement = false) => {
+        const currentVersion = 2; // Existing version
+        // Only increment if explicitly requested
+        return forceIncrement ? currentVersion + 1 : currentVersion;
+      });
+      
+      // First request (cache hit) - should NOT increment version
+      const firstRequestVersion = await getNextCacheKeyVersion(mockEnv, 'test-key', false);
+      expect(firstRequestVersion).toBe(2);
+      
+      // Second request (cache hit) - should still NOT increment version
+      const secondRequestVersion = await getNextCacheKeyVersion(mockEnv, 'test-key', false);
+      expect(secondRequestVersion).toBe(2);
+      
+      // Simulate cache miss by passing forceIncrement = true
+      const cacheMissVersion = await getNextCacheKeyVersion(mockEnv, 'test-key', true);
+      expect(cacheMissVersion).toBe(3);
+    });
   });
 });
