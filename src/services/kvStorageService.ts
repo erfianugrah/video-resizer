@@ -288,8 +288,19 @@ async function storeTransformedVideoImpl(
     metadata.expiresAt = Date.now() + (ttl * 1000);
   }
   
-  // Get response body as ArrayBuffer for storage
-  const videoData = await responseClone.arrayBuffer();
+  // Use ReadableStream instead of ArrayBuffer for better memory efficiency
+  const responseStream = responseClone.body;
+  
+  if (!responseStream) {
+    throw new Error('Response body is null or undefined');
+  }
+  
+  // Create a PassThrough stream to capture the data for storage
+  const { readable, writable } = new TransformStream();
+  
+  // Start piping the response to our transform stream
+  // This doesn't block and immediately returns a promise
+  const streamPromise = responseStream.pipeTo(writable);
   
   // Store the video data with metadata using retry with exponential backoff
   // This handles Cloudflare KV's rate limiting (1 write per second per key)
@@ -303,10 +314,13 @@ async function storeTransformedVideoImpl(
       attemptCount++;
       
       if (ttl) {
-        await namespace.put(key, videoData, { metadata, expirationTtl: ttl });
+        await namespace.put(key, readable, { metadata, expirationTtl: ttl });
       } else {
-        await namespace.put(key, videoData, { metadata });
+        await namespace.put(key, readable, { metadata });
       }
+      
+      // Wait for stream completion
+      await streamPromise;
       
       success = true;
       
@@ -638,7 +652,8 @@ async function getTransformedVideoImpl(
   });
   
   // Check if the key exists in KV
-  const { value, metadata } = await namespace.getWithMetadata<TransformationMetadata>(key, 'arrayBuffer');
+  // For video content, request as a stream to improve memory efficiency
+  const { value, metadata } = await namespace.getWithMetadata<TransformationMetadata>(key, 'stream');
   
   if (!value || !metadata) {
     logDebug('Transformed video not found in KV', { key });
@@ -844,7 +859,8 @@ async function getTransformedVideoImpl(
       const { parseRangeHeader, createUnsatisfiableRangeResponse } = await import('../utils/httpUtils');
       
       const rangeHeader = request.headers.get('Range');
-      const totalSize = value.byteLength;
+      // For streams, we need to use the metadata.contentLength since we don't have value.byteLength
+      const totalSize = metadata.contentLength;
       
       // Log detailed information about the range request
       logDebug('Processing range request from KV cache', { 
@@ -859,24 +875,90 @@ async function getTransformedVideoImpl(
       const range = parseRangeHeader(rangeHeader, totalSize);
       
       if (range) {
-        // Valid range request - create a 206 Partial Content response
-        const slicedBody = value.slice(range.start, range.end + 1);
+        // Valid range request - create a 206 Partial Content response with streams
         const rangeHeaders = new Headers(headers);
         rangeHeaders.set('Content-Range', `bytes ${range.start}-${range.end}/${range.total}`);
-        rangeHeaders.set('Content-Length', slicedBody.byteLength.toString());
+        rangeHeaders.set('Content-Length', (range.end - range.start + 1).toString());
         
         // Add debug headers to verify range handling
-        rangeHeaders.set('X-Range-Handled-By', 'KV-Cache');
+        rangeHeaders.set('X-Range-Handled-By', 'KV-Cache-Stream');
         rangeHeaders.set('X-Range-Request', rangeHeader || '');
         rangeHeaders.set('X-Range-Bytes', `${range.start}-${range.end}/${range.total}`);
         
-        logDebug('Serving ranged response from KV cache', { 
+        // Create a TransformStream that will extract the requested range
+        const { readable, writable } = new TransformStream();
+        
+        // Stream processing in background
+        const processStream = async () => {
+          try {
+            // Create a stream reader and writer
+            const reader = value.getReader();
+            const writer = writable.getWriter();
+            
+            let bytesRead = 0;
+            let bytesWritten = 0;
+            
+            // Process the stream
+            while (true) {
+              const { done, value: chunk } = await reader.read();
+              
+              if (done) break;
+              
+              // Find overlapping bytes with our range
+              if (chunk) {
+                const chunkSize = chunk.byteLength;
+                const chunkStart = bytesRead;
+                const chunkEnd = bytesRead + chunkSize - 1;
+                
+                // Check if this chunk overlaps with our range
+                if (chunkEnd >= range.start && chunkStart <= range.end) {
+                  // Calculate the portion of this chunk to include
+                  const startOffset = Math.max(0, range.start - chunkStart);
+                  const endOffset = Math.min(chunkSize, range.end - chunkStart + 1);
+                  
+                  // Extract the relevant portion
+                  const relevantPortion = chunk.slice(startOffset, endOffset);
+                  
+                  // Write to output stream
+                  await writer.write(relevantPortion);
+                  bytesWritten += relevantPortion.byteLength;
+                }
+                
+                // Track total bytes processed
+                bytesRead += chunkSize;
+                
+                // If we've gone past our range, we can stop
+                if (bytesRead > range.end) break;
+              }
+            }
+            
+            // Close the writer
+            await writer.close();
+            
+            logDebug('Completed streaming range request', {
+              bytesRead,
+              bytesWritten,
+              expectedBytes: range.end - range.start + 1
+            });
+            
+          } catch (error) {
+            logDebug('Error processing stream for range request', {
+              error: error instanceof Error ? error.message : String(error)
+            });
+            // Attempt to close the stream on error
+            writable.abort(error);
+          }
+        };
+        
+        // Start processing in background
+        void processStream();
+        
+        logDebug('Serving ranged response from KV cache with streaming', { 
           key,
           range: rangeHeader,
           start: range.start,
           end: range.end,
           total: range.total,
-          sliceSize: slicedBody.byteLength,
           bytesSent: range.end - range.start + 1,
           cacheVersion
         });
@@ -884,10 +966,10 @@ async function getTransformedVideoImpl(
         // Add breadcrumb for range response
         const requestContext = getCurrentContext();
         if (requestContext) {
-          addBreadcrumb(requestContext, 'KV', 'Serving partial content from KV cache', {
+          addBreadcrumb(requestContext, 'KV', 'Serving partial content from KV cache with streams', {
             key,
             contentRange: `bytes ${range.start}-${range.end}/${range.total}`,
-            contentLength: slicedBody.byteLength,
+            contentLength: range.end - range.start + 1,
             age: cacheAge + 's',
             rangeRequest: rangeHeader || '',
             cacheVersion
@@ -904,14 +986,14 @@ async function getTransformedVideoImpl(
             end: range.end,
             total: range.total,
             bytes: range.end - range.start + 1,
-            source: 'kv-cache'
+            source: 'kv-cache-stream'
           };
           
           // Add version to diagnostics
           requestContext.diagnostics.cacheVersion = cacheVersion;
         }
         
-        response = new Response(slicedBody, { 
+        response = new Response(readable, { 
           status: 206, 
           statusText: 'Partial Content',
           headers: rangeHeaders 
@@ -946,7 +1028,7 @@ async function getTransformedVideoImpl(
             header: rangeHeader,
             error: 'unsatisfiable',
             total: totalSize,
-            source: 'kv-cache'
+            source: 'kv-cache-stream'
           };
           
           // Add version to diagnostics
@@ -993,7 +1075,7 @@ async function getTransformedVideoImpl(
       response = new Response(value, { headers });
     }
   } else {
-    // Not a range request - create a standard response
+    // Not a range request - create a standard response with the stream
     headers.set('Content-Length', metadata.contentLength.toString());
     response = new Response(value, { headers });
   }

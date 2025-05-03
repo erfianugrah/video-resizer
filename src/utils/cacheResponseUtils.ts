@@ -232,46 +232,130 @@ async function handleRangeRequest(
       startTimeMs
     });
     
-    // Get the full response body
-    const clone = response.clone();
-    const body = await clone.arrayBuffer();
-    const totalSize = body.byteLength;
-    
-    // Log that we loaded the body and get metrics
-    const bodyLoadTimeMs = Date.now() - startTimeMs;
-    logDebug('Loaded full response body', {
-      totalSize,
-      bodyLoadTimeMs
-    });
+    // Get content length from headers if available, otherwise need to determine it
+    let totalSize: number;
+    if (response.headers.has('Content-Length')) {
+      totalSize = parseInt(response.headers.get('Content-Length') || '0', 10);
+    } else {
+      // We need to clone and read the response to get content length
+      // This is less efficient but necessary if Content-Length isn't set
+      const clone = response.clone();
+      const sizeBuffer = await clone.arrayBuffer();
+      totalSize = sizeBuffer.byteLength;
+      
+      // Log that we had to load the full body for size calculation
+      const bodyLoadTimeMs = Date.now() - startTimeMs;
+      logDebug('Loaded full response body to determine size', {
+        totalSize,
+        bodyLoadTimeMs,
+        note: 'Content-Length header missing, required ArrayBuffer'
+      });
+    }
     
     // Parse the range header
     const range = parseRangeHeader(rangeHeader, totalSize);
     
     if (range) {
-      // Create a partial response with the requested range
-      const slicedBody = body.slice(range.start, range.end + 1);
+      // Create a streaming partial response with the requested range
       const rangeHeaders = new Headers(response.headers);
       
       // Set range-specific headers
       rangeHeaders.set('Content-Range', `bytes ${range.start}-${range.end}/${totalSize}`);
-      rangeHeaders.set('Content-Length', slicedBody.byteLength.toString());
+      rangeHeaders.set('Content-Length', (range.end - range.start + 1).toString());
       
-      // Add a custom header to mark this as a manually handled range response
-      rangeHeaders.set('X-Range-Handled-By', 'Manual-Range-Handler');
+      // Add a custom header to mark this as a stream-handled range response
+      rangeHeaders.set('X-Range-Handled-By', 'Stream-Range-Handler');
+      
+      // Create a TransformStream that will extract the range
+      const { readable, writable } = new TransformStream();
+      
+      // Process the stream in the background
+      const processStream = async () => {
+        try {
+          // Create stream reader and writer
+          const clone = response.clone();
+          const stream = clone.body;
+          
+          if (!stream) {
+            throw new Error('Response body stream is null');
+          }
+          
+          const reader = stream.getReader();
+          const writer = writable.getWriter();
+          
+          let bytesRead = 0;
+          let bytesWritten = 0;
+          
+          // Process the stream chunk by chunk
+          while (true) {
+            const { done, value: chunk } = await reader.read();
+            
+            if (done) break;
+            
+            if (chunk) {
+              const chunkSize = chunk.byteLength;
+              const chunkStart = bytesRead;
+              const chunkEnd = bytesRead + chunkSize - 1;
+              
+              // Check if this chunk overlaps our range
+              if (chunkEnd >= range.start && chunkStart <= range.end) {
+                // Calculate the portion of this chunk to include
+                const startOffset = Math.max(0, range.start - chunkStart);
+                const endOffset = Math.min(chunkSize, range.end - chunkStart + 1);
+                
+                // Extract the relevant portion
+                const relevantPortion = chunk.slice(startOffset, endOffset);
+                
+                // Write to the output stream
+                await writer.write(relevantPortion);
+                bytesWritten += relevantPortion.byteLength;
+              }
+              
+              // Track total bytes processed
+              bytesRead += chunkSize;
+              
+              // If we've gone past our range, we can stop
+              if (bytesRead > range.end) break;
+            }
+          }
+          
+          // Close the writer when done
+          await writer.close();
+          
+          // Calculate final processing time
+          const processTimeMs = Date.now() - startTimeMs;
+          
+          logDebug('Completed streaming range request', {
+            bytesRead,
+            bytesWritten,
+            expectedBytes: range.end - range.start + 1,
+            processTimeMs
+          });
+        } catch (error) {
+          logDebug('Error processing stream for range request', {
+            error: error instanceof Error ? error.message : String(error)
+          });
+          // Attempt to close the stream on error
+          writable.abort(error);
+        }
+      };
+      
+      // Start processing in the background
+      void processStream();
       
       // Get all the headers we're setting
       const allSetHeaders = Object.fromEntries([...rangeHeaders.entries()].map(
         ([key, value]) => [key, value]
       ));
       
-      // Calculate processing times
+      // Calculate initial processing time
       const processTimeMs = Date.now() - startTimeMs;
       
-      logDebug('Created manual partial response', {
+      logDebug('Started manual streaming range response', {
         start: range.start,
         end: range.end,
         total: totalSize,
-        size: slicedBody.byteLength,
+        expectedSize: range.end - range.start + 1,
         contentRangeHeader: `bytes ${range.start}-${range.end}/${totalSize}`,
         processTimeMs,
         allHeaders: allSetHeaders,
@@ -292,13 +376,13 @@ async function handleRangeRequest(
           start: range.start,
           end: range.end,
           total: totalSize,
-          source: 'manual-range-handling',
+          source: 'stream-range-handling',
           status: 206,
           processTimeMs
         };
       }
       
-      return new Response(slicedBody, {
+      return new Response(readable, {
         status: 206,
         statusText: 'Partial Content',
         headers: rangeHeaders

@@ -156,8 +156,8 @@ export async function handleRangeRequestForInitialAccess(
       });
     }
     
-    // Store the full response in the cache
-    // This stores the entire video in the Cache API, not in the Worker's memory
+    // Store the full response in the cache using streaming if possible
+    // This approach leverages streams for better memory efficiency
     await cache.put(cacheKey, originalResponse.clone());
     
     // If this is a range request, use cache.match with ignoreSearch: false to respect ranges
@@ -248,21 +248,99 @@ export async function handleRangeRequestForInitialAccess(
             // Clone the response to avoid consuming it
             const clonedResponse = originalResponse.clone();
             
-            // Get the full response as an ArrayBuffer
-            const fullContent = await clonedResponse.arrayBuffer();
-            
-            // Extract the requested range
+            // Use streaming approach for range requests
+            const { readable, writable } = new TransformStream();
             const { start, end } = parsedRange;
-            const rangeContent = fullContent.slice(start, end + 1);
+            
+            // Process the stream in the background
+            const processStream = async () => {
+              try {
+                // Get streams from response
+                const stream = clonedResponse.body;
+                if (!stream) {
+                  throw new Error('Response body stream is null');
+                }
+                
+                const reader = stream.getReader();
+                const writer = writable.getWriter();
+                
+                let bytesRead = 0;
+                let bytesWritten = 0;
+                
+                // Process the stream chunk by chunk
+                while (true) {
+                  const { done, value: chunk } = await reader.read();
+                  
+                  if (done) break;
+                  
+                  if (chunk) {
+                    const chunkSize = chunk.byteLength;
+                    const chunkStart = bytesRead;
+                    const chunkEnd = bytesRead + chunkSize - 1;
+                    
+                    // Check if this chunk overlaps our range
+                    if (chunkEnd >= start && chunkStart <= end) {
+                      // Calculate the portion of this chunk to include
+                      const startOffset = Math.max(0, start - chunkStart);
+                      const endOffset = Math.min(chunkSize, end - chunkStart + 1);
+                      
+                      // Extract the relevant portion
+                      const relevantPortion = chunk.slice(startOffset, endOffset);
+                      
+                      // Write to the output stream
+                      await writer.write(relevantPortion);
+                      bytesWritten += relevantPortion.byteLength;
+                    }
+                    
+                    // Track total bytes processed
+                    bytesRead += chunkSize;
+                    
+                    // If we've gone past our range, we can stop
+                    if (bytesRead > end) break;
+                  }
+                }
+                
+                // Close the writer when done
+                await writer.close();
+                
+                // Add logging if available
+                try {
+                  const { getCurrentContext } = await import('./requestContext');
+                  const { createLogger, debug } = await import('./pinoLogger');
+                  
+                  const context = getCurrentContext();
+                  if (context) {
+                    const logger = createLogger(context);
+                    debug(context, logger, 'httpUtils', 'Completed streaming range request', {
+                      bytesRead,
+                      bytesWritten,
+                      expectedBytes: end - start + 1,
+                      rangeHeader: rangeHeader || ''
+                    });
+                  }
+                } catch (logError) {
+                  // Ignore logging errors
+                }
+                
+              } catch (error) {
+                console.error('Error processing stream for range request', error);
+                // Attempt to close the stream on error
+                writable.abort(error);
+              }
+            };
+            
+            // Start processing in the background
+            void processStream();
             
             // Create headers for the range response
             const headers = new Headers(originalResponse.headers);
             headers.set('Content-Range', `bytes ${start}-${end}/${contentLength}`);
-            headers.set('Content-Length', String(rangeContent.byteLength));
+            headers.set('Content-Length', String(end - start + 1));
             headers.set('Accept-Ranges', 'bytes');
+            headers.set('X-Range-Handled-By', 'Stream-Range-Handler');
             
-            // Return a 206 Partial Content response
-            return new Response(rangeContent, {
+            // Return a 206 Partial Content response with streaming
+            return new Response(readable, {
               status: 206,
               statusText: 'Partial Content',
               headers: headers

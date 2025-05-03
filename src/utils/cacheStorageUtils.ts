@@ -62,9 +62,8 @@ export const prepareResponseForCaching = withErrorHandling<
     
     if (isVideoResponseType) {
       try {
-        // For video content, fully consume the body and create a completely new response
-        // This ensures we have full control over the response characteristics
-        const arrayBuffer = await responseClone.arrayBuffer();
+        // For video content, use streams instead of ArrayBuffer
+        // This ensures memory efficiency while preserving range request support
         
         // Create new headers with range request support
         const headers = new Headers();
@@ -77,34 +76,75 @@ export const prepareResponseForCaching = withErrorHandling<
         // Always set Accept-Ranges for video content
         headers.set('Accept-Ranges', 'bytes');
         
-        // Ensure Content-Length is properly set
-        headers.set('Content-Length', arrayBuffer.byteLength.toString());
+        // Get content length if available
+        const contentLength = parseInt(responseClone.headers.get('Content-Length') || '0', 10);
         
-        // Add ETag if not present (helps with validation)
-        if (!headers.has('ETag')) {
-          const hashCode = Math.abs(arrayBuffer.byteLength).toString(16);
-          headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+        // Ensure Content-Length is properly set if available
+        if (contentLength > 0) {
+          headers.set('Content-Length', contentLength.toString());
+          
+          // Add ETag if not present (helps with validation)
+          if (!headers.has('ETag')) {
+            const hashCode = Math.abs(contentLength).toString(16);
+            headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+          }
+          
+          logDebug('Creating streaming response with range support', {
+            contentType: responseContentType,
+            contentLength,
+            status: responseClone.status,
+            hasEtag: headers.has('ETag'),
+            hasLastModified: headers.has('Last-Modified'),
+            usingStream: true
+          });
+          
+          // Set Last-Modified if not present
+          if (!headers.has('Last-Modified')) {
+            headers.set('Last-Modified', new Date().toUTCString());
+          }
+          
+          // Create a response with the original response body (stream)
+          enhancedResponse = new Response(responseClone.body, {
+            status: responseClone.status,
+            statusText: responseClone.statusText,
+            headers: headers
+          });
+        } else {
+          // If we don't have Content-Length, we need to get it
+          // This is less efficient but necessary
+          const tempArrayBuffer = await responseClone.clone().arrayBuffer();
+          
+          // Ensure Content-Length is properly set
+          headers.set('Content-Length', tempArrayBuffer.byteLength.toString());
+          
+          // Add ETag if not present (helps with validation)
+          if (!headers.has('ETag')) {
+            const hashCode = Math.abs(tempArrayBuffer.byteLength).toString(16);
+            headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+          }
+          
+          // Set Last-Modified if not present
+          if (!headers.has('Last-Modified')) {
+            headers.set('Last-Modified', new Date().toUTCString());
+          }
+          
+          logDebug('Creating streaming response with Content-Length detection', {
+            contentType: responseContentType,
+            contentLength: tempArrayBuffer.byteLength,
+            status: responseClone.status,
+            hasEtag: headers.has('ETag'),
+            hasLastModified: headers.has('Last-Modified'),
+            note: 'Had to buffer for Content-Length'
+          });
+          
+          // Create a response with the original response body
+          // We use another clone since we consumed one above
+          enhancedResponse = new Response(responseClone.clone().body, {
+            status: responseClone.status,
+            statusText: responseClone.statusText,
+            headers: headers
+          });
         }
-        
-        // Set Last-Modified if not present
-        if (!headers.has('Last-Modified')) {
-          headers.set('Last-Modified', new Date().toUTCString());
-        }
-        
-        logDebug('Creating fully controlled response for range request support', {
-          contentType: responseContentType,
-          contentLength: arrayBuffer.byteLength,
-          status: responseClone.status,
-          hasEtag: headers.has('ETag'),
-          hasLastModified: headers.has('Last-Modified')
-        });
-        
-        // Create a completely new response with the full body and all headers
-        enhancedResponse = new Response(arrayBuffer, {
-          status: responseClone.status,
-          statusText: responseClone.statusText,
-          headers: headers
-        });
       } catch (err) {
         // If there's an error consuming the body, log it and continue with the original response
         logDebug('Error creating fully controlled response, falling back to header modification', {
@@ -197,28 +237,59 @@ export async function prepareResponseForRangeSupport(
     }
   }
   
-  // Create a clean response for caching with full body content
-  const body = await response.clone().arrayBuffer();
+  // Get content length if available to avoid buffering
+  let contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
   
-  // Make sure Content-Length is set - this is required for proper Range request handling
-  headers.set('Content-Length', body.byteLength.toString());
-  
-  // Add strong validation headers if missing
-  if (!headers.has('ETag')) {
-    const hashCode = Math.abs(body.byteLength).toString(16);
-    headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+  if (contentLength > 0) {
+    // We have Content-Length, we can use streaming directly
+    
+    // Make sure Content-Length is set - this is required for proper Range request handling
+    headers.set('Content-Length', contentLength.toString());
+    
+    // Add strong validation headers if missing
+    if (!headers.has('ETag')) {
+      const hashCode = Math.abs(contentLength).toString(16);
+      headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+    }
+    
+    if (!headers.has('Last-Modified')) {
+      headers.set('Last-Modified', new Date().toUTCString());
+    }
+    
+    // Create a clean, cacheable response with streaming
+    return new Response(response.clone().body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: headers
+    });
+  } else {
+    // No Content-Length header, we need to buffer to determine size
+    // This is less efficient but necessary for Range request support
+    const body = await response.clone().arrayBuffer();
+    
+    // Make sure Content-Length is set - this is required for proper Range request handling
+    headers.set('Content-Length', body.byteLength.toString());
+    
+    // Add strong validation headers if missing
+    if (!headers.has('ETag')) {
+      const hashCode = Math.abs(body.byteLength).toString(16);
+      headers.set('ETag', `"${hashCode}-${Date.now().toString(36)}"`);
+    }
+    
+    if (!headers.has('Last-Modified')) {
+      headers.set('Last-Modified', new Date().toUTCString());
+    }
+    
+    // Create a fresh stream from the buffer
+    const stream = new Response(body).body;
+    
+    // Create a clean, cacheable response with streaming
+    return new Response(stream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: headers
+    });
   }
-  
-  if (!headers.has('Last-Modified')) {
-    headers.set('Last-Modified', new Date().toUTCString());
-  }
-  
-  // Create a clean, cacheable response
-  return new Response(body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: headers
-  });
 }
 
 /**
