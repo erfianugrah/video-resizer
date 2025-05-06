@@ -71,6 +71,17 @@ export const CacheConfigSchema = z.object({
   respectOriginHeaders: z.boolean().default(true),
   cacheEverything: z.boolean().default(false),
   
+  // TTL refresh settings
+  ttlRefresh: z.object({
+    // Minimum percentage of TTL that must elapse before refreshing
+    minElapsedPercent: z.number().min(0).max(100).default(10),
+    // Minimum seconds remaining before refreshing
+    minRemainingSeconds: z.number().nonnegative().default(60),
+  }).default({
+    minElapsedPercent: 10,
+    minRemainingSeconds: 60,
+  }),
+  
   // Cache tagging and purging
   enableCacheTags: z.boolean().default(true),
   cacheTagPrefix: z.string().default('video-'),
@@ -121,6 +132,10 @@ const defaultCacheConfig: CacheConfiguration = {
   bypassQueryParameters: ['nocache', 'bypass'],
   bypassHeaderValue: 'no-cache',
   maxSizeBytes: 25 * 1024 * 1024, // 25MiB default
+  ttlRefresh: {
+    minElapsedPercent: 10, // Refresh TTL after 10% elapsed
+    minRemainingSeconds: 60 // Only if at least 60s remains
+  },
   mimeTypes: {
     video: [
       'video/mp4',

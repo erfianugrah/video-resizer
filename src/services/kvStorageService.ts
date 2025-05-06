@@ -27,6 +27,7 @@ import {
   addVersionToUrl, 
   getVersionFromUrl 
 } from '../utils/urlVersionUtils';
+import { checkAndRefreshTtl } from '../utils/kvTtlRefreshUtils';
 import { EnvVariables } from '../config/environmentConfig';
 
 /**
@@ -1107,103 +1108,23 @@ async function getTransformedVideoImpl(
       requestContext.diagnostics.cacheVersion = cacheVersion;
     }
     
-    // Refresh TTL on cache hit using waitUntil if available
+    // Refresh TTL on cache hit using optimized TTL refresh utilities
     // This extends the expiration time for frequently accessed content
-    if (requestContext.executionContext?.waitUntil) {
-      // Calculate fresh TTL - use the original TTL if possible
-      const originalTtl = metadata.expiresAt ? 
-        Math.floor((metadata.expiresAt - metadata.createdAt) / 1000) : 
-        cacheTtl;
-      
-      // Only refresh if reasonably old (>25% of TTL elapsed) and not about to expire
-      const elapsed = Math.floor((Date.now() - metadata.createdAt) / 1000);
-      const remaining = metadata.expiresAt ? Math.floor((metadata.expiresAt - Date.now()) / 1000) : 0;
-      
-      if (elapsed > originalTtl * 0.25 && remaining > 60) {
-        // Log the TTL refresh
-        logDebug('Refreshing KV cache TTL on hit', {
+    if (requestContext.executionContext) {
+      // Use the new optimized TTL refresh mechanism which avoids re-storing the entire value
+      checkAndRefreshTtl(
+        namespace,
+        key,
+        metadata,
+        options.env,
+        requestContext.executionContext
+      ).catch(err => {
+        // Log any errors but don't fail the response
+        logDebug('Error during TTL refresh', {
           key,
-          originalTtl,
-          elapsed: elapsed + 's',
-          remaining: remaining + 's',
-          createdAt: new Date(metadata.createdAt).toISOString()
+          error: err instanceof Error ? err.message : String(err)
         });
-        
-        // Clone value and metadata for re-storing
-        const clonedMetadata = { ...metadata };
-        clonedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
-        
-        // Use waitUntil with retry logic to avoid blocking response
-        requestContext.executionContext.waitUntil(
-          (async () => {
-            const maxRetries = 3;
-            let attemptCount = 0;
-            let success = false;
-            let lastError: Error | null = null;
-            
-            while (attemptCount < maxRetries && !success) {
-              try {
-                attemptCount++;
-                
-                await namespace.put(key, value, { 
-                  metadata: clonedMetadata, 
-                  expirationTtl: originalTtl 
-                });
-                
-                success = true;
-                
-                // Log success with retry info if needed
-                if (attemptCount > 1) {
-                  logDebug('Successfully refreshed KV TTL after retries', { 
-                    key, 
-                    attempts: attemptCount,
-                    newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined' 
-                  });
-                } else {
-                  logDebug('Successfully refreshed KV TTL', { 
-                    key, 
-                    newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined' 
-                  });
-                }
-              } catch (err) {
-                lastError = err instanceof Error ? err : new Error(String(err));
-                const isRateLimitError = 
-                  lastError.message.includes('429') || 
-                  lastError.message.includes('409') || 
-                  lastError.message.includes('rate limit') ||
-                  lastError.message.includes('conflict');
-                
-                if (!isRateLimitError || attemptCount >= maxRetries) {
-                  logDebug('Error refreshing KV TTL', {
-                    key,
-                    error: lastError.message,
-                    attempts: attemptCount
-                  });
-                  return; // Exit the async function within waitUntil
-                }
-                
-                // Log the retry attempt
-                logDebug('KV rate limit hit during TTL refresh, retrying with backoff', {
-                  key,
-                  attempt: attemptCount,
-                  maxRetries,
-                  error: lastError.message
-                });
-                
-                // Exponential backoff: 200ms, 400ms, 800ms, etc.
-                const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
-                await new Promise(resolve => setTimeout(resolve, backoffMs));
-              }
-            }
-          })()
-        );
-        
-        addBreadcrumb(requestContext, 'KV', 'Refreshing cache TTL on hit', {
-          key,
-          originalTtl,
-          newExpiresAt: clonedMetadata.expiresAt ? new Date(clonedMetadata.expiresAt).toISOString() : 'undefined'
-        });
-      }
+      });
     }
   }
   

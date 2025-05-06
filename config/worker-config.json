@@ -406,6 +406,11 @@
 		],
 		"bypassHeaderValue": "no-cache",
 		"enableKVCache": true,
+		"enableVersioning": true,
+		"ttlRefresh": {
+			"minElapsedPercent": 10,
+			"minRemainingSeconds": 60
+		},
 		"maxSizeBytes": 26214400,
 		"fallback": {
 			"enabled": true,
