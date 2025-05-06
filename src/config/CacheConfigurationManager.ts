@@ -63,6 +63,9 @@ export const CacheConfigSchema = z.object({
   // Enable/disable cache versioning
   enableVersioning: z.boolean().default(true),
   
+  // Enable storing KV items indefinitely without expiration
+  storeIndefinitely: z.boolean().default(false),
+  
   // Enable debug logging for cache operations
   debug: z.boolean().default(false),
   
@@ -122,6 +125,7 @@ export type CacheProfileConfiguration = z.infer<typeof CacheProfileSchema>;
 const defaultCacheConfig: CacheConfiguration = {
   enableKVCache: true,
   enableVersioning: true,
+  storeIndefinitely: false,
   debug: false,
   defaultMaxAge: 300,
   respectOriginHeaders: true,

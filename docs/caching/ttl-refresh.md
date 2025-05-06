@@ -6,6 +6,8 @@ This document explains how TTL refreshing works in the video-resizer's KV cache 
 
 TTL (Time-To-Live) refresh extends the lifetime of cached items when they are accessed. This is particularly valuable for video content, as it helps keep frequently accessed videos in cache longer while allowing less popular content to expire naturally.
 
+> **New Feature:** You can now set `storeIndefinitely: true` in your `worker-config.json` to store KV items permanently without expiration. This bypasses the KV TTL mechanism entirely while maintaining all Cache-Control header behaviors. See [Indefinite Storage](#indefinite-storage) below for details.
+
 ## How It Works
 
 When a cached item is accessed:
@@ -116,3 +118,52 @@ The core refresh function (`refreshKeyTtl`) avoids rewriting the entire value by
 3. **Monitor KV usage**: Watch for increased KV operations if you adjust to more aggressive settings.
 
 By configuring TTL refresh appropriately, you can optimize cache efficiency and performance for your specific use case.
+
+## Indefinite Storage
+
+The `storeIndefinitely` setting allows you to store KV items permanently without expiration, regardless of the TTL settings:
+
+```json
+{
+  "cache": {
+    "storeIndefinitely": true,
+    "defaultMaxAge": 300,
+    "ttlRefresh": {
+      "minElapsedPercent": 10,
+      "minRemainingSeconds": 60
+    }
+  }
+}
+```
+
+### How It Works
+
+When `storeIndefinitely` is set to `true`:
+
+1. KV items are stored **without** the `expirationTtl` parameter, making them persist indefinitely
+2. The `expiresAt` field is still set in metadata, ensuring Cache-Control headers work properly
+3. Client browsers will still respect cache expiration as specified in your TTL configuration
+4. The `TTL refresh` mechanism becomes irrelevant for KV storage, though still functional for metadata
+
+### Use Cases
+
+This setting is ideal for:
+
+- Production environments with high-value video content that shouldn't expire
+- Situations where the 25 MiB KV value size limit isn't a concern
+- Environments where storage costs are less important than optimizing hit rates
+- Content that's infrequently updated and benefits from maximum persistence
+
+### Trade-offs
+
+Consider these trade-offs when using indefinite storage:
+
+**Advantages:**
+- Maximum KV hit rates (no TTL expirations)
+- Simplified architecture (no TTL refresh needed)
+- Reduced operations on hot content
+
+**Disadvantages:**
+- Increased KV storage usage and potential costs
+- Requires manual purging of outdated content
+- No automatic cleanup of rarely accessed content

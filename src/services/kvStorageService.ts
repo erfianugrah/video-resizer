@@ -309,14 +309,20 @@ async function storeTransformedVideoImpl(
   let attemptCount = 0;
   let success = false;
   let lastError: Error | null = null;
+  
+  // Check if indefinite storage is enabled
+  const cacheConfig = CacheConfigurationManager.getInstance().getConfig();
+  const useIndefiniteStorage = cacheConfig.storeIndefinitely === true;
 
   while (attemptCount < maxRetries && !success) {
     try {
       attemptCount++;
       
-      if (ttl) {
+      if (ttl && !useIndefiniteStorage) {
+        // Normal case with TTL (when storeIndefinitely is false)
         await namespace.put(key, readable, { metadata, expirationTtl: ttl });
       } else {
+        // Store indefinitely without expirationTtl (or when ttl is not provided)
         await namespace.put(key, readable, { metadata });
       }
       
@@ -516,7 +522,7 @@ async function storeTransformedVideoImpl(
   logDebug('Stored transformed video in KV', {
     key,
     size: metadata.contentLength,
-    ttl: ttl || 'indefinite',
+    ttl: useIndefiniteStorage ? 'indefinite (storeIndefinitely=true)' : (ttl || 'indefinite'),
     cacheVersion
   });
   
@@ -527,7 +533,7 @@ async function storeTransformedVideoImpl(
       key,
       contentType: metadata.contentType,
       contentLength: metadata.contentLength,
-      ttl: ttl || 'indefinite',
+      ttl: useIndefiniteStorage ? 'indefinite (storeIndefinitely=true)' : (ttl || 'indefinite'),
       cacheVersion
     });
     
