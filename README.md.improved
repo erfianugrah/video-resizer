@@ -6,19 +6,41 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 
 - Video transformation and optimization
 - Multiple transformation strategies (video, frame, spritesheet)
-- Caching with KV store integration
+- Caching with KV store integration and efficient TTL refresh
+- Cache versioning for invalidation without purging
 - Enhanced range request support for seeking and streaming
 - Client-aware responsive transformations
 - Automatic device and bandwidth detection
 - Debug UI for monitoring and troubleshooting
 
-## Architecture Diagrams
+## Quick Start
 
-Each diagram illustrates a key aspect of the Video Resizer system architecture, showing the flow of data and control through the system.
+1. Clone this repository
+2. Install dependencies with `npm install`
+3. Start development server with `npm run dev` or `wrangler dev`
+4. Deploy to Cloudflare with `npm run deploy` or `wrangler deploy`
 
-### Complete System Flow
+For more detailed instructions, see the [Quickstart Guide](./docs/guides/quickstart.md).
 
-This diagram provides a high-level overview of the entire system, showing how components interact.
+## Documentation
+
+Comprehensive documentation is available in the [docs directory](./docs/README.md).
+
+### Guides
+
+- [Configuration Guide](./docs/guides/configuration.md) - Practical configuration examples
+- [Troubleshooting Guide](./docs/guides/troubleshooting.md) - Common issues and solutions
+- [Performance Tuning Guide](./docs/guides/performance-tuning.md) - Optimization tips
+- [API Reference](./docs/reference/api-reference.md) - Complete API details
+
+## System Architecture
+
+This section provides visual diagrams of the system architecture and key components. For your convenience, diagrams are organized by functional area.
+
+### Core System Flow
+
+<details>
+<summary><strong>Complete System Flow</strong> - High-level overview of the entire system</summary>
 
 ```mermaid
 flowchart TB
@@ -61,10 +83,10 @@ flowchart TB
     class E,G response
     class K,L,M,N config
 ```
+</details>
 
-### Request Processing Flow
-
-This diagram shows the decision path for an incoming request.
+<details>
+<summary><strong>Request Processing Flow</strong> - Decision path for request handling</summary>
 
 ```mermaid
 flowchart LR
@@ -90,10 +112,42 @@ flowchart LR
     class F,G process
     class C,E,H success
 ```
+</details>
 
-### Command Pattern Flow
+<details>
+<summary><strong>Configuration System</strong> - Configuration hierarchy</summary>
 
-The command pattern centralizes transformation logic and error handling.
+```mermaid
+flowchart TB
+    %% Define node styles with high contrast colors
+    classDef root fill:#FFF8E1,stroke:#F57F17,color:#000000;
+    classDef config fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef settings fill:#ECEFF1,stroke:#455A64,color:#000000;
+
+    %% Config hierarchy
+    A[Environment Config] --> B[Video Config]
+    A --> C[Cache Config]
+    A --> D[Debug Config]
+    A --> E[Logging Config]
+
+    %% Settings
+    B --> F[Path Patterns]
+    B --> G[Video Derivatives]
+    C --> H[Cache Settings]
+    D --> I[Debug Options]
+    E --> J[Log Settings]
+
+    %% Apply styles
+    class A root
+    class B,C,D,E config
+    class F,G,H,I,J settings
+```
+</details>
+
+### Video Transformation
+
+<details>
+<summary><strong>Command Pattern Flow</strong> - Transformation logic and error handling</summary>
 
 ```mermaid
 flowchart TB
@@ -121,10 +175,10 @@ flowchart TB
     class H error
     class I success
 ```
+</details>
 
-### Strategy Pattern Design
-
-The strategy pattern allows multiple video processing approaches.
+<details>
+<summary><strong>Strategy Pattern Design</strong> - Multiple video processing approaches</summary>
 
 ```mermaid
 flowchart TB
@@ -154,10 +208,10 @@ flowchart TB
     class E factory
     class F decision
 ```
+</details>
 
-### Video Options Determination
-
-This diagram shows how video options are determined from various inputs.
+<details>
+<summary><strong>Video Options Determination</strong> - Parameter processing flow</summary>
 
 ```mermaid
 flowchart TB
@@ -186,112 +240,12 @@ flowchart TB
     class A,C,E,F,H,J,K process
     class B,D,G,I decision
 ```
+</details>
 
-### Range Request Handling
+### Caching System
 
-This diagram shows how video range requests are processed.
-
-```mermaid
-flowchart TB
-    %% Define node styles with high contrast colors
-    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
-    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
-    classDef cache fill:#ECEFF1,stroke:#455A64,color:#000000;
-    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-
-    %% Range flow
-    A([Video Request]) --> B{Has Range Header?}
-    B -->|No| C([Return Full Response])
-    B -->|Yes| D[Clone Full Response]
-    D --> E[(Store in Cache API)]
-    E --> F{Cache API Match?}
-    F -->|Success| G([Return Range Response])
-    F -->|Fail| H[Manual Range Extraction]
-    H --> I{Range Valid?}
-    I -->|Yes| J([Return 206 Response])
-    I -->|No| K([Return 416 Error])
-
-    %% Apply styles
-    class A request
-    class B,F,I decision
-    class D,E,H process
-    class C,G,J,K response
-    class E cache
-```
-
-### Configuration API Flow
-
-This diagram illustrates the authenticated configuration API.
-
-```mermaid
-flowchart TB
-    %% Define node styles with high contrast colors
-    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
-    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
-    classDef auth fill:#FFF8E1,stroke:#F57F17,color:#000000;
-    classDef storage fill:#ECEFF1,stroke:#455A64,color:#000000;
-    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-
-    %% Config API flow
-    A([/admin/config Request]) --> B{Method?}
-    B -->|GET| C{Auth Valid?}
-    B -->|POST| D{Auth Valid?}
-    C -->|No| E([401 Unauthorized])
-    D -->|No| E
-    C -->|Yes| F[Load Config from KV]
-    D -->|Yes| G[Parse JSON Body]
-    F --> H{Config Found?}
-    G --> I[Store Config in KV]
-    H -->|Yes| J([Return Config JSON])
-    H -->|No| K([Return 404 Not Found])
-    I --> L([Return Success Response])
-
-    %% Apply styles
-    class A request
-    class B,C,D,H decision
-    class F,G,I process
-    class J,L response
-    class E,K error
-```
-
-### Debug UI Flow
-
-This diagram shows the debug UI generation process.
-
-```mermaid
-flowchart TB
-    %% Define node styles with high contrast colors
-    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
-    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
-    classDef asset fill:#FFF8E1,stroke:#F57F17,color:#000000;
-    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
-    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-
-    %% Debug UI flow
-    A([Request with debug=view]) --> B[Gather Diagnostics Info]
-    B --> C{ASSETS Available?}
-    C -->|No| D([Return Minimal Debug HTML])
-    C -->|Yes| E[Fetch Debug Template]
-    E --> F{Template OK?}
-    F -->|No| G([Return Error HTML])
-    F -->|Yes| H[Add Diagnostics as JSON]
-    H --> I([Return Debug UI Response])
-
-    %% Apply styles
-    class A request
-    class B,E,H process
-    class C,F decision
-    class I response
-    class D,G error
-```
-
-### Caching Architecture
-
-This diagram illustrates the KV caching system.
+<details>
+<summary><strong>Caching Architecture</strong> - KV caching system overview</summary>
 
 ```mermaid
 flowchart LR
@@ -316,10 +270,10 @@ flowchart LR
     class E cache
     class C,F response
 ```
+</details>
 
-### Cache TTL Refresh Flow
-
-This diagram shows how TTL is refreshed for frequently accessed content.
+<details>
+<summary><strong>Cache TTL Refresh Flow</strong> - Efficient TTL refresh with metadata-only updates</summary>
 
 ```mermaid
 flowchart TB
@@ -350,10 +304,10 @@ flowchart TB
     class C response
     class E,F,G,H,I background
 ```
+</details>
 
-### Cache Versioning Flow
-
-This diagram shows how cache versioning enables invalidation without purging.
+<details>
+<summary><strong>Cache Versioning Flow</strong> - Invalidation without purging</summary>
 
 ```mermaid
 flowchart TB
@@ -388,59 +342,111 @@ flowchart TB
     class K,L,M cache
     class C,J,K version
 ```
+</details>
 
-### Configuration System
+### Additional Features
 
-This diagram shows the configuration hierarchy.
+<details>
+<summary><strong>Range Request Handling</strong> - Video seeking and streaming support</summary>
 
 ```mermaid
 flowchart TB
     %% Define node styles with high contrast colors
-    classDef root fill:#FFF8E1,stroke:#F57F17,color:#000000;
-    classDef config fill:#E3F2FD,stroke:#1565C0,color:#000000;
-    classDef settings fill:#ECEFF1,stroke:#455A64,color:#000000;
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef cache fill:#ECEFF1,stroke:#455A64,color:#000000;
+    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
 
-    %% Config hierarchy
-    A[Environment Config] --> B[Video Config]
-    A --> C[Cache Config]
-    A --> D[Debug Config]
-    A --> E[Logging Config]
-
-    %% Settings
-    B --> F[Path Patterns]
-    B --> G[Video Derivatives]
-    C --> H[Cache Settings]
-    D --> I[Debug Options]
-    E --> J[Log Settings]
+    %% Range flow
+    A([Video Request]) --> B{Has Range Header?}
+    B -->|No| C([Return Full Response])
+    B -->|Yes| D[Clone Full Response]
+    D --> E[(Store in Cache API)]
+    E --> F{Cache API Match?}
+    F -->|Success| G([Return Range Response])
+    F -->|Fail| H[Manual Range Extraction]
+    H --> I{Range Valid?}
+    I -->|Yes| J([Return 206 Response])
+    I -->|No| K([Return 416 Error])
 
     %% Apply styles
-    class A root
-    class B,C,D,E config
-    class F,G,H,I,J settings
+    class A request
+    class B,F,I decision
+    class D,E,H process
+    class C,G,J,K response
+    class E cache
 ```
+</details>
 
-## Documentation
+<details>
+<summary><strong>Configuration API Flow</strong> - Authenticated configuration management</summary>
 
-Comprehensive documentation is available in the [docs directory](./docs/README.md).
+```mermaid
+flowchart TB
+    %% Define node styles with high contrast colors
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef auth fill:#FFF8E1,stroke:#F57F17,color:#000000;
+    classDef storage fill:#ECEFF1,stroke:#455A64,color:#000000;
+    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
 
-## Getting Started
+    %% Config API flow
+    A([/admin/config Request]) --> B{Method?}
+    B -->|GET| C{Auth Valid?}
+    B -->|POST| D{Auth Valid?}
+    C -->|No| E([401 Unauthorized])
+    D -->|No| E
+    C -->|Yes| F[Load Config from KV]
+    D -->|Yes| G[Parse JSON Body]
+    F --> H{Config Found?}
+    G --> I[Store Config in KV]
+    H -->|Yes| J([Return Config JSON])
+    H -->|No| K([Return 404 Not Found])
+    I --> L([Return Success Response])
 
-1. Clone this repository
-2. Install dependencies with `npm install`
-3. Start development server with `npm run dev` or `wrangler dev`
-4. Deploy to Cloudflare with `npm run deploy` or `wrangler deploy`
+    %% Apply styles
+    class A request
+    class B,C,D,H decision
+    class F,G,I process
+    class J,L response
+    class E,K error
+```
+</details>
 
-For more detailed instructions, see the [Quickstart Guide](./docs/guides/quickstart.md).
+<details>
+<summary><strong>Debug UI Flow</strong> - Monitoring and troubleshooting interface</summary>
 
-## Guides
+```mermaid
+flowchart TB
+    %% Define node styles with high contrast colors
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef asset fill:#FFF8E1,stroke:#F57F17,color:#000000;
+    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
 
-- [Configuration Guide](./docs/guides/configuration.md) - Practical configuration examples
-- [Troubleshooting Guide](./docs/guides/troubleshooting.md) - Common issues and solutions
-- [Performance Tuning Guide](./docs/guides/performance-tuning.md) - Optimization tips
+    %% Debug UI flow
+    A([Request with debug=view]) --> B[Gather Diagnostics Info]
+    B --> C{ASSETS Available?}
+    C -->|No| D([Return Minimal Debug HTML])
+    C -->|Yes| E[Fetch Debug Template]
+    E --> F{Template OK?}
+    F -->|No| G([Return Error HTML])
+    F -->|Yes| H[Add Diagnostics as JSON]
+    H --> I([Return Debug UI Response])
 
-## Configuration
-
-See the [Configuration Guide](./docs/configuration/README.md) for detailed configuration options.
+    %% Apply styles
+    class A request
+    class B,E,H process
+    class C,F decision
+    class I response
+    class D,G error
+```
+</details>
 
 ## License
 
