@@ -8,6 +8,7 @@ import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
 import { EnvVariables } from '../config/environmentConfig';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
+import { cacheConfig } from '../config/CacheConfigurationManager';
 
 /**
  * Log a debug message with proper context handling
@@ -54,6 +55,12 @@ export const getCacheKeyVersion = withErrorHandling<
   Promise<number | null>
 >(
   async function getCacheKeyVersionImpl(env: EnvVariables | undefined, cacheKey: string): Promise<number | null> {
+    // Check if versioning is disabled in configuration
+    if (!cacheConfig.isVersioningEnabled()) {
+      logDebug('Cache versioning is disabled by configuration');
+      return 1; // Return a constant version (1) when disabled
+    }
+
     if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
       logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
       return null;
@@ -109,6 +116,12 @@ export const storeCacheKeyVersion = withErrorHandling<
     version: number,
     ttl?: number
   ): Promise<boolean> {
+    // Check if versioning is disabled in configuration
+    if (!cacheConfig.isVersioningEnabled()) {
+      logDebug('Cache versioning is disabled by configuration, skipping version storage');
+      return true; // Return success but don't actually store anything
+    }
+
     if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
       logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
       return false;
@@ -178,6 +191,12 @@ export const getNextCacheKeyVersion = withErrorHandling<
     cacheKey: string,
     forceIncrement: boolean = false
   ): Promise<number> {
+    // Check if versioning is disabled in configuration
+    if (!cacheConfig.isVersioningEnabled()) {
+      logDebug('Cache versioning is disabled by configuration, returning version 1');
+      return 1; // Return constant version when disabled
+    }
+
     if (!env) {
       logDebug('Environment variables not available, returning version 1');
       return 1;

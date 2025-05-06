@@ -2,6 +2,7 @@
  * URL utilities for working with version parameters
  * Provides functions for handling version parameters in URLs
  */
+import { cacheConfig } from '../config/CacheConfigurationManager';
 
 /**
  * Normalizes a URL by removing version parameter
@@ -27,6 +28,11 @@ export function normalizeUrlForCaching(url: string): string {
  * @returns URL with version parameter
  */
 export function addVersionToUrl(url: string, version: number): string {
+  // If versioning is disabled in configuration, return the original URL
+  if (!cacheConfig.isVersioningEnabled()) {
+    return url;
+  }
+
   // Skip adding version parameters to AWS presigned URLs entirely
   // Presigned URLs naturally expire and change, so no versioning is needed
   if (url.includes('X-Amz-Signature=')) {

@@ -60,6 +60,9 @@ export const CacheConfigSchema = z.object({
   // Enable/disable KV cache operations
   enableKVCache: z.boolean().default(true),
   
+  // Enable/disable cache versioning
+  enableVersioning: z.boolean().default(true),
+  
   // Enable debug logging for cache operations
   debug: z.boolean().default(false),
   
@@ -107,6 +110,7 @@ export type CacheProfileConfiguration = z.infer<typeof CacheProfileSchema>;
 // Default configuration
 const defaultCacheConfig: CacheConfiguration = {
   enableKVCache: true,
+  enableVersioning: true,
   debug: false,
   defaultMaxAge: 300,
   respectOriginHeaders: true,
@@ -272,6 +276,13 @@ export class CacheConfigurationManager {
    */
   public isKVCacheEnabled(): boolean {
     return this.config.enableKVCache !== false;
+  }
+
+  /**
+   * Check if cache versioning is enabled
+   */
+  public isVersioningEnabled(): boolean {
+    return this.config.enableVersioning !== false;
   }
 
   /**

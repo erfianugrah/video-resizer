@@ -1,6 +1,6 @@
 # Cache Versioning
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 6, 2025*
 
 ## Table of Contents
 
@@ -18,6 +18,7 @@
 - [Monitoring and Diagnostics](#monitoring-and-diagnostics)
 - [Best Practices](#best-practices)
 - [Implementation Examples](#implementation-examples)
+- [Disabling Versioning](#disabling-versioning)
 
 ## Overview
 
@@ -848,3 +849,76 @@ function getVersionFromRequest(
   return defaultVersion;
 }
 ```
+
+## Disabling Versioning
+
+The cache versioning system can be optionally disabled through configuration. This can be useful in scenarios where version management overhead is not desired or when simplifying cache behavior for troubleshooting.
+
+### Configuration
+
+To disable versioning, set the `enableVersioning` flag to `false` in your cache configuration:
+
+```json
+{
+  "enableKVCache": true,
+  "enableVersioning": false,
+  "defaultMaxAge": 300,
+  "respectOriginHeaders": true,
+  ...
+}
+```
+
+### Behavior When Disabled
+
+When cache versioning is disabled:
+
+1. **No Version Storage**: The system will not store or increment version information in the `VIDEO_CACHE_KEY_VERSIONS` KV namespace.
+   
+2. **Simplified Cache Keys**: Cache keys will not include version parameters, resulting in more direct cache hit patterns.
+   
+3. **No URL Version Parameters**: The `addVersionToUrl` function will not add version parameters to URLs.
+   
+4. **Constant Version Value**: All version-related functions return a constant version value (1) when checking for versions, ensuring consistent behavior.
+
+### Implementation Details
+
+The `CacheConfigurationManager` provides a method to check if versioning is enabled:
+
+```typescript
+public isVersioningEnabled(): boolean {
+  return this.config.enableVersioning !== false;
+}
+```
+
+This is checked at key integration points including:
+
+1. **Version Retrieval**: 
+```typescript
+if (!cacheConfig.isVersioningEnabled()) {
+  return 1; // Return constant version when disabled
+}
+```
+
+2. **Version Storage**: 
+```typescript
+if (!cacheConfig.isVersioningEnabled()) {
+  return true; // Skip storage but return success
+}
+```
+
+3. **URL Generation**:
+```typescript
+if (!cacheConfig.isVersioningEnabled()) {
+  return url; // Return URL without version parameter
+}
+```
+
+### Use Cases
+
+Consider disabling versioning when:
+
+- Running in a local development environment
+- Troubleshooting cache behavior issues
+- In scenarios where cache invalidation is handled through TTL or other methods
+- When optimizing for maximum cache hit ratio
+- When the KV namespace for versioning is unavailable
