@@ -1,6 +1,6 @@
 {
 	"version": "1.0.0",
-	"lastUpdated": "2025-05-01T12:00:00Z",
+	"lastUpdated": "2025-05-06T12:00:00Z",
 	"video": {
 		"derivatives": {
 			"desktop": {
@@ -35,6 +35,28 @@
 				"duration": "5m",
 				"compression": "high",
 				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
+			},
+			"thumbnail": {
+				"width": 320,
+				"height": 240,
+				"mode": "frame",
+				"audio": false,
+				"fit": "cover",
+				"time": "00:00:05",
+				"format": "jpg",
+				"quality": "high",
+				"description": "Static thumbnail image extracted from the video at 5 seconds."
+			},
+			"preview": {
+				"width": 640,
+				"height": 480,
+				"mode": "spritesheet",
+				"frames": 12,
+				"interval": "30s",
+				"format": "jpg",
+				"fit": "contain",
+				"compression": "medium",
+				"description": "Sprite sheet with 12 frames at 30-second intervals for preview."
 			}
 		},
 		"passthrough": {
@@ -43,6 +65,10 @@
 				"mp4",
 				"webm",
 				"mov"
+			],
+			"whitelistedClients": [
+				"trusted-app",
+				"admin-panel"
 			]
 		},
 		"defaults": {
@@ -247,6 +273,114 @@
 				"videoCompression": "auto"
 			},
 			{
+				"name": "authenticated-videos",
+				"matcher": "^/authenticated-videos/(.*)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://auth.videos.erfi.dev",
+				"ttl": {
+					"ok": 1800,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "high",
+				"cacheability": true,
+				"videoCompression": "auto",
+				"auth": {
+					"enabled": true,
+					"type": "bearer",
+					"accessKeyVar": "AUTH_VIDEO_ACCESS_KEY",
+					"secretKeyVar": "AUTH_VIDEO_SECRET_KEY"
+				}
+			},
+			{
+				"name": "premium-content",
+				"matcher": "^/premium/(.*)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://premium.videos.erfi.dev",
+				"ttl": {
+					"ok": 3600,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "high",
+				"cacheability": true,
+				"videoCompression": "low",
+				"auth": {
+					"enabled": true,
+					"type": "aws-s3-presigned-url",
+					"accessKeyVar": "PREMIUM_AWS_ACCESS_KEY",
+					"secretKeyVar": "PREMIUM_AWS_SECRET_KEY",
+					"region": "us-east-1",
+					"service": "s3",
+					"expiresInSeconds": 3600
+				}
+			},
+			{
+				"name": "partner-videos",
+				"matcher": "^/partner/(.*)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://partner.videos.erfi.dev",
+				"ttl": {
+					"ok": 86400,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "high",
+				"cacheability": true,
+				"videoCompression": "medium",
+				"auth": {
+					"enabled": true,
+					"type": "header",
+					"headers": {
+						"X-Partner-API-Key": "${PARTNER_API_KEY}",
+						"X-Partner-Secret": "${PARTNER_SECRET}"
+					}
+				}
+			},
+			{
+				"name": "query-auth-videos",
+				"matcher": "^/query-auth/(.*)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://queryauth.videos.erfi.dev",
+				"ttl": {
+					"ok": 43200,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "high",
+				"cacheability": true,
+				"videoCompression": "auto",
+				"auth": {
+					"enabled": true,
+					"type": "query",
+					"accessKeyVar": "QUERY_AUTH_TOKEN_VAR"
+				}
+			},
+			{
 				"name": "popular",
 				"matcher": "^/popular/(.*\\.mp4)",
 				"processPath": true,
@@ -304,7 +438,8 @@
 				"name": "images",
 				"matcher": "\\.(jpe?g|png|gif|webp|avif)$",
 				"processPath": true,
-				"baseUrl": null,
+				"baseUrl": "",
+				"originUrl": "",
 				"ttl": {
 					"ok": 300,
 					"redirects": 300,
@@ -317,6 +452,8 @@
 				"name": "default",
 				"matcher": ".*",
 				"processPath": false,
+				"baseUrl": "",
+				"originUrl": "",
 				"ttl": {
 					"ok": 300,
 					"redirects": 300,
@@ -348,7 +485,8 @@
 			},
 			"auth": {
 				"useOriginAuth": true,
-				"securityLevel": "strict"
+				"securityLevel": "strict",
+				"cacheTtl": 3600
 			},
 			"fallbackUrl": "https://cdn.erfi.dev",
 			"fallbackAuth": {
@@ -360,7 +498,11 @@
 				"service": "s3"
 			},
 			"fetchOptions": {
-				"userAgent": "Cloudflare-Video-Resizer/1.0"
+				"userAgent": "Cloudflare-Video-Resizer/1.0",
+				"headers": {
+					"Accept": "video/*,image/*",
+					"X-Client-ID": "video-resizer"
+				}
 			},
 			"pathTransforms": {
 				"videos": {
@@ -371,6 +513,46 @@
 					"remote": {
 						"removePrefix": true,
 						"prefix": "videos/"
+					}
+				},
+				"authenticated-videos": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "auth/"
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "authenticated/"
+					}
+				},
+				"premium-content": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "premium/"
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "premium/"
+					}
+				},
+				"partner-videos": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "partner/"
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "partners/"
+					}
+				},
+				"query-auth-videos": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "query-auth/"
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "query-auth/"
 					}
 				},
 				"popular": {
@@ -385,6 +567,21 @@
 						"prefix": "shorts/"
 					}
 				}
+			}
+		},
+		"caching": {
+			"method": "kv",
+			"debug": false,
+			"fallback": {
+				"enabled": true,
+				"badRequestOnly": true,
+				"preserveHeaders": [
+					"Content-Type", 
+					"Cache-Control", 
+					"Etag"
+				],
+				"fileSizeErrorHandling": true,
+				"maxRetries": 2
 			}
 		}
 	},
@@ -404,6 +601,13 @@
 		"bypassHeaderValue": "no-cache",
 		"enableKVCache": true,
 		"maxSizeBytes": 26214400,
+		"staleWhileRevalidate": true,
+		"staleIfError": true,
+		"varyHeaders": [
+			"Accept",
+			"Accept-Encoding",
+			"User-Agent"
+		],
 		"fallback": {
 			"enabled": true,
 			"badRequestOnly": true,
@@ -435,6 +639,13 @@
 				"image/webp",
 				"image/gif",
 				"image/avif"
+			],
+			"audio": [
+				"audio/mpeg",
+				"audio/mp3",
+				"audio/wav",
+				"audio/ogg",
+				"audio/aac"
 			]
 		},
 		"ttl": {
@@ -464,7 +675,11 @@
 		"includeStackTrace": false,
 		"maxContentLength": 50000,
 		"truncationMessage": "... [content truncated]",
-		"allowedIps": [],
+		"allowedIps": [
+			"127.0.0.1",
+			"192.168.1.0/24",
+			"10.0.0.0/8"
+		],
 		"excludedPaths": [
 			"/favicon.ico",
 			"/robots.txt"
@@ -476,8 +691,15 @@
 		"includeTimestamps": true,
 		"includeComponentName": true,
 		"colorize": true,
-		"enabledComponents": [],
-		"disabledComponents": [],
+		"enabledComponents": [
+			"auth",
+			"cache",
+			"storage",
+			"transform"
+		],
+		"disabledComponents": [
+			"healthcheck"
+		],
 		"sampleRate": 1.0,
 		"enablePerformanceLogging": true,
 		"performanceThresholdMs": 1000,
