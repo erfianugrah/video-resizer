@@ -193,6 +193,7 @@ The cache configuration controls global caching settings.
 ```typescript
 interface CacheConfig {
   enableKVCache: boolean;     // Enable KV cache storage
+  storeIndefinitely: boolean; // Store KV items indefinitely without TTL expiration
   debug: boolean;             // Enable cache debug logging
   defaultMaxAge: number;      // Default Cache-Control max-age
   respectOriginHeaders: boolean; // Respect origin Cache-Control
@@ -219,6 +220,7 @@ interface CacheConfig {
 **Default Values:**
 
 - `enableKVCache`: `true`
+- `storeIndefinitely`: `false`
 - `debug`: `false`
 - `defaultMaxAge`: `300` (5 minutes)
 - `respectOriginHeaders`: `true`
@@ -378,6 +380,7 @@ Environment variables provide a way to override configuration settings. Key vari
 | `CACHE_PURGE_ON_UPDATE` | boolean | Purge cache on config update |
 | `CACHE_BYPASS_PARAMS` | string | Comma-separated list of cache bypass parameters |
 | `CACHE_ENABLE_KV` | boolean | Enable KV cache storage |
+| `CACHE_STORE_INDEFINITELY` | boolean | Store KV items without expiration |
 | `CACHE_KV_TTL_OK` | number | TTL for successful responses |
 | `CACHE_KV_TTL_REDIRECTS` | number | TTL for redirect responses |
 | `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for client error responses |
@@ -499,6 +502,7 @@ Here's a streamlined configuration example without cache profiles:
   },
   "cache": {
     "enableKVCache": true,
+    "storeIndefinitely": false,
     "debug": false,
     "defaultMaxAge": 300,
     "respectOriginHeaders": true,

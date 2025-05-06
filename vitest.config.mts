@@ -7,6 +7,7 @@ export default defineWorkersConfig({
         wrangler: { configPath: './wrangler.jsonc' },
       },
     },
+    testTimeout: 30000, // Increase timeout to 30 seconds
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

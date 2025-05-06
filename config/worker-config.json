@@ -406,6 +406,7 @@
 		],
 		"bypassHeaderValue": "no-cache",
 		"enableKVCache": true,
+		"storeIndefinitely": false,
 		"enableVersioning": true,
 		"ttlRefresh": {
 			"minElapsedPercent": 10,
