@@ -11,7 +11,6 @@
 				"duration": "5m",
 				"fit": "contain",
 				"loop": true,
-				"compression": "low",
 				"description": "1920x1080 pixels. The video plays in high-definition."
 			},
 			"tablet": {
@@ -22,7 +21,6 @@
 				"fit": "contain",
 				"loop": true,
 				"duration": "5m",
-				"compression": "medium",
 				"description": "1280x720 pixels. The video plays at medium resolution."
 			},
 			"mobile": {
@@ -33,7 +31,6 @@
 				"fit": "contain",
 				"loop": true,
 				"duration": "5m",
-				"compression": "high",
 				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
 			}
 		},
