@@ -89,18 +89,36 @@ export async function refreshKeyTtl({
     remainingTime: `${remainingTime}s`
   });
 
+  // Check if indefinite storage is enabled
+  const useIndefiniteStorage = cacheConfig.storeIndefinitely === true;
+  
   // Update metadata with new expiresAt
   const updatedMetadata = { ...metadata };
-  updatedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
+  
+  // Only set expiresAt if we're not using indefinite storage
+  if (!useIndefiniteStorage) {
+    updatedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
+  } else if (updatedMetadata.expiresAt) {
+    // Remove expiresAt if it exists and we're using indefinite storage
+    delete updatedMetadata.expiresAt;
+    logDebug('Removed expiresAt for indefinitely stored item', { key });
+  }
 
   // Get request context for breadcrumb
   const requestContext = getCurrentContext();
   if (requestContext) {
-    addBreadcrumb(requestContext, 'KV', 'Refreshing cache TTL', {
-      key,
-      originalTtl,
-      newExpiresAt: new Date(updatedMetadata.expiresAt).toISOString()
-    });
+    if (useIndefiniteStorage) {
+      addBreadcrumb(requestContext, 'KV', 'Refreshing cache metadata (indefinite storage)', {
+        key,
+        indefiniteStorage: true
+      });
+    } else {
+      addBreadcrumb(requestContext, 'KV', 'Refreshing cache TTL', {
+        key,
+        originalTtl,
+        newExpiresAt: updatedMetadata.expiresAt ? new Date(updatedMetadata.expiresAt).toISOString() : 'undefined'
+      });
+    }
   }
 
   // Retry logic with exponential backoff
@@ -113,27 +131,52 @@ export async function refreshKeyTtl({
     try {
       attemptCount++;
       
+      // Check if indefinite storage is enabled from the already retrieved config
+      const useIndefiniteStorage = cacheConfig.storeIndefinitely === true;
+      
       // Store with metadata only - more efficient for value-less operations
       // Use empty string as KV doesn't accept null values, but we're only updating metadata
-      await namespace.put(key, "", { 
-        metadata: updatedMetadata, 
-        expirationTtl: originalTtl 
-      });
+      if (useIndefiniteStorage) {
+        // When using indefinite storage, don't set expirationTtl to keep item indefinitely
+        await namespace.put(key, "", { metadata: updatedMetadata });
+        logDebug('Refreshed KV TTL for indefinitely stored item', { key });
+      } else {
+        // Normal case with TTL
+        await namespace.put(key, "", { 
+          metadata: updatedMetadata, 
+          expirationTtl: originalTtl 
+        });
+      }
       
       success = true;
       
       // Log success with retry info if needed
-      if (attemptCount > 1) {
-        logDebug('Successfully refreshed KV TTL after retries', { 
-          key, 
-          attempts: attemptCount,
-          newExpiresAt: updatedMetadata.expiresAt ? new Date(updatedMetadata.expiresAt).toISOString() : 'undefined' 
-        });
+      if (useIndefiniteStorage) {
+        if (attemptCount > 1) {
+          logDebug('Successfully refreshed KV metadata for indefinite storage after retries', { 
+            key, 
+            attempts: attemptCount,
+            indefiniteStorage: true
+          });
+        } else {
+          logDebug('Successfully refreshed KV metadata for indefinite storage', { 
+            key, 
+            indefiniteStorage: true
+          });
+        }
       } else {
-        logDebug('Successfully refreshed KV TTL', { 
-          key, 
-          newExpiresAt: updatedMetadata.expiresAt ? new Date(updatedMetadata.expiresAt).toISOString() : 'undefined' 
-        });
+        if (attemptCount > 1) {
+          logDebug('Successfully refreshed KV TTL after retries', { 
+            key, 
+            attempts: attemptCount,
+            newExpiresAt: updatedMetadata.expiresAt ? new Date(updatedMetadata.expiresAt).toISOString() : 'undefined' 
+          });
+        } else {
+          logDebug('Successfully refreshed KV TTL', { 
+            key, 
+            newExpiresAt: updatedMetadata.expiresAt ? new Date(updatedMetadata.expiresAt).toISOString() : 'undefined' 
+          });
+        }
       }
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
