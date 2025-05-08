@@ -14,35 +14,60 @@ Cloudflare's KV storage has a 25MB value size limit, which can be too restrictiv
    - Videos under 20MB are stored as single KV entries
    - Larger videos are automatically split into 5MB chunks with a manifest
 
-2. **Manifest Structure**
-   - The manifest is stored at the base key
-   - Contains metadata about the original video and its chunks:
-     - Total size in bytes
-     - Number of chunks
-     - Exact byte lengths for each chunk
-     - Original content type
+2. **Chunk Size Rationale (5MB)**
+   - **Balance**: 5MB (5,242,880 bytes) provides an optimal balance between minimizing chunk count and staying well below KV's 25MB limit
+   - **Safety margin**: ~20% of KV's limit allows room for metadata overhead and future adjustments
+   - **Performance**: Large enough to reduce KV operation count, small enough for efficient memory usage during streaming
+   - **Technical efficiency**: As a power-of-2 multiple (5 * 2^20), it aligns well with memory operations
+   - **Scalability**: 5MB chunks support videos up to several GB in size without excessive chunk counts
 
-3. **Byte-Perfect Data Integrity**
+3. **Manifest Storage Approach**
+   - The manifest is stored in the **value** of the base key (not in the metadata)
+   - For a 50MB video (10 chunks), the manifest is ~200-250 bytes in JSON format
+   - While small manifests could fit in metadata (1024 byte limit), storing in the value provides:
+     - Scalability for very large videos (no size restrictions)
+     - Consistency in access patterns
+     - Future-proofing for additional metadata fields
+   - Manifest JSON example:
+     ```json
+     {
+       "totalSize": 52428800,
+       "chunkCount": 10,
+       "actualChunkSizes": [5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880],
+       "standardChunkSize": 5242880,
+       "originalContentType": "video/mp4"
+     }
+     ```
+
+4. **Storage Architecture**
+   - **Base key** (e.g., `video:path/to/video.mp4:w=640:h=480`):
+     - **Value**: Contains the JSON manifest data
+     - **Metadata**: Contains `TransformationMetadata` with `isChunked: true` flag
+   - **Chunk keys** (e.g., `video:path/to/video.mp4:w=640:h=480_chunk_0`):
+     - **Value**: Contains the actual binary video chunk data
+     - **Metadata**: Contains minimal chunk metadata (parent key, index, etc.)
+
+5. **Byte-Perfect Data Integrity**
    - Stores exact byte lengths for precise verification
    - Verifies chunk sizes on retrieval to ensure data integrity
    - Validates the sum of chunk sizes against the original video size
 
-4. **Range Request Support**
+6. **Range Request Support**
    - Efficiently retrieves only the chunks needed for a specific byte range
    - Calculates precise offsets within chunks
    - Streams the exact requested bytes to the client
    - Supports partial content responses (HTTP 206)
 
-5. **Streaming Improvements**
+7. **Streaming Improvements**
    - Precomputes needed chunks for range requests to avoid unnecessary fetches
-   - Uses timeout handling to prevent hanging on problematic chunks
+   - Uses timeout handling to prevent hanging on problematic chunks (10s timeout)
    - Implements robust error handling for stream writing
    - Provides graceful degradation for mid-stream errors
    - Properly handles client disconnections
 
 ### Storage Process
 
-1. The system determines whether to use single-entry or chunked storage
+1. The system determines whether to use single-entry or chunked storage based on video size
 2. For chunked storage:
    - Split the video into chunks of standard size (5MB)
    - Store each chunk with a unique key based on the base key and index
