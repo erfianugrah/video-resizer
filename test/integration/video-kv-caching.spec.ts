@@ -226,7 +226,10 @@ describe('Video Handler with KV Caching - Integration Test', () => {
         cacheTags: ['video-test'],
         contentType: 'video/mp4',
         contentLength: cachedData.length,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        // Add the required fields for the new chunking implementation
+        isChunked: false,
+        actualTotalVideoSize: cachedData.length
       }
     });
     
@@ -262,7 +265,10 @@ describe('Video Handler with KV Caching - Integration Test', () => {
         cacheTags: ['video-test'],
         contentType: 'video/mp4',
         contentLength: cachedData.length,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        // Add the required fields for the new chunking implementation
+        isChunked: false,
+        actualTotalVideoSize: cachedData.length
       }
     });
     
