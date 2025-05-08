@@ -905,13 +905,13 @@ async function getTransformedVideoImpl(
             let bytesRead = 0;
             let bytesWritten = 0;
             
-            // Process the stream
+            // Process the stream chunk by chunk
             while (true) {
               const { done, value: chunk } = await reader.read();
               
               if (done) break;
               
-              // Find overlapping bytes with our range
+              // Process the chunk if it exists
               if (chunk) {
                 const chunkSize = chunk.byteLength;
                 const chunkStart = bytesRead;
@@ -926,9 +926,17 @@ async function getTransformedVideoImpl(
                   // Extract the relevant portion
                   const relevantPortion = chunk.slice(startOffset, endOffset);
                   
-                  // Write to output stream
+                  // Write to output stream and ensure the write completes
                   await writer.write(relevantPortion);
                   bytesWritten += relevantPortion.byteLength;
+                  
+                  // Add debug log for chunk progress
+                  if (bytesWritten % 1000000 === 0) { // Log every ~1MB
+                    logDebug('Range request streaming progress', {
+                      bytesWritten,
+                      percentComplete: Math.round((bytesWritten / (range.end - range.start + 1)) * 100)
+                    });
+                  }
                 }
                 
                 // Track total bytes processed
@@ -939,26 +947,50 @@ async function getTransformedVideoImpl(
               }
             }
             
-            // Close the writer
+            // Close the writer and ensure it completes
             await writer.close();
             
             logDebug('Completed streaming range request', {
               bytesRead,
               bytesWritten,
-              expectedBytes: range.end - range.start + 1
+              expectedBytes: range.end - range.start + 1,
+              successful: bytesWritten > 0
             });
+            
+            return { bytesRead, bytesWritten };
             
           } catch (error) {
             logDebug('Error processing stream for range request', {
-              error: error instanceof Error ? error.message : String(error)
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined
             });
+            
             // Attempt to close the stream on error
-            writable.abort(error);
+            try {
+              writable.abort(error);
+            } catch (abortError) {
+              // Ignore errors from aborting to prevent cascading failures
+            }
+            
+            // Re-throw the error so it can be caught by the caller
+            throw error;
           }
         };
         
-        // Start processing in background
-        void processStream();
+        // Start processing as a properly handled promise
+        const streamPromise = processStream();
+        
+        // Use waitUntil to ensure the stream is processed even if the response is sent
+        const context = getCurrentContext();
+        if (context?.executionContext?.waitUntil) {
+          context.executionContext.waitUntil(streamPromise.catch(err => {
+            logDebug('Error in background stream processing', {
+              key,
+              error: err instanceof Error ? err.message : String(err),
+              range: rangeHeader
+            });
+          }));
+        }
         
         logDebug('Serving ranged response from KV cache with streaming', { 
           key,
