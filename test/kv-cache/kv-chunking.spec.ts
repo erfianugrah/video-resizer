@@ -14,7 +14,15 @@ vi.mock('../../src/utils/pinoLogger', () => ({
 }));
 
 vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => null)
+  getCurrentContext: vi.fn(() => ({
+    requestId: 'test-request-id',
+    url: 'https://example.com/videos/test.mp4',
+    startTime: Date.now(),
+    headers: new Headers(),
+    executionContext: {
+      waitUntil: vi.fn((promise) => promise)
+    }
+  }))
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
@@ -96,6 +104,9 @@ describe('KV Chunking Functionality', () => {
     }
   };
 
+  // Create a reusable mock request for all tests
+  const mockRequest = new Request('https://example.com/videos/test.mp4');
+
   // Reset mocks before each test
   beforeEach(() => {
     vi.clearAllMocks();
@@ -171,9 +182,9 @@ describe('KV Chunking Functionality', () => {
       );
 
       expect(result).toBe(true);
-      
+
       // Count the number of put calls - should be multiple chunks + 1 manifest
-      // Each chunk is 5MB, so 25MB / 5MB = 5 chunks + 1 manifest = 6 total put calls 
+      // Each chunk is 5MB, so 25MB / 5MB = 5 chunks + 1 manifest = 6 total put calls
       expect(mockKV.put).toHaveBeenCalledTimes(6);
 
       // Verify the last put was the manifest
@@ -185,7 +196,7 @@ describe('KV Chunking Functionality', () => {
       expect(manifestOptions.metadata.actualTotalVideoSize).toBe(videoData.length);
 
       // Parse manifest to verify chunk information
-      const manifest = typeof manifestValue === 'string' 
+      const manifest = typeof manifestValue === 'string'
         ? JSON.parse(manifestValue) as ChunkManifest
         : null;
 
@@ -194,6 +205,59 @@ describe('KV Chunking Functionality', () => {
       expect(manifest?.totalSize).toBe(videoData.length);
       expect(manifest?.actualChunkSizes.length).toBe(5);
       expect(manifest?.originalContentType).toBe('video/mp4');
+    });
+
+    it('should ensure all chunks have the same cache tags as the manifest', async () => {
+      // Create large video data (25 MB) to force chunking
+      const videoData = new Uint8Array(25 * 1024 * 1024).fill(1);
+      const videoResponse = new Response(videoData, {
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': videoData.length.toString()
+        }
+      });
+
+      // Mock the KV put method to succeed
+      mockKV.put.mockResolvedValue(undefined);
+
+      // Mock generateCacheTags to return specific tags for testing
+      const mockCacheTags = ['video-test-tag-1', 'video-test-tag-2'];
+      vi.mocked(require('../../src/services/videoStorageService').generateCacheTags).mockReturnValue(mockCacheTags);
+
+      const result = await storeTransformedVideo(
+        mockKV as KVNamespace,
+        'videos/large-tagged-test.mp4',
+        videoResponse,
+        {
+          mode: 'video',
+          width: 1280,
+          height: 720,
+          format: 'mp4',
+          version: 1,
+          env: mockEnv
+        },
+        300 // TTL in seconds
+      );
+
+      expect(result).toBe(true);
+
+      // There should be 5 chunks + 1 manifest = 6 total put calls
+      expect(mockKV.put).toHaveBeenCalledTimes(6);
+
+      // Verify the manifest has the expected cache tags
+      const lastPutCall = mockKV.put.mock.calls[mockKV.put.mock.calls.length - 1];
+      const [_, __, manifestOptions] = lastPutCall;
+      expect(manifestOptions.metadata.cacheTags).toEqual(mockCacheTags);
+
+      // Verify each chunk has the same cache tags as the manifest
+      for (let i = 0; i < mockKV.put.mock.calls.length - 1; i++) {
+        const [chunkKey, _, chunkOptions] = mockKV.put.mock.calls[i];
+
+        // Only check actual chunks (keys containing "_chunk_")
+        if (chunkKey.includes('_chunk_')) {
+          expect(chunkOptions.metadata.cacheTags).toEqual(mockCacheTags);
+        }
+      }
     });
 
     it('should handle errors during storage', async () => {
