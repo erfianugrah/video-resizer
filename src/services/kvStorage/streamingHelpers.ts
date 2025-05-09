@@ -71,7 +71,7 @@ export async function streamChunkedRangeResponse(
     });
     
     // Second pass: fetch and process chunks
-    for (let chunkInfo of chunksToFetch) {
+    for (const chunkInfo of chunksToFetch) {
       // Check if stream was aborted during processing
       if (isStreamAborted) {
         logDebug('[GET_VIDEO] Stream was aborted, stopping chunk processing', {
@@ -92,14 +92,23 @@ export async function streamChunkedRangeResponse(
       let chunkArrayBuffer: ArrayBuffer | null = null;
       try {
         // Use Promise.race for timeout to prevent hanging on problematic chunks
+        // Calculate dynamic timeout based on chunk size - larger chunks need more time
+        // Base timeout is 5 seconds + 1 second per MB, capped at 30 seconds
+        const chunkSizeMB = chunkInfo.size / (1024 * 1024);
+        const timeoutMs = Math.min(5000 + Math.ceil(chunkSizeMB) * 1000, 30000);
+
         const fetchPromise = namespace.get(chunkInfo.key, { type: 'arrayBuffer', ...kvReadOptions });
         const timeoutPromise = new Promise<null>((resolve) => {
           setTimeout(() => {
-            logDebug('[GET_VIDEO] Chunk fetch timeout', { chunkKey: chunkInfo.key });
+            logDebug('[GET_VIDEO] Chunk fetch timeout', {
+              chunkKey: chunkInfo.key,
+              chunkSizeMB: chunkSizeMB.toFixed(2),
+              timeoutMs
+            });
             resolve(null);
-          }, 10000); // 10 second timeout
+          }, timeoutMs);
         });
-        
+
         chunkArrayBuffer = await Promise.race([fetchPromise, timeoutPromise]);
       } catch (fetchError) {
         logErrorWithContext(
@@ -184,7 +193,7 @@ export async function streamChunkedRangeResponse(
           sliceSize: chunkSliceToSend.byteLength,
           bytesSentSoFar: bytesSentForRange
         });
-        
+
         // Check if stream was aborted during processing
         if (isStreamAborted || isStreamClosed) {
           logDebug('[GET_VIDEO] Stream was closed/aborted before writing chunk slice', {
@@ -192,10 +201,23 @@ export async function streamChunkedRangeResponse(
           });
           break;
         }
-        
-        await writer.write(new Uint8Array(chunkSliceToSend));
+
+        // Set a timeout for the write operation to detect stalled clients
+        const writePromise = writer.write(new Uint8Array(chunkSliceToSend));
+        const writeTimeoutMs = Math.max(5000, chunkSliceToSend.byteLength / 5000); // ~5MB/s minimum rate expected
+
+        // Create a timeout promise that resolves to an error after writeTimeoutMs
+        const writeTimeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Write operation timed out, client may be stalled'));
+          }, writeTimeoutMs);
+        });
+
+        // Race the write operation against the timeout
+        await Promise.race([writePromise, writeTimeoutPromise]);
+
         bytesSentForRange += chunkSliceToSend.byteLength;
-        
+
         // Log progress for large ranges
         if (bytesSentForRange % 1000000 === 0) { // Log every ~1MB
           logDebug('[GET_VIDEO] Range request streaming progress', {
@@ -205,21 +227,25 @@ export async function streamChunkedRangeResponse(
         }
       } catch (writeError) {
         // If write fails, the client likely disconnected
+        const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+        const isTimeoutError = errorMessage.includes('timed out');
+
         logDebug('[GET_VIDEO] Stream write failed, client may have disconnected', {
-          error: writeError instanceof Error ? writeError.message : String(writeError),
+          error: errorMessage,
+          reason: isTimeoutError ? 'write timeout' : 'stream error',
           chunkKey: chunkInfo.key,
           bytesSentSoFar: bytesSentForRange
         });
-        
+
         isStreamAborted = true;
-        
+
         // Try to abort the stream to clean up
         try {
           writer.abort(writeError);
         } catch (abortError) {
           // Ignore errors from aborting
         }
-        
+
         // Exit the loop as we can't write to this stream anymore
         break;
       }
@@ -328,14 +354,23 @@ export async function streamFullChunkedResponse(
       let chunkArrayBuffer: ArrayBuffer | null = null;
       try {
         // Use Promise.race for timeout to prevent hanging on problematic chunks
+        // Calculate dynamic timeout based on chunk size - larger chunks need more time
+        // Base timeout is 5 seconds + 1 second per MB, capped at 30 seconds
+        const chunkSizeMB = expectedChunkSize / (1024 * 1024);
+        const timeoutMs = Math.min(5000 + Math.ceil(chunkSizeMB) * 1000, 30000);
+
         const fetchPromise = namespace.get(chunkKey, { type: 'arrayBuffer', ...kvReadOptions });
         const timeoutPromise = new Promise<null>((resolve) => {
           setTimeout(() => {
-            logDebug('[GET_VIDEO] Chunk fetch timeout', { chunkKey });
+            logDebug('[GET_VIDEO] Chunk fetch timeout', {
+              chunkKey,
+              chunkSizeMB: chunkSizeMB.toFixed(2),
+              timeoutMs
+            });
             resolve(null);
-          }, 10000); // 10 second timeout
+          }, timeoutMs);
         });
-        
+
         chunkArrayBuffer = await Promise.race([fetchPromise, timeoutPromise]);
       } catch (fetchError) {
         logErrorWithContext(
@@ -417,7 +452,7 @@ export async function streamFullChunkedResponse(
           chunkSize: chunkArrayBuffer.byteLength,
           bytesSentSoFar: totalBytesSent
         });
-        
+
         // Check if stream was aborted or closed during processing
         if (isStreamAborted || isStreamClosed) {
           logDebug('[GET_VIDEO] Stream was closed/aborted before writing chunk', {
@@ -425,10 +460,23 @@ export async function streamFullChunkedResponse(
           });
           break;
         }
-        
-        await writer.write(new Uint8Array(chunkArrayBuffer));
+
+        // Set a timeout for the write operation to detect stalled clients
+        const writePromise = writer.write(new Uint8Array(chunkArrayBuffer));
+        const writeTimeoutMs = Math.max(5000, chunkArrayBuffer.byteLength / 5000); // ~5MB/s minimum rate expected
+
+        // Create a timeout promise that resolves to an error after writeTimeoutMs
+        const writeTimeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Write operation timed out, client may be stalled'));
+          }, writeTimeoutMs);
+        });
+
+        // Race the write operation against the timeout
+        await Promise.race([writePromise, writeTimeoutPromise]);
+
         totalBytesSent += chunkArrayBuffer.byteLength;
-        
+
         // Log progress for large videos
         if (totalBytesSent % 5000000 === 0) { // Log every ~5MB
           logDebug('[GET_VIDEO] Full content streaming progress', {
@@ -440,21 +488,25 @@ export async function streamFullChunkedResponse(
         }
       } catch (writeError) {
         // If write fails, the client likely disconnected
+        const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+        const isTimeoutError = errorMessage.includes('timed out');
+
         logDebug('[GET_VIDEO] Stream write failed, client may have disconnected', {
-          error: writeError instanceof Error ? writeError.message : String(writeError),
+          error: errorMessage,
+          reason: isTimeoutError ? 'write timeout' : 'stream error',
           chunkKey,
           bytesSentSoFar: totalBytesSent
         });
-        
+
         isStreamAborted = true;
-        
+
         // Try to abort the stream to clean up
         try {
           writer.abort(writeError);
         } catch (abortError) {
           // Ignore errors from aborting
         }
-        
+
         // Exit the loop as we can't write to this stream anymore
         break;
       }

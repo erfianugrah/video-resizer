@@ -57,7 +57,7 @@ export function logIntegrityCheck(operation: 'store' | 'retrieve', key: string, 
 export function addRangeDiagnostics(
   key: string,
   rangeHeader: string | null,
-  status: 'success' | 'unsatisfiable' | 'error',
+  status: 'success' | 'unsatisfiable' | 'error' | 'recovered-full-response' | 'recovered-full-chunked-response',
   totalSize: number,
   source: string,
   start?: number,
