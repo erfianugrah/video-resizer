@@ -1,7 +1,12 @@
 /**
  * Cache orchestrator for video-resizer
- * 
+ *
  * This utility coordinates KV caching to optimize video serving
+ *
+ * Features:
+ * - KV caching for videos with automatic range request support
+ * - Request coalescing (single-flight) to prevent multiple origin fetches for the same resource
+ * - Proper handling of range requests with full content storage for cache integrity
  */
 
 import { EnvVariables } from '../config/environmentConfig';
@@ -11,13 +16,47 @@ import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
 
 /**
- * Cache orchestrator that uses KV for caching
- * 
+ * Interface for in-flight request tracking with metadata
+ * This provides additional context about the in-flight request for better observability
+ */
+interface InFlightRequest {
+  promise: Promise<Response>;     // The original fetch promise
+  startTime: number;              // Timestamp when request started
+  url: string;                    // The original request URL
+  referenceCount: number;         // Count of requests using this in-flight request
+  derivative?: string;            // Derivative type if applicable
+  requesterId?: string;           // ID of the request that initiated the fetch
+  debug?: boolean;                // Whether this is a debug request
+  isRangeRequest?: boolean;       // Whether this is a range request
+}
+
+// Static map for in-flight request tracking to reduce duplicate origin fetches
+// This is a per-worker isolate map to prevent redundant fetches when multiple requests arrive simultaneously
+// Enhanced with metadata for better observability and debugging
+// Note: Map<cacheKey, InFlightRequest>
+const inFlightOriginFetches = new Map<string, InFlightRequest>();
+
+// Track all coalescable requests by requestId for diagnostic purposes
+// This helps identify which requests were coalesced together
+const coalescedRequestsLog = new Map<string, string[]>();
+
+// Generate a unique ID for tracking requests
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Cache orchestrator that uses KV for caching with request coalescing
+ *
  * Order of operations:
  * 1. Check KV storage for transformed variant
- * 2. Execute the handler function to generate response
- * 3. Store result in KV if appropriate
- * 
+ * 2. If cache miss, check if another request for the same resource is in-flight
+ *    a. If in-flight, wait for that request instead of making a new one
+ *    b. If not in-flight, mark this request as in-flight and fetch from origin
+ * 3. Execute the handler function to generate response for the first request only
+ * 4. Store result in KV using the full response (not partial/range)
+ * 5. Return appropriate response (full or partial based on Range header)
+ *
  * @param request - Original request
  * @param env - Environment variables
  * @param handler - Function to execute if cache misses occur
@@ -30,9 +69,13 @@ export async function withCaching(
   handler: () => Promise<Response>,
   options?: Record<string, unknown> // Type-safe alternative to any
 ): Promise<Response> {
+  // Generate a unique ID for this request for tracking
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  let cacheKey = ''; // Will be set later but defined here for scope
+
   const requestContext = getCurrentContext();
   const logger = requestContext ? createLogger(requestContext) : undefined;
-  
+
   // Helper for logging
   const logDebug = (message: string, data?: Record<string, unknown>) => {
     if (requestContext && logger) {
@@ -151,15 +194,303 @@ export async function withCaching(
       logDebug('Skipped cache checks due to request parameters');
     }
     
-    // Step 2: Cache miss or skip, execute handler
-    logDebug('Cache miss, executing handler');
-    const response = await handler();
-    
-    // Step 3: Check if this is a video response that should be proactively cached in KV
-    const contentType = response.headers.get('content-type') || '';
-    const isError = response.status >= 400;
+    // Step 2: Check if there's already an in-flight request for this resource
+    // Generate a unique cache key for request coalescing that matches KV storage key format
+    const sourcePath = url.pathname;
+
+    // Generate a canonical cache key for request coalescing (must match KV storage key)
+    cacheKey = `video:${sourcePath.replace(/^\//g, '')}`;
+    if (options) {
+      if (options.derivative) {
+        cacheKey += `:derivative=${options.derivative}`;
+      }
+      // Add IMQuery parameters if present - these should match how KV keys are generated
+      const imwidth = url.searchParams.get('imwidth');
+      const imheight = url.searchParams.get('imheight');
+
+      if (imwidth || imheight) {
+        const customData: Record<string, unknown> = {};
+        if (imwidth) customData.imwidth = imwidth;
+        if (imheight) customData.imheight = imheight;
+
+        // Add the same IMQuery parameters that would be used in KV caching
+        if (customData.imwidth) {
+          cacheKey += `:imwidth=${customData.imwidth}`;
+        }
+        if (customData.imheight) {
+          cacheKey += `:imheight=${customData.imheight}`;
+        }
+      }
+
+      // Add version information to match KV key format
+      cacheKey += `:v${options.version || 1}`;
+    }
+
+    // Debug info about the cache key
+    logDebug('Generated canonical cache key for request coalescing', {
+      cacheKey,
+      url: request.url,
+      path: sourcePath,
+      derivative: options?.derivative,
+      imwidth: url.searchParams.get('imwidth'),
+      imheight: url.searchParams.get('imheight')
+    });
+
+    // Generate a request ID for tracking this specific request
+    const requestId = generateRequestId();
     const isRangeRequest = request.headers.has('Range');
-    
+    const rangeHeaderValue = request.headers.get('Range');
+
+    // Check if there is already an in-flight request for this exact resource
+    let inFlightRequest = inFlightOriginFetches.get(cacheKey);
+    let isFirstRequest = false;
+
+    // Add debug info to trace request coalescing
+    logDebug('Request coalescing check', {
+      cacheKey,
+      requestId,
+      hasExistingRequest: !!inFlightRequest,
+      url: request.url,
+      timestamp: Date.now(),
+      isRangeRequest,
+      rangeHeaderValue: isRangeRequest ? rangeHeaderValue : undefined,
+      activeInFlightCount: inFlightOriginFetches.size
+    });
+
+    // If no in-flight request, create one
+    if (!inFlightRequest) {
+      isFirstRequest = true;
+
+      // Log detailed information about the new request
+      logDebug('No existing in-flight request, initiating new origin fetch', {
+        cacheKey,
+        requestId,
+        url: request.url,
+        derivative: options?.derivative,
+        timestamp: Date.now(),
+        isRangeRequest,
+        rangeHeaderValue: isRangeRequest ? rangeHeaderValue : undefined
+      });
+
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Origin', 'Initiating new origin fetch', {
+          cacheKey,
+          requestId,
+          url: request.url
+        });
+      }
+
+      // Track this request in the coalesced requests log
+      coalescedRequestsLog.set(requestId, [requestId]);
+
+      // Create a new promise with enhanced error handling
+      const originFetchPromise = (async () => {
+        let success = false;
+        let errorMsg = '';
+        let responseStatus = 0;
+        const startTime = Date.now();
+
+        try {
+          // Execute handler to fetch from origin
+          logDebug('First request: executing handler for origin fetch', {
+            cacheKey,
+            requestId,
+            timestamp: startTime
+          });
+
+          const response = await handler();
+          success = true;
+          responseStatus = response.status;
+          return response;
+        } catch (error) {
+          // Capture detailed error information
+          errorMsg = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+
+          logDebug('Error in origin fetch', {
+            cacheKey,
+            requestId,
+            error: errorMsg,
+            stack: errorStack,
+            duration: Date.now() - startTime
+          });
+
+          // Re-throw to propagate the error
+          throw error;
+        } finally {
+          // Log completion metrics
+          const duration = Date.now() - startTime;
+          const coalescedRequestCount = coalescedRequestsLog.get(requestId)?.length || 1;
+
+          logDebug(`Origin fetch ${success ? 'completed' : 'failed'}`, {
+            cacheKey,
+            requestId,
+            success,
+            duration,
+            responseStatus: success ? responseStatus : undefined,
+            error: !success ? errorMsg : undefined,
+            coalescedCount: coalescedRequestCount,
+            requestsCoalesced: coalescedRequestCount > 1 ? true : false,
+            isRangeRequest
+          });
+
+          // Clean up the in-flight request when done, regardless of success/failure
+          // Use a small delay to handle near-simultaneous requests but ensure cleanup happens
+          setTimeout(() => {
+            if (inFlightOriginFetches.has(cacheKey)) {
+              const removedRequest = inFlightOriginFetches.get(cacheKey);
+              inFlightOriginFetches.delete(cacheKey);
+
+              logDebug('Removed in-flight request from tracking map', {
+                cacheKey,
+                requestId,
+                duration: Date.now() - (removedRequest?.startTime || startTime),
+                referenceCount: removedRequest?.referenceCount || 1,
+                activeFetchesRemaining: inFlightOriginFetches.size
+              });
+            }
+
+            // Also clean up the coalesced requests log after a longer period
+            setTimeout(() => {
+              coalescedRequestsLog.delete(requestId);
+            }, 1000);
+          }, 50); // Small delay to handle near-simultaneous requests
+        }
+      })();
+
+      // Create the in-flight request object with metadata
+      inFlightRequest = {
+        promise: originFetchPromise,
+        startTime: Date.now(),
+        url: request.url,
+        referenceCount: 1,
+        derivative: options?.derivative?.toString(),
+        requesterId: requestId,
+        debug: url.searchParams.has('debug'),
+        isRangeRequest
+      };
+
+      // Store the request metadata in the in-flight map for subsequent requests
+      // At this point inFlightRequest is guaranteed to be defined
+      inFlightOriginFetches.set(cacheKey, inFlightRequest as InFlightRequest);
+    } else if (inFlightRequest) {
+      // This is a subsequent request for the same resource - coalesce with the existing request
+      inFlightRequest.referenceCount++;
+
+      // Add this request to the coalesced requests log
+      const initiatorId = inFlightRequest.requesterId || 'unknown';
+      if (coalescedRequestsLog.has(initiatorId)) {
+        coalescedRequestsLog.get(initiatorId)?.push(requestId);
+      }
+
+      // Log detailed information about joining the existing request
+      logDebug('Found existing in-flight request, joining to avoid duplicate origin fetch', {
+        cacheKey,
+        requestId,
+        joiningRequestId: inFlightRequest.requesterId,
+        url: request.url,
+        inFlightAge: Date.now() - inFlightRequest.startTime,
+        newReferenceCount: inFlightRequest.referenceCount,
+        isRangeRequest,
+        initiatorIsRange: inFlightRequest.isRangeRequest
+      });
+
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Origin', 'Joining existing in-flight request', {
+          cacheKey,
+          requestId,
+          joiningRequestId: inFlightRequest.requesterId,
+          url: request.url,
+          coalesced: true
+        });
+      }
+    }
+
+    // Wait for the origin fetch to complete (first or subsequent request)
+    let fullOriginResponse: Response;
+    try {
+      // Add a null check to satisfy TypeScript
+      if (!inFlightRequest) {
+        throw new Error('InFlightRequest unexpectedly became undefined');
+      }
+
+      fullOriginResponse = await inFlightRequest.promise;
+
+      // Log successful coalescence
+      if (!isFirstRequest) {
+        // inFlightRequest is guaranteed to be defined at this point
+        logDebug('Successfully coalesced request with existing fetch', {
+          cacheKey,
+          requestId,
+          joiningRequestId: inFlightRequest.requesterId,
+          responseStatus: fullOriginResponse.status,
+          contentType: fullOriginResponse.headers.get('content-type'),
+          coalesceLatency: Date.now() - inFlightRequest.startTime,
+          isRangeRequest
+        });
+      }
+    } catch (error) {
+      // Handle error in coalesced request
+      logDebug('Error in coalesced fetch request', {
+        cacheKey,
+        requestId,
+        joiningRequestId: inFlightRequest?.requesterId,
+        error: error instanceof Error ? error.message : String(error),
+        isFirstRequest,
+        isRangeRequest
+      });
+
+      // Re-throw to propagate to error handling
+      throw error;
+    }
+
+    // **CRITICAL FIX**: Clone the full origin response immediately for KV storage
+    // This clone's body must remain unread until KV storage processes it
+    // Only the first request should attempt to store in KV to avoid write conflicts
+    // Make sure we only clone successful responses (status 200-299)
+    let responseForKV = null;
+    if (isFirstRequest && fullOriginResponse.ok) {
+      try {
+        responseForKV = fullOriginResponse.clone();
+        logDebug('Created KV storage clone from full response', {
+          cacheKey,
+          requestId,
+          responseStatus: fullOriginResponse.status,
+          contentType: fullOriginResponse.headers.get('content-type'),
+          contentLength: fullOriginResponse.headers.get('content-length'),
+          isRangeRequest
+        });
+      } catch (cloneError) {
+        logDebug('Error cloning response for KV storage', {
+          cacheKey,
+          requestId,
+          error: cloneError instanceof Error ? cloneError.message : String(cloneError),
+          responseStatus: fullOriginResponse.status
+        });
+        // Continue without KV storage if cloning fails
+      }
+    }
+
+    // Clone for client response (might be modified for range requests)
+    // This needs to be in a separate try/catch since we must return something to the client
+    let responseForClient;
+    try {
+      responseForClient = fullOriginResponse.clone();
+    } catch (clientCloneError) {
+      logDebug('Error cloning response for client, using original response', {
+        cacheKey,
+        requestId,
+        error: clientCloneError instanceof Error ? clientCloneError.message : String(clientCloneError)
+      });
+      // Fall back to the original response if cloning fails
+      responseForClient = fullOriginResponse;
+    }
+
+    // Step 3: Check if this is a video response that should be proactively cached in KV
+    const contentType = fullOriginResponse.headers.get('content-type') || '';
+    const isError = fullOriginResponse.status >= 400;
+    // reuse isRangeRequest variable that was defined earlier
+
     // Comprehensive list of video MIME types
     const videoMimeTypes = [
       'video/mp4',
@@ -175,120 +506,613 @@ export async function withCaching(
       'application/x-mpegURL', // HLS
       'application/dash+xml'   // DASH
     ];
-    
+
     const isVideoResponse = videoMimeTypes.some(mimeType => contentType.startsWith(mimeType));
-    
+
     // SPECIAL HANDLING FOR VIDEO: For video content, we need to ensure we serve from cache
     // to properly support range requests (even on first access)
-    if (options && env && response.ok && request.method === 'GET' && !skipCache && 
-        isVideoResponse && !isError && kvCacheEnabled) {
+    if (options && env && fullOriginResponse.ok && request.method === 'GET' && !skipCache &&
+        isVideoResponse && !isError && kvCacheEnabled && responseForKV) { // Only store if responseForKV exists (first request)
       const sourcePath = url.pathname;
-      
+
       // Check if this is an IMQuery request
       const imwidth = url.searchParams.get('imwidth');
       const imheight = url.searchParams.get('imheight');
-      
+
       // Create customData to store the IMQuery parameters for use in the cache key
       const customData: Record<string, unknown> = {};
       if (imwidth) customData.imwidth = imwidth;
       if (imheight) customData.imheight = imheight;
-      
+
       // Add IMQuery detection to videoOptions custom data
       const optionsWithIMQuery: typeof options = {
         ...options,
         customData: Object.keys(customData).length > 0 ? customData : undefined
       };
-      
+
       // Log the IMQuery detection for debugging
       if (Object.keys(customData).length > 0) {
         logDebug('Including IMQuery parameters in cache key', {
           imwidth,
           imheight,
-          derivative: options.derivative
+          derivative: options.derivative,
+          requestId
         });
       }
-      
+
       try {
-        const responseClone = response.clone();
-        
-        logDebug('Storing video in KV for range request support', {
+        // CRITICAL FIX: Validate that responseForKV is still valid before attempting storage
+        // This catches cases where the response body might have been consumed or lost
+        if (!responseForKV || responseForKV.bodyUsed) {
+          throw new Error('Invalid response for KV storage: body already consumed or null');
+        }
+
+        // NOTE: We're using the responseForKV clone that was created before any range processing
+        // This ensures we always store the full video in KV, not partial content
+        logDebug('Storing full video in KV for range request support (via first request)', {
           url: request.url,
+          requestId,
           contentType,
-          isRangeRequest
+          isRangeRequest,
+          isFullResponse: responseForKV.status === 200,
+          responseStatus: responseForKV.status,
+          contentLength: responseForKV.headers.get('content-length'),
+          cacheKey,
+          timestamp: Date.now()
         });
-        
-        // Get execution context if available 
+
+        // Get execution context if available
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ctx = (env as any).executionCtx || (env as any).ctx;
 
         if (ctx && typeof ctx.waitUntil === 'function') {
           // Store in KV using waitUntil to do it in the background
+          // Use a retry mechanism wrapped around the storage operation
           ctx.waitUntil(
-            storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery)
-              .then((success: boolean) => {
-                logDebug(success ? 'Stored in KV cache' : 'Failed to store in KV cache', {
-                  sourcePath,
-                  hasIMQuery: Object.keys(customData).length > 0
-                });
-                
-                // Add breadcrumb if request context is available
-                const reqContext = getCurrentContext();
-                if (reqContext && success) {
-                  addBreadcrumb(reqContext, 'Cache', 'Stored in KV cache', {
-                    sourcePath,
-                    hasIMQuery: Object.keys(customData).length > 0
+            (async () => {
+              const maxRetries = 3;
+              let attemptCount = 0;
+              let success = false;
+              let lastError: Error | null = null;
+              const kvStartTime = Date.now();
+
+              // Retry loop for storage operation
+              while (attemptCount < maxRetries && !success) {
+                try {
+                  attemptCount++;
+
+                  // Add diagnostic data based on attempt number
+                  const attemptOptions = {
+                    ...optionsWithIMQuery,
+                    diagnosticsInfo: {
+                      ...(optionsWithIMQuery.diagnosticsInfo || {}),
+                      requestId,
+                      attemptNumber: attemptCount,
+                      timestamp: Date.now()
+                    }
+                  };
+
+                  if (attemptCount > 1) {
+                    logDebug(`Retry attempt ${attemptCount} for KV storage`, {
+                      cacheKey,
+                      requestId,
+                      previousError: lastError?.message,
+                      timeSinceFirstAttempt: Date.now() - kvStartTime
+                    });
+                  }
+
+                  // Use a clone for retry attempts after the first
+                  const responseToStore = attemptCount === 1 ?
+                    responseForKV :
+                    // Need to create a fresh clone for retries
+                    responseForClient.clone();
+
+                  // Execute storage operation
+                  success = await storeInKVCache(env, sourcePath, responseToStore, attemptOptions);
+
+                  // Success handling
+                  const hasIMQuery = Object.keys(customData).length > 0;
+                  if (success) {
+                    logDebug(`Successfully stored video in KV cache${attemptCount > 1 ? ' after retries' : ''}`, {
+                      sourcePath,
+                      requestId,
+                      hasIMQuery,
+                      attemptCount,
+                      duration: Date.now() - kvStartTime,
+                      cacheKey
+                    });
+
+                    // Add breadcrumb if request context is available
+                    const reqContext = getCurrentContext();
+                    if (reqContext) {
+                      addBreadcrumb(reqContext, 'Cache', 'Stored full video in KV cache', {
+                        sourcePath,
+                        hasIMQuery,
+                        requestId,
+                        attemptCount
+                      });
+                    }
+                  } else {
+                    // If storage reported failure but didn't throw, treat as non-retryable
+                    logDebug('KV storage operation reported failure', {
+                      requestId,
+                      cacheKey,
+                      attemptCount
+                    });
+                    break;
+                  }
+                } catch (err) {
+                  lastError = err instanceof Error ? err : new Error(String(err));
+
+                  // Check for rate limit or conflict errors that might be retryable
+                  const isRateLimitError =
+                    lastError.message.includes('429') ||
+                    lastError.message.includes('409') ||
+                    lastError.message.includes('rate limit') ||
+                    lastError.message.includes('conflict');
+
+                  logDebug('Error during KV storage attempt', {
+                    cacheKey,
+                    requestId,
+                    error: lastError.message,
+                    stack: lastError.stack,
+                    attemptCount,
+                    isRateLimitError,
+                    willRetry: isRateLimitError && attemptCount < maxRetries
                   });
+
+                  // Only retry rate limit errors
+                  if (!isRateLimitError || attemptCount >= maxRetries) {
+                    break;
+                  }
+
+                  // Exponential backoff: 100ms, 200ms, 400ms, etc.
+                  const backoffMs = Math.min(100 * Math.pow(2, attemptCount - 1), 1000);
+                  await new Promise(resolve => setTimeout(resolve, backoffMs));
                 }
-              })
-              .catch((err) => {
-                logDebug('Error storing in KV cache', {
-                  error: err instanceof Error ? err.message : String(err)
+              }
+
+              // Final logging at end of retry cycle
+              if (!success) {
+                logDebug('All KV storage attempts failed', {
+                  cacheKey,
+                  requestId,
+                  attempts: attemptCount,
+                  finalError: lastError?.message,
+                  duration: Date.now() - kvStartTime
                 });
-              })
+              }
+            })()
           );
         } else {
-          // If no context available, store without waiting
-          storeInKVCache(env, sourcePath, responseClone, optionsWithIMQuery)
-            .then((success: boolean) => {
-              logDebug(success ? 'Stored in KV cache (non-waitUntil)' : 'Failed to store in KV cache', {
-                sourcePath,
-                hasIMQuery: Object.keys(customData).length > 0 
-              });
-            })
-            .catch((err) => {
-              logDebug('Error storing in KV cache', {
-                error: err instanceof Error ? err.message : String(err)
-              });
+          // If no context available, store without waiting but still with retry logic
+          (async () => {
+            const maxRetries = 2; // Fewer retries for direct execution
+            let attemptCount = 0;
+            let success = false;
+            let lastError: Error | null = null;
+            const kvStartTime = Date.now();
+
+            // Retry loop for storage operation
+            while (attemptCount < maxRetries && !success) {
+              try {
+                attemptCount++;
+
+                // Add diagnostic data based on attempt number
+                const attemptOptions = {
+                  ...optionsWithIMQuery,
+                  diagnosticsInfo: {
+                    ...(optionsWithIMQuery.diagnosticsInfo || {}),
+                    requestId,
+                    attemptNumber: attemptCount,
+                    timestamp: Date.now()
+                  }
+                };
+
+                if (attemptCount > 1) {
+                  logDebug(`Direct retry attempt ${attemptCount} for KV storage`, {
+                    cacheKey,
+                    requestId,
+                    previousError: lastError?.message,
+                    timeSinceFirstAttempt: Date.now() - kvStartTime
+                  });
+                }
+
+                // Use a clone for retry attempts after the first
+                let responseToStore;
+                try {
+                  responseToStore = attemptCount === 1 ?
+                    responseForKV :
+                    // Need to create a fresh clone for retries
+                    responseForClient.clone();
+                } catch (cloneErr) {
+                  logDebug('Error cloning response for retry storage', {
+                    cacheKey,
+                    requestId,
+                    error: cloneErr instanceof Error ? cloneErr.message : String(cloneErr),
+                    attemptCount
+                  });
+                  break; // Can't retry without a valid response
+                }
+
+                // Execute storage operation
+                success = await storeInKVCache(env, sourcePath, responseToStore, attemptOptions);
+
+                // Report success
+                if (success) {
+                  const hasIMQuery = Object.keys(customData).length > 0;
+                  logDebug(`Successfully stored video in KV cache directly${attemptCount > 1 ? ' after retries' : ''}`, {
+                    sourcePath,
+                    requestId,
+                    hasIMQuery,
+                    attemptCount,
+                    duration: Date.now() - kvStartTime,
+                    cacheKey
+                  });
+                }
+              } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+
+                // Check for rate limit or conflict errors that might be retryable
+                const isRateLimitError =
+                  lastError.message.includes('429') ||
+                  lastError.message.includes('409') ||
+                  lastError.message.includes('rate limit') ||
+                  lastError.message.includes('conflict');
+
+                logDebug('Error during direct KV storage attempt', {
+                  cacheKey,
+                  requestId,
+                  error: lastError.message,
+                  attemptCount,
+                  isRateLimitError,
+                  willRetry: isRateLimitError && attemptCount < maxRetries
+                });
+
+                if (!isRateLimitError || attemptCount >= maxRetries) {
+                  break;
+                }
+
+                // Minimal backoff for direct execution
+                const backoffMs = 100 * attemptCount;
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+              }
+            }
+          })().catch(err => {
+            // Log any top-level errors in the storage flow
+            logDebug('Unexpected error in direct KV storage flow', {
+              cacheKey,
+              requestId,
+              error: err instanceof Error ? err.message : String(err)
             });
+          });
         }
       } catch (err) {
         logDebug('Error preparing KV cache operation', {
-          error: err instanceof Error ? err.message : String(err)
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          cacheKey,
+          requestId
         });
       }
     } else if (options && env && request.method === 'GET') {
       // Log reasons for skipping special video handling
       logDebug('Skipped special video handling', {
         method: request.method,
-        isOk: response.ok,
+        isOk: fullOriginResponse.ok,
         hasDebug: url.searchParams.has('debug'),
         isVideoResponse,
         isError,
-        statusCode: response.status,
+        statusCode: fullOriginResponse.status,
         contentType,
         kvCacheEnabled,
-        skipCache
+        responseForKVExists: !!responseForKV,
+        skipCache,
+        requestId
       });
     }
-    
-    // Return the direct response (KV storage happens in the background)
-    return response;
+
+    // If this is a range request, we need to create a 206 Partial Content response for the client
+    // while still using the full response for KV storage
+    if (isRangeRequest && isVideoResponse && fullOriginResponse.ok) {
+      try {
+        // Import needed httpUtils functions to handle range requests
+        const { parseRangeHeader } = await import('./httpUtils');
+
+        // Get the content-length from the full response
+        const contentLength = parseInt(responseForClient.headers.get('Content-Length') || '0', 10);
+        const rangeHeader = request.headers.get('Range') || '';
+
+        // Enhanced logging for range request processing
+        logDebug('Processing range request with full response', {
+          url: request.url,
+          requestId,
+          rangeHeader,
+          contentLength,
+          responseStatus: responseForClient.status,
+          contentType: responseForClient.headers.get('Content-Type')
+        });
+
+        if (contentLength > 0) {
+          // Parse the range header to get the requested byte range
+          const parsedRange = parseRangeHeader(rangeHeader, contentLength);
+
+          if (parsedRange) {
+            try {
+              // We need to create a proper 206 Partial Content response
+              // Clone the response to avoid consuming it
+              logDebug('Creating ArrayBuffer from full response for range processing', {
+                requestId,
+                parsedRange,
+                contentLength
+              });
+
+              const clonedBody = await responseForClient.arrayBuffer();
+
+              logDebug('Successfully created ArrayBuffer from full response', {
+                requestId,
+                arrayBufferSize: clonedBody.byteLength,
+                expectedSize: contentLength
+              });
+
+              // Validate buffer size against expected content length
+              if (clonedBody.byteLength !== contentLength) {
+                logDebug('WARNING: ArrayBuffer size does not match Content-Length header', {
+                  requestId,
+                  arrayBufferSize: clonedBody.byteLength,
+                  contentLengthHeader: contentLength,
+                  difference: clonedBody.byteLength - contentLength
+                });
+                // Continue anyway - the buffer we have is what we'll use
+              }
+
+              // Get just the requested portion of the body
+              const rangeStart = Math.min(parsedRange.start, clonedBody.byteLength - 1);
+              const rangeEnd = Math.min(parsedRange.end, clonedBody.byteLength - 1);
+
+              // Double-check range is valid
+              if (rangeStart > rangeEnd || rangeStart < 0 || rangeEnd >= clonedBody.byteLength) {
+                throw new Error(`Invalid range values after validation: ${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`);
+              }
+
+              const partialContent = clonedBody.slice(rangeStart, rangeEnd + 1);
+
+              logDebug('Created partial content slice for range request', {
+                requestId,
+                originalRange: `${parsedRange.start}-${parsedRange.end}`,
+                adjustedRange: rangeStart !== parsedRange.start || rangeEnd !== parsedRange.end ?
+                  `${rangeStart}-${rangeEnd}` : undefined,
+                totalSize: clonedBody.byteLength,
+                partialSize: partialContent.byteLength,
+                requestedRangeSize: parsedRange.end - parsedRange.start + 1
+              });
+
+              // Create new headers for the partial response
+              const partialHeaders = new Headers(responseForClient.headers);
+              partialHeaders.set('Content-Range', `bytes ${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`);
+              partialHeaders.set('Content-Length', partialContent.byteLength.toString());
+              partialHeaders.set('Accept-Ranges', 'bytes');
+
+              // Add tracking headers for diagnostics
+              partialHeaders.set('X-Range-Processed-By', 'cacheOrchestrator');
+
+              // Only add this header if using adjusted range
+              if (rangeStart !== parsedRange.start || rangeEnd !== parsedRange.end) {
+                partialHeaders.set('X-Range-Adjusted', 'true');
+              }
+
+              // Create the 206 Partial Content response
+              responseForClient = new Response(partialContent, {
+                status: 206,
+                statusText: 'Partial Content',
+                headers: partialHeaders
+              });
+
+              logDebug('Successfully created 206 Partial Content response', {
+                requestId,
+                originalRangeHeader: rangeHeader,
+                processedRange: `${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`,
+                partialSize: partialContent.byteLength
+              });
+            } catch (bufferErr) {
+              // Specific error for buffer processing issues
+              logDebug('Error processing buffer for range request, falling back to full response', {
+                requestId,
+                error: bufferErr instanceof Error ? bufferErr.message : String(bufferErr),
+                stack: bufferErr instanceof Error ? bufferErr.stack : undefined
+              });
+
+              // Fall back to the full response if buffer processing fails
+              // Create a fresh clone since the previous one might have been consumed
+              try {
+                responseForClient = fullOriginResponse.clone();
+
+                // Add diagnostic header
+                const headers = new Headers(responseForClient.headers);
+                headers.set('X-Range-Fallback', 'buffer-processing-error');
+                responseForClient = new Response(responseForClient.body, {
+                  status: responseForClient.status,
+                  statusText: responseForClient.statusText,
+                  headers
+                });
+              } catch (cloneErr) {
+                logDebug('Error cloning response after buffer error, using original full response', {
+                  requestId,
+                  error: cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+                });
+                responseForClient = fullOriginResponse;
+              }
+            }
+          } else {
+            // No valid parsed range - return a full response with diagnostic headers
+            logDebug('Unable to parse range header, returning full response instead', {
+              requestId,
+              rangeHeader,
+              contentLength,
+              fullResponseStatus: responseForClient.status
+            });
+
+            try {
+              // Create a response with diagnostic headers
+              const headers = new Headers(responseForClient.headers);
+              headers.set('X-Range-Fallback', 'invalid-range-header');
+              responseForClient = new Response(responseForClient.body, {
+                status: responseForClient.status,
+                statusText: responseForClient.statusText,
+                headers
+              });
+            } catch (headerErr) {
+              logDebug('Error adding diagnostic headers, using original response', {
+                requestId,
+                error: headerErr instanceof Error ? headerErr.message : String(headerErr)
+              });
+              // Keep using the existing responseForClient
+            }
+          }
+        } else {
+          // Content length missing or zero
+          logDebug('Missing or zero content length for range request, keeping full response', {
+            requestId,
+            contentLengthHeader: responseForClient.headers.get('Content-Length'),
+            parsedContentLength: contentLength,
+            fullResponseStatus: responseForClient.status
+          });
+
+          try {
+            // Add diagnostic headers about the issue
+            const headers = new Headers(responseForClient.headers);
+            headers.set('X-Range-Fallback', 'missing-content-length');
+            responseForClient = new Response(responseForClient.body, {
+              status: responseForClient.status,
+              statusText: responseForClient.statusText,
+              headers
+            });
+          } catch (headerErr) {
+            logDebug('Error adding diagnostic headers for missing content length', {
+              requestId,
+              error: headerErr instanceof Error ? headerErr.message : String(headerErr)
+            });
+            // Keep using the existing responseForClient
+          }
+        }
+
+        // Final logging for range response creation outcome
+        logDebug('Range request processing complete', {
+          url: request.url,
+          requestId,
+          originalRangeHeader: rangeHeader,
+          finalStatus: responseForClient.status,
+          finalContentLength: responseForClient.headers.get('Content-Length'),
+          finalContentRange: responseForClient.headers.get('Content-Range'),
+          hasFallbackHeader: !!responseForClient.headers.get('X-Range-Fallback')
+        });
+      } catch (rangeErr) {
+        // General error handler for the entire range processing
+        logDebug('Error creating range response, falling back to full response', {
+          requestId,
+          error: rangeErr instanceof Error ? rangeErr.message : String(rangeErr),
+          stack: rangeErr instanceof Error ? rangeErr.stack : undefined,
+          rangeHeader: request.headers.get('Range')
+        });
+
+        // Fall back to the full response if range handling fails
+        try {
+          // Try to create a fresh clone with diagnostic headers
+          const fallbackResponse = fullOriginResponse.clone();
+          const fallbackHeaders = new Headers(fallbackResponse.headers);
+          fallbackHeaders.set('X-Range-Error', 'general-processing-failure');
+          responseForClient = new Response(fallbackResponse.body, {
+            status: fallbackResponse.status,
+            statusText: fallbackResponse.statusText,
+            headers: fallbackHeaders
+          });
+        } catch (cloneErr) {
+          // If that fails too, just use the original response directly
+          logDebug('Error creating diagnostic fallback response, using original', {
+            requestId,
+            error: cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+          });
+          responseForClient = fullOriginResponse;
+        }
+      }
+    } else {
+      // For non-range requests, use the full response directly
+      logDebug('Not a range request or not eligible for range processing, using full response', {
+        requestId,
+        isRangeRequest,
+        isVideoResponse,
+        isResponseOk: fullOriginResponse.ok,
+        status: fullOriginResponse.status
+      });
+      responseForClient = fullOriginResponse;
+    }
+
+    // Return the appropriate response to the client
+    return responseForClient;
   } catch (err) {
+    // Generate a unique error ID for tracking this specific failure
+    const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Create a requestId variable for the error context if it doesn't exist
+    const thisRequestId = requestId || `err_req_${Date.now()}`;
+    // Safely use cacheKey if it's in the current scope
+    let errorCacheKey;
+    try {
+      errorCacheKey = cacheKey;
+    } catch {
+      errorCacheKey = 'unknown-key';
+    }
+
     logDebug('Error in cache flow', {
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      errorId,
+      requestId: thisRequestId,
+      url: request.url,
+      isRangeRequest: request.headers.has('Range'),
+      rangeHeader: request.headers.get('Range'),
+      cacheKey: errorCacheKey
     });
-    
-    // Fallback to handler directly if caching fails
-    return handler();
+
+    // Add breadcrumb for error tracking
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Error', 'Cache orchestration failed', {
+        errorId,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        severity: 'high'
+      });
+    }
+
+    try {
+      // Fallback to handler directly if caching fails, with better error context
+      logDebug('Executing fallback direct handler after cache flow error', {
+        errorId,
+        requestId: thisRequestId,
+        url: request.url
+      });
+
+      // Execute handler for fallback
+      const fallbackResponse = await handler();
+
+      logDebug('Fallback handler succeeded after cache flow error', {
+        errorId,
+        requestId: thisRequestId,
+        responseStatus: fallbackResponse.status,
+        contentType: fallbackResponse.headers.get('content-type')
+      });
+
+      return fallbackResponse;
+    } catch (fallbackErr) {
+      // If even the fallback handler fails, log it but still throw the original error
+      logDebug('Critical: Fallback handler also failed after cache flow error', {
+        originalError: err instanceof Error ? err.message : String(err),
+        fallbackError: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+        errorId,
+        requestId: thisRequestId,
+        url: request.url
+      });
+
+      // Re-throw the original error to maintain the original error context
+      throw err;
+    }
   }
 }

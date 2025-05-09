@@ -184,18 +184,30 @@ async function getTransformedVideoImpl(
         const clientRange = parseRangeHeader(rangeValue, manifest.totalSize);
         
         if (!clientRange) {
-          logDebug('[GET_VIDEO] Unsatisfiable range request for chunked video', {
+          logDebug('[GET_VIDEO] Potentially unsatisfiable range request for chunked video', {
             key,
             range: rangeHeaderValue,
             totalSize: manifest.totalSize
           });
-          
-          addRangeDiagnostics(key, rangeValue, 'unsatisfiable', manifest.totalSize, 'chunked-kv');
-          
-          return { 
-            response: createUnsatisfiableRangeResponse(manifest.totalSize), 
-            metadata: baseMetadata 
-          };
+
+          // RECOVERY LOGIC: Instead of returning 416, return the full chunked video
+          // This handles cases where KV may have partial content but we should return the full content
+          logDebug('[GET_VIDEO] Recovering from unsatisfiable range by returning full chunked response', {
+            key,
+            range: rangeHeaderValue,
+            totalSize: manifest.totalSize
+          });
+
+          addRangeDiagnostics(key, rangeValue, 'recovered-full-chunked-response', manifest.totalSize, 'chunked-kv');
+
+          // Create enhanced headers for full response
+          const fullHeaders = new Headers(responseHeaders);
+          fullHeaders.set('Content-Length', manifest.totalSize.toString());
+          fullHeaders.set('X-Range-Recovery', 'true');
+
+          // Return the full chunked video instead of just the range
+          // We'll use the same approach as the normal full content flow below
+          return await getFullChunkedResponse(namespace, key, manifest, responseHeaders, baseMetadata, kvReadOptions);
         }
         
         // Set range response headers
@@ -375,17 +387,33 @@ async function getTransformedVideoImpl(
         const clientRange = parseRangeHeader(rangeValue, videoArrayBuffer.byteLength);
         
         if (!clientRange) {
-          logDebug('[GET_VIDEO] Unsatisfiable range request for single entry', {
+          logDebug('[GET_VIDEO] Potentially unsatisfiable range request for single entry', {
             key,
             range: rangeHeaderValue,
             size: videoArrayBuffer.byteLength
           });
-          
-          addRangeDiagnostics(key, rangeValue, 'unsatisfiable', videoArrayBuffer.byteLength, 'single-kv');
-          
-          return { 
-            response: createUnsatisfiableRangeResponse(videoArrayBuffer.byteLength), 
-            metadata: baseMetadata 
+
+          // RECOVERY LOGIC: Instead of returning 416, return the full video
+          // This handles cases where KV may have partial content but we should return the full content
+          logDebug('[GET_VIDEO] Recovering from unsatisfiable range by returning full response', {
+            key,
+            range: rangeHeaderValue,
+            fullSize: videoArrayBuffer.byteLength
+          });
+
+          addRangeDiagnostics(key, rangeValue, 'recovered-full-response', videoArrayBuffer.byteLength, 'single-kv');
+
+          // Create enhanced headers for full response
+          const fullHeaders = new Headers(responseHeaders);
+          fullHeaders.set('Content-Length', videoArrayBuffer.byteLength.toString());
+          fullHeaders.set('X-Range-Recovery', 'true');
+
+          return {
+            response: new Response(videoArrayBuffer, {
+              status: 200,
+              headers: fullHeaders
+            }),
+            metadata: baseMetadata
           };
         }
         
@@ -482,6 +510,65 @@ async function getTransformedVideoImpl(
  * @param request - Optional request object for range request support
  * @returns The stored video response or null if not found
  */
+/**
+ * Helper function to get a full chunked response
+ * Used when recovering from unsatisfiable range requests
+ */
+async function getFullChunkedResponse(
+  namespace: KVNamespace,
+  key: string,
+  manifest: ChunkManifest,
+  responseHeaders: Headers,
+  baseMetadata: TransformationMetadata,
+  kvReadOptions: { cacheTtl?: number } = {}
+): Promise<{ response: Response; metadata: TransformationMetadata }> {
+  // Full content response for chunked video
+  responseHeaders.set('Content-Length', manifest.totalSize.toString());
+
+  logDebug('[GET_VIDEO] Processing full content request for chunked video recovery', {
+    key,
+    totalSize: manifest.totalSize,
+    chunkCount: manifest.chunkCount
+  });
+
+  // Create streaming response with transform stream
+  const { readable, writable } = new TransformStream();
+
+  // Process all chunks
+  const streamChunksPromise = streamFullChunkedResponse(
+    namespace,
+    key,
+    manifest,
+    writable.getWriter(),
+    kvReadOptions
+  );
+
+  // Process in background
+  const context = getCurrentContext();
+  if (context?.executionContext?.waitUntil) {
+    context.executionContext.waitUntil(
+      streamChunksPromise.catch(err => {
+        logErrorWithContext(
+          '[GET_VIDEO] Error in background full content chunk processing during recovery',
+          err,
+          { key },
+          'KVStorageService.get'
+        );
+      })
+    );
+  }
+
+  logDebug('[GET_VIDEO] Returning 200 OK for full chunked video (recovery mode)', { key });
+
+  return {
+    response: new Response(readable, {
+      status: 200,
+      headers: responseHeaders
+    }),
+    metadata: baseMetadata
+  };
+}
+
 export const getTransformedVideo = withErrorHandling<
   [
     KVNamespace,
