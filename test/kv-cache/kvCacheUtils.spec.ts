@@ -178,7 +178,8 @@ describe('KV Cache Utils', () => {
       expect(kvStorageService.getTransformedVideo).toHaveBeenCalledWith(
         mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
         sourcePath,
-        mockOptions
+        mockOptions,
+        undefined
       );
     });
 
@@ -195,7 +196,8 @@ describe('KV Cache Utils', () => {
       expect(getTransformedVideo).toHaveBeenCalledWith(
         mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
         sourcePath,
-        mockOptions
+        mockOptions,
+        undefined
       );
     });
 
@@ -297,7 +299,8 @@ describe('KV Cache Utils', () => {
             imwidth: '800',
             imheight: '450'
           }
-        })
+        }),
+        undefined
       );
     });
   });

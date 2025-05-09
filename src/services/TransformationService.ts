@@ -336,12 +336,16 @@ export const prepareVideoTransformation = withErrorHandling<
           });
           
           // Store updated version in background if possible
-          if (env && 'executionCtx' in env && (env as any).executionCtx?.waitUntil) {
-            (env as any).executionCtx.waitUntil(
+          const requestContextForWaitUntil = getCurrentContext(); // Get the current request context
+          const executionCtxForWaitUntil = requestContextForWaitUntil?.executionContext;
+
+          if (executionCtxForWaitUntil?.waitUntil) { // Use the context obtained from getCurrentContext()
+            executionCtxForWaitUntil.waitUntil(
               storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl)
             );
           } else {
             // Fall back to direct storage
+            logDebug('Falling back to await for storeCacheKeyVersion, waitUntil not available via requestContext', { cacheKey });
             await storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl);
           }
         }

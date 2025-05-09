@@ -98,10 +98,13 @@ export async function handleRangeRequestForInitialAccess(
   request: Request
 ): Promise<Response> {
   try {
-    // Generate a cache key based on the URL (without range headers)
+    // Use the full URL from the original request as the cache key
+    const cacheKeyForPut = request.url; // Use the full URL string
+
+    // For logging consistency, we can keep track of the pathname + search if needed
     const url = new URL(request.url);
-    const cacheKey = url.pathname + url.search;
-    
+    const pathAndSearchForLogging = url.pathname + url.search;
+
     // Get the cache or open a new one
     const cache = await caches.open('VIDEO_BUFFER_CACHE');
     
@@ -136,7 +139,8 @@ export async function handleRangeRequestForInitialAccess(
           status: originalResponse.status,
           contentType: originalResponse.headers.get('Content-Type'),
           approximateTtl: ttl,
-          cacheKey: cacheKey
+          cacheKey: cacheKeyForPut,
+          path: pathAndSearchForLogging // Include path for context
         });
         
         debug(context, logger, 'CacheAPI', 'Storing in Cache API with TTL alignment', {
@@ -156,9 +160,9 @@ export async function handleRangeRequestForInitialAccess(
       });
     }
     
-    // Store the full response in the cache using streaming if possible
+    // Store the full response in the cache using the full URL as the key
     // This approach leverages streams for better memory efficiency
-    await cache.put(cacheKey, originalResponse.clone());
+    await cache.put(cacheKeyForPut, originalResponse.clone());
     
     // If this is a range request, use cache.match with ignoreSearch: false to respect ranges
     const rangeHeader = request.headers.get('Range');
@@ -190,7 +194,8 @@ export async function handleRangeRequestForInitialAccess(
               status: rangeResponse.status,
               contentRange: rangeResponse.headers.get('Content-Range'),
               contentLength: rangeResponse.headers.get('Content-Length'),
-              cacheKey
+              cacheKey: cacheKeyForPut,
+              path: pathAndSearchForLogging
             });
           }
         } catch (logError) {

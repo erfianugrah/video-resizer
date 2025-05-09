@@ -42,10 +42,10 @@ Cloudflare's KV storage has a 25MB value size limit, which can be too restrictiv
 4. **Storage Architecture**
    - **Base key** (e.g., `video:path/to/video.mp4:w=640:h=480`):
      - **Value**: Contains the JSON manifest data
-     - **Metadata**: Contains `TransformationMetadata` with `isChunked: true` flag
+     - **Metadata**: Contains `TransformationMetadata` with `isChunked: true` flag and `cacheTags` for purging
    - **Chunk keys** (e.g., `video:path/to/video.mp4:w=640:h=480_chunk_0`):
      - **Value**: Contains the actual binary video chunk data
-     - **Metadata**: Contains minimal chunk metadata (parent key, index, etc.)
+     - **Metadata**: Contains chunk metadata (parent key, index, etc.) and the same `cacheTags` as the parent entry for consistent purging
 
 5. **Byte-Perfect Data Integrity**
    - Stores exact byte lengths for precise verification
@@ -69,8 +69,10 @@ Cloudflare's KV storage has a 25MB value size limit, which can be too restrictiv
 
 1. The system determines whether to use single-entry or chunked storage based on video size
 2. For chunked storage:
+   - Generate cache tags for the video based on its characteristics (path, dimensions, format, etc.)
    - Split the video into chunks of standard size (5MB)
    - Store each chunk with a unique key based on the base key and index
+   - Apply the same cache tags to each chunk for consistent purging capability
    - Create and store a manifest with chunk metadata
    - Verify total size integrity
 
@@ -94,18 +96,24 @@ Cloudflare's KV storage has a 25MB value size limit, which can be too restrictiv
    - Times out problematic chunk fetches after 10 seconds
    - Avoids stream errors from double-closing or writing to aborted streams
 
-2. **Client Disconnection Handling**
+2. **Cache Management & Purging**
+   - Applies the same cache tags to all chunks and the manifest
+   - Enables purging of both the manifest and all chunks with a single tag-based operation
+   - Prevents orphaned chunks when purging videos from cache
+   - Ensures cache consistency across all components of chunked videos
+
+3. **Client Disconnection Handling**
    - Detects client disconnections through stream write failures
    - Properly aborts and cleans up resources
    - Prevents unnecessary chunk fetches after client disconnects
 
-3. **Detailed Logging**
+4. **Detailed Logging**
    - Logs the progress of chunk processing for debugging
    - Records timing information for performance analysis
    - Provides verbose error logging with context
    - Tracks critical data integrity issues
 
-4. **Retry Logic**
+5. **Retry Logic**
    - Implements exponential backoff for KV operations
    - Handles rate limiting gracefully
 
