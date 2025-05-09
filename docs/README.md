@@ -1,6 +1,6 @@
 # Video Resizer Documentation
 
-*Last Updated: May 1, 2025* (All documentation sections completed)
+*Last Updated: May 10, 2025*
 
 Welcome to the Video Resizer documentation. This comprehensive guide provides detailed information about the video-resizer project, its architecture, configuration, features, and usage.
 
@@ -21,11 +21,12 @@ The Video Resizer is a Cloudflare Worker for transforming and resizing video con
 
 - Video transformation and optimization
 - Multiple transformation strategies (video, frame, spritesheet)
-- Caching with KV store integration
+- Advanced caching with KV store integration and chunking for large videos
 - Enhanced range request support for seeking and streaming
 - Client-aware responsive transformations
 - Automatic device and bandwidth detection
 - Debug UI for monitoring and troubleshooting
+- Modular architecture with separated service components
 
 ## Getting Started
 
@@ -40,8 +41,11 @@ New to the Video Resizer? Start here:
 
 | Date | Update |
 |------|--------|
+| May 10, 2025 | Added KV Chunking implementation for large videos |
+| May 10, 2025 | Added Service Separation Pattern documentation |
+| May 10, 2025 | Added Non-blocking cache version writes |
+| May 10, 2025 | Added Performance Optimizations documentation |
+| May 10, 2025 | Updated feature compatibility matrix with new features |
 | May 1, 2025 | Completed reference documentation (API reference, configuration schema) |
 | May 1, 2025 | Completed all practical guides (configuration, troubleshooting, performance-tuning) |
 | May 1, 2025 | Completed core technical documentation (architecture, caching, error handling) |
-| May 1, 2025 | Added comprehensive error handling documentation |
-| May 1, 2025 | Added detailed cache versioning documentation |

@@ -1,6 +1,6 @@
 # Video Resizer Architecture
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This section provides comprehensive documentation on the Video Resizer architecture, including system design, components, patterns, and evolution.
 
@@ -8,6 +8,7 @@ This section provides comprehensive documentation on the Video Resizer architect
 
 - [Architecture Overview](./architecture-overview.md) - Comprehensive system design overview
 - [Design Patterns](./design-patterns.md) - Strategy, Command, and other patterns used
+- [Service Separation](./service-separation.md) - Modular service architecture
 - [Dependency Management](./dependency-management.md) - Dependency injection approach
 - [Architecture Roadmap](./roadmap.md) - Future architecture plans
 
@@ -28,5 +29,31 @@ The architecture uses several design patterns:
 - **Singleton Pattern**: For configuration managers
 - **Factory Pattern**: For creating appropriate strategy instances
 - **Dependency Injection**: For service management
+- **Service Separation Pattern**: For modular, maintainable code organization
 
-See the [Architecture Overview](./architecture-overview.md) for detailed information on these components and their interactions.
+## Recent Architectural Improvements
+
+### Service Separation Pattern
+
+The codebase has been refactored to improve maintainability by breaking down large monolithic files into smaller, focused modules:
+
+- **KV Storage Service**: Separated into 9 specialized modules
+- **Video Storage Service**: Separated into 9 focused components
+- **Error Handler Service**: Split into 6 responsibility-specific files
+- **Configuration Service**: Divided into 8 logical modules
+- **Transformation Utils**: Organized into 5 focused utility files
+
+This pattern maintains backward compatibility while improving code organization and testability. See [Service Separation](./service-separation.md) for details.
+
+### Non-Blocking Operations
+
+The architecture now emphasizes non-blocking operations for improved performance:
+
+- Cache version metadata updates performed in the background
+- TTL refresh operations executed non-blocking
+- Streaming responses for large content
+- Parallel operations where beneficial
+
+These improvements ensure responsive user experience even during resource-intensive operations.
+
+See the [Architecture Overview](./architecture-overview.md) for a detailed explanation of the system's architecture.
