@@ -236,12 +236,33 @@ async function getTransformedVideoImpl(
         // Process in background
         const context = getCurrentContext();
         if (context?.executionContext?.waitUntil) {
+          // Create an AbortController to be able to cancel the chunk streaming if needed
+          const abortController = new AbortController();
+          const abortSignal = abortController.signal;
+
+          // Store the AbortController in the request context for potential cancellation
+          if (!context.activeStreams) {
+            context.activeStreams = new Map();
+          }
+          context.activeStreams.set(key, abortController);
+
+          // Add cleanup function to remove from activeStreams when done
+          const cleanup = () => {
+            if (context.activeStreams?.has(key)) {
+              context.activeStreams.delete(key);
+              logDebug('[GET_VIDEO] Removed stream from active streams map', { key });
+            }
+          };
+
+          // Pass the signal to the streaming operation
           context.executionContext.waitUntil(
-            streamChunksPromise.catch(err => {
+            streamChunksPromise.then(cleanup).catch(err => {
+              cleanup();
               logDebug('[GET_VIDEO] Error in background chunk processing', {
                 key,
                 error: err instanceof Error ? err.message : String(err),
-                range: rangeHeaderValue
+                range: rangeHeaderValue,
+                wasAborted: abortSignal.aborted
               });
             })
           );
@@ -309,12 +330,35 @@ async function getTransformedVideoImpl(
     // Process in background
     const context = getCurrentContext();
     if (context?.executionContext?.waitUntil) {
+      // Create an AbortController to be able to cancel the chunk streaming if needed
+      const abortController = new AbortController();
+      const abortSignal = abortController.signal;
+
+      // Store the AbortController in the request context for potential cancellation
+      if (!context.activeStreams) {
+        context.activeStreams = new Map();
+      }
+      context.activeStreams.set(key, abortController);
+
+      // Add cleanup function to remove from activeStreams when done
+      const cleanup = () => {
+        if (context.activeStreams?.has(key)) {
+          context.activeStreams.delete(key);
+          logDebug('[GET_VIDEO] Removed full content stream from active streams map', { key });
+        }
+      };
+
+      // Pass the signal to the streaming operation
       context.executionContext.waitUntil(
-        streamChunksPromise.catch(err => {
+        streamChunksPromise.then(cleanup).catch(err => {
+          cleanup();
           logErrorWithContext(
-            '[GET_VIDEO] Error in background full content chunk processing', 
-            err, 
-            { key }, 
+            '[GET_VIDEO] Error in background full content chunk processing',
+            err,
+            {
+              key,
+              wasAborted: abortSignal.aborted
+            },
             'KVStorageService.get'
           );
         })
@@ -546,12 +590,35 @@ async function getFullChunkedResponse(
   // Process in background
   const context = getCurrentContext();
   if (context?.executionContext?.waitUntil) {
+    // Create an AbortController to be able to cancel the chunk streaming if needed
+    const abortController = new AbortController();
+    const abortSignal = abortController.signal;
+
+    // Store the AbortController in the request context for potential cancellation
+    if (!context.activeStreams) {
+      context.activeStreams = new Map();
+    }
+    context.activeStreams.set(`${key}_recovery`, abortController);
+
+    // Add cleanup function to remove from activeStreams when done
+    const cleanup = () => {
+      if (context.activeStreams?.has(`${key}_recovery`)) {
+        context.activeStreams.delete(`${key}_recovery`);
+        logDebug('[GET_VIDEO] Removed recovery stream from active streams map', { key });
+      }
+    };
+
+    // Pass the signal to the streaming operation
     context.executionContext.waitUntil(
-      streamChunksPromise.catch(err => {
+      streamChunksPromise.then(cleanup).catch(err => {
+        cleanup();
         logErrorWithContext(
           '[GET_VIDEO] Error in background full content chunk processing during recovery',
           err,
-          { key },
+          {
+            key,
+            wasAborted: abortSignal.aborted
+          },
           'KVStorageService.get'
         );
       })

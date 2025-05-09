@@ -55,21 +55,24 @@ export interface RequestContext {
   requestId: string;      // Unique ID for the request
   url: string;            // Original request URL
   startTime: number;      // Request start timestamp
-  
+
   // Tracking data
   breadcrumbs: Breadcrumb[];  // Chronological events during processing
   diagnostics: DiagnosticsInfo; // Diagnostic information
-  
+
   // Performance tracking
   componentTiming: Record<string, number>; // Time spent in each component
   operations?: Record<string, TimedOperation>; // For tracking timed operations
-  
+
   // Feature flags
   debugEnabled: boolean;  // Whether debug mode is enabled
   verboseEnabled: boolean; // Whether verbose logging is enabled
-  
+
   // For waitUntil operations
   executionContext?: ExecutionContext; // Worker execution context for waitUntil
+
+  // For tracking and canceling active streams
+  activeStreams?: Map<string, AbortController>; // Map of active streams that can be canceled
 }
 
 /**
@@ -99,16 +102,20 @@ export function createRequestContext(request: Request, ctx?: ExecutionContext): 
   // This will work as long as the DebugConfigurationManager has been initialized elsewhere in the app
   try {
     // Import directly from the module index where it should be initialized
-    const { debugConfig } = require('../config');
-    if (debugConfig) {
-      envDebugEnabled = debugConfig.isDebugEnabled();
-      envVerboseEnabled = debugConfig.isVerboseEnabled();
-      
-      logDebug('Loaded debug config', { 
-        enabled: envDebugEnabled, 
-        verbose: envVerboseEnabled 
-      });
-    }
+    // Use dynamic import to avoid require
+    import('../config').then(module => {
+      if (module.debugConfig) {
+        envDebugEnabled = module.debugConfig.isDebugEnabled();
+        envVerboseEnabled = module.debugConfig.isVerboseEnabled();
+
+        logDebug('Loaded debug config', {
+          enabled: envDebugEnabled,
+          verbose: envVerboseEnabled
+        });
+      }
+    }).catch(() => {
+      // Silent catch - we'll fall back to the async import below
+    });
   } catch (err) {
     // Fall back to async import if the module isn't loaded yet
     import('../config').then(module => {
@@ -264,8 +271,9 @@ export function addBreadcrumb(
   }
 
   const timestamp = performance.now();
-  const elapsedMs = timestamp - context.startTime;
-  
+  // Ensure elapsed time is never negative - use 0 as a floor
+  const elapsedMs = Math.max(0, timestamp - context.startTime);
+
   // Create the breadcrumb
   const breadcrumb: Breadcrumb = {
     timestamp,
@@ -275,7 +283,7 @@ export function addBreadcrumb(
     elapsedMs,
     durationMs: undefined
   };
-  
+
   // Make sure the breadcrumbs array exists
   if (!context.breadcrumbs) {
     context.breadcrumbs = [];
@@ -287,38 +295,39 @@ export function addBreadcrumb(
     // Calculate duration from previous breadcrumb if available
     if (context.breadcrumbs.length > 0) {
       const lastBreadcrumb = context.breadcrumbs[context.breadcrumbs.length - 1];
-      breadcrumb.durationMs = timestamp - lastBreadcrumb.timestamp;
+      // Ensure duration is never negative - use 0 as a floor
+      breadcrumb.durationMs = Math.max(0, timestamp - lastBreadcrumb.timestamp);
     }
-    
+
     // Log breadcrumb for debugging with timing information
-    logDebug('Adding breadcrumb', { 
-      category, 
-      message, 
-      elapsedMs: elapsedMs.toFixed(2), 
-      durationMs: breadcrumb.durationMs !== undefined ? breadcrumb.durationMs.toFixed(2) : undefined 
+    logDebug('Adding breadcrumb', {
+      category,
+      message,
+      elapsedMs: elapsedMs.toFixed(2),
+      durationMs: breadcrumb.durationMs !== undefined ? breadcrumb.durationMs.toFixed(2) : undefined
     });
-    
+
     // Add to breadcrumbs array, respecting maxItems
     context.breadcrumbs.push(breadcrumb);
-    
+
     // Trim breadcrumbs if they exceed maxItems
     if (context.breadcrumbs.length > breadcrumbConfig.maxItems) {
       context.breadcrumbs = context.breadcrumbs.slice(-breadcrumbConfig.maxItems);
     }
-    
+
     // Update component timing if durationMs was calculated
     if (breadcrumb.durationMs !== undefined) {
       // Make sure the componentTiming object exists
       if (!context.componentTiming) {
         context.componentTiming = {};
       }
-      
+
       context.componentTiming[category] = (context.componentTiming[category] || 0) + breadcrumb.durationMs;
     }
   } else {
     logDebug('Breadcrumb recording disabled, skipping', { category, message });
   }
-  
+
   return breadcrumb;
 }
 
@@ -359,18 +368,19 @@ export function endTimedOperation(context: RequestContext, operationName: string
   if (!context.operations || !context.operations[operationName]) {
     return undefined;
   }
-  
+
   const operation = context.operations[operationName];
   operation.endTime = performance.now();
-  operation.duration = operation.endTime - operation.startTime;
-  
+  // Ensure duration is never negative - use 0 as a floor
+  operation.duration = Math.max(0, operation.endTime - operation.startTime);
+
   // Add a breadcrumb to mark the end of this operation with duration
   addBreadcrumb(context, operation.category || 'Performance', `Completed ${operationName}`, {
     operationType: 'end',
     operation: operationName,
     durationMs: operation.duration
   });
-  
+
   return operation.duration;
 }
 
@@ -382,7 +392,7 @@ export function endTimedOperation(context: RequestContext, operationName: string
 export function getPerformanceMetrics(context: RequestContext) {
   // Gather all operation durations
   const operations: Record<string, number> = {};
-  
+
   if (context.operations) {
     Object.entries(context.operations).forEach(([name, operation]) => {
       if (operation.duration !== undefined) {
@@ -390,9 +400,9 @@ export function getPerformanceMetrics(context: RequestContext) {
       }
     });
   }
-  
+
   return {
-    totalElapsedMs: performance.now() - context.startTime,
+    totalElapsedMs: Math.max(0, performance.now() - context.startTime),
     componentTiming: context.componentTiming,
     operations,
     breadcrumbCount: context.breadcrumbs.length
