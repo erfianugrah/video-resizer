@@ -1,6 +1,6 @@
 # Video Resizer Troubleshooting Guide
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This guide helps diagnose and resolve common issues with the Video Resizer. It covers error identification, debugging tools, and recommended solutions for specific problems.
 

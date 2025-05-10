@@ -1,6 +1,6 @@
 # KV Cache Implementation
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 ## Table of Contents
 
@@ -34,37 +34,43 @@ This document explains the technical implementation details of the KV caching sy
 
 ## KV Storage Components
 
-The KV caching system consists of several key components:
+The KV caching system consists of several key components that have been refactored into a modular structure:
 
-### 1. kvStorageService.ts
+### 1. KV Storage Service
 
-Core service responsible for KV operations:
-- Manages interaction with Cloudflare KV
-- Handles key generation and normalization
-- Manages metadata association
-- Controls TTL settings
-- Implements cache bypass logic
+The KV Storage Service is now organized as a module with multiple focused files:
+
+```
+src/services/kvStorage/
+├── README.md         # Documentation about the module
+├── constants.ts      # Shared constants for chunking, size limits, etc.
+├── interfaces.ts     # Type definitions for metadata and chunking manifest
+├── keyUtils.ts       # Key generation and management utilities
+├── storageHelpers.ts # Common storage functions and helpers
+├── streamingHelpers.ts # Range request handling and streaming
+├── versionHandlers.ts # Cache versioning utilities
+├── storeVideo.ts     # Video storage implementation
+├── getVideo.ts       # Video retrieval implementation
+├── listVariants.ts   # Video variant listing functionality
+└── index.ts          # Re-exports all functionality
+```
+
+The service provides these core capabilities:
+- Standard and chunked video storage in KV
+- Efficient key management
+- Metadata association
+- TTL settings
+- Cache bypass logic
+- Range request support
+
+The main service is now imported from the module:
 
 ```typescript
-export class KVStorageService {
-  private readonly namespace: KVNamespace;
-  private readonly versionService: CacheVersionService;
-  
-  constructor(env: Env) {
-    this.namespace = env.VIDEO_TRANSFORMATIONS_CACHE;
-    this.versionService = new CacheVersionService(env);
-  }
-  
-  public async get(key: string): Promise<Response | null> {
-    // KV retrieval implementation
-  }
-  
-  public async put(key: string, value: Response, options?: { ttl?: number }): Promise<void> {
-    // KV storage implementation
-  }
-  
-  // Additional methods
-}
+import { storeTransformedVideo, getTransformedVideo } from '../services/kvStorage';
+
+// or for direct imports
+import { storeTransformedVideo } from '../services/kvStorage/storeVideo';
+import { getTransformedVideo } from '../services/kvStorage/getVideo';
 ```
 
 ### 2. kvCacheUtils.ts

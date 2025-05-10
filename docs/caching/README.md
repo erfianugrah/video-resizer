@@ -1,6 +1,6 @@
 # Video Resizer Caching System
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This section provides comprehensive documentation on the caching system used in the Video Resizer.
 

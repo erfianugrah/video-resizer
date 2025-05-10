@@ -1,6 +1,6 @@
 # Video Resizer Configuration
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This section provides comprehensive documentation on configuring the Video Resizer, including environment settings, path patterns, and dynamic configuration.
 

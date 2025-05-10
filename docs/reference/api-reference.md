@@ -1,6 +1,6 @@
 # Video Resizer API Reference
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This document provides a comprehensive reference of public APIs, interfaces, and important types in the Video Resizer.
 

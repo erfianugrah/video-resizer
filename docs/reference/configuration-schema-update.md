@@ -1,6 +1,6 @@
 # Video Resizer Configuration Schema Reference (Updated)
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This document provides a comprehensive reference of the updated configuration schema used in the Video Resizer. It covers all available configuration options with a streamlined approach that eliminates redundancy between path patterns and cache profiles.
 

@@ -1,6 +1,6 @@
 # Video Resizer Deployment
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This section provides documentation on deploying and managing the Video Resizer in production environments.
 

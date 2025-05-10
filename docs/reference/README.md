@@ -1,6 +1,6 @@
 # Video Resizer Reference
 
-*Last Updated: May 1, 2025* (Updated with API reference and configuration schema)
+*Last Updated: May 10, 2025* (Updated with API reference and configuration schema)
 
 This section provides reference documentation for the Video Resizer.
 

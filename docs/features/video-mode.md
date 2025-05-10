@@ -1,6 +1,6 @@
 # Video Mode
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 ## Table of Contents
 
@@ -42,6 +42,8 @@ In video mode, you can:
 | `quality` | string | null | Quality level | `quality=high` |
 | `compression` | string | null | Compression level | `compression=low` |
 | `bitrate` | number | null | Target bitrate (bps) | `bitrate=3000000` |
+| `time` | string | null | Time position for frame extraction | `time=10s` |
+| `duration` | string | null | Duration of video segment | `duration=30s` |
 
 ### Fit Modes
 
@@ -65,8 +67,11 @@ Video mode supports several parameters that control video playback behavior:
 | `autoplay` | boolean | false | Whether video should autoplay | `autoplay=true` |
 | `muted` | boolean | false | Whether audio should be muted | `muted=true` |
 | `preload` | string | 'auto' | Preload behavior | `preload=metadata` |
+| `audio` | boolean | true | Whether to include audio | `audio=false` |
 
 > Note: These parameters only apply to video mode and will cause validation errors if used with frame or spritesheet modes.
+
+> **Important**: When using `autoplay=true` with audio, you must also set `muted=true` for browser compatibility. Most browsers will block autoplay with audio unless the video is muted.
 
 ### Preload Options
 
@@ -186,11 +191,13 @@ https://cdn.example.com/videos/sample.mp4?derivative=mobile
 
 ## Technical Limitations
 
-- **Input Video Size**: Maximum input video size is 40MB
+- **Input Video Size**: Maximum input video size is 40MB without KV chunking (can be larger with KV chunking enabled)
 - **Dimensions**: Width and height must be between 10-2000 pixels
 - **Input Format**: Cloudflare Media Transformation primarily supports MP4 files with H.264 video and AAC/MP3 audio
 - **Processing Time**: Initial transformations may take 500-2000ms (subsequent requests use cached versions)
 - **Duration**: Long videos may have higher processing times and resource usage
+- **Duration Limits**: Video durations can be limited by configuration; the system will automatically adjust durations to fit within configured limits
+- **Autoplay Limitations**: Browsers require videos with autoplay to be muted unless user interaction has occurred
 
 ## Best Practices
 
@@ -214,6 +221,16 @@ https://cdn.example.com/videos/sample.mp4?derivative=mobile
    - Preload only metadata for non-primary videos
    - Use muted for autoplay compatibility on mobile
 
+5. **Duration Best Practices**:
+   - Keep durations reasonable (generally under 5 minutes) for optimal performance
+   - For longer videos, consider breaking into segments or using range requests
+   - The system will automatically adjust durations exceeding configured limits
+
+6. **Autoplay Compatibility**:
+   - Always set `muted=true` when using `autoplay=true` to ensure compatibility
+   - If audio is required, consider a click-to-play approach instead of autoplay
+   - Testing across different browsers is recommended for autoplay functionality
+
 ## Advanced Usage
 
 ### Combining with Other Features
@@ -231,13 +248,37 @@ Video mode works well with other Video Resizer features:
 3. **Range Request Support**:
    - Video mode supports range requests for seeking
    - No special parameters needed, handled automatically
+   - Works with both regular and chunked KV storage
+
+4. **KV Chunking**:
+   - Larger videos are automatically stored in chunks in KV
+   - Supports videos exceeding the 25MB KV size limit
+   - Maintains efficient range request support
+   - See [KV Chunking documentation](./kv-chunking.md) for details
 
 ### Custom Transformations
 
 For advanced use cases, you can combine parameters for custom transformations:
 
 ```
-https://cdn.example.com/videos/sample.mp4?width=1280&height=720&quality=high&compression=low&fit=cover&format=webm&loop=true&muted=true
+https://cdn.example.com/videos/sample.mp4?width=1280&height=720&quality=high&compression=low&fit=cover&format=webm&loop=true&muted=true&autoplay=true&duration=30s
 ```
 
-This transforms the video to 1280x720, high quality with low compression, using cover fit, outputs in WebM format, and sets it to loop and be muted.
+This transforms the video to 1280x720, high quality with low compression, using cover fit, outputs in WebM format, sets it to loop and be muted with autoplay, and limits duration to 30 seconds.
+
+### Duration Format
+
+The `duration` parameter accepts the following formats:
+
+- Seconds: `10s`, `30s`, `60s`
+- Minutes: `1m`, `5m`, `30m`
+- Combined (in code implementation): `1m30s`
+
+The system will apply configured limits to duration values if they exceed the maximum allowed duration. This automatic adjustment prevents errors and ensures consistent behavior.
+
+Example with duration:
+```
+https://cdn.example.com/videos/sample.mp4?width=640&height=360&duration=1m30s
+```
+
+This will extract a 1 minute and 30 second clip from the start of the video. If the configured maximum duration is less than this (e.g., 1 minute), the system will automatically adjust to use the maximum allowed duration.

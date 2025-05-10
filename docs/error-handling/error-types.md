@@ -1,6 +1,6 @@
 # Error Types Reference
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This document provides a comprehensive reference of all error types defined in the Video Resizer, their meanings, and recommended handling approaches.
 

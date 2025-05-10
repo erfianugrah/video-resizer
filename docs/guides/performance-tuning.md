@@ -1,6 +1,6 @@
 # Video Resizer Performance Tuning Guide
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This guide provides practical advice for optimizing the performance of your Video Resizer implementation. It covers caching strategies, configuration optimizations, network performance, and client-side enhancements.
 

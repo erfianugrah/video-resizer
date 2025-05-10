@@ -1,6 +1,6 @@
 # Video Resizer Glossary
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This glossary provides standardized definitions for terms used throughout the Video Resizer documentation to ensure consistency in terminology.
 

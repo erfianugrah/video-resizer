@@ -1,6 +1,6 @@
 # Video Resizer Configuration Schema Reference (Updated)
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This document provides a comprehensive reference of the updated configuration schema used in the Video Resizer. It covers all available configuration options with a streamlined approach that eliminates redundancy between path patterns and cache profiles.
 
@@ -14,6 +14,7 @@ This document provides a comprehensive reference of the updated configuration sc
   - [Default Options](#default-options)
 - [Cache Configuration](#cache-configuration)
   - [TTL Settings](#ttl-settings)
+  - [KV Chunking Configuration](#kv-chunking-configuration)
 - [Debug Configuration](#debug-configuration)
 - [Logging Configuration](#logging-configuration)
 - [Storage Configuration](#storage-configuration)
@@ -25,7 +26,7 @@ This document provides a comprehensive reference of the updated configuration sc
 The Video Resizer uses a modular configuration system organized into these main sections:
 
 1. **Video Configuration**: Controls video transformation settings, derivatives, and patterns
-2. **Cache Configuration**: Manages caching behavior and TTLs
+2. **Cache Configuration**: Manages caching behavior, TTLs, and KV chunking for large videos
 3. **Debug Configuration**: Controls debugging features and diagnostic output
 4. **Logging Configuration**: Defines logging behavior, levels, and formats
 5. **Storage Configuration**: Configures origin storage settings and authentication
@@ -34,7 +35,11 @@ All configuration is validated using [Zod](https://github.com/colinhacks/zod) sc
 
 ## Key Changes
 
-This update streamlines the configuration by **eliminating the redundant "cache profiles" section** and consolidating caching properties directly into path patterns. Key changes include:
+This update streamlines the configuration and adds support for advanced features:
+
+### Cache Configuration Simplification
+
+The configuration has been streamlined by **eliminating the redundant "cache profiles" section** and consolidating caching properties directly into path patterns:
 
 1. **Removed `cache.profiles` section**: All caching configuration is now defined in path patterns
 2. **Enhanced path patterns**: Added caching properties directly to path patterns
@@ -45,6 +50,15 @@ These changes ensure that:
 - There's a single source of truth for TTL configuration
 - Path pattern TTLs are consistently used for matching URLs
 - The system is more intuitive and easier to maintain
+
+### KV Chunking Support
+
+The configuration now includes support for KV chunking, which allows storing videos larger than Cloudflare KV's 25MB limit:
+
+1. **Added `cache.kvChunking` section**: Configuration options for chunking large videos
+2. **Default chunking settings**: Pre-configured with optimal values for most use cases
+3. **Size thresholds**: Configurable limits for when to apply chunking
+4. **Performance settings**: Options to control parallel fetches and timeouts
 
 ## Video Configuration
 
@@ -259,6 +273,57 @@ interface CacheTTL {
 - `clientError`: `60` (1 minute)
 - `serverError`: `10` (10 seconds)
 
+### KV Chunking Configuration
+
+KV Chunking settings control how large videos are split into manageable chunks for storage in Cloudflare KV:
+
+```typescript
+interface KvChunkingConfig {
+  enabled: boolean;          // Enable KV chunking
+  sizeThreshold: number;     // Size threshold for chunking in bytes
+  chunkSize: number;         // Size of each chunk in bytes
+  timeoutMs: number;         // Timeout for chunk operations in milliseconds
+  maxChunks: number;         // Maximum allowed chunks
+  parallelFetches: number;   // Maximum parallel chunk fetches
+  logChunkOperations: boolean; // Log detailed chunk operations
+  useEdgeCache: boolean;     // Use edge cache for KV reads
+  edgeCacheTtl: number;      // Edge cache TTL in seconds
+}
+```
+
+**Default Values:**
+
+- `enabled`: `true` - Enable KV chunking for large videos
+- `sizeThreshold`: `20971520` (20MB) - Videos larger than this will be chunked
+- `chunkSize`: `5242880` (5MB) - Each chunk will be approximately this size
+- `timeoutMs`: `10000` (10s) - Maximum time to wait for chunk operations
+- `maxChunks`: `1000` - Maximum number of chunks allowed (5GB max with 5MB chunks)
+- `parallelFetches`: `3` - Maximum number of chunks to fetch in parallel
+- `logChunkOperations`: `true` - Enable detailed logging of chunk operations
+- `useEdgeCache`: `true` - Use edge cache for KV reads to improve performance
+- `edgeCacheTtl`: `3600` (60m) - TTL for edge-cached KV reads
+
+**Placement in Configuration:**
+
+This configuration is typically placed within the `cache` section:
+
+```json
+"cache": {
+  // Other cache settings...
+  "kvChunking": {
+    "enabled": true,
+    "sizeThreshold": 20971520,
+    "chunkSize": 5242880,
+    "timeoutMs": 10000,
+    "maxChunks": 1000,
+    "parallelFetches": 3,
+    "logChunkOperations": true,
+    "useEdgeCache": true,
+    "edgeCacheTtl": 3600
+  }
+}
+```
+
 ## Debug Configuration
 
 The debug configuration controls debugging features and diagnostic output.
@@ -385,6 +450,20 @@ Environment variables provide a way to override configuration settings. Key vari
 | `CACHE_KV_TTL_REDIRECTS` | number | TTL for redirect responses |
 | `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for client error responses |
 | `CACHE_KV_TTL_SERVER_ERROR` | number | TTL for server error responses |
+
+**KV Chunking Environment Variables:**
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `CACHE_KV_CHUNKING_ENABLED` | boolean | Enable KV chunking for large videos |
+| `CACHE_KV_CHUNK_SIZE` | number | Size of each chunk in bytes |
+| `CACHE_KV_SIZE_THRESHOLD` | number | Size threshold for chunking in bytes |
+| `CACHE_KV_CHUNK_TIMEOUT_MS` | number | Timeout for chunk operations in milliseconds |
+| `CACHE_KV_MAX_CHUNKS` | number | Maximum allowed chunks |
+| `CACHE_KV_PARALLEL_FETCHES` | number | Maximum parallel chunk fetches |
+| `CACHE_KV_LOG_OPERATIONS` | boolean | Log detailed chunk operations |
+| `CACHE_KV_USE_EDGE_CACHE` | boolean | Use edge cache for KV reads |
+| `CACHE_KV_EDGE_CACHE_TTL` | number | Edge cache TTL in seconds |
 
 ## Configuration Example
 
@@ -518,6 +597,17 @@ Here's a streamlined configuration example without cache profiles:
       "redirects": 300,
       "clientError": 60,
       "serverError": 10
+    },
+    "kvChunking": {
+      "enabled": true,
+      "sizeThreshold": 20971520,
+      "chunkSize": 5242880,
+      "timeoutMs": 10000,
+      "maxChunks": 1000,
+      "parallelFetches": 3,
+      "logChunkOperations": true,
+      "useEdgeCache": true,
+      "edgeCacheTtl": 3600
     }
   },
   "debug": {

@@ -1,6 +1,6 @@
 # Video Resizer Practical Configuration Guide
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 This guide provides practical advice and examples for configuring the Video Resizer for common scenarios. It covers everyday configuration tasks and best practices.
 

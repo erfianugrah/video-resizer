@@ -1,6 +1,6 @@
 # Video Resizer Configuration Guide
 
-*Last Updated: May 1, 2025*
+*Last Updated: May 10, 2025*
 
 ## Table of Contents
 
