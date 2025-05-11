@@ -7,6 +7,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - Video transformation and optimization
 - Multiple transformation strategies (video, frame, spritesheet)
 - Caching with KV store integration and efficient TTL refresh
+- KV chunking for large videos beyond KV size limits
 - Cache versioning for invalidation without purging
 - Enhanced range request support for seeking and streaming
 - Client-aware responsive transformations
