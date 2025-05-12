@@ -494,26 +494,29 @@ Cache tags are labels attached to cached items for grouped management:
 ```typescript
 export function generateCacheTags(sourcePath: string, options: VideoTransformOptions): string[] {
   const tags: string[] = [];
-  
+
   // Add source-based tag
   const sourceIdentifier = getSourceIdentifier(sourcePath);
   tags.push(`video-${sourceIdentifier}`);
-  
+
   // Add derivative-based tag
   if (options.derivative) {
     tags.push(`video-derivative-${options.derivative}`);
+
+    // Add combined path+derivative tag for more specific purging
+    tags.push(`video-${sourceIdentifier}-derivative-${options.derivative}`);
   }
-  
+
   // Add format-based tag
   if (options.format) {
     tags.push(`video-format-${options.format}`);
   }
-  
+
   // Add mode-based tag
   if (options.mode) {
     tags.push(`video-mode-${options.mode}`);
   }
-  
+
   return tags;
 }
 ```
@@ -522,6 +525,7 @@ These tags enable organized cache management:
 - Purge all videos from a specific source with `video-<source>`
 - Purge all mobile derivatives with `video-derivative-mobile`
 - Purge all WebM videos with `video-format-webm`
+- Purge a specific video's mobile derivative with `video-<source>-derivative-mobile`
 
 ## Bypass Mechanisms
 

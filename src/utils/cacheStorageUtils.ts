@@ -238,7 +238,7 @@ export async function prepareResponseForRangeSupport(
   }
   
   // Get content length if available to avoid buffering
-  let contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+  const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
   
   if (contentLength > 0) {
     // We have Content-Length, we can use streaming directly

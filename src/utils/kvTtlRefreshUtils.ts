@@ -138,11 +138,11 @@ export async function refreshKeyTtl({
       // Use empty string as KV doesn't accept null values, but we're only updating metadata
       if (useIndefiniteStorage) {
         // When using indefinite storage, don't set expirationTtl to keep item indefinitely
-        await namespace.put(key, "", { metadata: updatedMetadata });
+        await namespace.put(key, '', { metadata: updatedMetadata });
         logDebug('Refreshed KV TTL for indefinitely stored item', { key });
       } else {
         // Normal case with TTL
-        await namespace.put(key, "", { 
+        await namespace.put(key, '', { 
           metadata: updatedMetadata, 
           expirationTtl: originalTtl 
         });

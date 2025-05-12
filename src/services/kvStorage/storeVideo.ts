@@ -221,9 +221,11 @@ async function storeTransformedVideoImpl(
         parentKey: key,
         chunkIndex: chunkIndex,
         size: chunkBuffer.byteLength,
-        contentType: 'application/octet-stream',
+        contentType: 'application/octet-stream', // Use octet-stream for chunks
         createdAt: Date.now(),
-        cacheTags: cacheTags, // Apply the same cache tags to each chunk
+        cacheTags: generateCacheTags(sourcePath, options, new Headers({
+          'Content-Type': originalVideoContentType // Generate tags based on the original video type
+        })),
       };
       
       logDebug('[STORE_VIDEO] Preparing to PUT chunk', { 
@@ -315,8 +317,8 @@ async function storeTransformedVideoImpl(
       originalContentType: originalVideoContentType,
     };
     
-    // Create metadata for the manifest entry
-    // Note: We're reusing the same cache tags that were generated earlier for the chunks
+    // Create metadata for the manifest entry with video content type for cache tags
+    // but application/json as the actual content type for the manifest itself
     const manifestEntryMetadata = createBaseMetadata(
       sourcePath,
       options,
@@ -330,17 +332,12 @@ async function storeTransformedVideoImpl(
     manifestEntryMetadata.isChunked = true;
     manifestEntryMetadata.actualTotalVideoSize = sumOfChunkBytes;
 
-    // Verify the cache tags in manifestEntryMetadata match our pre-generated ones
-    // This is just a sanity check to ensure consistency between chunks and manifest
-    if (manifestEntryMetadata.cacheTags?.length !== cacheTags.length) {
-      logDebug('[STORE_VIDEO] Warning: Cache tag count mismatch between chunks and manifest', {
-        key,
-        chunkTagCount: cacheTags.length,
-        manifestTagCount: manifestEntryMetadata.cacheTags?.length || 0
-      });
-      // Override with our pre-generated tags to ensure consistency
-      manifestEntryMetadata.cacheTags = cacheTags;
-    }
+    // Override the cache tags to ensure they have the original video content type
+    // This ensures all chunked video-related entries have tags that include the
+    // correct video/mp4 content type, not application/json
+    manifestEntryMetadata.cacheTags = generateCacheTags(sourcePath, options, new Headers({
+      'Content-Type': originalVideoContentType // Generate tags based on the original video type
+    }));
     
     logDebug('[STORE_VIDEO] Preparing to PUT manifest', { 
       key, 

@@ -85,22 +85,25 @@ function generateCacheTagsImpl(
   // Add a tag for the derivative if available
   if (options.derivative) {
     tags.push(`${prefix}derivative-${options.derivative}`);
+
+    // Add a combined path+derivative tag for more specific purging
+    tags.push(`${prefix}path-${normalizedPath.join('-').replace(/\./g, '-')}-derivative-${options.derivative}`);
   }
-  
+
   // Add a tag for video format if available
   if (options.format) {
     tags.push(`${prefix}format-${options.format}`);
   }
-  
+
   // Add mode-specific tags
   if (options.mode) {
     tags.push(`${prefix}mode-${options.mode}`);
-    
+
     // Add frame-specific tags
     if (options.mode === 'frame' && options.time) {
       tags.push(`${prefix}time-${options.time.replace('s', '')}`);
     }
-    
+
     // Add spritesheet-specific tags
     if (options.mode === 'spritesheet') {
       if (options.columns) tags.push(`${prefix}columns-${options.columns}`);
@@ -108,36 +111,34 @@ function generateCacheTagsImpl(
       if (options.interval) tags.push(`${prefix}interval-${options.interval.replace('s', '')}`);
     }
   }
-  
-  // Add tag for the derivative if present
+
+  // Add dimension tags based on derivative or direct values
   if (options.derivative) {
-    tags.push(`${prefix}derivative-${options.derivative}`);
-    
     // When we have a derivative, use the actual derivative dimensions for width/height tags
     // instead of the requested dimensions for better cache consistency
     const derivativeDimensions = getDerivativeDimensions(options.derivative);
-    
+
     if (derivativeDimensions) {
       // Add tags for the derivative's actual dimensions
       if (derivativeDimensions.width) {
         tags.push(`${prefix}width-${derivativeDimensions.width}`);
       }
-      
+
       if (derivativeDimensions.height) {
         tags.push(`${prefix}height-${derivativeDimensions.height}`);
       }
-      
+
       // Add combined dimensions tag for the derivative's actual dimensions
       if (derivativeDimensions.width && derivativeDimensions.height) {
         tags.push(`${prefix}dimensions-${derivativeDimensions.width}x${derivativeDimensions.height}`);
       }
-      
+
       // Also include the original requested dimensions with a different prefix
       // This helps with debugging but doesn't affect cache behavior
       if (options.width) {
         tags.push(`${prefix}requested-width-${options.width}`);
       }
-      
+
       if (options.height) {
         tags.push(`${prefix}requested-height-${options.height}`);
       }
@@ -146,11 +147,11 @@ function generateCacheTagsImpl(
       if (options.width) {
         tags.push(`${prefix}width-${options.width}`);
       }
-      
+
       if (options.height) {
         tags.push(`${prefix}height-${options.height}`);
       }
-      
+
       if (options.width && options.height) {
         tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
       }
@@ -160,11 +161,11 @@ function generateCacheTagsImpl(
     if (options.width) {
       tags.push(`${prefix}width-${options.width}`);
     }
-    
+
     if (options.height) {
       tags.push(`${prefix}height-${options.height}`);
     }
-    
+
     // Add combined dimensions tag if both width and height are specified
     if (options.width && options.height) {
       tags.push(`${prefix}dimensions-${options.width}x${options.height}`);

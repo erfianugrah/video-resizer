@@ -87,80 +87,96 @@ export class VideoStrategy implements TransformationStrategy {
     
     // Check if we have duration limits, if not, extract from configuration
     if (!haveDurationLimits()) {
+      // Get the default duration from configuration
+      const configDuration = configManager.getDefaultOption('duration');
+
       // Use proper logging instead of console
-      import('../../utils/legacyLoggerAdapter').then(({ warn, info }) => {
-        warn('VideoStrategy', 'No duration limits found - checking configuration', {
+      import('../../utils/legacyLoggerAdapter').then(({ info }) => {
+        info('VideoStrategy', 'Checking configuration for duration settings', {
           configLoaded: !!configManager,
           derivativesAvailable: configManager ? Object.keys(configManager.getConfig().derivatives || {}).length : 0,
-          configDefaultDuration: configManager.getDefaultOption('duration')
+          configDefaultDuration: configDuration
         });
-        
-        // Try to get the duration from configuration first
-        const configDuration = configManager.getDefaultOption('duration');
-        if (configDuration) {
-          // Import duration parsing function
-          import('../../utils/transformationUtils').then(({ parseTimeString }) => {
-            const seconds = parseTimeString(configDuration);
-            if (seconds !== null) {
+      }).catch(() => {
+        debug('VideoStrategy', 'Checking configuration for duration settings', {
+          configDefaultDuration: configDuration
+        });
+      });
+
+      // If we have a valid duration in config, use it to set limits
+      if (configDuration) {
+        // Import duration parsing function
+        import('../../utils/transformationUtils').then(({ parseTimeString }) => {
+          const seconds = parseTimeString(configDuration);
+          if (seconds !== null && seconds > 0) {
+            import('../../utils/legacyLoggerAdapter').then(({ info }) => {
               info('VideoStrategy', 'Setting duration limits from config', {
                 defaultDuration: configDuration,
                 parsedSeconds: seconds,
                 min: 0,
                 max: seconds
               });
-              
-              storeTransformationLimit('duration', 'min', 0);
-              storeTransformationLimit('duration', 'max', seconds);
-              return;
-            }
-          });
-        } else {
-          // Fallback to default of 30s if no configuration is available
-          warn('VideoStrategy', 'No config duration found - applying defaults', {
-            settingMin: 0,
-            settingMax: 30,
-            reason: 'No configuration duration available'
-          });
-          
-          storeTransformationLimit('duration', 'min', 0);
-          storeTransformationLimit('duration', 'max', 30);
-        }
-      }).catch(() => {
-        // Use debug from loggerUtils as a fallback
-        debug('VideoStrategy', 'No duration limits found - applying defaults of 0-30s', {});
-        
-        // Get default duration from config if available
-        const configDuration = configManager.getDefaultOption('duration');
-        if (configDuration) {
-          debug('VideoStrategy', 'Found config duration', { configDuration });
-          
-          // Try to parse the duration from config
-          const durationMatch = configDuration.match(/^(\d+)([sm])$/);
-          if (durationMatch) {
-            const value = parseInt(durationMatch[1], 10);
-            const unit = durationMatch[2];
-            
-            // Convert to seconds
-            const seconds = unit === 'm' ? value * 60 : value;
-            debug('VideoStrategy', 'Setting duration limits from config', { 
-              min: 0, 
-              max: seconds,
-              configDuration
+            }).catch(() => {
+              debug('VideoStrategy', 'Setting duration limits from config', {
+                configDuration,
+                seconds
+              });
             });
-            
+
             storeTransformationLimit('duration', 'min', 0);
             storeTransformationLimit('duration', 'max', seconds);
             return;
+          } else {
+            // If parseTimeString fails or returns 0, use 5m (300s) as default
+            const fallbackSeconds = 300; // 5 minutes
+            import('../../utils/legacyLoggerAdapter').then(({ warn }) => {
+              warn('VideoStrategy', 'Invalid config duration format, using 5m fallback', {
+                invalidDuration: configDuration,
+                settingMin: 0,
+                settingMax: fallbackSeconds
+              });
+            }).catch(() => {
+              debug('VideoStrategy', 'Invalid config duration format, using 5m fallback', {
+                invalidDuration: configDuration
+              });
+            });
+
+            storeTransformationLimit('duration', 'min', 0);
+            storeTransformationLimit('duration', 'max', fallbackSeconds);
           }
-        }
-        
-        // Fallback to 30s default
-        debug('VideoStrategy', 'Using fallback 30s duration limit', {
-          reason: 'No valid configuration found'
+        }).catch((err) => {
+          // If the import fails, use 5m (300s) as default
+          const fallbackSeconds = 300; // 5 minutes
+          import('../../utils/legacyLoggerAdapter').then(({ warn }) => {
+            warn('VideoStrategy', 'Error importing parseTimeString, using 5m fallback', {
+              error: err instanceof Error ? err.message : String(err),
+              settingMin: 0,
+              settingMax: fallbackSeconds
+            });
+          }).catch(() => {
+            debug('VideoStrategy', 'Error importing parseTimeString, using 5m fallback');
+          });
+
+          storeTransformationLimit('duration', 'min', 0);
+          storeTransformationLimit('duration', 'max', fallbackSeconds);
         });
+      } else {
+        // No configuration duration available, use 5m (300s) default
+        const fallbackSeconds = 300; // 5 minutes
+
+        import('../../utils/legacyLoggerAdapter').then(({ warn }) => {
+          warn('VideoStrategy', 'No config duration found - using 5m fallback', {
+            settingMin: 0,
+            settingMax: fallbackSeconds,
+            reason: 'No configuration duration available'
+          });
+        }).catch(() => {
+          debug('VideoStrategy', 'No config duration found - using 5m fallback');
+        });
+
         storeTransformationLimit('duration', 'min', 0);
-        storeTransformationLimit('duration', 'max', 30);
-      });
+        storeTransformationLimit('duration', 'max', fallbackSeconds);
+      }
     }
     
     // Add details about where we're getting configuration

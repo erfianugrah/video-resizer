@@ -504,7 +504,7 @@ export const prepareVideoTransformation = withErrorHandling<
         }
         
         // We need to reassign cdnCgiUrl to a variable that's not a constant
-        let finalCdnCgiUrl = updatedCdnCgiUrl;
+        const finalCdnCgiUrl = updatedCdnCgiUrl;
         
         // Update diagnostics to include actual dimensions used
         if (diagnosticsInfo.transformParams) {
@@ -574,7 +574,7 @@ export const prepareVideoTransformation = withErrorHandling<
     const hasModernTtl = pathPattern.ttl && typeof pathPattern.ttl === 'object';
     
     if ((hasLegacyTtl || hasModernTtl) && cacheConfig) {
-      let updatedTtl = { ...cacheConfig.ttl };
+      const updatedTtl = { ...cacheConfig.ttl };
       
       // Source of TTL value for logging
       let ttlSource = 'unknown';

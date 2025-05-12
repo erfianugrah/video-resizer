@@ -125,7 +125,7 @@ describe('kvTtlRefreshUtils', () => {
       expect(mockNamespace.put).toHaveBeenCalledTimes(1);
       expect(mockNamespace.put).toHaveBeenCalledWith(
         'test-key',
-        "",
+        '',
         {
           metadata: {
             ...mockMetadata,

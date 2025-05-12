@@ -182,7 +182,7 @@ async function storePresignedUrlImpl(
     try {
       attemptCount++;
       // Store with empty value and use metadata for all information
-      await namespace.put(key, "", { 
+      await namespace.put(key, '', { 
         expirationTtl: ttl,
         metadata // Store all URL information in metadata
       });
