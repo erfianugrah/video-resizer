@@ -1,506 +1,506 @@
 {
-  "version": "1.0.0",
-  "lastUpdated": "2025-05-01T12:00:00Z",
-  "video": {
-    "derivatives": {
-      "desktop": {
-        "width": 1920,
-        "height": 1080,
-        "mode": "video",
-        "audio": true,
-        "duration": "5m",
-        "fit": "contain",
-        "loop": true,
-        "description": "1920x1080 pixels. The video plays in high-definition."
-      },
-      "tablet": {
-        "width": 1280,
-        "height": 720,
-        "mode": "video",
-        "audio": true,
-        "fit": "contain",
-        "loop": true,
-        "duration": "5m",
-        "description": "1280x720 pixels. The video plays at medium resolution."
-      },
-      "mobile": {
-        "width": 854,
-        "height": 640,
-        "mode": "video",
-        "audio": true,
-        "fit": "contain",
-        "loop": true,
-        "duration": "5m",
-        "description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
-      }
-    },
-    "passthrough": {
-      "enabled": true,
-      "whitelistedFormats": [
-        "mp4",
-        "webm",
-        "mov"
-      ]
-    },
-    "defaults": {
-      "width": null,
-      "height": null,
-      "mode": "video",
-      "fit": null,
-      "audio": true,
-      "format": null,
-      "time": null,
-      "duration": "5m",
-      "quality": null,
-      "compression": null,
-      "loop": null,
-      "preload": null,
-      "autoplay": null,
-      "muted": null
-    },
-    "validOptions": {
-      "mode": [
-        "video",
-        "frame",
-        "spritesheet"
-      ],
-      "fit": [
-        "contain",
-        "scale-down",
-        "cover"
-      ],
-      "format": [
-        "mp4",
-        "webm",
-        "gif",
-        "jpg",
-        "webp",
-        "png"
-      ],
-      "audio": [
-        true,
-        false
-      ],
-      "quality": [
-        "low",
-        "medium",
-        "high",
-        "auto"
-      ],
-      "compression": [
-        "low",
-        "medium",
-        "high",
-        "auto"
-      ],
-      "preload": [
-        "none",
-        "metadata",
-        "auto"
-      ],
-      "loop": [
-        true,
-        false
-      ],
-      "autoplay": [
-        true,
-        false
-      ],
-      "muted": [
-        true,
-        false
-      ]
-    },
-    "responsive": {
-      "breakpoints": {
-        "xs": 1,
-        "sm": 640,
-        "md": 768,
-        "lg": 1024,
-        "xl": 1280,
-        "2xl": 1536
-      },
-      "availableQualities": [
-        360,
-        480,
-        720,
-        1080,
-        1440,
-        2160
-      ],
-      "deviceWidths": {
-        "mobile": 640,
-        "tablet": 1024,
-        "desktop": 1920
-      },
-      "networkQuality": {
-        "slow": {
-          "maxWidth": 640,
-          "maxHeight": 360,
-          "maxBitrate": 1000000
-        },
-        "medium": {
-          "maxWidth": 1280,
-          "maxHeight": 720,
-          "maxBitrate": 2500000
-        },
-        "fast": {
-          "maxWidth": 1920,
-          "maxHeight": 1080,
-          "maxBitrate": 5000000
-        }
-      },
-      "browserCapabilities": {
-        "hevc": {
-          "patterns": [
-            "Safari/[6-9][0-9][0-9]",
-            "Version\\/1[2-9]",
-            "iPhone OS 1[1-9]",
-            "iPad OS 1[1-9]"
-          ],
-          "exclusions": [
-            "Chrome"
-          ]
-        },
-        "av1": {
-          "patterns": [
-            "Chrome\\/[9][0-9]",
-            "Edge\\/[9][0-9]",
-            "Firefox\\/[9][0-9]",
-            "Chrome\\/90\\."
-          ]
-        },
-        "vp9": {
-          "patterns": [
-            "Chrome\\/[5-9][0-9]",
-            "Edge\\/[7-9][0-9]",
-            "Firefox\\/[6-9][0-9]",
-            "Safari\\/60[5-9]",
-            "Safari\\/[6-9][1-9][0-9]"
-          ]
-        },
-        "webm": {
-          "patterns": [
-            "Chrome",
-            "Firefox",
-            "Edge",
-            "Opera"
-          ]
-        }
-      }
-    },
-    "responsiveBreakpoints": {
-      "small": {
-        "max": 854,
-        "derivative": "mobile"
-      },
-      "medium": {
-        "min": 855,
-        "max": 1080,
-        "derivative": "tablet"
-      },
-      "large": {
-        "min": 1081,
-        "derivative": "desktop"
-      }
-    },
-    "paramMapping": {
-      "width": "width",
-      "height": "height",
-      "fit": "fit",
-      "format": "format",
-      "quality": "quality",
-      "time": "time",
-      "duration": "duration",
-      "compression": "compression",
-      "audio": "audio",
-      "loop": "loop",
-      "preload": "preload",
-      "autoplay": "autoplay",
-      "muted": "muted"
-    },
-    "cdnCgi": {
-      "basePath": "/cdn-cgi/media"
-    },
-    "pathPatterns": [
-      {
-        "name": "videos",
-        "matcher": "^/videos/",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": null,
-        "ttl": {
-          "ok": 300,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "useTtlByStatus": true,
-        "captureGroups": [
-          "videoId"
-        ],
-        "quality": "high",
-        "cacheability": true,
-        "videoCompression": "auto"
-      },
-      {
-        "name": "popular",
-        "matcher": "^/popular/(.*\\.mp4)",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": "https://videos.erfi.dev",
-        "ttl": {
-          "ok": 604800,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "useTtlByStatus": true,
-        "captureGroups": [
-          "videoId"
-        ],
-        "cacheability": true,
-        "videoCompression": "auto"
-      },
-      {
-        "name": "shorts",
-        "matcher": "^/shorts/(.*\\.mp4)",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": "https://videos.erfi.dev",
-        "ttl": {
-          "ok": 172800,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "useTtlByStatus": true,
-        "captureGroups": [
-          "videoId"
-        ],
-        "quality": "medium",
-        "cacheability": true,
-        "videoCompression": "auto"
-      },
-      {
-        "name": "standard",
-        "matcher": "^/(.*\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv))",
-        "processPath": true,
-        "baseUrl": null,
-        "originUrl": "https://videos.erfi.dev",
-        "ttl": {
-          "ok": 86400,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "cacheability": true,
-        "videoCompression": "auto"
-      },
-      {
-        "name": "images",
-        "matcher": "\\.(jpe?g|png|gif|webp|avif)$",
-        "processPath": true,
-        "baseUrl": "",
-        "originUrl": "",
-        "ttl": {
-          "ok": 300,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "cacheability": true
-      },
-      {
-        "name": "default",
-        "matcher": ".*",
-        "processPath": false,
-        "baseUrl": "",
-        "originUrl": "",
-        "ttl": {
-          "ok": 300,
-          "redirects": 300,
-          "clientError": 60,
-          "serverError": 10
-        },
-        "cacheability": true,
-        "useTtlByStatus": true
-      }
-    ],
-    "storage": {
-      "priority": [
-        "r2",
-        "remote",
-        "fallback"
-      ],
-      "r2": {
-        "enabled": true,
-        "bucketBinding": "VIDEOS_BUCKET"
-      },
-      "remoteUrl": "https://videos.erfi.dev",
-      "remoteAuth": {
-        "enabled": true,
-        "type": "aws-s3",
-        "accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
-        "secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
-        "region": "us-east-1",
-        "service": "s3"
-      },
-      "auth": {
-        "useOriginAuth": true,
-        "securityLevel": "strict"
-      },
-      "fallbackUrl": "https://cdn.erfi.dev",
-      "fallbackAuth": {
-        "enabled": false,
-        "type": "aws-s3",
-        "accessKeyVar": "AWS_ACCESS_KEY_ID",
-        "secretKeyVar": "AWS_SECRET_ACCESS_KEY",
-        "region": "us-east-1",
-        "service": "s3"
-      },
-      "fetchOptions": {
-        "userAgent": "Cloudflare-Video-Resizer/1.0"
-      },
-      "pathTransforms": {
-        "videos": {
-          "r2": {
-            "removePrefix": true,
-            "prefix": ""
-          },
-          "remote": {
-            "removePrefix": true,
-            "prefix": "videos/"
-          }
-        },
-        "popular": {
-          "r2": {
-            "removePrefix": true,
-            "prefix": "popular/"
-          }
-        },
-        "shorts": {
-          "r2": {
-            "removePrefix": true,
-            "prefix": "shorts/"
-          }
-        }
-      }
-    }
-  },
-  "cache": {
-    "debug": false,
-    "defaultMaxAge": 300,
-    "respectOriginHeaders": true,
-    "cacheEverything": false,
-    "enableCacheTags": true,
-    "cacheTagPrefix": "video-prod-",
-    "purgeOnUpdate": false,
-    "bypassQueryParameters": [
-      "nocache",
-      "bypass",
-      "debug"
-    ],
-    "bypassHeaderValue": "no-cache",
-    "enableKVCache": true,
-    "storeIndefinitely": true,
-    "enableVersioning": true,
-    "ttlRefresh": {
-      "minElapsedPercent": 10,
-      "minRemainingSeconds": 60
-    },
-    "maxSizeBytes": 26214400,
-    "fallback": {
-      "enabled": true,
-      "badRequestOnly": true,
-      "preserveHeaders": [
-        "Content-Type",
-        "Cache-Control",
-        "Etag"
-      ]
-    },
-    "mimeTypes": {
-      "video": [
-        "video/mp4",
-        "video/webm",
-        "video/ogg",
-        "video/x-msvideo",
-        "video/quicktime",
-        "video/x-matroska",
-        "video/x-flv",
-        "video/3gpp",
-        "video/3gpp2",
-        "video/mpeg",
-        "application/x-mpegURL",
-        "application/dash+xml"
-      ],
-      "image": [
-        "image/jpeg",
-        "image/jpg",
-        "image/png",
-        "image/webp",
-        "image/gif",
-        "image/avif"
-      ]
-    },
-    "ttl": {
-      "ok": 86400,
-      "redirects": 300,
-      "clientError": 60,
-      "serverError": 10
-    },
-    "method": "kv"
-  },
-  "debug": {
-    "enabled": true,
-    "verbose": false,
-    "includeHeaders": true,
-    "includePerformance": true,
-    "dashboardMode": true,
-    "viewMode": true,
-    "headerMode": true,
-    "debugQueryParam": "debug",
-    "debugViewParam": "view",
-    "preserveDebugParams": false,
-    "debugHeaders": [
-      "X-Debug",
-      "X-Debug-Enabled",
-      "Debug"
-    ],
-    "renderStaticHtml": true,
-    "includeStackTrace": false,
-    "maxContentLength": 50000,
-    "truncationMessage": "... [content truncated]",
-    "allowedIps": [],
-    "excludedPaths": [
-      "/favicon.ico",
-      "/robots.txt"
-    ]
-  },
-  "logging": {
-    "level": "debug",
-    "format": "json",
-    "includeTimestamps": true,
-    "includeComponentName": true,
-    "colorize": true,
-    "enabledComponents": [],
-    "disabledComponents": [],
-    "sampleRate": 1,
-    "enablePerformanceLogging": true,
-    "performanceThresholdMs": 1000,
-    "breadcrumbs": {
-      "enabled": true,
-      "maxItems": 25
-    },
-    "pino": {
-      "level": "debug",
-      "browser": {
-        "asObject": true
-      },
-      "base": {
-        "service": "video-resizer",
-        "env": "production"
-      }
-    }
-  }
+	"version": "1.0.0",
+	"lastUpdated": "2025-05-01T12:00:00Z",
+	"video": {
+		"derivatives": {
+			"desktop": {
+				"width": 1920,
+				"height": 1080,
+				"mode": "video",
+				"audio": true,
+				"duration": "5m",
+				"fit": "contain",
+				"loop": true,
+				"description": "1920x1080 pixels. The video plays in high-definition."
+			},
+			"tablet": {
+				"width": 1280,
+				"height": 720,
+				"mode": "video",
+				"audio": true,
+				"fit": "contain",
+				"loop": true,
+				"duration": "5m",
+				"description": "1280x720 pixels. The video plays at medium resolution."
+			},
+			"mobile": {
+				"width": 854,
+				"height": 640,
+				"mode": "video",
+				"audio": true,
+				"fit": "contain",
+				"loop": true,
+				"duration": "5m",
+				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
+			}
+		},
+		"passthrough": {
+			"enabled": true,
+			"whitelistedFormats": [
+				"mp4",
+				"webm",
+				"mov"
+			]
+		},
+		"defaults": {
+			"width": null,
+			"height": null,
+			"mode": "video",
+			"fit": null,
+			"audio": true,
+			"format": null,
+			"time": null,
+			"duration": "5m",
+			"quality": null,
+			"compression": null,
+			"loop": null,
+			"preload": null,
+			"autoplay": null,
+			"muted": null
+		},
+		"validOptions": {
+			"mode": [
+				"video",
+				"frame",
+				"spritesheet"
+			],
+			"fit": [
+				"contain",
+				"scale-down",
+				"cover"
+			],
+			"format": [
+				"mp4",
+				"webm",
+				"gif",
+				"jpg",
+				"webp",
+				"png"
+			],
+			"audio": [
+				true,
+				false
+			],
+			"quality": [
+				"low",
+				"medium",
+				"high",
+				"auto"
+			],
+			"compression": [
+				"low",
+				"medium",
+				"high",
+				"auto"
+			],
+			"preload": [
+				"none",
+				"metadata",
+				"auto"
+			],
+			"loop": [
+				true,
+				false
+			],
+			"autoplay": [
+				true,
+				false
+			],
+			"muted": [
+				true,
+				false
+			]
+		},
+		"responsive": {
+			"breakpoints": {
+				"xs": 1,
+				"sm": 640,
+				"md": 768,
+				"lg": 1024,
+				"xl": 1280,
+				"2xl": 1536
+			},
+			"availableQualities": [
+				360,
+				480,
+				720,
+				1080,
+				1440,
+				2160
+			],
+			"deviceWidths": {
+				"mobile": 640,
+				"tablet": 1024,
+				"desktop": 1920
+			},
+			"networkQuality": {
+				"slow": {
+					"maxWidth": 640,
+					"maxHeight": 360,
+					"maxBitrate": 1000000
+				},
+				"medium": {
+					"maxWidth": 1280,
+					"maxHeight": 720,
+					"maxBitrate": 2500000
+				},
+				"fast": {
+					"maxWidth": 1920,
+					"maxHeight": 1080,
+					"maxBitrate": 5000000
+				}
+			},
+			"browserCapabilities": {
+				"hevc": {
+					"patterns": [
+						"Safari/[6-9][0-9][0-9]",
+						"Version\\/1[2-9]",
+						"iPhone OS 1[1-9]",
+						"iPad OS 1[1-9]"
+					],
+					"exclusions": [
+						"Chrome"
+					]
+				},
+				"av1": {
+					"patterns": [
+						"Chrome\\/[9][0-9]",
+						"Edge\\/[9][0-9]",
+						"Firefox\\/[9][0-9]",
+						"Chrome\\/90\\."
+					]
+				},
+				"vp9": {
+					"patterns": [
+						"Chrome\\/[5-9][0-9]",
+						"Edge\\/[7-9][0-9]",
+						"Firefox\\/[6-9][0-9]",
+						"Safari\\/60[5-9]",
+						"Safari\\/[6-9][1-9][0-9]"
+					]
+				},
+				"webm": {
+					"patterns": [
+						"Chrome",
+						"Firefox",
+						"Edge",
+						"Opera"
+					]
+				}
+			}
+		},
+		"responsiveBreakpoints": {
+			"small": {
+				"max": 854,
+				"derivative": "mobile"
+			},
+			"medium": {
+				"min": 855,
+				"max": 1280,
+				"derivative": "tablet"
+			},
+			"large": {
+				"min": 1281,
+				"derivative": "desktop"
+			}
+		},
+		"paramMapping": {
+			"width": "width",
+			"height": "height",
+			"fit": "fit",
+			"format": "format",
+			"quality": "quality",
+			"time": "time",
+			"duration": "duration",
+			"compression": "compression",
+			"audio": "audio",
+			"loop": "loop",
+			"preload": "preload",
+			"autoplay": "autoplay",
+			"muted": "muted"
+		},
+		"cdnCgi": {
+			"basePath": "/cdn-cgi/media"
+		},
+		"pathPatterns": [
+			{
+				"name": "videos",
+				"matcher": "^/videos/",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": null,
+				"ttl": {
+					"ok": 300,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "high",
+				"cacheability": true,
+				"videoCompression": "auto"
+			},
+			{
+				"name": "popular",
+				"matcher": "^/popular/(.*\\.mp4)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"ttl": {
+					"ok": 604800,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"cacheability": true,
+				"videoCompression": "auto"
+			},
+			{
+				"name": "shorts",
+				"matcher": "^/shorts/(.*\\.mp4)",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"ttl": {
+					"ok": 172800,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"useTtlByStatus": true,
+				"captureGroups": [
+					"videoId"
+				],
+				"quality": "medium",
+				"cacheability": true,
+				"videoCompression": "auto"
+			},
+			{
+				"name": "standard",
+				"matcher": "^/(.*\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv))",
+				"processPath": true,
+				"baseUrl": null,
+				"originUrl": "https://videos.erfi.dev",
+				"ttl": {
+					"ok": 86400,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"cacheability": true,
+				"videoCompression": "auto"
+			},
+			{
+				"name": "images",
+				"matcher": "\\.(jpe?g|png|gif|webp|avif)$",
+				"processPath": true,
+				"baseUrl": "",
+				"originUrl": "",
+				"ttl": {
+					"ok": 300,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"cacheability": true
+			},
+			{
+				"name": "default",
+				"matcher": ".*",
+				"processPath": false,
+				"baseUrl": "",
+				"originUrl": "",
+				"ttl": {
+					"ok": 300,
+					"redirects": 300,
+					"clientError": 60,
+					"serverError": 10
+				},
+				"cacheability": true,
+				"useTtlByStatus": true
+			}
+		],
+		"storage": {
+			"priority": [
+				"r2",
+				"remote",
+				"fallback"
+			],
+			"r2": {
+				"enabled": true,
+				"bucketBinding": "VIDEOS_BUCKET"
+			},
+			"remoteUrl": "https://videos.erfi.dev",
+			"remoteAuth": {
+				"enabled": true,
+				"type": "aws-s3",
+				"accessKeyVar": "REMOTE_AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "REMOTE_AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
+			"auth": {
+				"useOriginAuth": true,
+				"securityLevel": "strict"
+			},
+			"fallbackUrl": "https://cdn.erfi.dev",
+			"fallbackAuth": {
+				"enabled": false,
+				"type": "aws-s3",
+				"accessKeyVar": "AWS_ACCESS_KEY_ID",
+				"secretKeyVar": "AWS_SECRET_ACCESS_KEY",
+				"region": "us-east-1",
+				"service": "s3"
+			},
+			"fetchOptions": {
+				"userAgent": "Cloudflare-Video-Resizer/1.0"
+			},
+			"pathTransforms": {
+				"videos": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": ""
+					},
+					"remote": {
+						"removePrefix": true,
+						"prefix": "videos/"
+					}
+				},
+				"popular": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "popular/"
+					}
+				},
+				"shorts": {
+					"r2": {
+						"removePrefix": true,
+						"prefix": "shorts/"
+					}
+				}
+			}
+		}
+	},
+	"cache": {
+		"debug": false,
+		"defaultMaxAge": 300,
+		"respectOriginHeaders": true,
+		"cacheEverything": false,
+		"enableCacheTags": true,
+		"cacheTagPrefix": "video-prod-",
+		"purgeOnUpdate": false,
+		"bypassQueryParameters": [
+			"nocache",
+			"bypass",
+			"debug"
+		],
+		"bypassHeaderValue": "no-cache",
+		"enableKVCache": true,
+		"storeIndefinitely": true,
+		"enableVersioning": true,
+		"ttlRefresh": {
+			"minElapsedPercent": 10,
+			"minRemainingSeconds": 60
+		},
+		"maxSizeBytes": 26214400,
+		"fallback": {
+			"enabled": true,
+			"badRequestOnly": true,
+			"preserveHeaders": [
+				"Content-Type",
+				"Cache-Control",
+				"Etag"
+			]
+		},
+		"mimeTypes": {
+			"video": [
+				"video/mp4",
+				"video/webm",
+				"video/ogg",
+				"video/x-msvideo",
+				"video/quicktime",
+				"video/x-matroska",
+				"video/x-flv",
+				"video/3gpp",
+				"video/3gpp2",
+				"video/mpeg",
+				"application/x-mpegURL",
+				"application/dash+xml"
+			],
+			"image": [
+				"image/jpeg",
+				"image/jpg",
+				"image/png",
+				"image/webp",
+				"image/gif",
+				"image/avif"
+			]
+		},
+		"ttl": {
+			"ok": 86400,
+			"redirects": 300,
+			"clientError": 60,
+			"serverError": 10
+		},
+		"method": "kv"
+	},
+	"debug": {
+		"enabled": true,
+		"verbose": false,
+		"includeHeaders": true,
+		"includePerformance": true,
+		"dashboardMode": true,
+		"viewMode": true,
+		"headerMode": true,
+		"debugQueryParam": "debug",
+		"debugViewParam": "view",
+		"preserveDebugParams": false,
+		"debugHeaders": [
+			"X-Debug",
+			"X-Debug-Enabled",
+			"Debug"
+		],
+		"renderStaticHtml": true,
+		"includeStackTrace": false,
+		"maxContentLength": 50000,
+		"truncationMessage": "... [content truncated]",
+		"allowedIps": [],
+		"excludedPaths": [
+			"/favicon.ico",
+			"/robots.txt"
+		]
+	},
+	"logging": {
+		"level": "debug",
+		"format": "json",
+		"includeTimestamps": true,
+		"includeComponentName": true,
+		"colorize": true,
+		"enabledComponents": [],
+		"disabledComponents": [],
+		"sampleRate": 1,
+		"enablePerformanceLogging": true,
+		"performanceThresholdMs": 1000,
+		"breadcrumbs": {
+			"enabled": true,
+			"maxItems": 25
+		},
+		"pino": {
+			"level": "debug",
+			"browser": {
+				"asObject": true
+			},
+			"base": {
+				"service": "video-resizer",
+				"env": "production"
+			}
+		}
+	}
 }
