@@ -22,7 +22,7 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
       availableQualities: [240, 360, 480, 720, 1080, 1440, 2160]
     }
   };
-  
+
   return {
     VideoConfigurationManager: {
       getInstance: vi.fn().mockReturnValue({
@@ -33,6 +33,27 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
     }
   };
 });
+
+// Mock logger functions
+vi.mock('../../src/utils/loggerUtils', () => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+}));
+
+// Mock legacyLoggerAdapter
+vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+  getCurrentContext: vi.fn().mockReturnValue(null),
+  info: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  pinoInfo: vi.fn(),
+  pinoDebug: vi.fn(),
+  pinoWarn: vi.fn(),
+  pinoError: vi.fn()
+}));
 
 describe('IMQuery Utils', () => {
   describe('parseImQueryRef', () => {
@@ -178,17 +199,15 @@ describe('IMQuery Utils', () => {
               desktop: { width: 1920, height: 1080, quality: 'high' }
             },
             responsiveBreakpoints: {
-              small: { max: 640, derivative: 'mobile' },
-              medium: { min: 641, max: 1024, derivative: 'tablet' },
-              large: { min: 1025, max: 1440, derivative: 'tablet' },
-              'extra-large': { min: 1441, derivative: 'desktop' }
+              small: { max: 854, derivative: 'mobile' },
+              medium: { min: 855, max: 1280, derivative: 'tablet' },
+              large: { min: 1281, derivative: 'desktop' }
             }
           }),
           getResponsiveBreakpoints: vi.fn().mockReturnValue({
-            small: { max: 640, derivative: 'mobile' },
-            medium: { min: 641, max: 1024, derivative: 'tablet' },
-            large: { min: 1025, max: 1440, derivative: 'tablet' },
-            'extra-large': { min: 1441, derivative: 'desktop' }
+            small: { max: 854, derivative: 'mobile' },
+            medium: { min: 855, max: 1280, derivative: 'tablet' },
+            large: { min: 1281, derivative: 'desktop' }
           })
         })
       }
@@ -258,13 +277,36 @@ describe('IMQuery Utils', () => {
     });
     
     it('should use closest breakpoint for dimensions outside exact ranges', () => {
-      // This width (1500) is outside any exact range but closest to 'extra-large' (min: 1441)
+      // This width (1500) is outside any exact range but closest to 'large' (min: 1281)
       const derivative = findClosestDerivative(1500, null);
-      expect(derivative).toBe('desktop'); // Should map to desktop via 'extra-large' breakpoint
-      
-      // This width (630) is just below the medium range (min: 641), should map to closest breakpoint
-      const derivativeLower = findClosestDerivative(630, null);
-      expect(derivativeLower).toBe('mobile'); // Should map to mobile via closest breakpoint
+      expect(derivative).toBe('desktop'); // Should map to desktop via 'large' breakpoint
+
+      // This width (800) is within the medium range (min: 855, max: 1280)
+      const derivativeLower = findClosestDerivative(800, null);
+      expect(derivativeLower).toBe('mobile'); // Should map to mobile as it's below min:855
+    });
+
+    it('should correctly map exact boundary values according to configuration', () => {
+      // Test exact boundary values according to our config:
+      // small: { max: 854, derivative: 'mobile' },
+      // medium: { min: 855, max: 1280, derivative: 'tablet' },
+      // large: { min: 1281, derivative: 'desktop' }
+
+      // Test boundary value: 854 (max of small)
+      const mobileUpperBoundary = findClosestDerivative(854, null);
+      expect(mobileUpperBoundary).toBe('mobile');
+
+      // Test boundary value: 855 (min of medium)
+      const tabletLowerBoundary = findClosestDerivative(855, null);
+      expect(tabletLowerBoundary).toBe('tablet');
+
+      // Test boundary value: 1280 (max of medium)
+      const tabletUpperBoundary = findClosestDerivative(1280, null);
+      expect(tabletUpperBoundary).toBe('tablet');
+
+      // Test boundary value: 1281 (min of large)
+      const desktopLowerBoundary = findClosestDerivative(1281, null);
+      expect(desktopLowerBoundary).toBe('desktop');
     });
     
     it('should factor in aspect ratio when both width and height are specified', () => {

@@ -119,9 +119,21 @@ export function mapWidthToDerivative(width: number | null): string | null {
   // Cache derivatives list to check availability
   const availableDerivatives = Object.keys(configManager.getConfig().derivatives);
   
-  // Sort breakpoints by max value for consistent matching
+  // Sort breakpoints by min value (ascending) first for consistent matching
+  // This ensures that we match the correct range when there are overlapping or boundary cases
   const sortedBreakpoints = Object.entries(breakpoints)
-    .sort((a, b) => (a[1].max || Infinity) - (b[1].max || Infinity));
+    .sort((a, b) => {
+      // First sort by min value (ascending)
+      const minA = a[1].min || 0;
+      const minB = b[1].min || 0;
+
+      if (minA !== minB) {
+        return minA - minB;
+      }
+
+      // If min values are the same, then sort by max value (ascending)
+      return (a[1].max || Infinity) - (b[1].max || Infinity);
+    });
   
   // Find matching breakpoint
   for (const [name, range] of sortedBreakpoints) {
