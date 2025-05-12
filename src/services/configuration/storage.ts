@@ -138,22 +138,25 @@ export function createUpdatedConfiguration(
  */
 function deepMerge(target: any, source: any): any {
   const output = { ...target };
-  
+
   // Handle null or undefined source
   if (source === null || source === undefined) {
     return output;
   }
-  
+
   // Loop through source properties and merge
   Object.keys(source).forEach(key => {
-    if (source[key] instanceof Object && key in target && target[key] instanceof Object) {
-      // Recursively merge objects
+    // Special case for arrays - don't try to merge them, just replace them
+    if (Array.isArray(source[key])) {
+      output[key] = source[key];
+    } else if (source[key] instanceof Object && key in target && target[key] instanceof Object && !Array.isArray(target[key])) {
+      // Recursively merge objects (but not arrays)
       output[key] = deepMerge(target[key], source[key]);
     } else {
       // Directly copy non-object values or for keys not in target
       output[key] = source[key];
     }
   });
-  
+
   return output;
 }
