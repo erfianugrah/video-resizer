@@ -226,7 +226,11 @@ describe('IMQuery Utils', () => {
 
     // Clear any static cache before each test
     beforeEach(() => {
+      // Clear the derivative mapping cache to ensure tests start with a clean slate
       (global as any).__derivativeMappingCache = {};
+
+      // Reset all mocks to ensure consistent behavior
+      vi.clearAllMocks();
     });
 
     it('should match dimensions to the closest derivative within threshold', () => {
@@ -241,9 +245,9 @@ describe('IMQuery Utils', () => {
     });
     
     it('should handle single dimension matching', () => {
-      // Width only - should match to tablet via breakpoints (800 is in 641-1024 range)
-      expect(findClosestDerivative(800, null)).toBe('tablet');
-      
+      // Width only - should match to mobile via breakpoints (800 is in small range with max:854)
+      expect(findClosestDerivative(800, null)).toBe('mobile');
+
       // Height only - should match to tablet (720 is this height)
       expect(findClosestDerivative(null, 700)).toBe('tablet');
     });
@@ -281,7 +285,7 @@ describe('IMQuery Utils', () => {
       const derivative = findClosestDerivative(1500, null);
       expect(derivative).toBe('desktop'); // Should map to desktop via 'large' breakpoint
 
-      // This width (800) is within the medium range (min: 855, max: 1280)
+      // This width (800) is within the small range (max: 854)
       const derivativeLower = findClosestDerivative(800, null);
       expect(derivativeLower).toBe('mobile'); // Should map to mobile as it's below min:855
     });
@@ -292,17 +296,32 @@ describe('IMQuery Utils', () => {
       // medium: { min: 855, max: 1280, derivative: 'tablet' },
       // large: { min: 1281, derivative: 'desktop' }
 
+      // First make sure we're starting with fresh mocks and cache for this test
+      vi.clearAllMocks();
+      (global as any).__derivativeMappingCache = {};
+
+      // Test boundaries individually to avoid cache interactions
+
       // Test boundary value: 854 (max of small)
       const mobileUpperBoundary = findClosestDerivative(854, null);
       expect(mobileUpperBoundary).toBe('mobile');
+
+      // Clear cache between tests
+      (global as any).__derivativeMappingCache = {};
 
       // Test boundary value: 855 (min of medium)
       const tabletLowerBoundary = findClosestDerivative(855, null);
       expect(tabletLowerBoundary).toBe('tablet');
 
+      // Clear cache between tests
+      (global as any).__derivativeMappingCache = {};
+
       // Test boundary value: 1280 (max of medium)
       const tabletUpperBoundary = findClosestDerivative(1280, null);
       expect(tabletUpperBoundary).toBe('tablet');
+
+      // Clear cache between tests
+      (global as any).__derivativeMappingCache = {};
 
       // Test boundary value: 1281 (min of large)
       const desktopLowerBoundary = findClosestDerivative(1281, null);
