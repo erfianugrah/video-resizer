@@ -87,6 +87,189 @@ flowchart TB
 </details>
 
 <details>
+<summary><strong>Comprehensive E2E System Diagram</strong> - Complete end-to-end flow of all components</summary>
+
+```mermaid
+flowchart TD
+    %% Client request entry point
+    Client([Client Request]) --> Fetch[src/index.ts]
+    Fetch --> ReqCtx[Request Context]
+    ReqCtx --> Router{URL Pattern}
+    
+    %% Route branching
+    Router -->|"/admin/config"| Config[configHandler.ts]
+    Router -->|"Non-MP4"| Pass[Direct Passthrough]
+    Router -->|"Video Request"| Video[videoHandler.ts]
+    
+    %% Config flow
+    Config --> ConfigSvc[configurationService.ts]
+    ConfigSvc --> KVStore[KV Configuration Storage]
+    KVStore --> ConfigResp[Configuration Response]
+    
+    %% Video processing flow
+    Video --> ClientDet[clientHints.ts]
+    ClientDet --> DeviceUtil[deviceUtils.ts]
+    DeviceUtil --> CacheChk{KV Cache Check}
+    
+    %% Cache hit/miss paths
+    CacheChk -->|"Hit"| CacheHit[Serve from Cache]
+    CacheChk -->|"Miss"| Coalesce{Request Coalescing}
+    
+    %% Request coalescing
+    Coalesce -->|"In-flight"| Wait[Wait for Original]
+    Coalesce -->|"New Request"| Options[videoOptionsService.ts]
+    
+    %% Options flow
+    Options --> IMCheck{IMQuery Parameters?}
+    IMCheck -->|"Yes"| IMProc[imqueryUtils.ts]
+    IMCheck -->|"No"| StdOpt[Standard Options]
+    IMProc --> Pattern[Path Pattern Matching]
+    StdOpt --> Pattern
+    
+    %% Command pattern
+    Pattern --> Command[TransformVideoCommand.ts]
+    Command --> Mode{Transformation Mode}
+    
+    %% Strategy pattern
+    Mode -->|"video"| VideoS[VideoStrategy.ts]
+    Mode -->|"frame"| FrameS[FrameStrategy.ts]
+    Mode -->|"spritesheet"| SheetS[SpritesheetStrategy.ts]
+    
+    %% Strategy execution
+    VideoS --> Validate[validateOptions]
+    FrameS --> Validate
+    SheetS --> Validate
+    Validate --> Prepare[prepareTransformParams]
+    Prepare --> Transform[TransformationService.ts]
+    
+    %% Transformation execution
+    Transform --> CDN[Create cdn-cgi URL]
+    CDN --> Execute[executeTransformation]
+    Execute --> FetchVid[fetchVideo.ts]
+    
+    %% Storage backend
+    FetchVid --> Storage{Storage Priority}
+    Storage -->|"R2"| R2Store[r2Storage.ts]
+    Storage -->|"Remote"| RemStore[remoteStorage.ts]
+    Storage -->|"Fallback"| FallStore[fallbackStorage.ts]
+    
+    %% Response processing
+    R2Store --> Process[Process Response]
+    RemStore --> Process
+    FallStore --> Process
+    
+    %% Caching system
+    Process --> StoreCache[cacheManagementService.ts]
+    StoreCache --> GenKey[keyUtils.ts]
+    GenKey --> Version[cacheVersionService.ts]
+    Version --> SizeChk{Size > 20MB?}
+    
+    %% Chunking implementation
+    SizeChk -->|"Yes"| Chunk[storeVideo.ts: Chunked]
+    SizeChk -->|"No"| Single[storeVideo.ts: Single]
+    Chunk --> CacheTags[cacheTags.ts]
+    Single --> CacheTags
+    
+    %% TTL calculation
+    CacheTags --> TTLCalc[determineTTL.ts]
+    TTLCalc --> Profile[Match Cache Profile]
+    Profile --> TTLType{Response Type}
+    TTLType -->|"200"| OkTTL[Standard TTL]
+    TTLType -->|"404"| ErrTTL[Error TTL]
+    TTLType -->|"302"| RedirTTL[Redirect TTL]
+    
+    %% Range request handling
+    CacheHit --> RangeChk{Range Request?}
+    RangeChk -->|"Yes"| Stream[streamingHelpers.ts]
+    RangeChk -->|"No"| StdResp[Standard Response]
+    
+    %% Streaming logic
+    Stream --> ChunkChk{Chunked Storage?}
+    ChunkChk -->|"Yes"| ChunkStream[streamChunkedRangeResponse]
+    ChunkChk -->|"No"| StdStream[Standard Range Response]
+    
+    %% Error handling system
+    Validate -.-> Error[errorHandlerService.ts]
+    FetchVid -.-> Error
+    Process -.-> Error
+    Error --> Normalize[normalizeError.ts]
+    Normalize --> ErrType{Error Type}
+    
+    %% Error responses
+    ErrType -->|"Validation"| Err400[400 Response]
+    ErrType -->|"NotFound"| Err404[404 Response]
+    ErrType -->|"Processing"| Err500[500 Response]
+    ErrType -->|"Size Limit"| FallResp[Fallback Content]
+    
+    %% Debug system
+    Command -.-> Debug[debugService.ts]
+    Debug --> Diag[collectDiagnostics]
+    Diag --> Bread[Add Breadcrumbs]
+    Bread --> DebugMd{Debug Mode}
+    
+    %% Debug outputs
+    DebugMd -->|"Headers"| DebugH[Debug Headers]
+    DebugMd -->|"View"| DebugV[Debug UI]
+    DebugMd -->|"JSON"| DebugJ[Diagnostic JSON]
+    
+    %% Logging system
+    Fetch -.-> Logger[pinoLogger.ts]
+    Video -.-> Logger
+    Command -.-> Logger
+    Error -.-> Logger
+    Logger --> LogLvl{Log Level}
+    
+    %% Log levels
+    LogLvl -->|"Info"| InfoLog[Info Logging]
+    LogLvl -->|"Error"| ErrLog[Error with Context]
+    LogLvl -->|"Debug"| DbgLog[Debug Details]
+    
+    %% Configuration system
+    EnvConf[environmentConfig.ts] --> VidConf[VideoConfigurationManager.ts]
+    VidConf --> CacheConf[CacheConfigurationManager.ts]
+    CacheConf --> LogConf[LoggingConfigurationManager.ts]
+    LogConf --> DbgConf[DebugConfigurationManager.ts]
+    
+    %% Configuration connections
+    VidConf -.-> Command
+    CacheConf -.-> StoreCache
+    CacheConf -.-> TTLCalc
+    LogConf -.-> Logger
+    DbgConf -.-> Debug
+    
+    %% Final response paths
+    ConfigResp --> Final[Finalize Response]
+    Pass --> Final
+    StdResp --> Final
+    ChunkStream --> Final
+    StdStream --> Final
+    Err400 --> Final
+    Err404 --> Final
+    Err500 --> Final
+    FallResp --> Final
+    
+    Final --> Client
+    
+    %% Performance monitoring connections
+    Performance[Time Tracking] -.-> Fetch
+    Performance -.-> Video
+    Performance -.-> Command
+    Performance -.-> StoreCache
+    
+    %% Styling for better readability within confluence
+    classDef primary fill:#d0e0ff
+    classDef cache fill:#ffffd0
+    classDef error fill:#ffd0d0
+    classDef strategy fill:#d8f9d8
+    
+    class Command,Pattern,Transform primary
+    class CacheChk,StoreCache,GenKey,Version cache
+    class Error,Normalize,ErrType error
+    class VideoS,FrameS,SheetS strategy
+```
+</details>
+
+<details>
 <summary><strong>Request Processing Flow</strong> - Decision path for request handling</summary>
 
 ```mermaid
