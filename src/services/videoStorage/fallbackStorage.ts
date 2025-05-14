@@ -418,6 +418,34 @@ async function fetchFromFallbackImpl(
   // Clone the response to ensure we can access its body multiple times
   const clonedResponse = response.clone();
   
+  // Check if we should store this in KV (in the background)
+  if (response.ok && env.executionCtx?.waitUntil && env.VIDEO_TRANSFORMATIONS_CACHE) {
+    // Get content length to check file size
+    const contentLengthHeader = response.headers.get('Content-Length');
+    const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+    
+    // For extremely large files, we'll still process them but log the size
+    if (contentLength > 100 * 1024 * 1024) { // 100MB threshold
+      logDebug('VideoStorageService', `Processing large fallback content (${Math.round(contentLength/1024/1024)}MB) with streams API`, {
+        path: transformedPath,
+        size: contentLength
+      });
+    }
+    
+    // We need to clone the response before passing it to waitUntil and returning it
+    const responseClone = response.clone();
+    
+    // Use waitUntil to process in the background without blocking the response
+    env.executionCtx.waitUntil(
+      streamFallbackToKV(env, transformedPath, responseClone, config)
+    );
+    
+    logDebug('VideoStorageService', 'Initiating background storage of fallback content', {
+      path: transformedPath,
+      size: contentLength || 'unknown'
+    });
+  }
+  
   return {
     response: clonedResponse,
     sourceType: 'fallback',
@@ -426,6 +454,76 @@ async function fetchFromFallbackImpl(
     originalUrl: finalUrl,
     path: transformedPath
   };
+}
+
+/**
+ * Streams fallback content to KV storage in the background
+ * Uses tee() with concurrent reading to avoid memory limitations for large files
+ * @export - This is exported for use in transformationErrorHandler.ts
+ */
+export async function streamFallbackToKV(
+  env: EnvVariables,
+  sourcePath: string,
+  fallbackResponse: Response,
+  config: VideoResizerConfig
+): Promise<void> {
+  // Use the correct KV namespace from env
+  if (!env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
+    return;
+  }
+
+  try {
+    const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');
+    const contentType = fallbackResponse.headers.get('Content-Type') || 'video/mp4';
+    const contentLength = parseInt(fallbackResponse.headers.get('Content-Length') || '0', 10);
+    
+    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
+      path: transformedPath,
+      contentType,
+      contentLength 
+    });
+
+    // Import the storeTransformedVideo function from the correct relative path
+    const { storeTransformedVideo } = await import('../../services/kvStorage/storeVideo');
+    
+    // Create a new response with the body for KV storage
+    // Since fallbackResponse was already cloned before being passed to this function,
+    // we can just use it directly without another clone
+    const storageResponse = new Response(fallbackResponse.body, {
+      headers: new Headers({
+        'Content-Type': contentType,
+        'Content-Length': contentLength ? contentLength.toString() : ''
+      })
+    });
+
+    // Store in KV with chunking support using existing implementation
+    await storeTransformedVideo(
+      env.VIDEO_TRANSFORMATIONS_CACHE,
+      transformedPath,
+      storageResponse,
+      {
+        // Transfer any transformation options that might be in the config
+        // Note: These are optional and might not exist on the config object
+        width: (config as any).width || null,
+        height: (config as any).height || null,
+        format: (config as any).format || null,
+        env: env
+      },
+      config?.cache?.ttl?.ok ?? 3600
+    );
+    
+    logDebug('VideoStorageService', 'Successfully stored fallback content in KV', {
+      path: transformedPath,
+      kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE'
+    });
+  } catch (err) {
+    logErrorWithContext(
+      'Error streaming fallback content to KV',
+      err,
+      { sourcePath, kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE' },
+      'VideoStorageService'
+    );
+  }
 }
 
 /**
