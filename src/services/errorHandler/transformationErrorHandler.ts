@@ -526,15 +526,32 @@ export async function handleTransformationError({
   // Second priority: Basic direct fetch from fallbackOriginUrl or source
   const sourceUrlForDirectFetch = fallbackOriginUrl || source; // Prefer pattern-based fallback URL
   
+  // Check if this is specifically a "video too large" error
+  const is256MiBSizeError = isFileSizeError && (
+    errorText.includes('256MiB') || 
+    errorText.includes('256 MiB') || 
+    parsedError.specificError?.includes('256MiB')
+  );
+  
   // Only attempt direct fetch if pattern-specific fetch wasn't attempted or failed, and we have a direct URL
-  if (!fallbackResponse && !patternFetchAttempted && (isServerError || isFileSizeError) && sourceUrlForDirectFetch) {
-    logDebug('handleTransformationError', 'Attempting direct source fetch', { 
-      sourceUrl: sourceUrlForDirectFetch.substring(0,50), 
-      reason: isServerError ? 'Server Error' : 'File Size Error' 
-    });
-    addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch', { 
-      reason: isServerError ? 'Server Error' : 'File Size Error' 
-    });
+  if (!fallbackResponse && !patternFetchAttempted && ((isServerError || isFileSizeError) || is256MiBSizeError) && sourceUrlForDirectFetch) {
+    // If it's specifically a 256MiB size error, log it differently
+    if (is256MiBSizeError) {
+      logDebug('handleTransformationError', 'Video exceeds 256MiB limit, attempting direct source fetch with range support', { 
+        sourceUrl: sourceUrlForDirectFetch.substring(0,50)
+      });
+      addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch for large video', { 
+        reason: 'Video exceeds 256MiB size limit'
+      });
+    } else {
+      logDebug('handleTransformationError', 'Attempting direct source fetch', { 
+        sourceUrl: sourceUrlForDirectFetch.substring(0,50), 
+        reason: isServerError ? 'Server Error' : 'File Size Error' 
+      });
+      addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch', { 
+        reason: isServerError ? 'Server Error' : 'File Size Error' 
+      });
+    }
     
     try {
       // Use original request's method and headers for direct fetch
@@ -544,15 +561,46 @@ export async function handleTransformationError({
         redirect: 'follow' // Important for potential redirects at origin
       });
       
-      fallbackResponse = await fetch(directRequest);
-      
-      if (!fallbackResponse.ok) {
-        logDebug('handleTransformationError', 'Direct source fetch failed', { status: fallbackResponse.status });
-        addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed', { status: fallbackResponse.status });
-        fallbackResponse = undefined; // Reset to trigger storage service fallback
+      // For large videos that exceed 256MiB, handle differently to avoid cache API
+      if (is256MiBSizeError) {
+        // Fetch but don't use cache API for these large files
+        fallbackResponse = await fetch(directRequest);
+        
+        if (!fallbackResponse.ok) {
+          logDebug('handleTransformationError', 'Direct source fetch failed for large video', { status: fallbackResponse.status });
+          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed for large video', { status: fallbackResponse.status });
+          fallbackResponse = undefined; // Reset to trigger storage service fallback
+        } else {
+          // Check if origin supports range requests
+          const hasRangeSupport = fallbackResponse.headers.get('Accept-Ranges') === 'bytes';
+          
+          logDebug('handleTransformationError', 'Direct source fetch successful for large video', { 
+            status: fallbackResponse.status,
+            contentLength: fallbackResponse.headers.get('Content-Length'),
+            hasRangeSupport: hasRangeSupport
+          });
+          
+          // If origin doesn't support range requests, we could implement streaming 
+          // using utilities similar to those in kvStorage/streamingHelpers.ts
+          
+          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful for large video', { 
+            status: fallbackResponse.status,
+            streamedDirectly: true,
+            hasRangeSupport: hasRangeSupport
+          });
+        }
       } else {
-        logDebug('handleTransformationError', 'Direct source fetch successful', { status: fallbackResponse.status });
-        addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful', { status: fallbackResponse.status });
+        // Normal fetch for other cases
+        fallbackResponse = await fetch(directRequest);
+        
+        if (!fallbackResponse.ok) {
+          logDebug('handleTransformationError', 'Direct source fetch failed', { status: fallbackResponse.status });
+          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed', { status: fallbackResponse.status });
+          fallbackResponse = undefined; // Reset to trigger storage service fallback
+        } else {
+          logDebug('handleTransformationError', 'Direct source fetch successful', { status: fallbackResponse.status });
+          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful', { status: fallbackResponse.status });
+        }
       }
     } catch (directFetchError) {
       logErrorWithContext('Error fetching directly from source', directFetchError, { sourceUrl: sourceUrlForDirectFetch }, 'handleTransformationError');
@@ -610,6 +658,12 @@ export async function handleTransformationError({
       headers.set('X-Video-Too-Large', 'true'); // Required for backward compatibility
     }
     
+    // Add specific header for 256MiB size errors
+    if (is256MiBSizeError) {
+      headers.set('X-Video-Exceeds-256MiB', 'true');
+      headers.set('X-Direct-Stream', 'true');
+    }
+    
     if (isServerError) headers.set('X-Server-Error-Fallback', 'true');
     
     // Add pattern info if a pattern was matched but direct fetch was used
@@ -643,7 +697,35 @@ export async function handleTransformationError({
       headers.set('X-Direct-Source-Used', 'true');
     }
 
-    headers.set('Cache-Control', 'no-store'); // Ensure fallback isn't cached
+    // For ALL fallbacks, set bypass headers using the centralized utility
+    const { setBypassHeaders } = await import('../../utils/bypassHeadersUtils');
+    
+    // Set bypass headers with appropriate options
+    setBypassHeaders(headers, {
+      videoExceedsSize: is256MiBSizeError,
+      isFallback: true,
+      fileSizeError: isFileSizeError || parsedError.errorType === 'file_size_limit' || errorText.includes('file size limit')
+    })
+    
+    // For large videos specifically, add some browser cache hints to improve playback
+    if (is256MiBSizeError) {
+      // Also allow some browser-side caching with private directive 
+      headers.append('Cache-Control', 'private, max-age=3600');
+      
+      logDebug('handleTransformationError', 'Setting up large video response for direct streaming (bypassing Cache API)', {
+        contentLength: headers.get('Content-Length'),
+        contentType: headers.get('Content-Type'),
+        acceptRanges: headers.get('Accept-Ranges'),
+        sizeExceeds256MiB: true
+      });
+    } else {
+      // Log regular fallback
+      logDebug('handleTransformationError', 'Fallback streaming with direct response (bypassing Cache API)', {
+        contentLength: headers.get('Content-Length'),
+        contentType: headers.get('Content-Type'),
+        acceptRanges: headers.get('Accept-Ranges')
+      });
+    }
 
     return new Response(fallbackResponse.body, {
       status: fallbackResponse.status,
