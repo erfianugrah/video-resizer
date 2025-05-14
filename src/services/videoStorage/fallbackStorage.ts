@@ -10,6 +10,13 @@ import { addBreadcrumb } from '../../utils/requestContext';
 import { getPresignedUrl, storePresignedUrl, isUrlExpiring, refreshPresignedUrl, UrlGeneratorFunction } from '../presignedUrlCacheService';
 import { applyPathTransformation } from './pathTransform';
 import { logDebug } from './logging';
+// For TypeScript type checking without importing actual implementations
+// The actual FixedLengthStream is provided by the Cloudflare Workers runtime
+declare class FixedLengthStream {
+  constructor(size: number);
+  readonly readable: ReadableStream;
+  readonly writable: WritableStream;
+}
 
 /**
  * Implementation of fetchFromFallback that might throw errors
@@ -418,6 +425,36 @@ async function fetchFromFallbackImpl(
   // Clone the response to ensure we can access its body multiple times
   const clonedResponse = response.clone();
   
+  // Check if we should store this in KV (in the background)
+  if (response.ok && env.executionCtx?.waitUntil && env.VIDEO_TRANSFORMATIONS_CACHE) {
+    // Get content length to check file size
+    const contentLengthHeader = response.headers.get('Content-Length');
+    const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+    
+    // Skip KV storage completely for files larger than 128MB
+    if (contentLength > 128 * 1024 * 1024) { // 128MB threshold
+      logDebug('VideoStorageService', `Skipping KV storage for large fallback content (${Math.round(contentLength/1024/1024)}MB) - exceeds 128MB limit`, {
+        path: transformedPath,
+        size: contentLength
+      });
+    } else {
+      // For smaller files, proceed with KV storage
+      
+      // We need to clone the response before passing it to waitUntil and returning it
+      const responseClone = response.clone();
+      
+      // Use waitUntil to process in the background without blocking the response
+      env.executionCtx.waitUntil(
+        streamFallbackToKV(env, transformedPath, responseClone, config)
+      );
+      
+      logDebug('VideoStorageService', 'Initiating background storage of fallback content', {
+        path: transformedPath,
+        size: contentLength || 'unknown'
+      });
+    }
+  }
+  
   return {
     response: clonedResponse,
     sourceType: 'fallback',
@@ -426,6 +463,304 @@ async function fetchFromFallbackImpl(
     originalUrl: finalUrl,
     path: transformedPath
   };
+}
+
+/**
+ * Streams fallback content to KV storage in the background
+ * Uses tee() with concurrent reading to avoid memory limitations for large files
+ * @export - This is exported for use in transformationErrorHandler.ts
+ */
+export async function streamFallbackToKV(
+  env: EnvVariables,
+  sourcePath: string,
+  fallbackResponse: Response,
+  config: VideoResizerConfig
+): Promise<void> {
+  // Use the correct KV namespace from env
+  if (!env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
+    return;
+  }
+
+  try {
+    const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');
+    const contentType = fallbackResponse.headers.get('Content-Type') || 'video/mp4';
+    const contentLength = parseInt(fallbackResponse.headers.get('Content-Length') || '0', 10);
+    
+    // Safety check: Skip storing files larger than 128MB to avoid memory issues
+    if (contentLength > 128 * 1024 * 1024) {
+      logDebug('VideoStorageService', 'Skipping KV storage for large file in streamFallbackToKV', {
+        path: transformedPath,
+        size: Math.round(contentLength / 1024 / 1024) + 'MB',
+        reason: 'Exceeds 128MB safety limit'
+      });
+      return;
+    }
+    
+    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
+      path: transformedPath,
+      contentType,
+      contentLength 
+    });
+
+    // For files close to our limit, use optimized streaming approach
+    if (contentLength > 40 * 1024 * 1024) {
+      logDebug('KVCache', 'Using optimized streaming for large file', {
+        path: transformedPath,
+        sizeMB: Math.round(contentLength / 1024 / 1024)
+      });
+      
+      // Import necessary functions
+      const { storeTransformedVideoWithStreaming } = await import('../kvStorage/streamStorage');
+      
+      // For extremely large files, we need to be even more careful with the stream
+      // Instead of using FixedLengthStream, we'll implement our own stream-based approach
+      // that avoids any tee() operations entirely
+      
+      // Create a TransformStream to directly process chunks
+      const { readable, writable } = new TransformStream();
+      
+      // Create a writer for the writable side
+      const writer = writable.getWriter();
+      
+      // Run the direct pumping in the background
+      if (env.executionCtx) {
+        env.executionCtx.waitUntil((async () => {
+        try {
+          if (!fallbackResponse.body) {
+            throw new Error('Response body is null');
+          }
+          
+          // Get a reader from the original response
+          const reader = fallbackResponse.body.getReader();
+          
+          // Process chunks directly to the KV in 10MB chunks
+          const { storeTransformedVideoWithStreaming } = await import('../kvStorage/streamStorage');
+          
+          // We'll process chunks directly to KV, completely bypassing the Response.body approach
+          let totalBytesProcessed = 0;
+          const chunks = [];
+          let currentChunkSize = 0;
+          const targetChunkSize = 10 * 1024 * 1024; // 10MB chunks
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            totalBytesProcessed += value.byteLength;
+            
+            // Write the chunk to the response stream
+            await writer.write(value);
+            
+            // Also collect chunks for KV storage
+            chunks.push(value);
+            currentChunkSize += value.byteLength;
+            
+            // If we have enough data for a KV chunk, process it
+            if (currentChunkSize >= targetChunkSize) {
+              // Process this batch of chunks
+              if (env.VIDEO_TRANSFORMATIONS_CACHE) {
+                await processChunksToKV(
+                  env.VIDEO_TRANSFORMATIONS_CACHE,
+                  transformedPath,
+                  chunks,
+                  contentType,
+                  {
+                    width: (config as any).width || null,
+                    height: (config as any).height || null,
+                    format: (config as any).format || null,
+                    env: env,
+                    contentLength
+                  },
+                  config?.cache?.ttl?.ok ?? 3600,
+                  totalBytesProcessed,
+                  contentLength
+                );
+              }
+              
+              // Reset for next batch
+              chunks.length = 0;
+              currentChunkSize = 0;
+            }
+          }
+          
+          // Process any remaining chunks
+          if (chunks.length > 0 && env.VIDEO_TRANSFORMATIONS_CACHE) {
+            await processChunksToKV(
+              env.VIDEO_TRANSFORMATIONS_CACHE,
+              transformedPath,
+              chunks,
+              contentType,
+              {
+                width: (config as any).width || null,
+                height: (config as any).height || null,
+                format: (config as any).format || null,
+                env: env,
+                contentLength
+              },
+              config?.cache?.ttl?.ok ?? 3600,
+              totalBytesProcessed,
+              contentLength
+            );
+          }
+          
+          // Close the writer
+          writer.close();
+          
+          logDebug('VideoStorageService', 'Successfully processed extremely large file directly', {
+            path: transformedPath,
+            totalBytes: totalBytesProcessed,
+            expectedBytes: contentLength
+          });
+        } catch (err) {
+          logErrorWithContext(
+            'Error in direct stream processing',
+            err,
+            { sourcePath, transformedPath, size: contentLength },
+            'VideoStorageService'
+          );
+          writer.abort();
+        }
+      })());
+      }
+      
+      // Use the readable part of the stream for sending the response
+      const newResponse = new Response(readable, {
+        headers: new Headers({
+          'Content-Type': contentType,
+          'Content-Length': contentLength.toString()
+        })
+      });
+      
+      // Helper function to process chunks directly to KV
+      async function processChunksToKV(
+        namespace: KVNamespace,
+        path: string,
+        chunks: Uint8Array[],
+        contentType: string,
+        options: any,
+        ttl: number,
+        processedBytes: number,
+        totalBytes: number
+      ) {
+        try {
+          // Combine chunks
+          const totalLength = chunks.reduce((sum, arr) => sum + arr.byteLength, 0);
+          const combinedChunk = new Uint8Array(totalLength);
+          
+          let offset = 0;
+          for (const chunk of chunks) {
+            combinedChunk.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+          
+          // Generate a unique key for this chunk
+          const chunkNumber = Math.floor(processedBytes / (10 * 1024 * 1024));
+          const key = `direct_${path}_chunk_${chunkNumber}`;
+          
+          // Store directly
+          await namespace.put(key, combinedChunk.buffer, {
+            metadata: {
+              contentType,
+              chunkNumber,
+              totalBytes,
+              processedBytes,
+              timestamp: Date.now()
+            }
+          });
+          
+          logDebug('VideoStorageService', 'Stored chunk directly to KV', {
+            key,
+            chunkSize: totalLength,
+            chunkNumber,
+            totalProcessed: processedBytes
+          });
+        } catch (err) {
+          logErrorWithContext(
+            'Error storing chunk directly to KV',
+            err,
+            { path, chunkCount: chunks.length },
+            'VideoStorageService'
+          );
+        }
+      }
+      
+      // Store with direct streaming
+      await storeTransformedVideoWithStreaming(
+        env.VIDEO_TRANSFORMATIONS_CACHE,
+        transformedPath,
+        newResponse,
+        {
+          width: (config as any).width || null,
+          height: (config as any).height || null,
+          format: (config as any).format || null,
+          env: env
+        },
+        config?.cache?.ttl?.ok ?? 3600
+      );
+      
+      logDebug('VideoStorageService', 'Successfully initiated direct streaming to KV', {
+        path: transformedPath,
+        kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE',
+        sizeMB: Math.round(contentLength / 1024 / 1024)
+      });
+      
+      return;
+    }
+    
+    // For large files, use standard streaming
+    // Import the storeTransformedVideo function from the correct relative path
+    const { storeTransformedVideo } = await import('../../services/kvStorage/storeVideo');
+    
+    // Check if this is a large file that would benefit from streaming
+    const useStreaming = contentLength > 40 * 1024 * 1024; // 40MB threshold for streaming
+    
+    if (useStreaming) {
+      logDebug('VideoStorageService', 'Using streaming mode for large fallback content', {
+        path: transformedPath,
+        sizeMB: Math.round(contentLength / 1024 / 1024),
+        contentType
+      });
+    }
+    
+    // Create a new response with the body for KV storage
+    // Since fallbackResponse was already cloned before being passed to this function,
+    // we can just use it directly without another clone
+    const storageResponse = new Response(fallbackResponse.body, {
+      headers: new Headers({
+        'Content-Type': contentType,
+        'Content-Length': contentLength ? contentLength.toString() : ''
+      })
+    });
+
+    // Store in KV with chunking support using streaming for large files
+    await storeTransformedVideo(
+      env.VIDEO_TRANSFORMATIONS_CACHE,
+      transformedPath,
+      storageResponse,
+      {
+        // Transfer any transformation options that might be in the config
+        // Note: These are optional and might not exist on the config object
+        width: (config as any).width || null,
+        height: (config as any).height || null,
+        format: (config as any).format || null,
+        env: env
+      },
+      config?.cache?.ttl?.ok ?? 3600,
+      useStreaming // Pass the streaming flag
+    );
+    
+    logDebug('VideoStorageService', 'Successfully stored fallback content in KV', {
+      path: transformedPath,
+      kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE'
+    });
+  } catch (err) {
+    logErrorWithContext(
+      'Error streaming fallback content to KV',
+      err,
+      { sourcePath, kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE' },
+      'VideoStorageService'
+    );
+  }
 }
 
 /**

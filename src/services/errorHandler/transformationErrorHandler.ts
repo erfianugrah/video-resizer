@@ -1,5 +1,6 @@
 /**
  * Specialized handling for transformation errors
+ * Includes background caching of fallback content with streaming support for large files
  */
 import { VideoTransformContext } from '../../domain/commands/TransformVideoCommand';
 import { RequestContext, addBreadcrumb } from '../../utils/requestContext';
@@ -12,6 +13,115 @@ import { prepareVideoTransformation } from '../TransformationService';
 // Import will be done dynamically within the function to allow for mocking in tests
 import type { DiagnosticsInfo } from '../../utils/debugHeadersUtils';
 import { logDebug } from './logging';
+import { EnvVariables } from '../../config/environmentConfig';
+import type { VideoResizerConfig } from '../videoStorage/interfaces';
+
+/**
+ * Helper function to initiate background caching of fallback responses
+ * This centralizes the background caching logic to avoid code duplication
+ * 
+ * @param env Cloudflare environment with executionCtx and KV namespace (can be undefined)
+ * @param path Path of the video being cached
+ * @param fallbackResponse Response to cache in KV
+ * @param requestContext Request context for diagnostics and logging
+ * @param tagInfo Additional information tags for logs (pattern name, content info)
+ */
+async function initiateBackgroundCaching(
+  env: Partial<EnvVariables> | undefined,
+  path: string,
+  fallbackResponse: Response,
+  requestContext: RequestContext,
+  tagInfo?: {
+    pattern?: string,
+    isLargeVideo?: boolean
+  }
+): Promise<void> {
+  // Only proceed if we have the necessary environment and response
+  if (!env || !env.executionCtx?.waitUntil || !env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
+    return;
+  }
+
+  try {
+    // Log context based on whether this is a large video or pattern fallback
+    const contextType = tagInfo?.isLargeVideo 
+      ? 'large video'
+      : tagInfo?.pattern 
+        ? `pattern fallback (${tagInfo.pattern})`
+        : 'fallback video';
+    
+    // Get content length to check file size
+    const contentLengthHeader = fallbackResponse.headers.get('Content-Length');
+    const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+    
+    // For extremely large files, we'll still process them using the streams API
+    if (contentLength > 100 * 1024 * 1024) { // 100MB threshold
+      logDebug('handleTransformationError', `Processing large ${contextType} (${Math.round(contentLength/1024/1024)}MB) with streams API`, {
+        path,
+        pattern: tagInfo?.pattern,
+        contentLength,
+        status: fallbackResponse.status,
+        isLargeVideo: tagInfo?.isLargeVideo
+      });
+      
+      addBreadcrumb(requestContext, 'KVCache', `Using streaming for large ${contextType}`, {
+        path,
+        pattern: tagInfo?.pattern,
+        contentLength,
+        isLargeVideo: tagInfo?.isLargeVideo,
+        sizeMB: Math.round(contentLength/1024/1024)
+      });
+    }
+    
+    // Import the background chunking storage function
+    const { streamFallbackToKV } = await import('../../services/videoStorage/fallbackStorage');
+    
+    // Get a fresh clone for KV storage - this is separate from the response we send to the client
+    const fallbackClone = fallbackResponse.clone();
+    
+    // Log the KV storage attempt
+    logDebug('handleTransformationError', `Initiating background KV storage for ${contextType}`, {
+      path,
+      pattern: tagInfo?.pattern,
+      contentType: fallbackResponse.headers.get('Content-Type'),
+      contentLength,
+      status: fallbackResponse.status,
+      isLargeVideo: tagInfo?.isLargeVideo
+    });
+    
+    // Add breadcrumb for tracking
+    addBreadcrumb(requestContext, 'KVCache', `Starting background storage for ${contextType}`, {
+      path,
+      pattern: tagInfo?.pattern,
+      contentLength,
+      isLargeVideo: tagInfo?.isLargeVideo
+    });
+    
+    // Import VideoConfigurationManager to get configuration
+    const { VideoConfigurationManager } = await import('../../config');
+    const videoConfigManager = VideoConfigurationManager.getInstance();
+    const videoConfig = videoConfigManager.getConfig();
+    
+    // Use waitUntil to store in the background
+    env.executionCtx.waitUntil(
+      streamFallbackToKV(env, path, fallbackClone, videoConfig)
+        .catch(storeError => {
+          // Log any errors that occur during background storage
+          logErrorWithContext(`Error during background KV storage for ${contextType}`, storeError, {
+            path,
+            pattern: tagInfo?.pattern,
+            requestId: requestContext.requestId,
+            isLargeVideo: tagInfo?.isLargeVideo
+          }, 'handleTransformationError');
+        })
+    );
+  } catch (importError) {
+    // Log error but don't let it affect the user response
+    logErrorWithContext(`Failed to initialize background KV storage for ${tagInfo?.isLargeVideo ? 'large video' : 'fallback'}`, importError, {
+      requestId: requestContext.requestId,
+      pattern: tagInfo?.pattern
+    }, 'handleTransformationError');
+  }
+}
 
 /**
  * Handles transformation errors, including fallback logic and retries
@@ -415,6 +525,18 @@ export async function handleTransformationError({
           status: fallbackResponse.status
         });
         
+        // Store pattern-specific fallback video in KV cache in the background
+        // This is particularly important for S3 presigned URLs which expire
+        if (fallbackResponse.body) {
+          // Get the path from the original request
+          const path = new URL(originalRequest.url).pathname;
+          
+          // Use our centralized helper function for background caching
+          await initiateBackgroundCaching(context.env, path, fallbackResponse, requestContext, {
+            pattern: matchedPattern?.name
+          });
+        }
+        
         // Add pattern-specific fallback header
         const headers = new Headers(fallbackResponse.headers);
         headers.set('X-Fallback-Applied', 'true');
@@ -588,6 +710,18 @@ export async function handleTransformationError({
             streamedDirectly: true,
             hasRangeSupport: hasRangeSupport
           });
+          
+          // Store large video in KV cache in the background using chunking
+          // Use waitUntil to process in the background without blocking the response
+          if (fallbackResponse.body) {
+            // Get the path from the original request
+            const path = new URL(originalRequest.url).pathname;
+            
+            // Use our centralized helper function for background caching
+            await initiateBackgroundCaching(context.env, path, fallbackResponse, requestContext, {
+              isLargeVideo: true
+            });
+          }
         }
       } else {
         // Normal fetch for other cases
@@ -600,6 +734,16 @@ export async function handleTransformationError({
         } else {
           logDebug('handleTransformationError', 'Direct source fetch successful', { status: fallbackResponse.status });
           addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful', { status: fallbackResponse.status });
+          
+          // Also store regular fallback videos in KV cache in the background
+          // This handles the non-large video case but with the same chunking support
+          if (fallbackResponse.body) {
+            // Get the path from the original request
+            const path = new URL(originalRequest.url).pathname;
+            
+            // Use our centralized helper function for background caching
+            await initiateBackgroundCaching(context.env, path, fallbackResponse, requestContext);
+          }
         }
       }
     } catch (directFetchError) {

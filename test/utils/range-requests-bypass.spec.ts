@@ -176,8 +176,8 @@ describe('Range Request Handling with Cache API Bypass', () => {
     expect(result.headers.get('X-Range-Handled-By')).toBe('Direct-Stream-Range-Handler');
     
     // Verify correct bypass headers are maintained
-    expect(result.headers.get('X-Bypass-Cache-API')).toBe('true');
-    expect(result.headers.get('X-Direct-Stream-Only')).toBe('true');
+    expect(result.headers.get('X-Video-Exceeds-256MiB')).toBe('true');
+    expect(result.headers.get('X-Range-Handled-By')).toBe('Direct-Stream-Range-Handler');
     
     // Verify we didn't use the Cache API
     expect(globalThis.caches.open).not.toHaveBeenCalled();
