@@ -296,10 +296,13 @@ export const handleVideoRequest = withErrorHandling<
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
       
-      // Check for range request and handle it for initial access
+      // Create a clone for KV caching (important: do this BEFORE any range handling)
+      const responseForCache = response.clone();
+      
+      // Set up final response
       let finalResponse = response;
       
-      // Handle range requests for first access before KV caching occurs
+      // Handle range requests for first access AFTER cloning for KV caching
       if (request.headers.has('Range') && finalResponse.headers.get('Content-Type')?.includes('video/')) {
         // Import the centralized bypass headers utility
         const { hasBypassHeaders } = await import('../utils/bypassHeadersUtils');
@@ -457,7 +460,8 @@ export const handleVideoRequest = withErrorHandling<
           // Only proceed with KV cache if it's enabled in config
           if (kvCacheEnabled) {
             const sourcePath = url.pathname;
-            const responseClone = response.clone();
+            // Use the clone we made before range handling (important to avoid caching a 206 response)
+            const responseClone = responseForCache;
             
             // Use derivative-based caching instead of specific IMQuery dimensions
             // This ensures better cache reuse when multiple imwidth/imheight values map to the same derivative

@@ -240,8 +240,17 @@ export async function handleRangeRequestForInitialAccess(
     
     try {
       // Store the full response in the cache using the full URL as the key
-      // Important: originalResponse is now consumed by this operation and can't be used again!
-      await cache.put(cacheKeyForPut, originalResponse);
+      // Only cache 200 OK responses, NEVER 206 Partial Content responses
+      if (originalResponse.status === 200) {
+        // Important: originalResponse is now consumed by this operation and can't be used again!
+        await cache.put(cacheKeyForPut, originalResponse);
+      } else {
+        // Log warning - we should never get here if the videoHandler is properly cloning before range handling
+        console.warn('Skipping Cache API storage for non-200 response:', {
+          status: originalResponse.status,
+          url: cacheKeyForPut
+        });
+      }
     } catch (cacheError) {
       // Log the cache error
       try {
