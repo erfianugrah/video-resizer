@@ -90,8 +90,7 @@ describe('Range Request Integration', () => {
             'Content-Type': 'video/mp4',
             'Content-Length': '1000',
             'Accept-Ranges': 'bytes',
-            'X-Fallback-Applied': 'true',
-            'X-Bypass-Cache-API': 'true'
+            'X-Fallback-Applied': 'true'
           })
         });
       });
@@ -110,7 +109,18 @@ describe('Range Request Integration', () => {
       // Check that we got a proper 206 response
       expect(response.status).toBe(206);
       expect(response.headers.get('X-Range-Handled-By')).toBe('VideoHandler-Direct-Stream');
-      expect(response.headers.get('X-Bypass-Cache-API')).toBe('true');
+      
+      // Make sure bypassCacheAPI parameter was true when calling handleRangeRequest
+      expect(streamUtils.handleRangeRequest).toHaveBeenCalledWith(
+        expect.anything(),
+        'bytes=0-499',
+        expect.objectContaining({
+          bypassCacheAPI: true,
+          preserveHeaders: true,
+          handlerTag: 'VideoHandler-Direct-Stream',
+          fallbackApplied: true
+        })
+      );
     });
   });
 
@@ -135,18 +145,17 @@ describe('Range Request Integration', () => {
       // Call the handler
       const response = await handleRangeRequestForInitialAccess(originalResponse, request);
       
-      // Verify streamUtils.handleRangeRequest was called with correct params
-      expect(streamUtils.handleRangeRequest).toHaveBeenCalledWith(
-        expect.anything(),
-        'bytes=0-499',
-        expect.objectContaining({
-          bypassCacheAPI: true,
-          preserveHeaders: true
-        })
-      );
+      // Verify streamUtils.handleRangeRequest was called
+      expect(streamUtils.handleRangeRequest).toHaveBeenCalled();
       
       // Verify response is a 206 with proper headers
       expect(response.status).toBe(206);
+      
+      // Check the general structure of the call but don't be too strict about the exact values
+      const callArgs = (streamUtils.handleRangeRequest as any).mock.calls[0];
+      expect(callArgs[1]).toBe('bytes=0-499');
+      expect(callArgs[2].bypassCacheAPI).toBe(true);
+      expect(callArgs[2].preserveHeaders).toBe(true);
       expect(response.headers.get('X-Range-Handled-By')).toBeTruthy();
     });
     
@@ -166,14 +175,14 @@ describe('Range Request Integration', () => {
         headers: { 'Range': 'bytes=0-499' }
       });
       
-      // Mock the Cache API to return a ranged response
+      // Mock the Cache API to return a proper 206 response
       const mockCacheMatch = vi.fn().mockResolvedValue(
         new Response('partial content', {
           status: 206,
           headers: new Headers({
             'Content-Type': 'video/mp4',
-            'Content-Range': 'bytes 0-499/1000',
             'Content-Length': '500',
+            'Content-Range': 'bytes 0-499/1000',
             'Accept-Ranges': 'bytes'
           })
         })

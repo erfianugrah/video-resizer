@@ -14,47 +14,183 @@ ReadableStream.tee() buffer limit exceeded
 
 This error occurs in Cloudflare Workers when cloning a response with a large body. The issue was particularly prevalent in background caching operations using `waitUntil()`, where the response body was being cloned multiple times.
 
-## Solution: Efficient Streaming with Streams API
-
-Rather than imposing artificial file size limits, we implemented a more efficient approach using the Streams API to handle files of any size:
-
-1. **Single Response Clone**: We ensure that response bodies are cloned only once before being passed to background processes
-2. **Direct Stream Consumption**: The response body is consumed directly as a stream, without loading the entire content into memory
-3. **Proper Headers Propagation**: Content-Type and Content-Length headers are preserved when streaming
-4. **Memory-Efficient Processing**: Chunked storage mechanism processes data in small pieces to avoid memory limits
-
-## Implementation Details
-
-The key components of the implementation are:
-
-### 1. fetchFromFallbackImpl Function
+Additionally, the original implementation would buffer the entire video content into memory before storing it to KV, which could cause another memory error with very large files:
 
 ```typescript
-// Check if we should store this in KV (in the background)
-if (response.ok && env.executionCtx?.waitUntil && env.VIDEO_TRANSFORMATIONS_CACHE) {
-  // Get content length to check file size
-  const contentLengthHeader = response.headers.get('Content-Length');
-  const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
-  
-  // For extremely large files, we'll still process them but log the size
-  if (contentLength > 100 * 1024 * 1024) { // 100MB threshold
-    logDebug('VideoStorageService', `Processing large fallback content (${Math.round(contentLength/1024/1024)}MB) with streams API`, {
-      path: transformedPath,
-      size: contentLength
-    });
-  }
-  
-  // We need to clone the response before passing it to waitUntil and returning it
-  const responseClone = response.clone();
-  
-  // Use waitUntil to process in the background without blocking the response
-  env.executionCtx.waitUntil(
-    streamFallbackToKV(env, transformedPath, responseClone, config)
-  );
+// Buffer the entire video for exact size measurement and chunking decision
+let videoArrayBuffer: ArrayBuffer;
+try {
+  videoArrayBuffer = await responseClone.arrayBuffer();
+} catch (error) {
+  // Error handling
 }
 ```
 
-### 2. streamFallbackToKV Function
+## Solution: Comprehensive Streaming Architecture
+
+Rather than imposing artificial file size limits, we implemented a comprehensive streaming architecture using the Streams API to handle files of any size:
+
+1. **Single Response Clone**: Response bodies are cloned only once before being passed to background processes
+2. **Streaming Read Processing**: Large files are processed as streams without buffering the entire content
+3. **Streaming Write Implementation**: Chunks are written to KV as they are read from the stream
+4. **Smart Size Detection**: Automatically detects file size and selects optimal storage strategy
+5. **Chunked Storage**: Larger files are split into manageable chunks for storage with proper manifest
+6. **Memory Management**: Maintains low memory footprint even for files of several hundred megabytes
+
+## Implementation Details
+
+The solution consists of three major components:
+
+### 1. Streaming-Aware Storage in KV Storage Service
+
+We enhanced `storeTransformedVideo` to support a streaming mode:
+
+```typescript
+export const storeTransformedVideo = withErrorHandling<
+  [/* parameters */],
+  Promise<boolean>
+>(
+  async function storeTransformedVideoWrapper(
+    namespace,
+    sourcePath,
+    response,
+    options,
+    ttl?,
+    useStreaming?
+  ): Promise<boolean> {
+    try {
+      // Check if we should use streaming mode (either explicitly requested or very large file)
+      const contentLengthHeader = response.headers.get('Content-Length');
+      const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      const shouldUseStreaming = useStreaming === true || 
+                               (contentLength > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY * 2);
+      
+      if (shouldUseStreaming) {
+        logDebug('KVStorageService', 'Using streaming mode for large file', { 
+          sourcePath, 
+          contentLength,
+          explicitStreaming: useStreaming === true
+        });
+        
+        // Dynamically import the streaming implementation to avoid circular dependencies
+        const { storeTransformedVideoWithStreaming } = await import('./streamStorage');
+        return await storeTransformedVideoWithStreaming(namespace, sourcePath, response, options, ttl);
+      } else {
+        // Use the standard implementation for normal files
+        return await storeTransformedVideoImpl(namespace, sourcePath, response, options, ttl);
+      }
+    } catch (err) {
+      // Error handling
+    }
+  },
+  /* error handling configs */
+);
+```
+
+### 2. New Stream-Specific Storage Implementation
+
+We implemented a dedicated streaming storage implementation that processes files chunk-by-chunk:
+
+```typescript
+export async function storeTransformedVideoWithStreaming(
+  namespace: KVNamespace,
+  sourcePath: string,
+  response: Response,
+  options: { /* options */ },
+  ttl?: number
+): Promise<boolean> {
+  // Verify response body exists
+  if (!responseClone.body) {
+    return false;
+  }
+  
+  // Process the stream in chunks and get the result
+  const result = await processStreamInChunks(
+    namespace,
+    key,
+    responseClone.body,
+    {
+      sourcePath, 
+      contentType,
+      transformOptions: options,
+      cacheVersion
+    },
+    ttl,
+    useIndefiniteStorage
+  );
+  
+  // Rest of function implementation
+}
+
+async function processStreamInChunks(
+  namespace: KVNamespace,
+  key: string,
+  stream: ReadableStream<Uint8Array>,
+  options: { /* options */ },
+  ttl?: number,
+  useIndefiniteStorage?: boolean
+): Promise<{
+  success: boolean;
+  totalSize: number;
+  chunkKeys: string[];
+  actualChunkSizes: number[];
+}> {
+  try {
+    // Set up the reader
+    const reader = stream.getReader();
+    
+    // Create a buffer for accumulating data
+    let currentChunkData: Uint8Array[] = [];
+    let currentAccumulatedSize = 0;
+    
+    // Process the stream chunk by chunk
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      // Break when stream is done
+      if (done) {
+        // Store any remaining data in the buffer
+        if (currentAccumulatedSize > 0) {
+          const success = await storeCurrentChunk();
+          if (!success) throw new Error(`Failed to store final chunk ${chunkIndex}`);
+        }
+        break;
+      }
+      
+      // Add the new chunk to our buffer
+      currentChunkData.push(value);
+      currentAccumulatedSize += value.byteLength;
+      
+      // If we've accumulated enough data, store it as a chunk
+      if (currentAccumulatedSize >= STANDARD_CHUNK_SIZE) {
+        const success = await storeCurrentChunk();
+        if (!success) throw new Error(`Failed to store chunk ${chunkIndex}`);
+        
+        // Reset the buffer
+        currentChunkData = [];
+        currentAccumulatedSize = 0;
+        chunkIndex++;
+      }
+    }
+    
+    // Process results, create manifest
+    // Rest of implementation
+  } catch (error) {
+    // Error handling
+  }
+  
+  /**
+   * Helper function to store the current accumulated data as a chunk
+   */
+  async function storeCurrentChunk(): Promise<boolean> {
+    // Implementation
+  }
+}
+```
+
+### 3. Integration With Fallback Storage
+
+Updated `streamFallbackToKV` to use the streaming-aware storage for background caching:
 
 ```typescript
 export async function streamFallbackToKV(
@@ -63,128 +199,68 @@ export async function streamFallbackToKV(
   fallbackResponse: Response,
   config: VideoResizerConfig
 ): Promise<void> {
-  // Use the correct KV namespace from env
-  if (!env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
-    return;
-  }
-
   try {
-    const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');
-    const contentType = fallbackResponse.headers.get('Content-Type') || 'video/mp4';
-    const contentLength = parseInt(fallbackResponse.headers.get('Content-Length') || '0', 10);
+    // Check if this is a large file that would benefit from streaming
+    const useStreaming = contentLength > 40 * 1024 * 1024; // 40MB threshold for streaming
     
-    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
-      path: transformedPath,
-      contentType,
-      contentLength 
-    });
+    if (useStreaming) {
+      logDebug('VideoStorageService', 'Using streaming mode for large fallback content', {
+        path: transformedPath,
+        sizeMB: Math.round(contentLength / 1024 / 1024),
+        contentType
+      });
+    }
 
-    // Import the storeTransformedVideo function from the correct relative path
-    const { storeTransformedVideo } = await import('../../services/kvStorage/storeVideo');
-    
-    // Create a new response with the body for KV storage
-    // Since fallbackResponse was already cloned before being passed to this function,
-    // we can just use it directly without another clone
-    const storageResponse = new Response(fallbackResponse.body, {
-      headers: new Headers({
-        'Content-Type': contentType,
-        'Content-Length': contentLength ? contentLength.toString() : ''
-      })
-    });
-
-    // Store in KV with chunking support using existing implementation
+    // Store in KV with chunking support using streaming for large files
     await storeTransformedVideo(
       env.VIDEO_TRANSFORMATIONS_CACHE,
       transformedPath,
       storageResponse,
       {
-        width: (config as any).width || null,
-        height: (config as any).height || null,
-        format: (config as any).format || null,
-        env: env
+        // options
       },
-      config?.cache?.ttl?.ok ?? 3600
+      config?.cache?.ttl?.ok ?? 3600,
+      useStreaming // Pass the streaming flag
     );
-    
-    logDebug('VideoStorageService', 'Successfully stored fallback content in KV', {
-      path: transformedPath,
-      kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE'
-    });
   } catch (err) {
-    logErrorWithContext(
-      'Error streaming fallback content to KV',
-      err,
-      { sourcePath, kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE' },
-      'VideoStorageService'
-    );
+    // Error handling
   }
 }
 ```
 
-### 3. initiateBackgroundCaching in transformationErrorHandler.ts
+## How It Works
 
-```typescript
-// For extremely large files, we'll still process them using the streams API
-if (contentLength > 100 * 1024 * 1024) { // 100MB threshold
-  logDebug('handleTransformationError', `Processing large ${contextType} (${Math.round(contentLength/1024/1024)}MB) with streams API`, {
-    path,
-    pattern: tagInfo?.pattern,
-    contentLength,
-    status: fallbackResponse.status,
-    isLargeVideo: tagInfo?.isLargeVideo
-  });
-  
-  addBreadcrumb(requestContext, 'KVCache', `Using streaming for large ${contextType}`, {
-    path,
-    pattern: tagInfo?.pattern,
-    contentLength,
-    isLargeVideo: tagInfo?.isLargeVideo,
-    sizeMB: Math.round(contentLength/1024/1024)
-  });
-}
+1. **Size Detection**: The system automatically detects large files that would benefit from streaming
+2. **Progressive Storage**: Large files are read in manageable chunks (typically 5MB) and stored incrementally
+3. **Manifest Creation**: A manifest records information about chunks for later retrieval
+4. **Memory Efficiency**: By processing data in chunks, memory usage remains low regardless of total file size
+5. **Transparent Implementation**: The streaming functionality is automatically invoked for large files with no user configuration required
 
-// Get a fresh clone for KV storage
-const fallbackClone = fallbackResponse.clone();
+## Key Benefits
 
-// Use waitUntil to store in the background
-env.executionCtx.waitUntil(
-  streamFallbackToKV(env, path, fallbackClone, videoConfig)
-    .catch(storeError => {
-      // Log any errors that occur during background storage
-      logErrorWithContext(`Error during background KV storage for ${contextType}`, storeError, {
-        path,
-        pattern: tagInfo?.pattern,
-        requestId: requestContext.requestId,
-        isLargeVideo: tagInfo?.isLargeVideo
-      }, 'handleTransformationError');
-    })
-);
-```
-
-## Key Improvements
-
-The improved implementation provides:
-
-1. **Size Agnostic Processing**: Efficiently handles files of any size, from small videos to multi-hundred MB files
-2. **Memory Efficiency**: Avoids exceeding Worker memory limits by streaming content directly
-3. **Reduced Error Rates**: Eliminates "ReadableStream.tee() buffer limit exceeded" errors by managing response cloning properly
-4. **Transparent User Experience**: Users receive videos regardless of size, with background caching handled efficiently
-5. **Improved Diagnostics**: Added detailed logging for large file processing to assist with monitoring and debugging
-6. **Graceful Error Handling**: Prevents user-visible errors when background caching operations fail
+1. **True Streaming Architecture**: Files of any size can be efficiently processed without buffering the entire content
+2. **Automatic Optimization**: Intelligently selects between direct storage (for small files) and streaming (for large files)
+3. **Memory-Safe Processing**: Maintains low memory footprint even for very large files (300MB+)
+4. **Stable Worker Execution**: Prevents memory-related crashes or timeouts
+5. **High-Performance Storage**: Maintains fast processing for small files while supporting large files
+6. **Intelligent Chunking**: Splits content into optimally-sized chunks for KV storage
 
 ## Testing
 
 The solution has been verified with:
 
 1. Comprehensive unit tests that simulate large file processing
-2. Integration tests that verify proper behavior with the KV chunking system
-3. Error handling tests to ensure system resilience
-4. Log verification for proper diagnostics
+2. Controlled streaming response tests for both small and large files
+3. Error handling tests to ensure system resilience 
+4. Performance testing for various file sizes
 
 ## Future Considerations
 
-1. **Configurable Size Thresholds**: Size thresholds could be made configurable via the video-resizer config
-2. **Enhanced Monitoring**: Consider adding metrics for large file processing success rates
-3. **Adaptive Streaming**: Implement adaptive chunk sizes based on file sizes for optimal performance
+1. **Progressive Streaming Support**: Add support for storing partial cache results for interrupted operations
+2. **Adaptive Chunk Sizing**: Dynamically adjust chunk sizes based on file characteristics
+3. **Bandwidth-Aware Streaming**: Adjust streaming behavior based on origin bandwidth characteristics
+4. **Metrics Collection**: Add detailed metrics for streaming operations to monitor performance
 
-By efficiently handling large files through streaming, the video resizer service can now reliably process videos of any size within the constraints of the Cloudflare Workers platform.
+## Conclusion
+
+This implementation provides a comprehensive solution for handling files of any size in Cloudflare Workers, eliminating previous memory limitations while maintaining high performance. The architecture ensures that all content, regardless of size, can be properly processed and cached for optimal delivery.

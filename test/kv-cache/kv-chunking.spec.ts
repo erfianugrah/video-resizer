@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { storeTransformedVideo, getTransformedVideo, TransformationMetadata, ChunkManifest } from '../../src/services/kvStorageService';
+import { storeTransformedVideo, getTransformedVideo } from '../../src/services/kvStorage';
+import { TransformationMetadata, ChunkManifest } from '../../src/services/kvStorage/interfaces';
 
 // Mock all imports used by kvStorageService
 vi.mock('../../src/utils/pinoLogger', () => ({
@@ -48,7 +49,7 @@ vi.mock('../../src/services/cacheVersionService', () => ({
   storeCacheKeyVersion: vi.fn().mockResolvedValue(true)
 }));
 
-vi.mock('../../src/services/videoStorageService', () => ({
+vi.mock('../../src/services/videoStorage/cacheTags', () => ({
   generateCacheTags: vi.fn().mockReturnValue(['tag1', 'tag2'])
 }));
 
@@ -222,7 +223,8 @@ describe('KV Chunking Functionality', () => {
 
       // Mock generateCacheTags to return specific tags for testing
       const mockCacheTags = ['video-test-tag-1', 'video-test-tag-2'];
-      vi.mocked(require('../../src/services/videoStorageService').generateCacheTags).mockReturnValue(mockCacheTags);
+      const { generateCacheTags } = await import('../../src/services/videoStorage/cacheTags');
+      vi.mocked(generateCacheTags).mockReturnValue(mockCacheTags);
 
       const result = await storeTransformedVideo(
         mockKV as KVNamespace,
@@ -294,6 +296,9 @@ describe('KV Chunking Functionality', () => {
 
   describe('getTransformedVideo function', () => {
     it('should retrieve a single entry video', async () => {
+      // Reset mocks for this test
+      vi.resetAllMocks();
+      
       // Create mock video data
       const videoData = new Uint8Array(1024 * 1024).fill(1); // 1 MB
 
@@ -343,6 +348,9 @@ describe('KV Chunking Functionality', () => {
     });
 
     it('should retrieve a chunked video by recombining chunks', async () => {
+      // Reset mocks for this test
+      vi.resetAllMocks();
+      
       // Create mock chunk data
       const chunk1 = new Uint8Array(5 * 1024 * 1024).fill(1);
       const chunk2 = new Uint8Array(5 * 1024 * 1024).fill(2);
@@ -411,6 +419,9 @@ describe('KV Chunking Functionality', () => {
     });
 
     it('should handle range requests for single entry videos', async () => {
+      // Reset mocks for this test
+      vi.resetAllMocks();
+      
       // Create mock video data
       const videoData = new Uint8Array(1024 * 1024).fill(1); // 1 MB
 
@@ -467,6 +478,9 @@ describe('KV Chunking Functionality', () => {
     });
 
     it('should handle range requests for chunked videos', async () => {
+      // Reset mocks for this test
+      vi.resetAllMocks();
+      
       // Create mock chunk data
       const chunk1 = new Uint8Array(5 * 1024 * 1024).fill(1);
       const chunk2 = new Uint8Array(5 * 1024 * 1024).fill(2);
@@ -541,6 +555,9 @@ describe('KV Chunking Functionality', () => {
     });
 
     it('should handle invalid range requests', async () => {
+      // Reset mocks for this test
+      vi.resetAllMocks();
+      
       // Create mock video data
       const videoData = new Uint8Array(1024 * 1024).fill(1); // 1 MB
 

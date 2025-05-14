@@ -1,5 +1,6 @@
 /**
  * Specialized handling for transformation errors
+ * Includes background caching of fallback content with streaming support for large files
  */
 import { VideoTransformContext } from '../../domain/commands/TransformVideoCommand';
 import { RequestContext, addBreadcrumb } from '../../utils/requestContext';

@@ -386,7 +386,8 @@ export async function storeInKVCache(
             normalizedPath, // Use normalized path for consistent cache keys
             responseClone,
             options,
-            ttl
+            ttl,
+            false // Don't use streaming mode for this path
           ).then(result => {
             const endTime = new Date();
             // Generate a log-friendly representation of the storage key
@@ -448,7 +449,8 @@ export async function storeInKVCache(
           normalizedPath, // Use normalized path for consistent cache keys
           responseClone,
           options,
-          ttl
+          ttl,
+          false // Don't use streaming mode for this path
         );
       }
     } catch (err) {

@@ -129,7 +129,9 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     const largeVideoResponse = new Response(smallBuffer.buffer, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': contentLength.toString()
+        'Content-Length': contentLength.toString(),
+        'Accept-Ranges': 'bytes',
+        'X-Fallback-Applied': 'true'
       }
     });
 
@@ -151,6 +153,17 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     // Verify storeTransformedVideo was called with correct parameters
     const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).toHaveBeenCalledTimes(1);
+    
+    // Verify response passed to storeTransformedVideo has proper headers
+    expect(storeTransformedVideo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ headers: expect.any(Headers) }),
+      expect.objectContaining({
+        env: mockEnv
+      }),
+      expect.any(Number)
+    );
     
     // Verify logging for large file
     const { logDebug } = require('../../../src/services/videoStorage/logging');
@@ -304,7 +317,9 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     const largeVideoResponse = new Response(smallData.buffer, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': largeContentLength.toString()
+        'Content-Length': largeContentLength.toString(),
+        'Accept-Ranges': 'bytes',
+        'X-Fallback-Applied': 'true'
       }
     });
 
@@ -336,6 +351,8 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     expect(capturedResponse).not.toBeNull();
     expect(capturedResponse?.headers.get('Content-Type')).toBe('video/mp4');
     expect(capturedResponse?.headers.get('Content-Length')).toBe(largeContentLength.toString());
+    expect(capturedResponse?.headers.get('X-Fallback-Applied')).toBe('true');
+    expect(capturedResponse?.headers.get('Accept-Ranges')).toBe('bytes');
     
     // Verify options were passed correctly including transformation parameters
     expect(capturedOptions).toEqual(expect.objectContaining({

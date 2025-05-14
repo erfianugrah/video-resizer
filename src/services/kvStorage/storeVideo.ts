@@ -385,6 +385,7 @@ async function storeTransformedVideoImpl(
  * @param response - The transformed video response
  * @param options - Transformation options used
  * @param ttl - Optional TTL in seconds
+ * @param useStreaming - Whether to use streaming mode for large files (default false)
  * @returns Boolean indicating if storage was successful
  */
 export const storeTransformedVideo = withErrorHandling<
@@ -410,7 +411,8 @@ export const storeTransformedVideo = withErrorHandling<
       version?: number; // Version from TransformationService
       env?: EnvVariables; // Environment variables for versioning
     },
-    number | undefined
+    number | undefined,
+    boolean | undefined
   ],
   Promise<boolean>
 >(
@@ -419,10 +421,45 @@ export const storeTransformedVideo = withErrorHandling<
     sourcePath,
     response,
     options,
-    ttl?
+    ttl?,
+    useStreaming?
   ): Promise<boolean> {
     try {
-      return await storeTransformedVideoImpl(namespace, sourcePath, response, options, ttl);
+      // Check content length
+      const contentLengthHeader = response.headers.get('Content-Length');
+      const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      
+      // Safety check: Skip storing files larger than 128MB to avoid memory issues
+      if (contentLength > 128 * 1024 * 1024) {
+        // Log the skipped storage
+        const { logDebug } = await import('./logging');
+        logDebug('Skipping KV storage for large file', {
+          path: sourcePath,
+          component: 'KVStorageService',
+          size: Math.round(contentLength / 1024 / 1024) + 'MB',
+          reason: 'Exceeds 128MB safety limit'
+        });
+        return false;
+      }
+      
+      // Check if we should use streaming mode (either explicitly requested or very large file)
+      const shouldUseStreaming = useStreaming === true || 
+                               (contentLength > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY * 2);
+      
+      if (shouldUseStreaming) {
+        logDebug('Using streaming mode for large file', { 
+          sourcePath, 
+          contentLength,
+          explicitStreaming: useStreaming === true
+        });
+        
+        // Dynamically import the streaming implementation to avoid circular dependencies
+        const { storeTransformedVideoWithStreaming } = await import('./streamStorage');
+        return await storeTransformedVideoWithStreaming(namespace, sourcePath, response, options, ttl);
+      } else {
+        // Use the standard implementation for normal files
+        return await storeTransformedVideoImpl(namespace, sourcePath, response, options, ttl);
+      }
     } catch (err) {
       // Add breadcrumb for KV storage error
       const requestContext = getCurrentContext();
