@@ -301,36 +301,122 @@ export const handleVideoRequest = withErrorHandling<
       
       // Handle range requests for first access before KV caching occurs
       if (request.headers.has('Range') && finalResponse.headers.get('Content-Type')?.includes('video/')) {
-        const { handleRangeRequestForInitialAccess } = await import('../utils/httpUtils');
+        // Import the centralized bypass headers utility
+        const { hasBypassHeaders } = await import('../utils/bypassHeadersUtils');
         
-        addBreadcrumb(context, 'RangeRequest', 'Processing range request for initial access', {
-          range: request.headers.get('Range'),
-          contentLength: finalResponse.headers.get('Content-Length'),
-          contentType: finalResponse.headers.get('Content-Type')
-        });
+        // Check if this is a fallback response, large video, or any other bypass flag
+        // For these cases, we want to completely avoid Cache API operations
+        const bypassCacheApi = hasBypassHeaders(finalResponse.headers) || 
+                               finalResponse.headers.get('X-Video-Too-Large') === 'true' ||
+                               finalResponse.headers.get('X-Fallback-Applied') === 'true';
         
-        startTimedOperation(context, 'initial-range-handling', 'RangeRequest');
-        
-        try {
-          // Process range request on first access
-          finalResponse = await handleRangeRequestForInitialAccess(response, request);
+        // For fallbacks or large videos, completely skip Cache API - but still handle range requests directly
+        if (bypassCacheApi) {
+          // Identify the reason for bypass (helpful for debugging)
+          const bypassReason = finalResponse.headers.get('X-Video-Exceeds-256MiB') === 'true' ? 
+                               'VideoTooLarge' : 
+                               finalResponse.headers.get('X-Fallback-Applied') === 'true' ?
+                               'FallbackContent' : 'CacheAPIBypass';
           
-          // Log the result
-          addBreadcrumb(context, 'RangeRequest', 'Range request handled for initial access', {
-            originalStatus: response.status,
-            newStatus: finalResponse.status,
-            contentRange: finalResponse.headers.get('Content-Range'),
-            contentLength: finalResponse.headers.get('Content-Length')
+          // Log this bypass for debugging
+          addBreadcrumb(context, 'RangeRequest', 'Using direct streaming (bypassing Cache API)', {
+            contentLength: finalResponse.headers.get('Content-Length'),
+            contentType: finalResponse.headers.get('Content-Type'),
+            bypassReason,
+            hasRangeSupport: finalResponse.headers.get('Accept-Ranges') === 'bytes'
           });
-        } catch (err) {
-          // Log error but continue with the full response
-          error(context, logger, 'VideoHandler', 'Error handling range request for initial access', {
-            error: err instanceof Error ? err.message : String(err),
-            range: request.headers.get('Range')
+          
+          debug(context, logger, 'VideoHandler', 'Direct streaming video response without Cache API', {
+            contentLength: finalResponse.headers.get('Content-Length'),
+            contentType: finalResponse.headers.get('Content-Type'),
+            hasRangeSupport: finalResponse.headers.get('Accept-Ranges') === 'bytes',
+            bypassReason
           });
+          
+          // For fallbacks, we still need to handle range requests, but directly without Cache API
+          const rangeHeader = request.headers.get('Range');
+          if (rangeHeader && finalResponse.headers.get('Accept-Ranges') === 'bytes') {
+            try {
+              // Use the centralized range request handler
+              const { handleRangeRequest } = await import('../utils/streamUtils');
+              
+              // Log the range request attempt
+              debug(context, logger, 'VideoHandler', 'Processing range request for direct stream', {
+                rangeHeader,
+                contentLength: finalResponse.headers.get('Content-Length'),
+                bypassReason
+              });
+              
+              // Handle the range request with appropriate options
+              const rangeResponse = await handleRangeRequest(finalResponse, rangeHeader, {
+                bypassCacheAPI: true,
+                preserveHeaders: true,
+                handlerTag: 'VideoHandler-Direct-Stream',
+                fallbackApplied: finalResponse.headers.get('X-Fallback-Applied') === 'true'
+              });
+              
+              // Only replace if we got a valid range response (status 206)
+              if (rangeResponse.status === 206) {
+                finalResponse = rangeResponse;
+                
+                // Log the successful range request handling
+                addBreadcrumb(context, 'RangeRequest', 'Range request handled for direct stream', {
+                  contentRange: finalResponse.headers.get('Content-Range'),
+                  contentLength: finalResponse.headers.get('Content-Length'),
+                  range: rangeHeader
+                });
+                
+                debug(context, logger, 'VideoHandler', 'Created 206 Partial Content response for direct stream', {
+                  status: 206,
+                  contentRange: finalResponse.headers.get('Content-Range'),
+                  contentLength: finalResponse.headers.get('Content-Length')
+                });
+              }
+            } catch (rangeError) {
+              // Log error but continue with the full response
+              error(context, logger, 'VideoHandler', 'Error handling range request for direct stream', {
+                error: rangeError instanceof Error ? rangeError.message : String(rangeError),
+                range: rangeHeader
+              });
+              
+              // Keep the original response if range handling fails
+              // This is better than returning a broken response
+            }
+          }
+        } else {
+          // This is a regular (not fallback/large) video - use Cache API for range handling
+          const { handleRangeRequestForInitialAccess } = await import('../utils/httpUtils');
+          // Note: For regular videos we still use the Cache API method which stores the response for future range requests
+          
+          addBreadcrumb(context, 'RangeRequest', 'Processing range request for initial access', {
+            range: request.headers.get('Range'),
+            contentLength: finalResponse.headers.get('Content-Length'),
+            contentType: finalResponse.headers.get('Content-Type')
+          });
+          
+          startTimedOperation(context, 'initial-range-handling', 'RangeRequest');
+          
+          try {
+            // Process range request on first access
+            finalResponse = await handleRangeRequestForInitialAccess(response, request);
+            
+            // Log the result
+            addBreadcrumb(context, 'RangeRequest', 'Range request handled for initial access', {
+              originalStatus: response.status,
+              newStatus: finalResponse.status,
+              contentRange: finalResponse.headers.get('Content-Range'),
+              contentLength: finalResponse.headers.get('Content-Length')
+            });
+          } catch (err) {
+            // Log error but continue with the full response
+            error(context, logger, 'VideoHandler', 'Error handling range request for initial access', {
+              error: err instanceof Error ? err.message : String(err),
+              range: request.headers.get('Range')
+            });
+          }
+          
+          endTimedOperation(context, 'initial-range-handling');
         }
-        
-        endTimedOperation(context, 'initial-range-handling');
       }
       
       // If derivative is present, make a more educated guess about video info

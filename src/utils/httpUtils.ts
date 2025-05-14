@@ -98,6 +98,84 @@ export async function handleRangeRequestForInitialAccess(
   request: Request
 ): Promise<Response> {
   try {
+    // Import the centralized bypass headers utility
+    const { hasBypassHeaders } = await import('./bypassHeadersUtils');
+    
+    // IMPORTANT: Check if response should bypass Cache API (for large videos or fallbacks)
+    if (hasBypassHeaders(originalResponse.headers) || 
+        originalResponse.headers.get('X-Fallback-Applied') === 'true') {
+      
+      try {
+        // Log bypass if context is available
+        const { getCurrentContext } = await import('./requestContext');
+        const { createLogger, debug } = await import('./pinoLogger');
+        const { addBreadcrumb } = await import('./requestContext');
+        
+        const context = getCurrentContext();
+        if (context) {
+          const logger = createLogger(context);
+          
+          debug(context, logger, 'CacheAPI', 'Bypassing Cache API for direct streaming', {
+            status: originalResponse.status,
+            contentType: originalResponse.headers.get('Content-Type'),
+            contentLength: originalResponse.headers.get('Content-Length'),
+            reason: originalResponse.headers.get('X-Video-Exceeds-256MiB') === 'true' ? 
+                   'VideoTooLarge' : 'FallbackContent',
+            bypass: true
+          });
+          
+          addBreadcrumb(context, 'CacheAPI', 'Direct streaming (bypassing Cache API)', {
+            contentLength: originalResponse.headers.get('Content-Length'),
+            contentType: originalResponse.headers.get('Content-Type')
+          });
+        }
+      } catch (logError) {
+        // Silent fail - logging should not break function
+      }
+      
+      // If there's a range header, use the centralized streamUtils to handle it
+      const rangeHeader = request.headers.get('Range');
+      if (rangeHeader) {
+        try {
+          // Import centralized range handling from streamUtils
+          const { handleRangeRequest } = await import('./streamUtils');
+          
+          // Handle the range request with streamUtils (preserving all headers and bypass flags)
+          return await handleRangeRequest(originalResponse, rangeHeader, {
+            bypassCacheAPI: true,
+            preserveHeaders: true,
+            handlerTag: 'Direct-Stream-Range-Handler',
+            fallbackApplied: originalResponse.headers.get('X-Fallback-Applied') === 'true'
+          });
+        } catch (rangeError) {
+          try {
+            // Log the error
+            const { getCurrentContext } = await import('./requestContext');
+            const { createLogger, error } = await import('./pinoLogger');
+            
+            const context = getCurrentContext();
+            if (context) {
+              const logger = createLogger(context);
+              error(context, logger, 'RangeRequest', 'Error processing range request for direct stream', {
+                error: rangeError instanceof Error ? rangeError.message : String(rangeError),
+                range: rangeHeader
+              });
+            }
+          } catch (logError) {
+            // Silent fail for logging errors
+          }
+          
+          console.error('Error handling range request:', rangeError);
+          
+          // RECOVERY: fallback to normal response if range handling fails
+          return originalResponse;
+        }
+      }
+      
+      // If there's no range request or if range handling failed, return the original response
+      return originalResponse;
+    }
+
     // Use the full URL from the original request as the cache key
     const cacheKeyForPut = request.url; // Use the full URL string
 
@@ -160,9 +238,34 @@ export async function handleRangeRequestForInitialAccess(
       });
     }
     
-    // Store the full response in the cache using the full URL as the key
-    // This approach leverages streams for better memory efficiency
-    await cache.put(cacheKeyForPut, originalResponse.clone());
+    try {
+      // Store the full response in the cache using the full URL as the key
+      // Important: originalResponse is now consumed by this operation and can't be used again!
+      await cache.put(cacheKeyForPut, originalResponse);
+    } catch (cacheError) {
+      // Log the cache error
+      try {
+        const { getCurrentContext } = await import('./requestContext');
+        const { createLogger, error } = await import('./pinoLogger');
+        
+        const context = getCurrentContext();
+        if (context) {
+          const logger = createLogger(context);
+          error(context, logger, 'CacheAPI', 'Error storing in Cache API', {
+            error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+            status: originalResponse.status,
+            contentType: originalResponse.headers.get('Content-Type'),
+            contentLength: originalResponse.headers.get('Content-Length')
+          });
+        }
+      } catch (logError) {
+        // Silent fail - logging should not break function
+      }
+      
+      // If we fail to store in cache, create a fresh response to return
+      // This is needed because originalResponse is now consumed
+      return new Response('Error caching response', { status: 500 });
+    }
     
     // If this is a range request, use cache.match with ignoreSearch: false to respect ranges
     const rangeHeader = request.headers.get('Range');
@@ -241,117 +344,39 @@ export async function handleRangeRequestForInitialAccess(
     const rangeHeader = request.headers.get('Range');
     if (rangeHeader) {
       try {
-        // Get content length
-        const contentLengthHeader = originalResponse.headers.get('Content-Length');
-        const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+        // Use centralized streamUtils for range handling as fallback
+        const { handleRangeRequest } = await import('./streamUtils');
         
-        if (contentLength) {
-          // Parse the range header
-          const parsedRange = parseRangeHeader(rangeHeader, contentLength);
+        try {
+          // Use proper logging utility
+          const { getCurrentContext } = await import('./requestContext');
+          const { createLogger, debug } = await import('./pinoLogger');
+          const { addBreadcrumb } = await import('./requestContext');
           
-          if (parsedRange) {
-            // Clone the response to avoid consuming it
-            const clonedResponse = originalResponse.clone();
+          const context = getCurrentContext();
+          if (context) {
+            const logger = createLogger(context);
+            debug(context, logger, 'CacheAPI', 'Attempting fallback range handling with streamUtils', {
+              rangeHeader,
+              status: originalResponse.status,
+              contentType: originalResponse.headers.get('Content-Type')
+            });
             
-            // Use streaming approach for range requests
-            const { readable, writable } = new TransformStream();
-            const { start, end } = parsedRange;
-            
-            // Process the stream in the background
-            const processStream = async () => {
-              try {
-                // Get streams from response
-                const stream = clonedResponse.body;
-                if (!stream) {
-                  throw new Error('Response body stream is null');
-                }
-                
-                const reader = stream.getReader();
-                const writer = writable.getWriter();
-                
-                let bytesRead = 0;
-                let bytesWritten = 0;
-                
-                // Process the stream chunk by chunk
-                while (true) {
-                  const { done, value: chunk } = await reader.read();
-                  
-                  if (done) break;
-                  
-                  if (chunk) {
-                    const chunkSize = chunk.byteLength;
-                    const chunkStart = bytesRead;
-                    const chunkEnd = bytesRead + chunkSize - 1;
-                    
-                    // Check if this chunk overlaps our range
-                    if (chunkEnd >= start && chunkStart <= end) {
-                      // Calculate the portion of this chunk to include
-                      const startOffset = Math.max(0, start - chunkStart);
-                      const endOffset = Math.min(chunkSize, end - chunkStart + 1);
-                      
-                      // Extract the relevant portion
-                      const relevantPortion = chunk.slice(startOffset, endOffset);
-                      
-                      // Write to the output stream
-                      await writer.write(relevantPortion);
-                      bytesWritten += relevantPortion.byteLength;
-                    }
-                    
-                    // Track total bytes processed
-                    bytesRead += chunkSize;
-                    
-                    // If we've gone past our range, we can stop
-                    if (bytesRead > end) break;
-                  }
-                }
-                
-                // Close the writer when done
-                await writer.close();
-                
-                // Add logging if available
-                try {
-                  const { getCurrentContext } = await import('./requestContext');
-                  const { createLogger, debug } = await import('./pinoLogger');
-                  
-                  const context = getCurrentContext();
-                  if (context) {
-                    const logger = createLogger(context);
-                    debug(context, logger, 'httpUtils', 'Completed streaming range request', {
-                      bytesRead,
-                      bytesWritten,
-                      expectedBytes: end - start + 1,
-                      rangeHeader: rangeHeader || ''
-                    });
-                  }
-                } catch (logError) {
-                  // Ignore logging errors
-                }
-                
-              } catch (error) {
-                console.error('Error processing stream for range request', error);
-                // Attempt to close the stream on error
-                writable.abort(error);
-              }
-            };
-            
-            // Start processing in the background
-            void processStream();
-            
-            // Create headers for the range response
-            const headers = new Headers(originalResponse.headers);
-            headers.set('Content-Range', `bytes ${start}-${end}/${contentLength}`);
-            headers.set('Content-Length', String(end - start + 1));
-            headers.set('Accept-Ranges', 'bytes');
-            headers.set('X-Range-Handled-By', 'Stream-Range-Handler');
-            
-            // Return a 206 Partial Content response with streaming
-            return new Response(readable, {
-              status: 206,
-              statusText: 'Partial Content',
-              headers: headers
+            addBreadcrumb(context, 'RangeRequest', 'Attempting fallback range handling', {
+              range: rangeHeader
             });
           }
+        } catch (logError) {
+          // Silent fail for logging errors
         }
+        
+        // Handle the range request with appropriate options
+        return await handleRangeRequest(originalResponse, rangeHeader, {
+          bypassCacheAPI: false, // Regular fallback handling, not deliberately bypassing
+          preserveHeaders: true,
+          handlerTag: 'Stream-Range-Handler-Fallback'
+        });
+        
       } catch (fallbackError) {
         try {
           // Use proper logging utility
