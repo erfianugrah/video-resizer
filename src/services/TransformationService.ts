@@ -16,6 +16,9 @@ import { addVersionToUrl, normalizeUrlForCaching } from '../utils/urlVersionUtil
 import { generateKVKey } from './kvStorageService';
 import { EnvVariables } from '../config/environmentConfig';
 import { cacheResponse } from './cacheManagementService';
+import { OriginResolver, OriginMatchResult, SourceResolutionResult } from '../services/origins/OriginResolver';
+import { VideoConfigurationManager } from '../config';
+import { Origin } from './videoStorage/interfaces';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -38,7 +41,81 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
 import { createTransformationStrategy } from '../domain/strategies/StrategyFactory';
 import { videoConfig } from '../config/videoConfig';
-import { VideoConfigurationManager } from '../config';
+
+/**
+ * Construct the video URL using origin and source resolution
+ */
+const constructVideoUrlFromOrigin = tryOrNull<
+  [string, URL, OriginMatchResult, SourceResolutionResult, VideoTransformOptions],
+  string
+>(function constructVideoUrlFromOriginImpl(
+  path: string,
+  url: URL,
+  originMatch: OriginMatchResult,
+  sourceResolution: SourceResolutionResult,
+  options: VideoTransformOptions
+): string {
+  // Log start of URL construction
+  logDebug('Constructing video URL from Origin', {
+    path,
+    url: url.toString(),
+    originName: originMatch.origin.name,
+    sourceType: sourceResolution.originType,
+    resolvedPath: sourceResolution.resolvedPath
+  });
+
+  // Check if we have a source URL from the resolution
+  if (!sourceResolution.sourceUrl && sourceResolution.originType !== 'r2') {
+    throw new Error('Source URL is required for path transformation');
+  }
+
+  // For remote and fallback sources, use the source URL directly
+  if (sourceResolution.sourceUrl) {
+    // Add breadcrumb for URL construction
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Using source URL from Origin', {
+        originalUrl: url.toString(),
+        sourceUrl: sourceResolution.sourceUrl,
+        originName: originMatch.origin.name,
+        sourceType: sourceResolution.originType
+      });
+    }
+
+    // For R2 sources, we use the resolved path
+    if (sourceResolution.originType === 'r2') {
+      return `r2:${sourceResolution.resolvedPath}`;
+    }
+
+    return sourceResolution.sourceUrl;
+  }
+
+  // For R2 sources without a source URL, construct r2: URL
+  if (sourceResolution.originType === 'r2') {
+    const r2Url = `r2:${sourceResolution.resolvedPath}`;
+    
+    // Add breadcrumb for URL construction
+    const requestContext = getCurrentContext();
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Constructed R2 URL', {
+        originalUrl: url.toString(),
+        r2Url,
+        originName: originMatch.origin.name,
+        resolvedPath: sourceResolution.resolvedPath
+      });
+    }
+    
+    return r2Url;
+  }
+
+  throw new Error('Could not construct URL from Origin');
+}, 
+{
+  functionName: 'constructVideoUrlFromOrigin',
+  component: 'TransformationService'
+},
+null // default return value when error occurs
+);
 
 /**
  * Orchestrate the video transformation process
@@ -82,28 +159,139 @@ export const prepareVideoTransformation = withErrorHandling<
     debugEnabled: !!debugInfo?.isEnabled
   });
     
-    // Initialize diagnostics
-    const diagnosticsInfo: DiagnosticsInfo = {
-      errors: [],
-      warnings: [],
-    };
+  // Initialize diagnostics with required arrays
+  const diagnosticsInfo: DiagnosticsInfo = {
+    errors: [],
+    warnings: [],
+  };
 
-    // Extract path and URL information
-    const url = new URL(request.url);
-    const path = url.pathname;
-    
-    // Log URL information
-    logDebug('Processing URL information', {
-      url: url.toString(),
-      path,
-      search: url.search || ''
-    });
+  // Extract path and URL information
+  const url = new URL(request.url);
+  const path = url.pathname;
+  
+  // Log URL information
+  logDebug('Processing URL information', {
+    url: url.toString(),
+    path,
+    search: url.search || ''
+  });
 
+  // Get request context for breadcrumbs
+  const requestContext = getCurrentContext();
+
+  // Check if we should use Origins
+  const configManager = VideoConfigurationManager.getInstance();
+  const shouldUseOrigins = configManager.shouldUseOrigins();
+
+  let pathPattern: PathPattern | null = null;
+  let originMatch: OriginMatchResult | null = null;
+  let sourceResolution: SourceResolutionResult | null = null;
+  let videoUrl: string;
+
+  // Try Origins first if enabled, fall back to path patterns
+  if (shouldUseOrigins) {
+    try {
+      // Create OriginResolver
+      const resolver = new OriginResolver(configManager.getConfig());
+      
+      // Log that we're using Origins
+      logDebug('Trying Origins-based path resolution', { path });
+      
+      // Find matching origin with captures
+      originMatch = resolver.matchOriginWithCaptures(path);
+      
+      if (originMatch) {
+        // Add breadcrumb for origin match
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'Transform', 'Found matching Origin', {
+            originName: originMatch.origin.name,
+            matcher: originMatch.origin.matcher,
+            path
+          });
+        }
+
+        // Log origin match details
+        logDebug('Found matching Origin', {
+          originName: originMatch.origin.name,
+          matcher: originMatch.origin.matcher,
+          captureCount: Object.keys(originMatch.captures).length
+        });
+        
+        // Add origin to diagnostics
+        diagnosticsInfo.origin = {
+          name: originMatch.origin.name,
+          matcher: originMatch.origin.matcher
+        };
+
+        // Resolve path to source
+        sourceResolution = resolver.resolvePathToSource(path);
+        
+        if (sourceResolution) {
+          // Log source resolution success
+          logDebug('Resolved path to source', {
+            originName: originMatch.origin.name,
+            sourceType: sourceResolution.originType,
+            resolvedPath: sourceResolution.resolvedPath,
+            hasSourceUrl: !!sourceResolution.sourceUrl
+          });
+          
+          // Add breadcrumb for source resolution
+          if (requestContext) {
+            addBreadcrumb(requestContext, 'Transform', 'Resolved path to source', {
+              originName: originMatch.origin.name,
+              sourceType: sourceResolution.originType,
+              hasSourceUrl: !!sourceResolution.sourceUrl
+            });
+          }
+          
+          // Add source resolution to diagnostics
+          diagnosticsInfo.sourceResolution = {
+            type: sourceResolution.originType,
+            resolvedPath: sourceResolution.resolvedPath,
+            url: sourceResolution.sourceUrl
+          };
+        } else {
+          // Log source resolution failure
+          logDebug('Failed to resolve path to source, will fall back to path patterns', {
+            originName: originMatch.origin.name,
+            path
+          });
+          
+          // Add warning to diagnostics (ensure warnings array exists)
+          if (!diagnosticsInfo.warnings) {
+            diagnosticsInfo.warnings = [];
+          }
+          diagnosticsInfo.warnings.push(`Failed to resolve path to source for origin: ${originMatch.origin.name}`);
+          
+          // Fall back to path patterns
+          originMatch = null;
+        }
+      } else {
+        // Log no matching origin
+        logDebug('No matching Origin found, falling back to path patterns', { path });
+      }
+    } catch (err) {
+      // Log error in Origins resolution
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      logDebug('Error in Origins resolution, falling back to path patterns', {
+        error: errorMessage,
+        path
+      });
+      
+      // Add warning to diagnostics (ensure warnings array exists)
+      if (!diagnosticsInfo.warnings) {
+        diagnosticsInfo.warnings = [];
+      }
+      diagnosticsInfo.warnings.push(`Origins resolution error: ${errorMessage}`);
+    }
+  }
+
+  // Fall back to path patterns if Origins resolution failed or is disabled
+  if (!originMatch || !sourceResolution) {
     // Find matching path pattern for the URL
-    const pathPattern = findMatchingPathPattern(path, pathPatterns);
+    pathPattern = findMatchingPathPattern(path, pathPatterns);
     
     // Add breadcrumb for path pattern matching
-    const requestContext = getCurrentContext();
     if (requestContext) {
       addBreadcrumb(requestContext, 'Transform', 'Path pattern matching', {
         path,
@@ -115,25 +303,43 @@ export const prepareVideoTransformation = withErrorHandling<
     }
     
     if (!pathPattern) {
-      throw new Error('No matching path pattern found');
+      throw new Error('No matching path pattern or Origin found');
     }
+  }
 
-    // Create transformation context
-    const context: TransformationContext = {
-      request,
-      options,
-      pathPattern,
-      url,
-      path,
-      diagnosticsInfo,
-      env
-    };
+  // Determine which approach to use for the transformation
+  const useOrigins = !!(originMatch && sourceResolution);
 
-    // Get the appropriate strategy for the transformation type
-    const strategy = createTransformationStrategy(options);
-    
-    // Log strategy creation
-    logDebug('Created transformation strategy', {
+  // Create transformation context - supporting both approaches
+  const context: TransformationContext = {
+    request,
+    options,
+    pathPattern: pathPattern!, // Type assertion since we've checked pathPattern isn't null above when !useOrigins
+    url,
+    path,
+    diagnosticsInfo,
+    env,
+    // Add Origins-specific context if using Origins
+    origin: originMatch?.origin,
+    sourceResolution: sourceResolution || undefined
+  };
+
+  // Get the appropriate strategy for the transformation type
+  const strategy = createTransformationStrategy(options);
+  
+  // Log strategy creation
+  logDebug('Created transformation strategy', {
+    strategyType: options.mode || 'video',
+    derivative: options.derivative,
+    format: options.format,
+    width: options.width,
+    height: options.height,
+    quality: options.quality
+  });
+  
+  // Add breadcrumb for strategy creation
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Transform', 'Created transformation strategy', {
       strategyType: options.mode || 'video',
       derivative: options.derivative,
       format: options.format,
@@ -141,434 +347,504 @@ export const prepareVideoTransformation = withErrorHandling<
       height: options.height,
       quality: options.quality
     });
+  }
+
+  // Validate options
+  try {
+    await strategy.validateOptions(options);
     
-    // Add breadcrumb for strategy creation
+    // Log successful validation
     if (requestContext) {
-      addBreadcrumb(requestContext, 'Transform', 'Created transformation strategy', {
-        strategyType: options.mode || 'video',
-        derivative: options.derivative,
-        format: options.format,
-        width: options.width,
-        height: options.height,
-        quality: options.quality
+      addBreadcrumb(requestContext, 'Transform', 'Options validated successfully', {
+        strategyType: options.mode || 'video'
       });
     }
-
-    // Validate options
-    try {
-      await strategy.validateOptions(options);
-      
-      // Log successful validation
-      if (requestContext) {
-        addBreadcrumb(requestContext, 'Transform', 'Options validated successfully', {
-          strategyType: options.mode || 'video'
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Validation error';
-      
-      // Log validation failure with context
-      logErrorWithContext('Transformation options validation failed', error, {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Validation error';
+    
+    // Log validation failure with context
+    logErrorWithContext('Transformation options validation failed', error, {
+      strategyType: options.mode || 'video',
+      errorType: 'ValidationError',
+      severity: 'high'
+    });
+    
+    // Add breadcrumb for tracking
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Error', 'Transformation options validation failed', {
+        error: message,
         strategyType: options.mode || 'video',
         errorType: 'ValidationError',
         severity: 'high'
       });
-      
-      // Add breadcrumb for tracking
-      if (requestContext) {
-        addBreadcrumb(requestContext, 'Error', 'Transformation options validation failed', {
-          error: message,
-          strategyType: options.mode || 'video',
-          errorType: 'ValidationError',
-          severity: 'high'
-        });
-      }
-      
-      if (!diagnosticsInfo.errors) {
-        diagnosticsInfo.errors = [];
-      }
-      diagnosticsInfo.errors.push(message);
-      throw error;
     }
-
-    // Update diagnostics with strategy-specific information
-    strategy.updateDiagnostics(context);
-    logDebug('Strategy updated diagnostics');
-
-    // Map options to CDN-CGI parameters
-    const cdnParams = strategy.prepareTransformParams(context);
-    diagnosticsInfo.transformParams = cdnParams;
     
-    // Log the transformation parameters (comprehensive for debugging)
-    logDebug('Prepared transformation parameters', {
-      hasParams: Object.keys(cdnParams).length > 0,
+    if (!diagnosticsInfo.errors) {
+      diagnosticsInfo.errors = [];
+    }
+    diagnosticsInfo.errors.push(message);
+    throw error;
+  }
+
+  // Update diagnostics with strategy-specific information
+  strategy.updateDiagnostics(context);
+  logDebug('Strategy updated diagnostics');
+
+  // Map options to CDN-CGI parameters
+  const cdnParams = strategy.prepareTransformParams(context);
+  diagnosticsInfo.transformParams = cdnParams;
+  
+  // Log the transformation parameters (comprehensive for debugging)
+  logDebug('Prepared transformation parameters', {
+    hasParams: Object.keys(cdnParams).length > 0,
+    params: cdnParams,
+    paramCount: Object.keys(cdnParams).length,
+    strategy: options.mode || 'video',
+    derivative: options.derivative
+  });
+  
+  // Add breadcrumb for CDN parameters - include ALL parameters for complete debug information
+  if (requestContext) {
+    addBreadcrumb(requestContext, 'Transform', 'Prepared CDN-CGI parameters', {
+      // All core parameters for detailed debugging
       params: cdnParams,
       paramCount: Object.keys(cdnParams).length,
-      strategy: options.mode || 'video',
+      // Common parameters as individual fields for easier filtering
+      width: cdnParams.width,
+      height: cdnParams.height,
+      format: cdnParams.format,
+      quality: cdnParams.quality,
+      mode: cdnParams.mode,
+      fit: cdnParams.fit,
+      // Performance metrics
+      paramGenerationTimeMs: Math.round(performance.now() - requestContext.startTime),
+      // Request info
+      hasQuery: url.search.length > 0,
       derivative: options.derivative
     });
-    
-    // Add breadcrumb for CDN parameters - include ALL parameters for complete debug information
-    if (requestContext) {
-      addBreadcrumb(requestContext, 'Transform', 'Prepared CDN-CGI parameters', {
-        // All core parameters for detailed debugging
-        params: cdnParams,
-        paramCount: Object.keys(cdnParams).length,
-        // Common parameters as individual fields for easier filtering
-        width: cdnParams.width,
-        height: cdnParams.height,
-        format: cdnParams.format,
-        quality: cdnParams.quality,
-        mode: cdnParams.mode,
-        fit: cdnParams.fit,
-        // Performance metrics
-        paramGenerationTimeMs: Math.round(performance.now() - requestContext.startTime),
-        // Request info
-        hasQuery: url.search.length > 0,
-        derivative: options.derivative
-      });
-    }
+  }
 
-    // Construct the video URL
-    let videoUrl: string;
-    if (pathPattern.originUrl) {
-      const constructedUrl = constructVideoUrl(path, url, pathPattern, options);
-      if (constructedUrl === null) {
-        throw new Error('Failed to construct video URL');
-      }
-      videoUrl = constructedUrl;
-      
-      // Add breadcrumb for URL construction
-      if (requestContext) {
-        addBreadcrumb(requestContext, 'Transform', 'Constructed origin URL', {
-          originalUrl: url.toString(),
-          constructedUrl: videoUrl,
-          patternName: pathPattern.name,
-          hasCaptures: !!pathPattern.captureGroups
-        });
-      }
-    } else {
-      videoUrl = url.toString();
-      
-      // Add breadcrumb for passthrough URL
-      if (requestContext) {
-        addBreadcrumb(requestContext, 'Transform', 'Using passthrough URL', {
-          url: videoUrl,
-          reason: 'No originUrl in path pattern'
-        });
-      }
-    }
-
-    // Try to extract video ID
-    const extractedVideoId = extractVideoId(path, pathPattern);
-    diagnosticsInfo.videoId = extractedVideoId || undefined;
-
-    // Import path utils module to get buildCdnCgiMediaUrlAsync
-    const { buildCdnCgiMediaUrlAsync } = await import('../utils/pathUtils');
-    
-    // Build the CDN-CGI media URL asynchronously, passing the matched pattern
-    // This ensures we use the request host while accessing content from origin URL
-    // and properly presigns the URL if needed for S3 access
-    // Pass the environment variables and path pattern to enable presigned URL generation with proper context
-    let cdnCgiUrl = await buildCdnCgiMediaUrlAsync(
-      cdnParams,
-      videoUrl, // Pass the *constructed* origin URL
-      url.toString(),
-      env,
-      pathPattern // <-- Pass the matched pattern here
+  // Construct the video URL - using different approaches based on context
+  if (useOrigins && originMatch && sourceResolution) {
+    // Use Origins approach
+    const constructedUrl = constructVideoUrlFromOrigin(
+      path, 
+      url, 
+      originMatch, 
+      sourceResolution, 
+      options
     );
     
-    // Get cache configuration for the video URL
-    let cacheConfig = determineCacheConfig(videoUrl);
+    if (constructedUrl === null) {
+      throw new Error('Failed to construct video URL from Origin');
+    }
+    videoUrl = constructedUrl;
     
-    // Check if we should attempt to get previous version for cache busting
-    const skipCache = url.searchParams.has('debug') || !cacheConfig?.cacheability;
-    
-    // Only proceed with versioning if env is available and we're not skipping cache
-    if (env && !skipCache) {
-      try {
-        // Generate a consistent cache key for this transformation
-        const cacheKey = generateKVKey(normalizeUrlForCaching(videoUrl), options);
+    // If Origin has transformationOverrides, apply them
+    const origin = originMatch.origin;
+    if (origin.transformOptions) {
+      logDebug('Applying Origin transformation overrides', origin.transformOptions);
+      
+      // Apply quality from Origin if available
+      if (origin.quality) {
+        // Extract dimensions based on named quality preset
+        const qualityPresets: Record<string, { width: number, height: number }> = {
+          'low': { width: 640, height: 360 },
+          'medium': { width: 854, height: 480 },
+          'high': { width: 1280, height: 720 },
+          'hd': { width: 1920, height: 1080 },
+          '4k': { width: 3840, height: 2160 },
+        };
         
-        // Check if the content exists in the cache
-        let shouldIncrement = false;
+        const preset = qualityPresets[origin.quality] || qualityPresets.medium;
         
-        if (env.VIDEO_TRANSFORMATIONS_CACHE) {
-          try {
-            // Check if the entry exists by trying to get it
-            // We'll use list with a prefix to be more efficient and avoid fetching the actual data
-            const keys = await env.VIDEO_TRANSFORMATIONS_CACHE.list({ prefix: cacheKey, limit: 1 });
-            const exists = keys.keys.length > 0;
-            
-            // If the entry doesn't exist, we should increment the version
-            shouldIncrement = !exists;
-            
-            logDebug('Checking if cache entry exists for version increment', {
-              cacheKey,
-              exists,
-              shouldIncrement,
-              checkMethod: 'head request'
-            });
-          } catch (err) {
-            // If error occurs during check, assume cache miss to be safe
-            shouldIncrement = true;
-            logDebug('Error checking cache existence, assuming cache miss', {
-              cacheKey,
-              error: err instanceof Error ? err.message : String(err),
-              shouldIncrement: true
-            });
-          }
-        }
+        // Apply quality preset to the options
+        options.width = preset.width;
+        options.height = preset.height;
         
-        // Get next version number - if shouldIncrement is true, we'll force an increment
-        const nextVersion = await getNextCacheKeyVersion(env, cacheKey, shouldIncrement);
-        
-        // Calculate TTL - double the video cache TTL for longer persistence
-        const versionTtl = (cacheConfig?.ttl?.ok || 300) * 2;
-
-        // ALWAYS store the updated version in KV when it changes
-        if (shouldIncrement) {
-          logDebug('Storing incremented version in KV', {
-            cacheKey,
-            previousVersion: nextVersion - 1,
-            nextVersion,
-            ttl: versionTtl
-          });
-          
-          // Store updated version in background if possible
-          const requestContextForWaitUntil = getCurrentContext(); // Get the current request context
-          const executionCtxForWaitUntil = requestContextForWaitUntil?.executionContext;
-
-          if (executionCtxForWaitUntil?.waitUntil) { // Use the context obtained from getCurrentContext()
-            executionCtxForWaitUntil.waitUntil(
-              storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl)
-            );
-          } else {
-            // Fall back to direct storage
-            logDebug('Falling back to await for storeCacheKeyVersion, waitUntil not available via requestContext', { cacheKey });
-            await storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl);
-          }
-        }
-        
-        // Only add version param for version > 1 to avoid unnecessary params
-        if (nextVersion > 1) {
-          // Create a modified URL with version parameter
-          const versionedCdnCgiUrl = addVersionToUrl(cdnCgiUrl, nextVersion);
-          
-          // Log the version addition
-          logDebug('Added version parameter for cache busting', {
-            originalUrl: cdnCgiUrl,
-            versionedUrl: versionedCdnCgiUrl,
-            cacheKey,
-            nextVersion,
-            shouldIncrement
-          });
-          
-          // Add a breadcrumb for tracking
-          if (requestContext) {
-            addBreadcrumb(requestContext, 'Cache', 'Added version for cache busting', {
-              cacheKey, 
-              nextVersion,
-              path,
-              originalUrl: url.toString()
-            });
-          }
-          
-          // Add version info to diagnostics
-          diagnosticsInfo.cacheVersion = nextVersion;
-          
-          // Store version in options for use in kvStorageService
-          options.version = nextVersion;
-          
-          // Update the URL with version
-          cdnCgiUrl = versionedCdnCgiUrl;
-        } else {
-          // First version - add to diagnostics but don't modify URL
-          // Store version in options
-          options.version = nextVersion;
-          
-          // Add version info to diagnostics
-          diagnosticsInfo.cacheVersion = nextVersion;
-          
-          logDebug('Using first version (no URL parameter needed)', {
-            cacheKey,
-            version: nextVersion,
-            url: cdnCgiUrl
-          });
-        }
-      } catch (err) {
-        // Log error but continue with unversioned URL
-        logDebug('Error adding version parameter', {
-          error: err instanceof Error ? err.message : String(err),
-          path
+        logDebug('Applied Origin-based quality preset', {
+          quality: origin.quality,
+          width: preset.width,
+          height: preset.height
         });
       }
     }
-
-    // Add timing information for transformation operation
-    const transformationTime = performance.now() - (requestContext?.startTime || 0);
+  } else if (pathPattern?.originUrl) {
+    // Use legacy path pattern approach
+    const constructedUrl = constructVideoUrl(path, url, pathPattern, options);
+    if (constructedUrl === null) {
+      throw new Error('Failed to construct video URL');
+    }
+    videoUrl = constructedUrl;
     
-    // Add detailed breadcrumb for URL transformation
+    // Add breadcrumb for URL construction
     if (requestContext) {
-      // Timer for URL construction performance
-      const urlConstructionTime = performance.now() - (requestContext.startTime + transformationTime);
-      
-      addBreadcrumb(requestContext, 'Transform', 'Transformed URL', {
-        // Original URL info
-        original: url.toString(),
-        // Include FULL URL for debugging - essential for troubleshooting
-        transformed: cdnCgiUrl,
-        transformedWithoutParams: cdnCgiUrl.split('?')[0],
-        videoUrl: videoUrl,
-        videoUrlSafe: videoUrl.split('?')[0],
-        // Parameters info
-        hasTransformParams: Object.keys(cdnParams).length > 0,
-        paramCount: Object.keys(cdnParams).length,
-        // Performance metrics
-        transformationTimeMs: Math.round(transformationTime),
-        urlConstructionTimeMs: Math.round(urlConstructionTime),
-        totalTimeMs: Math.round(performance.now() - requestContext.startTime),
-        // Other useful details
+      addBreadcrumb(requestContext, 'Transform', 'Constructed origin URL', {
+        originalUrl: url.toString(),
+        constructedUrl: videoUrl,
         patternName: pathPattern.name,
-        videoId: diagnosticsInfo.videoId,
-        derivative: options.derivative,
-        hasOriginUrl: !!pathPattern.originUrl
+        hasCaptures: !!pathPattern.captureGroups
       });
     }
+  } else {
+    videoUrl = url.toString();
     
-    // Format params for logging
-    const cdnParamsFormatted = Object.entries(cdnParams)
-      .map(([key, value]) => `${key}=${value}`)
-      .join(',');
-    
-    // Setup source for cache tagging
-    const source = pathPattern.name;
-    
-    // IMPORTANT: Special handling for IMQuery - ensure it's cacheable
-    // If this is an IMQuery request with derivative, log and ensure cacheability
-    const isIMQuery = url.searchParams.has('imwidth') || url.searchParams.has('imheight');
-    const hasDerivative = !!options.derivative;
-    
-    if (isIMQuery && hasDerivative && options.derivative) {
-      logDebug('IMQuery with derivative found - checking cache config', {
-        url: url.toString(),
-        derivative: options.derivative,
-        cacheability: cacheConfig.cacheability,
-        hasIMQuery: isIMQuery,
-        imwidth: url.searchParams.get('imwidth'),
-        imheight: url.searchParams.get('imheight')
+    // Add breadcrumb for passthrough URL
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Using passthrough URL', {
+        url: videoUrl,
+        reason: 'No originUrl in pattern or Origin'
+      });
+    }
+  }
+
+  // Try to extract video ID using the appropriate method
+  let extractedVideoId: string | null = null;
+  if (useOrigins && originMatch) {
+    // With Origins, use the videoId capture if available
+    extractedVideoId = originMatch.captures['videoId'] || originMatch.captures['1'] || null;
+  } else if (pathPattern) {
+    // Legacy approach - use pathUtils
+    extractedVideoId = extractVideoId(path, pathPattern);
+  }
+  
+  diagnosticsInfo.videoId = extractedVideoId || undefined;
+
+  // Import path utils module to get buildCdnCgiMediaUrlAsync
+  const { buildCdnCgiMediaUrlAsync } = await import('../utils/pathUtils');
+  
+  // Build the CDN-CGI media URL asynchronously
+  // If using Origins, pass the Origin and source resolution information
+  let cdnCgiUrl = await buildCdnCgiMediaUrlAsync(
+    cdnParams,
+    videoUrl, // Pass the *constructed* origin URL
+    url.toString(),
+    env,
+    pathPattern // For backward compatibility
+  );
+  
+  // Get cache configuration for the video URL
+  let cacheConfig = determineCacheConfig(videoUrl);
+  
+  // If using Origins, override cacheConfig with Origin TTL values
+  if (useOrigins && originMatch) {
+    const origin = originMatch.origin;
+    if (origin.ttl) {
+      // Override TTL values from Origin
+      cacheConfig.ttl = {
+        ...cacheConfig.ttl,
+        ok: origin.ttl.ok,
+        redirects: origin.ttl.redirects,
+        clientError: origin.ttl.clientError,
+        serverError: origin.ttl.serverError
+      };
+      
+      // Log override
+      logDebug('Using Origin-specific TTL values', {
+        originName: origin.name,
+        ttl: cacheConfig.ttl
       });
       
-      // Ensure cacheability is set to true for IMQuery derivatives
-      if (!cacheConfig.cacheability) {
-        logDebug('Forcing cacheability for IMQuery derivative', {
-          derivative: options.derivative,
-          originalCacheability: cacheConfig.cacheability
+      // Add breadcrumb for Origin TTL
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Cache', 'Using Origin-specific TTL values', {
+          originName: origin.name,
+          ttl: cacheConfig.ttl.ok,
+          sourceType: sourceResolution?.originType
         });
-        cacheConfig.cacheability = true;
+      }
+    }
+  }
+  
+  // Check if we should attempt to get previous version for cache busting
+  const skipCache = url.searchParams.has('debug') || !cacheConfig?.cacheability;
+  
+  // Only proceed with versioning if env is available and we're not skipping cache
+  if (env && !skipCache) {
+    try {
+      // Generate a consistent cache key for this transformation
+      const cacheKey = generateKVKey(normalizeUrlForCaching(videoUrl), options);
+      
+      // Check if the content exists in the cache
+      let shouldIncrement = false;
+      
+      if (env.VIDEO_TRANSFORMATIONS_CACHE) {
+        try {
+          // Check if the entry exists by trying to get it
+          // We'll use list with a prefix to be more efficient and avoid fetching the actual data
+          const keys = await env.VIDEO_TRANSFORMATIONS_CACHE.list({ prefix: cacheKey, limit: 1 });
+          const exists = keys.keys.length > 0;
+          
+          // If the entry doesn't exist, we should increment the version
+          shouldIncrement = !exists;
+          
+          logDebug('Checking if cache entry exists for version increment', {
+            cacheKey,
+            exists,
+            shouldIncrement,
+            checkMethod: 'head request'
+          });
+        } catch (err) {
+          // If error occurs during check, assume cache miss to be safe
+          shouldIncrement = true;
+          logDebug('Error checking cache existence, assuming cache miss', {
+            cacheKey,
+            error: err instanceof Error ? err.message : String(err),
+            shouldIncrement: true
+          });
+        }
       }
       
-      // CRITICAL: When we have a derivative, use the derivative's dimensions in the transformation
-      // rather than the original requested dimensions
-      const derivativeDimensions = getDerivativeDimensions(options.derivative);
+      // Get next version number - if shouldIncrement is true, we'll force an increment
+      const nextVersion = await getNextCacheKeyVersion(env, cacheKey, shouldIncrement);
       
-      if (derivativeDimensions) {
-        // Replace the width/height with the derivative's dimensions in the transformation parameters
-        if (derivativeDimensions.width) {
-          cdnParams.width = derivativeDimensions.width;
+      // Calculate TTL - double the video cache TTL for longer persistence
+      const versionTtl = (cacheConfig?.ttl?.ok || 300) * 2;
+
+      // ALWAYS store the updated version in KV when it changes
+      if (shouldIncrement) {
+        logDebug('Storing incremented version in KV', {
+          cacheKey,
+          previousVersion: nextVersion - 1,
+          nextVersion,
+          ttl: versionTtl
+        });
+        
+        // Store updated version in background if possible
+        const requestContextForWaitUntil = getCurrentContext(); // Get the current request context
+        const executionCtxForWaitUntil = requestContextForWaitUntil?.executionContext;
+
+        if (executionCtxForWaitUntil?.waitUntil) { // Use the context obtained from getCurrentContext()
+          executionCtxForWaitUntil.waitUntil(
+            storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl)
+          );
+        } else {
+          // Fall back to direct storage
+          logDebug('Falling back to await for storeCacheKeyVersion, waitUntil not available via requestContext', { cacheKey });
+          await storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl);
         }
+      }
+      
+      // Only add version param for version > 1 to avoid unnecessary params
+      if (nextVersion > 1) {
+        // Create a modified URL with version parameter
+        const versionedCdnCgiUrl = addVersionToUrl(cdnCgiUrl, nextVersion);
         
-        if (derivativeDimensions.height) {
-          cdnParams.height = derivativeDimensions.height;
-        }
+        // Log the version addition
+        logDebug('Added version parameter for cache busting', {
+          originalUrl: cdnCgiUrl,
+          versionedUrl: versionedCdnCgiUrl,
+          cacheKey,
+          nextVersion,
+          shouldIncrement
+        });
         
-        // Rebuild the CDN-CGI media URL with the derivative's dimensions using async function
-        // Pass the environment variables and path pattern for presigning
-        let updatedCdnCgiUrl = await buildCdnCgiMediaUrlAsync(
-          cdnParams, 
-          videoUrl, 
-          url.toString(), 
-          env,
-          pathPattern // <-- Pass the matched pattern here
-        );
-        
-        // Apply versioning if available
-        if (diagnosticsInfo.cacheVersion && diagnosticsInfo.cacheVersion > 1) {
-          updatedCdnCgiUrl = addVersionToUrl(updatedCdnCgiUrl, diagnosticsInfo.cacheVersion);
-          
-          // Log version application to IMQuery URL
-          logDebug('Applied version to IMQuery URL', {
-            version: diagnosticsInfo.cacheVersion,
-            url: updatedCdnCgiUrl
+        // Add a breadcrumb for tracking
+        if (requestContext) {
+          addBreadcrumb(requestContext, 'Cache', 'Added version for cache busting', {
+            cacheKey, 
+            nextVersion,
+            path,
+            originalUrl: url.toString()
           });
         }
         
-        // We need to reassign cdnCgiUrl to a variable that's not a constant
-        const finalCdnCgiUrl = updatedCdnCgiUrl;
+        // Add version info to diagnostics
+        diagnosticsInfo.cacheVersion = nextVersion;
         
-        // Update diagnostics to include actual dimensions used
-        if (diagnosticsInfo.transformParams) {
-          diagnosticsInfo.transformParams.width = derivativeDimensions.width;
-          diagnosticsInfo.transformParams.height = derivativeDimensions.height;
-        }
+        // Store version in options for use in kvStorageService
+        options.version = nextVersion;
         
-        // Also add imquery mapping info to diagnostics
-        diagnosticsInfo.imqueryParams = {
-          requestedWidth: parseFloat(url.searchParams.get('imwidth') || '0') || options.width,
-          requestedHeight: parseFloat(url.searchParams.get('imheight') || '0') || options.height,
-          mappedToDerivative: options.derivative,
-          actualWidth: derivativeDimensions.width,
-          actualHeight: derivativeDimensions.height
-        };
+        // Update the URL with version
+        cdnCgiUrl = versionedCdnCgiUrl;
+      } else {
+        // First version - add to diagnostics but don't modify URL
+        // Store version in options
+        options.version = nextVersion;
         
-        // Log this substitution for debugging
-        logDebug('Using derivative dimensions instead of requested dimensions', {
-          requestedWidth: options.width,
-          requestedHeight: options.height,
-          derivativeWidth: cdnParams.width,
-          derivativeHeight: cdnParams.height,
-          derivative: options.derivative,
-          originalUrl: url.toString(),
-          updatedUrl: finalCdnCgiUrl
+        // Add version info to diagnostics
+        diagnosticsInfo.cacheVersion = nextVersion;
+        
+        logDebug('Using first version (no URL parameter needed)', {
+          cacheKey,
+          version: nextVersion,
+          url: cdnCgiUrl
         });
-        
-        // Return the transformation result with the updated URL
-        return {
-          cdnCgiUrl: finalCdnCgiUrl,
-          cacheConfig,
-          source,
-          derivative: options.derivative,
-          diagnosticsInfo,
-          originSourceUrl: videoUrl  // Include the original source URL
-        };
       }
+    } catch (err) {
+      // Log error but continue with unversioned URL
+      logDebug('Error adding version parameter', {
+        error: err instanceof Error ? err.message : String(err),
+        path
+      });
     }
-      
-    // Comprehensive logging for the complete transformation process
-    logDebug('Transformed URL - COMPLETE DETAILS', {
-      // Original request details
+  }
+
+  // Add timing information for transformation operation
+  const transformationTime = performance.now() - (requestContext?.startTime || 0);
+  
+  // Add detailed breadcrumb for URL transformation
+  if (requestContext) {
+    // Timer for URL construction performance
+    const urlConstructionTime = performance.now() - (requestContext.startTime + transformationTime);
+    
+    addBreadcrumb(requestContext, 'Transform', 'Transformed URL', {
+      // Original URL info
       original: url.toString(),
-      path: path,
-      // Complete transformation details - IMPORTANT FOR DEBUGGING
+      // Include FULL URL for debugging - essential for troubleshooting
       transformed: cdnCgiUrl,
-      transformedParams: cdnParamsFormatted,
-      // Video parameters
-      options: {
-        ...options,
-        source: options.source ? '[source url omitted]' : undefined
-      },
-      // Pattern details
-      pattern: pathPattern.name,
-      patternMatcher: pathPattern.matcher,
-      // Cache config
-      cacheablility: !!cacheConfig?.cacheability,
-      cacheTtl: cacheConfig?.ttl?.ok,
-      // Performance and tracking
+      transformedWithoutParams: cdnCgiUrl.split('?')[0],
+      videoUrl: videoUrl,
+      videoUrlSafe: videoUrl.split('?')[0],
+      // Parameters info
+      hasTransformParams: Object.keys(cdnParams).length > 0,
+      paramCount: Object.keys(cdnParams).length,
+      // Performance metrics
       transformationTimeMs: Math.round(transformationTime),
-      timestamp: new Date().toISOString()
+      urlConstructionTimeMs: Math.round(urlConstructionTime),
+      totalTimeMs: Math.round(performance.now() - requestContext.startTime),
+      // Other useful details
+      originOrPatternName: useOrigins ? originMatch?.origin.name : pathPattern?.name,
+      videoId: diagnosticsInfo.videoId,
+      derivative: options.derivative,
+      usingOrigins: useOrigins
+    });
+  }
+  
+  // Format params for logging
+  const cdnParamsFormatted = Object.entries(cdnParams)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(',');
+  
+  // Setup source for cache tagging
+  const source = useOrigins ? originMatch?.origin.name || 'unknown' : pathPattern?.name || 'unknown';
+  
+  // IMPORTANT: Special handling for IMQuery - ensure it's cacheable
+  // If this is an IMQuery request with derivative, log and ensure cacheability
+  const isIMQuery = url.searchParams.has('imwidth') || url.searchParams.has('imheight');
+  const hasDerivative = !!options.derivative;
+  
+  if (isIMQuery && hasDerivative && options.derivative) {
+    logDebug('IMQuery with derivative found - checking cache config', {
+      url: url.toString(),
+      derivative: options.derivative,
+      cacheability: cacheConfig.cacheability,
+      hasIMQuery: isIMQuery,
+      imwidth: url.searchParams.get('imwidth'),
+      imheight: url.searchParams.get('imheight')
     });
     
-    // If the path pattern has a specific cache TTL, override the config
+    // Ensure cacheability is set to true for IMQuery derivatives
+    if (!cacheConfig.cacheability) {
+      logDebug('Forcing cacheability for IMQuery derivative', {
+        derivative: options.derivative,
+        originalCacheability: cacheConfig.cacheability
+      });
+      cacheConfig.cacheability = true;
+    }
+    
+    // CRITICAL: When we have a derivative, use the derivative's dimensions in the transformation
+    // rather than the original requested dimensions
+    const derivativeDimensions = getDerivativeDimensions(options.derivative);
+    
+    if (derivativeDimensions) {
+      // Replace the width/height with the derivative's dimensions in the transformation parameters
+      if (derivativeDimensions.width) {
+        cdnParams.width = derivativeDimensions.width;
+      }
+      
+      if (derivativeDimensions.height) {
+        cdnParams.height = derivativeDimensions.height;
+      }
+      
+      // Rebuild the CDN-CGI media URL with the derivative's dimensions using async function
+      // Pass the environment variables and path pattern for presigning
+      let updatedCdnCgiUrl = await buildCdnCgiMediaUrlAsync(
+        cdnParams, 
+        videoUrl, 
+        url.toString(), 
+        env,
+        pathPattern // For backward compatibility
+      );
+      
+      // Apply versioning if available
+      if (diagnosticsInfo.cacheVersion && diagnosticsInfo.cacheVersion > 1) {
+        updatedCdnCgiUrl = addVersionToUrl(updatedCdnCgiUrl, diagnosticsInfo.cacheVersion);
+        
+        // Log version application to IMQuery URL
+        logDebug('Applied version to IMQuery URL', {
+          version: diagnosticsInfo.cacheVersion,
+          url: updatedCdnCgiUrl
+        });
+      }
+      
+      // We need to reassign cdnCgiUrl to a variable that's not a constant
+      const finalCdnCgiUrl = updatedCdnCgiUrl;
+      
+      // Update diagnostics to include actual dimensions used
+      if (diagnosticsInfo.transformParams) {
+        diagnosticsInfo.transformParams.width = derivativeDimensions.width;
+        diagnosticsInfo.transformParams.height = derivativeDimensions.height;
+      }
+      
+      // Also add imquery mapping info to diagnostics
+      diagnosticsInfo.imqueryParams = {
+        requestedWidth: parseFloat(url.searchParams.get('imwidth') || '0') || options.width,
+        requestedHeight: parseFloat(url.searchParams.get('imheight') || '0') || options.height,
+        mappedToDerivative: options.derivative,
+        actualWidth: derivativeDimensions.width,
+        actualHeight: derivativeDimensions.height
+      };
+      
+      // Log this substitution for debugging
+      logDebug('Using derivative dimensions instead of requested dimensions', {
+        requestedWidth: options.width,
+        requestedHeight: options.height,
+        derivativeWidth: cdnParams.width,
+        derivativeHeight: cdnParams.height,
+        derivative: options.derivative,
+        originalUrl: url.toString(),
+        updatedUrl: finalCdnCgiUrl
+      });
+      
+      // Return the transformation result with the updated URL
+      return {
+        cdnCgiUrl: finalCdnCgiUrl,
+        cacheConfig,
+        source,
+        derivative: options.derivative,
+        diagnosticsInfo,
+        originSourceUrl: videoUrl  // Include the original source URL
+      };
+    }
+  }
+    
+  // Comprehensive logging for the complete transformation process
+  logDebug('Transformed URL - COMPLETE DETAILS', {
+    // Original request details
+    original: url.toString(),
+    path: path,
+    // Complete transformation details - IMPORTANT FOR DEBUGGING
+    transformed: cdnCgiUrl,
+    transformedParams: cdnParamsFormatted,
+    // Video parameters
+    options: {
+      ...options,
+      source: options.source ? '[source url omitted]' : undefined
+    },
+    // Pattern details
+    useOrigins,
+    originOrPatternName: useOrigins ? originMatch?.origin.name : pathPattern?.name,
+    // Cache config
+    cacheablility: !!cacheConfig?.cacheability,
+    cacheTtl: cacheConfig?.ttl?.ok,
+    // Performance and tracking
+    transformationTimeMs: Math.round(transformationTime),
+    timestamp: new Date().toISOString()
+  });
+  
+  // If using the legacy path pattern and it has a specific cache TTL, override the config
+  if (!useOrigins && pathPattern) {
     // Check for both legacy cacheTtl property and modern ttl object structure
     const hasLegacyTtl = pathPattern.cacheTtl !== undefined;
     const hasModernTtl = pathPattern.ttl && typeof pathPattern.ttl === 'object';
@@ -624,28 +900,29 @@ export const prepareVideoTransformation = withErrorHandling<
         ttl: updatedTtl.ok
       });
     }
-    
-    // Add cache info to diagnostics
-    diagnosticsInfo.cacheability = cacheConfig?.cacheability;
-    if (cacheConfig?.ttl.ok !== undefined) {
-      diagnosticsInfo.cacheTtl = cacheConfig.ttl.ok;
-    }
-    
-    // Assign the derivative value here 
-    const derivative = options.derivative || '';
+  }
+  
+  // Add cache info to diagnostics
+  diagnosticsInfo.cacheability = cacheConfig?.cacheability;
+  if (cacheConfig?.ttl.ok !== undefined) {
+    diagnosticsInfo.cacheTtl = cacheConfig.ttl.ok;
+  }
+  
+  // Assign the derivative value here 
+  const derivative = options.derivative || '';
 
-    // Store the original source URL used for this transformation
-    const originSourceUrl = videoUrl;
+  // Store the original source URL used for this transformation
+  const originSourceUrl = videoUrl;
 
-    // Return the transformation result
-    return {
-      cdnCgiUrl,
-      cacheConfig,
-      source,
-      derivative,
-      diagnosticsInfo,
-      originSourceUrl
-    };
+  // Return the transformation result
+  return {
+    cdnCgiUrl,
+    cacheConfig,
+    source,
+    derivative,
+    diagnosticsInfo,
+    originSourceUrl
+  };
 },
 {
   functionName: 'prepareVideoTransformation',
@@ -666,7 +943,7 @@ const constructVideoUrl = tryOrNull<
     options: VideoTransformOptions
   ): string {
   // Log start of URL construction
-  logDebug('Constructing video URL', {
+  logDebug('Constructing video URL using legacy path pattern', {
     path,
     url: url.toString(),
     patternName: pattern.name,

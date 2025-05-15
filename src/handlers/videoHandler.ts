@@ -15,6 +15,8 @@ import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
 import { TransformOptions } from '../utils/kvCacheUtils';
 import { ResponseBuilder } from '../utils/responseBuilder';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
+import { OriginResolver } from '../services/origins/OriginResolver';
+import { Origin } from '../services/videoStorage/interfaces';
 
 /**
  * Main handler for video requests
@@ -230,50 +232,110 @@ export const handleVideoRequest = withErrorHandling<
       
       endTimedOperation(context, 'cache-lookup');
 
-      // Get path patterns from config or use defaults - use let instead of const
+      // Initialize Origin resolver and get path patterns
+      startTimedOperation(context, 'origin-resolution', 'Origin');
+      
+      // Get path patterns from OriginResolver if using Origins, or from config as fallback
+      const shouldUseOrigins = videoConfig.shouldUseOrigins();
+      
+      // Create array to hold patterns: either Origin-based or legacy path patterns
       let pathPatterns = config.pathPatterns || videoConfig.getPathPatterns();
       
-      // Log the path patterns to see what we have at this point
-      debug(context, logger, 'VideoHandler', 'Path patterns from config', {
-        source: config.pathPatterns ? 'environment-config' : 'default-config',
-        patternCount: pathPatterns.length,
-        patterns: pathPatterns.map((p: any) => ({
-          name: p.name,
-          matcher: p.matcher,
-          processPath: p.processPath
-        }))
-      });
-      
-      // Also check VideoConfigurationManager to see what patterns it has
-      try {
-        const managerPatterns = videoConfig.getPathPatterns();
-        debug(context, logger, 'VideoHandler', 'Path patterns from VideoConfigurationManager', {
-          patternCount: managerPatterns.length,
-          patterns: managerPatterns.map((p: any) => {
-            return {
-              name: p.name,
-              matcher: p.matcher,
-              processPath: p.processPath
+      if (shouldUseOrigins) {
+        // Log that we're using the new Origins system
+        debug(context, logger, 'VideoHandler', 'Using Origins system for path pattern matching', {
+          path,
+          useLegacyFallback: !shouldUseOrigins
+        });
+        
+        // Initialize OriginResolver
+        const resolver = new OriginResolver(videoConfig.getConfig());
+        
+        // Log origins configuration
+        const origins = videoConfig.getOrigins();
+        debug(context, logger, 'VideoHandler', 'Origins configuration loaded', {
+          originCount: origins.length,
+          originNames: origins.map(o => o.name)
+        });
+        
+        // Add breadcrumb for origins
+        addBreadcrumb(context, 'Origins', 'Using Origins for path resolution', {
+          originCount: origins.length,
+          originNames: origins.map(o => o.name).join(', ')
+        });
+        
+        // Convert Origins to PathPatterns for compatibility with existing code
+        if (origins.length > 0) {
+          try {
+            // Converter function from Origin to PathPattern
+            const convertOriginToPathPattern = (origin: Origin) => {
+              // Get the highest priority source for this origin
+              const sortedSources = [...origin.sources].sort((a, b) => a.priority - b.priority);
+              const primarySource = sortedSources[0];
+              
+              return {
+                name: origin.name,
+                matcher: origin.matcher,
+                processPath: origin.processPath ?? true,
+                baseUrl: null,
+                originUrl: primarySource?.url || null,
+                quality: origin.quality,
+                ttl: origin.ttl,
+                priority: 0,
+                auth: primarySource?.auth ? {
+                  type: primarySource.auth.type,
+                  enabled: primarySource.auth.enabled,
+                  accessKeyVar: primarySource.auth.accessKeyVar,
+                  secretKeyVar: primarySource.auth.secretKeyVar,
+                  region: primarySource.auth.region,
+                  service: primarySource.auth.service,
+                  expiresInSeconds: primarySource.auth.expiresInSeconds,
+                  sessionTokenVar: primarySource.auth.sessionTokenVar
+                } : undefined,
+                captureGroups: origin.captureGroups,
+                transformationOverrides: origin.transformOptions || {}
+              };
             };
-          })
-        });
-        
-        // Use manager patterns if they exist and we didn't get any patterns from config
-        if (managerPatterns.length > 0 && (!pathPatterns || pathPatterns.length === 0)) {
-          pathPatterns = managerPatterns;
-          debug(context, logger, 'VideoHandler', 'Using path patterns from VideoConfigurationManager');
+            
+            // Convert all Origins to PathPatterns
+            const originBasedPatterns = origins.map(convertOriginToPathPattern);
+            
+            debug(context, logger, 'VideoHandler', 'Converted Origins to PathPatterns', {
+              originalCount: origins.length,
+              convertedCount: originBasedPatterns.length
+            });
+            
+            // Use these patterns for transformation
+            pathPatterns = originBasedPatterns;
+          } catch (err) {
+            error(context, logger, 'VideoHandler', 'Error converting Origins to PathPatterns', {
+              error: err instanceof Error ? err.message : String(err)
+            });
+            
+            // Fall back to legacy pathPatterns if conversion fails
+            pathPatterns = config.pathPatterns || videoConfig.getPathPatterns();
+          }
         }
-        
-        // Log the final path patterns being used
-        addBreadcrumb(context, 'Configuration', 'Path patterns for request', {
+      } else {
+        // Using legacy path patterns
+        debug(context, logger, 'VideoHandler', 'Using legacy path patterns', {
           patternCount: pathPatterns.length,
-          patterns: pathPatterns.map((p: any) => p.name).join(', ')
-        });
-      } catch (err) {
-        error(context, logger, 'VideoHandler', 'Error getting path patterns from manager', {
-          error: err instanceof Error ? err.message : String(err)
+          patterns: pathPatterns.map((p: any) => ({
+            name: p.name,
+            matcher: p.matcher,
+            processPath: p.processPath
+          }))
         });
       }
+      
+      endTimedOperation(context, 'origin-resolution');
+      
+      // Log the final path patterns being used
+      addBreadcrumb(context, 'Configuration', 'Path patterns for request', {
+        patternCount: pathPatterns.length,
+        patterns: pathPatterns.map((p: any) => p.name).join(', '),
+        fromOrigins: shouldUseOrigins
+      });
       
       // Get video options from path and query parameters
       const videoOptions = determineVideoOptions(request, url.searchParams, path);

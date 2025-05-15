@@ -26,7 +26,7 @@ import { generateDebugPage } from '../../services/debugService';
 import { ResponseBuilder } from '../../utils/responseBuilder';
 import type { Logger } from 'pino';
 import { Origin } from '../../services/videoStorage/interfaces';
-import { SourceResolutionResult } from '../../services/origins/OriginResolver';
+import { OriginResolver, SourceResolutionResult } from '../../services/origins/OriginResolver';
 
 export interface VideoTransformOptions {
   width?: number | null;
@@ -209,14 +209,91 @@ export class TransformVideoCommand {
   }
 
   /**
-   * Execute the video transformation
-   * 
-   * This method is the main entry point for the command,
-   * orchestrating the transformation process by delegating to 
-   * specialized services and utilities.
-   * 
-   * @returns A response with the transformed video
+   * Initialize context for Origins-based transformation if not already provided
+   * This method uses the OriginResolver directly to set up the transform context
+   * @param path The URL path to resolve
+   * @returns Whether the Origins initialization was successful
    */
+  private async initializeOrigins(path: string): Promise<boolean> {
+    // Skip if Origins context is already initialized
+    if (this.context.origin && this.context.sourceResolution) {
+      pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Origins context already initialized');
+      return true;
+    }
+
+    try {
+      // Get configuration to determine if Origins should be used
+      const configManager = VideoConfigurationManager.getInstance();
+      
+      if (!configManager.shouldUseOrigins()) {
+        // Origins not enabled in configuration
+        pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Origins not enabled in configuration');
+        return false;
+      }
+      
+      // Create OriginResolver
+      const resolver = new OriginResolver(configManager.getConfig());
+      
+      // Find matching origin with captures
+      addBreadcrumb(this.requestContext, 'Origins', 'Resolving origin for path', { path });
+      
+      const originMatch = resolver.matchOriginWithCaptures(path);
+      if (!originMatch) {
+        pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'No matching origin found for path', { path });
+        return false;
+      }
+      
+      // Resolve path to source
+      addBreadcrumb(this.requestContext, 'Origins', 'Resolving path to source', { 
+        origin: originMatch.origin.name 
+      });
+      
+      const sourceResult = resolver.resolvePathToSource(path);
+      if (!sourceResult) {
+        pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Failed to resolve path to source', {
+          origin: originMatch.origin.name,
+          path
+        });
+        return false;
+      }
+      
+      // Set up Origins context
+      this.context.origin = originMatch.origin;
+      this.context.sourceResolution = sourceResult;
+      
+      pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Origins context initialized', {
+        origin: originMatch.origin.name,
+        sourceType: sourceResult.originType,
+        resolvedPath: sourceResult.resolvedPath
+      });
+      
+      addBreadcrumb(this.requestContext, 'Origins', 'Origins context initialized', {
+        origin: originMatch.origin.name,
+        sourceType: sourceResult.originType
+      });
+      
+      return true;
+    } catch (err) {
+      // Log error but don't fail the request - we'll fall back to legacy path patterns
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Error initializing Origins context', {
+        error: errorMessage,
+        path
+      });
+      
+      addBreadcrumb(this.requestContext, 'Origins', 'Error initializing Origins context', {
+        error: errorMessage
+      });
+      
+      // Add warning to diagnostics
+      if (this.requestContext.diagnostics?.warnings) {
+        this.requestContext.diagnostics.warnings.push(`Origins initialization error: ${errorMessage}`);
+      }
+      
+      return false;
+    }
+  }
+
   /**
    * Execute transformation using the Origins system
    * This method implements the transformation using the new Origins-based configuration
@@ -602,9 +679,28 @@ export class TransformVideoCommand {
         diagnosticsInfo.requestHeaders = extractRequestHeaders(request);
       }
       
-      // Check if we're using Origins-based transformation
+      // Try to initialize Origins context if not already provided
+      const shouldUseOrigins = VideoConfigurationManager.getInstance().shouldUseOrigins();
+      
+      // If Origins should be used and context not already initialized, attempt to initialize it
+      if (shouldUseOrigins && (!this.context.origin || !this.context.sourceResolution)) {
+        await this.initializeOrigins(path);
+      }
+      
+      // Check if we now have a valid Origins context
       if (this.context.origin && this.context.sourceResolution) {
         return await this.executeWithOrigins();
+      }
+      
+      // If we reach here, we're falling back to legacy path patterns
+      addBreadcrumb(this.requestContext, 'Routing', 'Falling back to legacy path patterns', { 
+        path,
+        shouldUseOrigins 
+      });
+      
+      // If Origin initialization failed but was enabled, add a warning to diagnostics
+      if (shouldUseOrigins) {
+        diagnosticsInfo.warnings.push('Origins enabled but initialization failed, falling back to legacy path patterns');
       }
       
       // Legacy transformation with path patterns
