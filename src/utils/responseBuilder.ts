@@ -326,6 +326,44 @@ export class ResponseBuilder {
   }
 
   /**
+   * Helper method to create a new Response that uses TransformStream to avoid the 
+   * "ReadableStream is disturbed" error.
+   * 
+   * @param originalBody The original response body that might be disturbed
+   * @param status The status code for the new response
+   * @param statusText The status text for the new response
+   * @param headers The headers for the new response
+   * @returns A new Response object that uses a TransformStream
+   */
+  private createSafeStreamResponse(
+    originalBody: ReadableStream<Uint8Array> | null, 
+    status: number, 
+    statusText: string | undefined,
+    headers: Headers
+  ): Response {
+    // Create a TransformStream to pipe the response through
+    const { readable, writable } = new TransformStream();
+    
+    // Start pumping the body without awaiting - this runs asynchronously
+    if (originalBody) {
+      originalBody.pipeTo(writable).catch(err => {
+        console.error('Error piping response body:', err instanceof Error ? err.message : String(err), {
+          status,
+          bodyType: originalBody ? typeof originalBody : 'null',
+          errorType: err instanceof Error ? err.name : typeof err
+        });
+      });
+    }
+    
+    // Return a new response with the readable stream
+    return new Response(readable, {
+      status,
+      statusText,
+      headers
+    });
+  }
+  
+  /**
    * Build the final response
    */
   async build(): Promise<Response> {
@@ -502,11 +540,13 @@ export class ResponseBuilder {
       );
       
       // Create a response with the identical body, status, and carefully preserved headers
-      return new Response(this.response.body, {
-        status: 206,  // Force Partial Content status
-        statusText: this.response.statusText || 'Partial Content',
-        headers: this.headers
-      });
+      // Use our helper method to create a safe streamed response
+      return this.createSafeStreamResponse(
+        this.response.body,
+        206, // Force Partial Content status
+        this.response.statusText || 'Partial Content',
+        this.headers
+      );
     }
     
     // For range requests or video/audio content, handle specially
@@ -525,19 +565,23 @@ export class ResponseBuilder {
       );
       
       // Create a response with the identical body and status, but our enhanced headers
-      return new Response(this.response.body, {
-        status: this.response.status,
-        statusText: this.response.statusText,
-        headers: this.headers
-      });
+      // Use our helper method to create a safe streamed response
+      return this.createSafeStreamResponse(
+        this.response.body,
+        this.response.status,
+        this.response.statusText,
+        this.headers
+      );
     }
     
     // Create the final response with all headers for non-media content
-    return new Response(this.response.body, {
-      status: this.response.status,
-      statusText: this.response.statusText,
-      headers: this.headers
-    });
+    // Use our helper method to create a safe streamed response
+    return this.createSafeStreamResponse(
+      this.response.body,
+      this.response.status,
+      this.response.statusText,
+      this.headers
+    );
   }
   
   /**
@@ -773,6 +817,8 @@ export class ResponseBuilder {
     };
     
     // Build error response
+    // No need for TransformStream here as the body is a simple string
+    // and not a potentially disturbed ReadableStream
     const response = new Response(responseBody, {
       status: statusCode,
       headers: {

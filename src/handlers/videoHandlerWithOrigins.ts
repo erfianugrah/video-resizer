@@ -591,6 +591,20 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
             
             // Use waitUntil if available to store in KV without blocking response
             const envWithCtx = env as unknown as EnvWithExecutionContext;
+            
+            // Check if we have origin information to include
+            const originTtl = response.headers.get('X-Origin-TTL');
+            if (originTtl) {
+              // Add the origin TTL to the options for storage
+              videoOptionsWithIMQuery = {
+                ...videoOptionsWithIMQuery,
+                customData: {
+                  ...(videoOptionsWithIMQuery.customData || {}),
+                  originTtl: parseInt(originTtl, 10)
+                }
+              };
+            }
+            
             if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
               envWithCtx.executionCtx.waitUntil(
                 storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
@@ -678,6 +692,18 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         verboseEnabled: context.verboseEnabled
       });
       
+      // Create a single ResponseBuilder instance for finalResponse - this is CRITICAL
+      // to avoid "ReadableStream is disturbed" errors when multiple ResponseBuilder instances
+      // try to use the same response body
+      const responseBuilder = new ResponseBuilder(finalResponse, context);
+      
+      // Set the default handler information
+      responseBuilder.withHeaders({
+        'X-Handler': 'Origins',
+        'X-Origin': originMatch.origin.name,
+        'X-Source-Type': sourceResolution.originType
+      });
+      
       // Check if we should add cache tags to the final response
       if (finalResponse.ok && finalResponse.status < 300) {
         try {
@@ -698,45 +724,26 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
                 tagCount: tags.length
               });
               
-              // Get the existing headers, don't try to clone the body which might be disturbed
-              // IMPORTANT: We'll use headers.append in the ResponseBuilder instead of cloning the Response
-              const responseBuilder = new ResponseBuilder(finalResponse, context);
+              // Add cache tags to the existing ResponseBuilder
               responseBuilder.withHeaders({
-                'Cache-Tag': tags.join(','),
-                'X-Handler': 'Origins' 
+                'Cache-Tag': tags.join(',')
               });
               
               addBreadcrumb(context, 'Cache', 'Applied Cache-Tags to final response', {
                 count: tags.length,
                 firstTags: tags.slice(0, 3).join(',')
               });
-              
-              // Continue with the response, tags will be applied in the final responseBuilder.build()
             }
           }
         } catch (tagError) {
-          // Fallback to original response if applying tags fails
+          // Log error but continue with the response
           error(context, logger, 'VideoHandlerWithOrigins', 'Failed to apply cache tags', {
             error: tagError instanceof Error ? tagError.message : String(tagError)
           });
         }
-      } else {
-        // For non-ok responses, still add the Origins handler header via the ResponseBuilder
-        const responseBuilder = new ResponseBuilder(finalResponse, context);
-        responseBuilder.withHeaders({
-          'X-Handler': 'Origins'
-        });
       }
       
-      // Add the origin information directly via the ResponseBuilder instead of creating a new Response
-      // This avoids the "ReadableStream is disturbed" error when trying to create a new Response with the same body
-      const responseBuilder = new ResponseBuilder(finalResponse, context);
-      responseBuilder.withHeaders({
-        'X-Origin': originMatch.origin.name,
-        'X-Source-Type': sourceResolution.originType
-      });
-      
-      // Use the existing ResponseBuilder instance and chain the methods
+      // Add debug info and build the response with a single ResponseBuilder instance
       const result = await responseBuilder.withDebugInfo().build();
       endTimedOperation(context, 'response-building');
       

@@ -118,6 +118,9 @@ async function storeTransformedVideoImpl(
     });
     
     // Create single entry metadata
+    // Check if there's an explicit ttl in customData.originTtl from the origin config
+    const originTtl = options.customData?.originTtl as number | undefined;
+    
     const singleEntryMetadata = createBaseMetadata(
       sourcePath, 
       options, 
@@ -126,6 +129,14 @@ async function storeTransformedVideoImpl(
       cacheVersion, 
       ttl
     );
+    
+    // Store the origin TTL in the metadata for retrieval
+    if (originTtl) {
+      singleEntryMetadata.customData = {
+        ...singleEntryMetadata.customData,
+        originTtl: originTtl
+      };
+    }
     
     // Mark as non-chunked and store actual video size for integrity checks
     singleEntryMetadata.isChunked = false;
@@ -317,6 +328,9 @@ async function storeTransformedVideoImpl(
       originalContentType: originalVideoContentType,
     };
     
+    // Check if there's an explicit ttl in customData.originTtl from the origin config
+    const originTtl = options.customData?.originTtl as number | undefined;
+    
     // Create metadata for the manifest entry with video content type for cache tags
     // but application/json as the actual content type for the manifest itself
     const manifestEntryMetadata = createBaseMetadata(
@@ -327,6 +341,14 @@ async function storeTransformedVideoImpl(
       cacheVersion,
       ttl
     );
+    
+    // Store the origin TTL in the metadata for retrieval
+    if (originTtl) {
+      manifestEntryMetadata.customData = {
+        ...manifestEntryMetadata.customData,
+        originTtl: originTtl
+      };
+    }
 
     // Mark as chunked and store actual video size for integrity checks
     manifestEntryMetadata.isChunked = true;

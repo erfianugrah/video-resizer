@@ -841,6 +841,9 @@ export class TransformVideoCommand {
         ttl: cacheTtl,
         staleWhileRevalidate: cacheTtl * 0.5, // 50% of TTL
         mustRevalidate: false,
+        // Store origin information for better retrieval from KV cache
+        originName: origin.name,
+        originTtl: cacheTtl // Store the TTL from the origin config for KV cache
       };
 
       responseBuilder.withCaching(
@@ -859,6 +862,7 @@ export class TransformVideoCommand {
         "X-Origin": origin.name,
         "X-Source-Type": sourceResolution.originType,
         "X-Handler": "Origins",
+        "X-Origin-TTL": cacheTtl.toString() // Add the origin TTL for KV cache to use
       });
 
       // Check for debug view mode

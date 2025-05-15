@@ -375,17 +375,31 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
   // Always set Accept-Ranges header for video content to indicate range request support
   headers.set('Accept-Ranges', 'bytes');
   
-  // Add Cache-Control header if expiresAt is set
+  // Add Cache-Control header based on metadata
   const now = Date.now();
-  if (metadata.expiresAt) {
+  
+  // First, check if the origin's TTL is stored in customData
+  if (metadata.customData?.originTtl) {
+    // Use the origin's TTL directly
+    const originTtl = metadata.customData.originTtl as number;
+    headers.set('Cache-Control', `public, max-age=${originTtl}`);
+    headers.set('X-TTL-Source', 'origin-config');
+    headers.set('X-Origin-TTL', originTtl.toString());
+  }
+  // Otherwise, check if expiresAt is set (relative to creation time)
+  else if (metadata.expiresAt) {
     const remainingTtl = Math.max(0, Math.floor((metadata.expiresAt - now) / 1000));
     headers.set('Cache-Control', `public, max-age=${remainingTtl}`);
-  } else {
+    headers.set('X-TTL-Source', 'expires-at');
+  } 
+  // Fallback to default TTL from cache configuration
+  else {
     // Get the cache configuration manager
     const { CacheConfigurationManager } = require('../../config');
     const cacheConfig = CacheConfigurationManager.getInstance();
     const ttl = cacheConfig.getConfig().defaultMaxAge;
     headers.set('Cache-Control', `public, max-age=${ttl}`);
+    headers.set('X-TTL-Source', 'default-config');
   }
   
   // Add Cache-Tag header with the cache tags from metadata
