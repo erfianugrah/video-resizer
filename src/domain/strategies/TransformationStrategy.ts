@@ -6,6 +6,9 @@ import { VideoTransformOptions } from '../commands/TransformVideoCommand';
 import { DiagnosticsInfo } from '../../utils/debugHeadersUtils';
 import { PathPattern } from '../../utils/pathUtils';
 
+import { Origin } from '../../services/videoStorage/interfaces';
+import { SourceResolutionResult } from '../../services/origins/OriginResolver';
+
 export interface TransformationContext {
   request: Request;
   options: VideoTransformOptions;
@@ -18,6 +21,9 @@ export interface TransformationContext {
       fetch: (request: Request) => Promise<Response> 
     } 
   };
+  // Origins-specific fields
+  origin?: Origin;
+  sourceResolution?: SourceResolutionResult;
 }
 
 export type TransformParamValue = string | number | boolean | null | Record<string, unknown>;

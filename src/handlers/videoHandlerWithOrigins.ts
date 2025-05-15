@@ -1,34 +1,40 @@
 /**
- * Video handler for processing video transformation requests
+ * Video handler with Origins-based resolution
  * 
- * Main entry point for video transformation service
+ * This handler uses the Origins system to resolve video paths to the appropriate sources,
+ * providing a more intuitive and flexible configuration model than the legacy system.
  */
-import { determineVideoOptions } from './videoOptionsService';
-import { isCdnCgiMediaPath } from '../utils/pathUtils';
-import { getEnvironmentConfig, EnvVariables } from '../config/environmentConfig';
-import { EnvironmentConfig } from '../config/environmentConfig';
+
+import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
-import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
-import { createRequestContext, addBreadcrumb } from '../utils/requestContext';
+import { TransformOptions } from '../utils/kvCacheUtils';
+import { OriginResolver } from '../services/origins/OriginResolver';
+import { createRequestContext, addBreadcrumb, 
+         startTimedOperation, endTimedOperation, setCurrentContext } from '../utils/requestContext';
 import { createLogger, info, debug, error } from '../utils/pinoLogger';
 import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
-import { TransformOptions } from '../utils/kvCacheUtils';
-import { ResponseBuilder } from '../utils/responseBuilder';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
-import { OriginResolver } from '../services/origins/OriginResolver';
-import { Origin } from '../services/videoStorage/interfaces';
+import { ResponseBuilder } from '../utils/responseBuilder';
+import { determineVideoOptions } from './videoOptionsService';
+import { isCdnCgiMediaPath } from '../utils/pathUtils';
+import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
+import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
+import type { Origin, Source, VideoOptions } from '../services/videoStorage/interfaces';
 
 /**
- * Main handler for video requests
+ * Main handler for video requests using the Origins system
+ * 
  * @param request The incoming request
  * @param config Environment configuration
- * @returns A response with the processed video
+ * @param env Environment variables including KV bindings
+ * @param ctx Execution context
+ * @returns Response with the processed video
  */
-export const handleVideoRequest = withErrorHandling<
+export const handleVideoRequestWithOrigins = withErrorHandling<
   [Request, EnvironmentConfig, EnvVariables | undefined, ExecutionContext | undefined],
   Response
 >(
-  async function handleVideoRequestImpl(
+  async function handleVideoRequestWithOriginsImpl(
     request: Request, 
     config: EnvironmentConfig, 
     env?: EnvVariables,
@@ -38,11 +44,9 @@ export const handleVideoRequest = withErrorHandling<
     if (env && ctx) {
       (env as unknown as EnvWithExecutionContext).executionCtx = ctx;
     }
+    
     // Create request context and logger, pass execution context for waitUntil operations
     const context = createRequestContext(request, ctx);
-    
-    // Import performance tracking functions and context management
-    const { startTimedOperation, endTimedOperation, setCurrentContext } = await import('../utils/requestContext');
     
     // Set the current request context for the global context manager
     setCurrentContext(context);
@@ -52,7 +56,7 @@ export const handleVideoRequest = withErrorHandling<
     try {
       // Log environment variables received for debugging
       if (env) {
-        debug(context, logger, 'VideoHandler', 'Environment variables received', {
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Environment variables received', {
           CACHE_ENABLE_KV: env.CACHE_ENABLE_KV || 'not set',
           VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
           VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV,
@@ -71,7 +75,7 @@ export const handleVideoRequest = withErrorHandling<
       const path = url.pathname;
 
       // Add initial breadcrumb
-      addBreadcrumb(context, 'Request', 'Started total-request-processing', {
+      addBreadcrumb(context, 'Request', 'Started processing with Origins handler', {
         url: url.toString(),
         path: path,
         elapsedMs: 0
@@ -90,7 +94,7 @@ export const handleVideoRequest = withErrorHandling<
       
       // If path is already a CDN-CGI media path, passthrough directly to the CDN
       if (isCdnCgiMediaPath(path)) {
-        info(context, logger, 'VideoHandler', 'Request is already a CDN-CGI media request, passing through');
+        info(context, logger, 'VideoHandlerWithOrigins', 'Request is already a CDN-CGI media request, passing through');
         return fetch(request);
       }
       
@@ -155,7 +159,7 @@ export const handleVideoRequest = withErrorHandling<
           });
         }
       } else if (skipCache) {
-        debug(context, logger, 'VideoHandler', 'Skipping KV cache due to debug mode', {
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Skipping KV cache due to debug mode', {
           debugEnabled: context.debugEnabled,
           hasDebugParam: url.searchParams.has('debug')
         });
@@ -173,7 +177,7 @@ export const handleVideoRequest = withErrorHandling<
         const contentType = kvResponse.headers.get('Content-Type') || 'unknown';
         
         // Log the KV cache hit
-        info(context, logger, 'VideoHandler', 'Serving from KV cache', {
+        info(context, logger, 'VideoHandlerWithOrigins', 'Serving from KV cache', {
           url: url.toString(),
           path: url.pathname,
           cacheAge: cacheAge,
@@ -211,6 +215,7 @@ export const handleVideoRequest = withErrorHandling<
         const headers = new Headers(kvResponse.headers);
         headers.set('X-Cache-Source', 'KV');
         headers.set('X-Cache-Status', 'HIT');
+        headers.set('X-Handler', 'Origins');
         const mutableResponse = new Response(kvResponse.body, {
           status: kvResponse.status,
           statusText: kvResponse.statusText,
@@ -222,7 +227,7 @@ export const handleVideoRequest = withErrorHandling<
         return await responseBuilder.withDebugInfo().build();
       }
       
-      // If no cache hit, proceed with transformation
+      // If no cache hit, proceed with transformation using Origins
       // Log KV cache miss if we attempted lookup
       if (env && !skipCache) {
         addBreadcrumb(context, 'KVCache', 'KV cache miss', {
@@ -232,113 +237,116 @@ export const handleVideoRequest = withErrorHandling<
       
       endTimedOperation(context, 'cache-lookup');
 
-      // Initialize Origin resolver and get path patterns
-      startTimedOperation(context, 'origin-resolution', 'Origin');
+      // Initialize OriginResolver with the video configuration
+      const originResolver = new OriginResolver(videoConfig.getConfig());
       
-      // Get path patterns from OriginResolver if using Origins, or from config as fallback
-      const shouldUseOrigins = videoConfig.shouldUseOrigins();
+      // Match the request path to an origin
+      const originMatch = originResolver.matchOriginWithCaptures(path);
       
-      // Create array to hold patterns: either Origin-based or legacy path patterns
-      let pathPatterns = config.pathPatterns || videoConfig.getPathPatterns();
-      
-      if (shouldUseOrigins) {
-        // Log that we're using the new Origins system
-        debug(context, logger, 'VideoHandler', 'Using Origins system for path pattern matching', {
-          path,
-          useLegacyFallback: !shouldUseOrigins
+      if (!originMatch) {
+        // No matching origin found
+        debug(context, logger, 'VideoHandlerWithOrigins', 'No matching origin for path', {
+          path: path,
+          originCount: videoConfig.getOrigins().length,
+          origins: videoConfig.getOrigins().map(o => o.name)
         });
         
-        // Initialize OriginResolver
-        const resolver = new OriginResolver(videoConfig.getConfig());
-        
-        // Log origins configuration
-        const origins = videoConfig.getOrigins();
-        debug(context, logger, 'VideoHandler', 'Origins configuration loaded', {
-          originCount: origins.length,
-          originNames: origins.map(o => o.name)
-        });
-        
-        // Add breadcrumb for origins
-        addBreadcrumb(context, 'Origins', 'Using Origins for path resolution', {
-          originCount: origins.length,
-          originNames: origins.map(o => o.name).join(', ')
-        });
-        
-        // Convert Origins to PathPatterns for compatibility with existing code
-        if (origins.length > 0) {
-          try {
-            // Converter function from Origin to PathPattern
-            const convertOriginToPathPattern = (origin: Origin) => {
-              // Get the highest priority source for this origin
-              const sortedSources = [...origin.sources].sort((a, b) => a.priority - b.priority);
-              const primarySource = sortedSources[0];
-              
-              return {
-                name: origin.name,
-                matcher: origin.matcher,
-                processPath: origin.processPath ?? true,
-                baseUrl: null,
-                originUrl: primarySource?.url || null,
-                quality: origin.quality,
-                ttl: origin.ttl,
-                priority: 0,
-                auth: primarySource?.auth ? {
-                  type: primarySource.auth.type,
-                  enabled: primarySource.auth.enabled,
-                  accessKeyVar: primarySource.auth.accessKeyVar,
-                  secretKeyVar: primarySource.auth.secretKeyVar,
-                  region: primarySource.auth.region,
-                  service: primarySource.auth.service,
-                  expiresInSeconds: primarySource.auth.expiresInSeconds,
-                  sessionTokenVar: primarySource.auth.sessionTokenVar
-                } : undefined,
-                captureGroups: origin.captureGroups,
-                transformationOverrides: origin.transformOptions || {}
-              };
-            };
-            
-            // Convert all Origins to PathPatterns
-            const originBasedPatterns = origins.map(convertOriginToPathPattern);
-            
-            debug(context, logger, 'VideoHandler', 'Converted Origins to PathPatterns', {
-              originalCount: origins.length,
-              convertedCount: originBasedPatterns.length
-            });
-            
-            // Use these patterns for transformation
-            pathPatterns = originBasedPatterns;
-          } catch (err) {
-            error(context, logger, 'VideoHandler', 'Error converting Origins to PathPatterns', {
-              error: err instanceof Error ? err.message : String(err)
-            });
-            
-            // Fall back to legacy pathPatterns if conversion fails
-            pathPatterns = config.pathPatterns || videoConfig.getPathPatterns();
+        // Return error response
+        const errorResponse = new Response(
+          `No matching origin found for path: ${path}`, 
+          { 
+            status: 404, 
+            headers: { 
+              'Content-Type': 'text/plain',
+              'Cache-Control': 'no-store',
+              'X-Handler': 'Origins',
+              'X-Error': 'NoMatchingOrigin'
+            } 
           }
-        }
-      } else {
-        // Using legacy path patterns
-        debug(context, logger, 'VideoHandler', 'Using legacy path patterns', {
-          patternCount: pathPatterns.length,
-          patterns: pathPatterns.map((p: any) => ({
-            name: p.name,
-            matcher: p.matcher,
-            processPath: p.processPath
-          }))
-        });
+        );
+        
+        const responseBuilder = new ResponseBuilder(errorResponse, context);
+        return await responseBuilder.withDebugInfo().build();
       }
       
-      endTimedOperation(context, 'origin-resolution');
+      // Found a matching origin - add to context
+      context.diagnostics.origin = {
+        name: originMatch.origin.name,
+        matcher: originMatch.origin.matcher,
+        capturedParams: originMatch.captures
+      };
       
-      // Log the final path patterns being used
-      addBreadcrumb(context, 'Configuration', 'Path patterns for request', {
-        patternCount: pathPatterns.length,
-        patterns: pathPatterns.map((p: any) => p.name).join(', '),
-        fromOrigins: shouldUseOrigins
+      addBreadcrumb(context, 'Origins', 'Matched origin', {
+        origin: originMatch.origin.name,
+        matcher: originMatch.origin.matcher,
+        captures: JSON.stringify(originMatch.captures)
+      });
+      
+      debug(context, logger, 'VideoHandlerWithOrigins', 'Matched origin for request', {
+        origin: originMatch.origin.name,
+        path: path,
+        captures: originMatch.captures
+      });
+      
+      // Resolve the path to a source
+      const sourceResolution = originResolver.resolvePathToSource(path);
+      
+      if (!sourceResolution) {
+        // No valid source found in the origin
+        debug(context, logger, 'VideoHandlerWithOrigins', 'No valid source found in origin', {
+          origin: originMatch.origin.name,
+          sourceCount: originMatch.origin.sources.length,
+          sources: originMatch.origin.sources.map(s => s.type)
+        });
+        
+        // Return error response
+        const errorResponse = new Response(
+          `No valid source found in origin: ${originMatch.origin.name}`, 
+          { 
+            status: 500, 
+            headers: { 
+              'Content-Type': 'text/plain',
+              'Cache-Control': 'no-store',
+              'X-Handler': 'Origins',
+              'X-Error': 'NoValidSource'
+            } 
+          }
+        );
+        
+        const responseBuilder = new ResponseBuilder(errorResponse, context);
+        return await responseBuilder.withDebugInfo().build();
+      }
+      
+      // Add source resolution to context
+      context.diagnostics.sourceInfo = {
+        type: sourceResolution.originType,
+        resolvedPath: sourceResolution.resolvedPath,
+        url: sourceResolution.sourceUrl
+      };
+      
+      addBreadcrumb(context, 'Origins', 'Resolved source', {
+        sourceType: sourceResolution.originType,
+        resolvedPath: sourceResolution.resolvedPath,
+        url: sourceResolution.sourceUrl
+      });
+      
+      debug(context, logger, 'VideoHandlerWithOrigins', 'Resolved path to source', {
+        sourceType: sourceResolution.originType,
+        resolvedPath: sourceResolution.resolvedPath,
+        url: sourceResolution.sourceUrl
       });
       
       // Get video options from path and query parameters
       const videoOptions = determineVideoOptions(request, url.searchParams, path);
+      
+      // Add origin-specific options if available
+      if (originMatch.origin.quality) {
+        videoOptions.quality = videoOptions.quality || originMatch.origin.quality;
+      }
+      
+      if (originMatch.origin.videoCompression) {
+        videoOptions.compression = videoOptions.compression || originMatch.origin.videoCompression;
+      }
       
       // Configure debug options
       const debugInfo = {
@@ -351,8 +359,17 @@ export const handleVideoRequest = withErrorHandling<
       
       // Time the video transformation operation
       startTimedOperation(context, 'video-transformation', 'Transform');
-      // Transform the video
-      const response = await transformVideo(request, videoOptions as any, pathPatterns, debugInfo, env);
+      
+      // Transform the video with origins
+      const response = await transformVideoWithOrigins(
+        request, 
+        videoOptions as any, 
+        originMatch.origin,
+        sourceResolution,
+        debugInfo, 
+        env
+      );
+      
       endTimedOperation(context, 'video-transformation');
       
       // Add final timing information to diagnostics
@@ -391,7 +408,7 @@ export const handleVideoRequest = withErrorHandling<
             hasRangeSupport: finalResponse.headers.get('Accept-Ranges') === 'bytes'
           });
           
-          debug(context, logger, 'VideoHandler', 'Direct streaming video response without Cache API', {
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Direct streaming video response without Cache API', {
             contentLength: finalResponse.headers.get('Content-Length'),
             contentType: finalResponse.headers.get('Content-Type'),
             hasRangeSupport: finalResponse.headers.get('Accept-Ranges') === 'bytes',
@@ -406,7 +423,7 @@ export const handleVideoRequest = withErrorHandling<
               const { handleRangeRequest } = await import('../utils/streamUtils');
               
               // Log the range request attempt
-              debug(context, logger, 'VideoHandler', 'Processing range request for direct stream', {
+              debug(context, logger, 'VideoHandlerWithOrigins', 'Processing range request for direct stream', {
                 rangeHeader,
                 contentLength: finalResponse.headers.get('Content-Length'),
                 bypassReason
@@ -416,7 +433,7 @@ export const handleVideoRequest = withErrorHandling<
               const rangeResponse = await handleRangeRequest(finalResponse, rangeHeader, {
                 bypassCacheAPI: true,
                 preserveHeaders: true,
-                handlerTag: 'VideoHandler-Direct-Stream',
+                handlerTag: 'VideoHandlerWithOrigins-Direct-Stream',
                 fallbackApplied: finalResponse.headers.get('X-Fallback-Applied') === 'true'
               });
               
@@ -431,7 +448,7 @@ export const handleVideoRequest = withErrorHandling<
                   range: rangeHeader
                 });
                 
-                debug(context, logger, 'VideoHandler', 'Created 206 Partial Content response for direct stream', {
+                debug(context, logger, 'VideoHandlerWithOrigins', 'Created 206 Partial Content response for direct stream', {
                   status: 206,
                   contentRange: finalResponse.headers.get('Content-Range'),
                   contentLength: finalResponse.headers.get('Content-Length')
@@ -439,7 +456,7 @@ export const handleVideoRequest = withErrorHandling<
               }
             } catch (rangeError) {
               // Log error but continue with the full response
-              error(context, logger, 'VideoHandler', 'Error handling range request for direct stream', {
+              error(context, logger, 'VideoHandlerWithOrigins', 'Error handling range request for direct stream', {
                 error: rangeError instanceof Error ? rangeError.message : String(rangeError),
                 range: rangeHeader
               });
@@ -474,7 +491,7 @@ export const handleVideoRequest = withErrorHandling<
             });
           } catch (err) {
             // Log error but continue with the full response
-            error(context, logger, 'VideoHandler', 'Error handling range request for initial access', {
+            error(context, logger, 'VideoHandlerWithOrigins', 'Error handling range request for initial access', {
               error: err instanceof Error ? err.message : String(err),
               range: request.headers.get('Range')
             });
@@ -539,7 +556,7 @@ export const handleVideoRequest = withErrorHandling<
             let videoOptionsWithIMQuery = videoOptions;
             if (hasIMQueryParams) {
               if (videoOptions.derivative) {
-                debug(context, logger, 'VideoHandler', 'Using derivative-based caching for IMQuery request', {
+                debug(context, logger, 'VideoHandlerWithOrigins', 'Using derivative-based caching for IMQuery request', {
                   imwidth,
                   imheight,
                   hasIMRef,
@@ -563,7 +580,7 @@ export const handleVideoRequest = withErrorHandling<
                   optimizedParams: Object.keys(videoOptionsWithIMQuery).length
                 });
               } else {
-                debug(context, logger, 'VideoHandler', 'IMQuery request without mapped derivative', {
+                debug(context, logger, 'VideoHandlerWithOrigins', 'IMQuery request without mapped derivative', {
                   imwidth,
                   imheight,
                   hasIMRef,
@@ -579,19 +596,19 @@ export const handleVideoRequest = withErrorHandling<
                 storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
                   .then(success => {
                     if (success) {
-                      debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
+                      debug(context, logger, 'VideoHandlerWithOrigins', 'Stored in KV cache', {
                         path: sourcePath,
                         hasIMQuery: !!(imwidth || imheight),
                         derivative: videoOptions.derivative
                       });
                     } else {
-                      debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
+                      debug(context, logger, 'VideoHandlerWithOrigins', 'Failed to store in KV cache', {
                         path: sourcePath
                       });
                     }
                   })
                   .catch(err => {
-                    error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
+                    error(context, logger, 'VideoHandlerWithOrigins', 'Error storing in KV cache', {
                       error: err instanceof Error ? err.message : 'Unknown error',
                       path: sourcePath
                     });
@@ -605,19 +622,19 @@ export const handleVideoRequest = withErrorHandling<
               storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
                 .then(success => {
                   if (success) {
-                    debug(context, logger, 'VideoHandler', 'Stored in KV cache', {
+                    debug(context, logger, 'VideoHandlerWithOrigins', 'Stored in KV cache', {
                       path: sourcePath,
                       hasIMQuery: !!(imwidth || imheight),
                       derivative: videoOptions.derivative
                     });
                   } else {
-                    debug(context, logger, 'VideoHandler', 'Failed to store in KV cache', {
+                    debug(context, logger, 'VideoHandlerWithOrigins', 'Failed to store in KV cache', {
                       path: sourcePath
                     });
                   }
                 })
                 .catch(err => {
-                  error(context, logger, 'VideoHandler', 'Error storing in KV cache', {
+                  error(context, logger, 'VideoHandlerWithOrigins', 'Error storing in KV cache', {
                     error: err instanceof Error ? err.message : 'Unknown error',
                     path: sourcePath
                   });
@@ -628,7 +645,7 @@ export const handleVideoRequest = withErrorHandling<
             }
           } else {
             // KV cache is disabled in config
-            debug(context, logger, 'VideoHandler', 'Skipping KV cache storage (disabled by configuration)', {
+            debug(context, logger, 'VideoHandlerWithOrigins', 'Skipping KV cache storage (disabled by configuration)', {
               enableKVCache: false
             });
             endTimedOperation(context, 'cache-storage');
@@ -638,7 +655,7 @@ export const handleVideoRequest = withErrorHandling<
         }
       } else if (skipCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
         // Log that we're skipping cache storage due to debug parameter
-        debug(context, logger, 'VideoHandler', 'Skipping cache storage due to debug parameter', {
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Skipping cache storage due to debug parameter', {
           debugEnabled: context.debugEnabled,
           hasDebugParam: url.searchParams.has('debug'),
           debugParamValue: url.searchParams.get('debug')
@@ -677,13 +694,15 @@ export const handleVideoRequest = withErrorHandling<
             // Cast videoOptions to match the expected type with index signature
             const tags = generateCacheTags(url.pathname, videoOptions as any, finalResponse.headers);
             if (tags.length > 0) {
-              debug(context, logger, 'VideoHandler', 'Applying cache tags to final response', {
+              debug(context, logger, 'VideoHandlerWithOrigins', 'Applying cache tags to final response', {
                 tagCount: tags.length
               });
               
               // Clone the response to modify headers
               const newHeaders = new Headers(finalResponse.headers);
               newHeaders.set('Cache-Tag', tags.join(','));
+              // Add Origins identifier header
+              newHeaders.set('X-Handler', 'Origins');
               
               finalResponse = new Response(finalResponse.body, {
                 status: finalResponse.status,
@@ -699,11 +718,32 @@ export const handleVideoRequest = withErrorHandling<
           }
         } catch (tagError) {
           // Fallback to original response if applying tags fails
-          error(context, logger, 'VideoHandler', 'Failed to apply cache tags', {
+          error(context, logger, 'VideoHandlerWithOrigins', 'Failed to apply cache tags', {
             error: tagError instanceof Error ? tagError.message : String(tagError)
           });
         }
+      } else {
+        // For non-ok responses, still add the Origins handler header
+        const newHeaders = new Headers(finalResponse.headers);
+        newHeaders.set('X-Handler', 'Origins');
+        
+        finalResponse = new Response(finalResponse.body, {
+          status: finalResponse.status,
+          statusText: finalResponse.statusText,
+          headers: newHeaders
+        });
       }
+      
+      // Add the origin name to the response for tracking
+      const headersWithOrigin = new Headers(finalResponse.headers);
+      headersWithOrigin.set('X-Origin', originMatch.origin.name);
+      headersWithOrigin.set('X-Source-Type', sourceResolution.originType);
+      
+      finalResponse = new Response(finalResponse.body, {
+        status: finalResponse.status,
+        statusText: finalResponse.statusText,
+        headers: headersWithOrigin
+      });
       
       const responseBuilder = new ResponseBuilder(finalResponse, context);
       const result = await responseBuilder.withDebugInfo().build();
@@ -718,11 +758,11 @@ export const handleVideoRequest = withErrorHandling<
       startTimedOperation(context, 'error-handling', 'Error');
       
       // Use standardized error handling
-      logErrorWithContext('Error handling video request', err, {
+      logErrorWithContext('Error handling video request with Origins', err, {
         url: request.url,
         path: new URL(request.url).pathname,
         requestId: context.requestId
-      }, 'VideoHandler');
+      }, 'VideoHandlerWithOrigins');
 
       // Add error to diagnostics
       if (!context.diagnostics.errors) {
@@ -735,21 +775,27 @@ export const handleVideoRequest = withErrorHandling<
         const { VideoConfigurationManager } = await import('../config/VideoConfigurationManager');
         const configManager = VideoConfigurationManager.getInstance();
         context.diagnostics.storageDiagnostics = configManager.getStorageDiagnostics(env as Record<string, unknown>);
+        context.diagnostics.originsDiagnostics = configManager.getOriginsDiagnostics();
       } catch (diagError) {
         // If diagnostics fail, don't block error handling
-        error(context, logger, 'VideoHandler', 'Failed to add storage diagnostics', {
+        error(context, logger, 'VideoHandlerWithOrigins', 'Failed to add storage diagnostics', {
           error: diagError instanceof Error ? diagError.message : 'Unknown error'
         });
       }
       
       // Create error response with ResponseBuilder
-      const errorResponse = new Response(`Error processing video: ${err instanceof Error ? err.message : 'Unknown error'}`, {
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Cache-Control': 'no-store',
-        },
-      });
+      const errorResponse = new Response(
+        `Error processing video with Origins: ${err instanceof Error ? err.message : 'Unknown error'}`, 
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Cache-Control': 'no-store',
+            'X-Handler': 'Origins',
+            'X-Error': 'InternalError'
+          },
+        }
+      );
       
       const responseBuilder = new ResponseBuilder(errorResponse, context);
       const result = await responseBuilder.withDebugInfo().build();
@@ -764,25 +810,122 @@ export const handleVideoRequest = withErrorHandling<
     }
   },
   {
-    functionName: 'handleVideoRequest',
-    component: 'VideoHandler',
+    functionName: 'handleVideoRequestWithOrigins',
+    component: 'VideoHandlerWithOrigins',
     logErrors: true
   }
 );
 
 /**
- * Dynamically import the video transformation function to avoid circular dependencies
+ * Dynamically import and call the video transformation function with origin information
+ * 
+ * @param request The incoming request
+ * @param options Video transformation options
+ * @param origin The matched origin
+ * @param sourceResolution The resolved source
+ * @param debugInfo Debug options
+ * @param env Environment variables
+ * @returns Response with transformed video
  */
-async function transformVideo(
+async function transformVideoWithOrigins(
   request: Request, 
-  options: Record<string, unknown>, 
-  pathPatterns: any[], 
+  options: VideoOptions, 
+  origin: Origin,
+  sourceResolution: any,
   debugInfo: any, 
   env?: EnvVariables
 ): Promise<Response> {
-  // Import the transformation function with dynamic import
-  const { transformVideo: transform } = await import('../services/videoTransformationService');
+  // Import request context utilities
+  const { getCurrentContext } = await import('../utils/requestContext');
   
-  // Call the transform function directly
-  return transform(request, options, pathPatterns, debugInfo, env);
+  // Get current context if available
+  const context = getCurrentContext ? getCurrentContext() : null;
+  const logger = context ? createLogger(context) : console as any;
+  
+  // Log only if we have a context
+  if (context) {
+    debug(context, logger, 'VideoHandlerWithOrigins', 'Transforming video with Origins', {
+      origin: origin.name,
+      sourceType: sourceResolution.originType,
+      resolvedPath: sourceResolution.resolvedPath,
+      url: sourceResolution.sourceUrl
+    });
+  } else {
+    console.debug('Transforming video with Origins:', {
+      origin: origin.name,
+      sourceType: sourceResolution.originType,
+      resolvedPath: sourceResolution.resolvedPath
+    });
+  }
+  
+  // Import the transformation command
+  const { TransformVideoCommand } = await import('../domain/commands/TransformVideoCommand');
+  
+  try {
+    // Create the transform command with origins context
+    const command = new TransformVideoCommand({
+      origin,
+      sourceResolution,
+      options,
+      request,
+      env: env as unknown as WorkerEnvironment,
+      debugMode: debugInfo.isEnabled
+    });
+    
+    // Execute the command
+    return await command.execute();
+  } catch (err) {
+    // Handle transformation errors
+    const { handleTransformationError } = await import('../services/errorHandlerService');
+    
+    if (context) {
+      error(context, logger, 'VideoHandlerWithOrigins', 'Error transforming video with Origins', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        origin: origin.name,
+        sourceType: sourceResolution.originType
+      });
+    } else {
+      console.error('Error transforming video with Origins:', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        origin: origin.name,
+        sourceType: sourceResolution.originType
+      });
+    }
+    
+    // Create a basic error response
+    const errorMessage = err instanceof Error ? err.message : 'Unknown transformation error';
+    const errorResponse = new Response(`Error transforming video with Origins: ${errorMessage}`, {
+      status: 500,
+      headers: {
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-store',
+        'X-Error': 'OriginsTransformationError',
+        'X-Origin': origin.name,
+        'X-Source-Type': sourceResolution.originType,
+        'X-Handler': 'Origins'
+      }
+    });
+    
+    // If we have a context, use it. Otherwise create a minimal one.
+    let responseCtx = context;
+    if (!responseCtx) {
+      responseCtx = {
+        requestId: `origins-error-${Date.now()}`,
+        url: request.url,
+        startTime: performance.now(),
+        breadcrumbs: [],
+        componentTiming: {},
+        diagnostics: {
+          errors: [errorMessage],
+          originalUrl: request.url
+        },
+        debugEnabled: false,
+        verboseEnabled: false
+      };
+    }
+    
+    // Build final response with debug info
+    const responseBuilder = new ResponseBuilder(errorResponse, responseCtx);
+    return await responseBuilder.build();
+  }
 }

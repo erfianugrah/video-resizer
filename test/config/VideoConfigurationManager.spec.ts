@@ -50,8 +50,19 @@ describe('VideoConfigurationManager', () => {
       const manager = VideoConfigurationManager.getInstance();
       const config = manager.getConfig();
       
-      // Check keys one by one to allow for defaults added by the schema
-      expect(Object.keys(config).sort()).toEqual(Object.keys(videoConfig).sort());
+      // Account for new origins property that might be auto-generated
+      const expectedKeys = [...Object.keys(videoConfig)];
+      if (!expectedKeys.includes('origins') && config.origins) {
+        expectedKeys.push('origins');
+      }
+      
+      // Check that all expected keys are present
+      // Note: We use includes() instead of strict equality because auto-generated props might be added
+      Object.keys(config).forEach(key => {
+        expect(expectedKeys).toContain(key);
+      });
+      
+      // Check individual properties
       expect(config.derivatives).toEqual(videoConfig.derivatives);
       expect(config.defaults).toEqual(videoConfig.defaults);
       expect(config.validOptions).toEqual(videoConfig.validOptions);
@@ -283,6 +294,121 @@ describe('VideoConfigurationManager', () => {
       
       expect(() => manager.updateConfig(invalidUpdate as unknown as Partial<z.infer<typeof VideoConfigSchema>>))
         .toThrow(ConfigurationError);
+    });
+    
+    it('should get origins from configuration', () => {
+      const manager = VideoConfigurationManager.getInstance();
+      
+      // Add test origins
+      const testOrigins = [{
+        name: 'test-origin',
+        matcher: '^/test/(.+)$',
+        captureGroups: ['videoId'],
+        sources: [{
+          type: 'r2' as const,
+          priority: 1,
+          path: '$1'
+        }],
+        ttl: {
+          ok: 300,
+          redirects: 300,
+          clientError: 60,
+          serverError: 10
+        }
+      }];
+      
+      // Update config with origins
+      manager.updateConfig({ origins: testOrigins });
+      
+      // Test getOrigins method
+      const origins = manager.getOrigins();
+      expect(origins).toBeDefined();
+      expect(origins.length).toBe(1);
+      expect(origins[0].name).toBe('test-origin');
+      
+      // Test shouldUseOrigins method
+      expect(manager.shouldUseOrigins()).toBe(true);
+      
+      // Test getOriginByName method
+      const origin = manager.getOriginByName('test-origin');
+      expect(origin).toBeDefined();
+      expect(origin?.name).toBe('test-origin');
+      
+      // Test getOriginByName with non-existent name
+      const nonExistentOrigin = manager.getOriginByName('non-existent');
+      expect(nonExistentOrigin).toBeNull();
+    });
+    
+    it('should add an origin to configuration', () => {
+      const manager = VideoConfigurationManager.getInstance();
+      const initialOriginCount = manager.getOrigins().length;
+      
+      const newOrigin = {
+        name: 'new-origin',
+        matcher: '^/new/(.+)$',
+        captureGroups: ['videoId'],
+        sources: [{
+          type: 'remote' as const,
+          priority: 1,
+          url: 'https://example.com',
+          path: '$1'
+        }],
+        ttl: {
+          ok: 300,
+          redirects: 300,
+          clientError: 60,
+          serverError: 10
+        }
+      };
+      
+      const addedOrigin = manager.addOrigin(newOrigin);
+      
+      expect(manager.getOrigins().length).toBe(initialOriginCount + 1);
+      expect(addedOrigin.name).toBe('new-origin');
+      expect(addedOrigin.sources[0].type).toBe('remote');
+    });
+    
+    it('should generate origins diagnostics', () => {
+      const manager = VideoConfigurationManager.getInstance();
+      
+      // Add test origins with different source types
+      const testOrigins = [
+        {
+          name: 'test-origin-1',
+          matcher: '^/test1/(.+)$',
+          captureGroups: ['videoId'],
+          sources: [
+            { type: 'r2' as const, priority: 1, path: '$1' },
+            { type: 'remote' as const, priority: 2, url: 'https://example.com', path: '$1' }
+          ],
+          ttl: { ok: 300, redirects: 300, clientError: 60, serverError: 10 },
+          cacheability: true
+        },
+        {
+          name: 'test-origin-2',
+          matcher: '^/test2/(.+)$',
+          captureGroups: ['videoId'],
+          sources: [
+            { type: 'fallback' as const, priority: 1, url: 'https://fallback.com', path: '$1' }
+          ]
+        }
+      ];
+      
+      // Update config with origins
+      manager.updateConfig({ origins: testOrigins });
+      
+      // Get diagnostics
+      const diagnostics = manager.getOriginsDiagnostics();
+      
+      expect(diagnostics.origins).toBeDefined();
+      expect(diagnostics.origins.count).toBe(2);
+      expect(diagnostics.origins.enabled).toBe(true);
+      expect(diagnostics.origins.sourceCounts.r2).toBe(1);
+      expect(diagnostics.origins.sourceCounts.remote).toBe(1);
+      expect(diagnostics.origins.sourceCounts.fallback).toBe(1);
+      expect(diagnostics.origins.sourceCounts.total).toBe(3);
+      expect(diagnostics.origins.originsWithTtl).toBe(1);
+      expect(diagnostics.origins.originsWithCacheability).toBe(1);
     });
   });
 

@@ -153,4 +153,139 @@ describe('ResponseBuilder', () => {
     expect(finalResponse.headers.get('Accept-Ranges')).toBe('bytes');
     expect(context.diagnostics.isMediaContent).toBe(true);
   });
+  
+  it('should add origin information headers', async () => {
+    const mockRequest = new Request('https://example.com/videos/sample.mp4');
+    const context = createRequestContext(mockRequest);
+    const mockResponse = new Response('test content');
+    
+    // Create origin information
+    const originInfo = {
+      name: 'videos',
+      matcher: '^/videos/(.+)$',
+      capturedParams: {
+        videoId: 'sample.mp4',
+        '1': 'sample.mp4'
+      },
+      processPath: true
+    };
+    
+    const responseBuilder = new ResponseBuilder(mockResponse, context);
+    const finalResponse = await responseBuilder
+      .withOriginInfo(originInfo)
+      .build();
+    
+    // Verify the response has origin headers
+    expect(finalResponse.headers.get('X-Origin-Name')).toBe('videos');
+    expect(finalResponse.headers.get('X-Origin-Matcher')).toBe('^/videos/(.+)$');
+    expect(finalResponse.headers.get('X-Origin-Captured-Params')).toBe(JSON.stringify(originInfo.capturedParams));
+    expect(finalResponse.headers.get('X-Handler')).toBe('Origins');
+    
+    // Check diagnostics values
+    expect(context.diagnostics.origin).toEqual(originInfo);
+  });
+  
+  it('should add source resolution information headers', async () => {
+    const mockRequest = new Request('https://example.com/videos/sample.mp4');
+    const context = createRequestContext(mockRequest);
+    const mockResponse = new Response('test content');
+    
+    // Create source resolution information
+    const sourceInfo = {
+      type: 'remote',
+      resolvedPath: 'videos/sample.mp4',
+      url: 'https://storage.example.com/videos/sample.mp4',
+      source: {
+        type: 'remote',
+        priority: 1,
+        url: 'https://storage.example.com',
+        path: 'videos/${videoId}'
+      }
+    };
+    
+    const responseBuilder = new ResponseBuilder(mockResponse, context);
+    const finalResponse = await responseBuilder
+      .withOriginInfo(undefined, sourceInfo)
+      .build();
+    
+    // Verify the response has source headers
+    expect(finalResponse.headers.get('X-Source-Type')).toBe('remote');
+    expect(finalResponse.headers.get('X-Source-Path')).toBe('videos/sample.mp4');
+    expect(finalResponse.headers.get('X-Source-URL')).toBe('https://storage.example.com/videos/sample.mp4');
+    expect(finalResponse.headers.get('X-Handler')).toBe('Origins');
+    
+    // Check diagnostics values
+    expect(context.diagnostics.sourceResolution).toEqual(sourceInfo);
+  });
+  
+  it('should add both origin and source information headers', async () => {
+    const mockRequest = new Request('https://example.com/videos/sample.mp4');
+    const context = createRequestContext(mockRequest);
+    const mockResponse = new Response('test content');
+    
+    // Create origin and source information
+    const originInfo = {
+      name: 'videos',
+      matcher: '^/videos/(.+)$',
+      capturedParams: {
+        videoId: 'sample.mp4',
+        '1': 'sample.mp4'
+      }
+    };
+    
+    const sourceInfo = {
+      type: 'r2',
+      resolvedPath: 'videos/sample.mp4',
+      source: {
+        type: 'r2',
+        priority: 1,
+        bucketBinding: 'VIDEOS_BUCKET',
+        path: 'videos/${videoId}'
+      }
+    };
+    
+    const responseBuilder = new ResponseBuilder(mockResponse, context);
+    const finalResponse = await responseBuilder
+      .withOriginInfo(originInfo, sourceInfo)
+      .build();
+    
+    // Verify the response has both origin and source headers
+    expect(finalResponse.headers.get('X-Origin-Name')).toBe('videos');
+    expect(finalResponse.headers.get('X-Origin-Matcher')).toBe('^/videos/(.+)$');
+    expect(finalResponse.headers.get('X-Source-Type')).toBe('r2');
+    expect(finalResponse.headers.get('X-Source-Path')).toBe('videos/sample.mp4');
+    expect(finalResponse.headers.get('X-Handler')).toBe('Origins');
+    
+    // Check diagnostics values
+    expect(context.diagnostics.origin).toEqual(originInfo);
+    expect(context.diagnostics.sourceResolution).toEqual(sourceInfo);
+  });
+  
+  it('should create origin error response with proper status and headers', () => {
+    // Create a mock error that simulates an OriginError
+    const mockError = {
+      name: 'OriginResolutionError',
+      message: 'No matching origin found for path: /invalid/path',
+      errorType: 'ORIGIN_NOT_FOUND',
+      getStatusCode: () => 404,
+      context: {
+        parameters: {
+          path: '/invalid/path',
+          availableOrigins: ['videos', 'images']
+        },
+        originName: 'unknown'
+      }
+    };
+    
+    // Create an error response
+    const responseBuilder = ResponseBuilder.createOriginErrorResponse(mockError, true);
+    
+    // Check response headers
+    const headers = responseBuilder['headers']; // Access private property for testing
+    
+    expect(headers.get('X-Error-Type')).toBe('ORIGIN_NOT_FOUND');
+    expect(headers.get('X-Error-Name')).toBe('OriginResolutionError');
+    expect(headers.get('X-Origin-Name')).toBe('unknown');
+    expect(headers.get('Content-Type')).toBe('application/json');
+  });
 });

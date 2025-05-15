@@ -1,18 +1,22 @@
 /**
- * Storage utilities for the video resizer worker
- * 
- * This module provides functions for retrieving videos from different storage sources
- * including R2 buckets, remote URLs, and fallback URLs.
+ * Exports for the Video Storage Service
  */
 
-// Export interfaces
+// Interfaces
 export * from './interfaces';
 
-// Export the main functions
+// Core storage functionality
 export { fetchVideo } from './fetchVideo';
+export { fetchVideoWithOrigins } from './fetchVideoWithOrigins';
+export { applyPathTransformation } from './pathTransform';
+
+// Storage providers
 export { fetchFromR2 } from './r2Storage';
 export { fetchFromRemote } from './remoteStorage';
 export { fetchFromFallback } from './fallbackStorage';
-export { shouldBypassCache } from './cacheBypass';
+
+// Cache tag utilities
 export { generateCacheTags } from './cacheTags';
-export { applyPathTransformation } from './pathTransform';
+
+// Configuration handlers
+export const VIDEO_STORAGE_VERSION = '2.0.0';

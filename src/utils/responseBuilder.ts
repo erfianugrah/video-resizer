@@ -5,6 +5,7 @@
  */
 import { RequestContext, getPerformanceMetrics, addBreadcrumb } from './requestContext';
 import { DebugInfo } from './debugHeadersUtils';
+import { DiagnosticsInfo } from '../types/diagnostics';
 
 /**
  * A builder class for creating responses with consistent headers
@@ -17,10 +18,68 @@ export class ResponseBuilder {
   private cachingApplied = false;
   private debugApplied = false;
 
-  constructor(response: Response, context: RequestContext) {
+  /**
+   * Create a new ResponseBuilder
+   * @param response The base response to build upon
+   * @param context The request context or partial context for the response
+   */
+  constructor(
+    response: Response, 
+    context?: RequestContext | Partial<RequestContext> | null
+  ) {
     this.response = response;
-    this.context = context;
+    
+    // Create minimal context if none provided
+    if (!context) {
+      this.context = this.createMinimalContext();
+    } else if (!this.isCompleteContext(context)) {
+      // Merge with default context if partial
+      this.context = {
+        ...this.createMinimalContext(),
+        ...context
+      } as RequestContext;
+    } else {
+      this.context = context as RequestContext;
+    }
+    
     this.headers = new Headers(response.headers);
+  }
+  
+  /**
+   * Check if a context is complete and has all required fields
+   * @param context The context to check
+   * @returns Whether the context is complete
+   */
+  private isCompleteContext(context: Partial<RequestContext>): boolean {
+    return !!(
+      context.requestId &&
+      context.url !== undefined &&
+      context.startTime !== undefined &&
+      context.breadcrumbs !== undefined &&
+      context.componentTiming !== undefined &&
+      context.diagnostics !== undefined
+    );
+  }
+  
+  /**
+   * Create a minimal context with default values
+   * @returns A minimal request context
+   */
+  private createMinimalContext(): RequestContext {
+    return {
+      requestId: `auto-${Date.now()}`,
+      url: '',
+      startTime: performance.now(),
+      breadcrumbs: [],
+      componentTiming: {},
+      diagnostics: {
+        errors: [],
+        warnings: [],
+        originalUrl: ''
+      },
+      debugEnabled: false,
+      verboseEnabled: false
+    };
   }
 
   /**
@@ -197,6 +256,64 @@ export class ResponseBuilder {
     this.context.diagnostics.cdnErrorResponse = errorResponse;
     if (originalUrl) {
       this.context.diagnostics.originalSourceUrl = originalUrl;
+    }
+    
+    return this;
+  }
+  
+  /**
+   * Add Origin system information headers
+   * @param originInfo Origin information for headers
+   * @param sourceInfo Source resolution information
+   */
+  withOriginInfo(
+    originInfo?: DiagnosticsInfo['origin'],
+    sourceInfo?: DiagnosticsInfo['sourceResolution']
+  ): ResponseBuilder {
+    // Add origin information if available
+    if (originInfo) {
+      this.headers.set('X-Origin-Name', originInfo.name);
+      this.headers.set('X-Origin-Matcher', originInfo.matcher);
+      
+      // Update diagnostics
+      this.context.diagnostics.origin = originInfo;
+      
+      // Add captured parameters as JSON if available
+      if (originInfo.capturedParams && Object.keys(originInfo.capturedParams).length > 0) {
+        this.headers.set('X-Origin-Captured-Params', JSON.stringify(originInfo.capturedParams));
+        
+        // Log breadcrumb for origin matching
+        addBreadcrumb(this.context, 'Origins', 'Added origin info to response', {
+          originName: originInfo.name,
+          capturedParams: originInfo.capturedParams,
+          hasSourceInfo: !!sourceInfo
+        });
+      }
+    }
+    
+    // Add source resolution information if available
+    if (sourceInfo) {
+      this.headers.set('X-Source-Type', sourceInfo.type);
+      this.headers.set('X-Source-Path', sourceInfo.resolvedPath);
+      
+      if (sourceInfo.url) {
+        this.headers.set('X-Source-URL', sourceInfo.url);
+      }
+      
+      // Update diagnostics
+      this.context.diagnostics.sourceResolution = sourceInfo;
+      
+      // Log breadcrumb for source resolution
+      addBreadcrumb(this.context, 'Origins', 'Added source info to response', {
+        sourceType: sourceInfo.type,
+        resolvedPath: sourceInfo.resolvedPath,
+        hasUrl: !!sourceInfo.url
+      });
+    }
+    
+    // Add X-Handler header to indicate we're using Origins system
+    if (originInfo || sourceInfo) {
+      this.headers.set('X-Handler', 'Origins');
     }
     
     return this;
@@ -496,6 +613,15 @@ export class ResponseBuilder {
       this.headers.set('X-Cache-Method', diagnostics.cachingMethod);
     }
     
+    // Add Origin system information if available
+    if (diagnostics.origin) {
+      this.headers.set('X-Origin-Name', diagnostics.origin.name);
+    }
+    
+    if (diagnostics.sourceResolution) {
+      this.headers.set('X-Source-Type', diagnostics.sourceResolution.type);
+    }
+    
     // Add client capability detection results
     if (diagnostics.clientHints !== undefined) {
       this.headers.set('X-Client-Hints-Available', diagnostics.clientHints.toString());
@@ -536,6 +662,38 @@ export class ResponseBuilder {
         this.headers.set('X-Estimated-Bitrate', diagnostics.estimatedBitrate.toString());
       }
       
+      // Include Origin-related detailed information
+      if (diagnostics.origin) {
+        // Include detailed Origin information including matcher and capture groups
+        if (diagnostics.origin.capturedParams) {
+          this.headers.set('X-Origin-Captured-Params', JSON.stringify(diagnostics.origin.capturedParams));
+        }
+        
+        // Include process path flag if available
+        if (diagnostics.origin.processPath !== undefined) {
+          this.headers.set('X-Origin-Process-Path', diagnostics.origin.processPath.toString());
+        }
+      }
+      
+      // Include detailed Source resolution information
+      if (diagnostics.sourceResolution) {
+        this.headers.set('X-Source-Path', diagnostics.sourceResolution.resolvedPath);
+        
+        if (diagnostics.sourceResolution.url) {
+          this.headers.set('X-Source-URL', diagnostics.sourceResolution.url);
+        }
+        
+        // Include detailed source configuration
+        if (diagnostics.sourceResolution.source) {
+          this.headers.set('X-Source-Config', JSON.stringify(diagnostics.sourceResolution.source));
+        }
+      }
+      
+      // Include execution timing information
+      if (diagnostics.executionTiming) {
+        this.headers.set('X-Execution-Timing', JSON.stringify(diagnostics.executionTiming));
+      }
+      
       // Include any errors or warnings
       if (diagnostics.errors && diagnostics.errors.length > 0) {
         this.headers.set('X-Debug-Errors', JSON.stringify(diagnostics.errors));
@@ -568,5 +726,71 @@ export class ResponseBuilder {
       }
       this.headers.set('X-Breadcrumbs-Chunks', chunks.toString());
     }
+  }
+  
+  /**
+   * Create an error response for Origin errors
+   * @param error The Origin error
+   * @param debugMode Whether to include debug information
+   * @returns A ResponseBuilder with error information
+   */
+  static createOriginErrorResponse(error: any, debugMode: boolean = false): ResponseBuilder {
+    // Default status code to 404 if not available
+    const statusCode = error.getStatusCode?.() || 404;
+    
+    // Create a basic error object
+    const errorInfo = {
+      error: error.name || 'OriginError',
+      message: error.message,
+      errorType: error.errorType,
+      statusCode
+    };
+    
+    // Add any additional parameters from the error
+    if (error.context && error.context.parameters) {
+      Object.assign(errorInfo, { parameters: error.context.parameters });
+    }
+    
+    // Create the error response body
+    let responseBody = JSON.stringify({
+      success: false,
+      ...errorInfo
+    }, null, 2);
+    
+    // Create a minimal context for the response builder
+    const context: Partial<RequestContext> = {
+      diagnostics: {
+        errors: [error.message],
+        originalUrl: error.context?.originalUrl || ''
+      },
+      debugEnabled: debugMode
+    };
+    
+    // Build error response
+    const response = new Response(responseBody, {
+      status: statusCode,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // Create response builder with error information
+    const builder = new ResponseBuilder(response, context)
+      .withHeaders({
+        'X-Error-Type': error.errorType || 'UNKNOWN_ERROR',
+        'X-Error-Name': error.name || 'OriginError'
+      });
+    
+    // If we have origin information in the error, add it
+    if (error.context?.originName) {
+      builder.withOriginInfo(
+        {
+          name: error.context.originName,
+          matcher: error.context.originMatcher || ''
+        }
+      );
+    }
+    
+    return builder;
   }
 }

@@ -21,6 +21,9 @@ import { z } from 'zod';
 import { ConfigurationError } from '../errors';
 import { videoConfig as defaultConfig } from './videoConfig';
 import { AuthConfigSchema, StorageConfigSchema } from './storageConfig';
+import { OriginSchema, safeValidateOrigin } from './originSchema';
+import { convertLegacyConfigToOrigins } from './originConverters';
+import { Origin, OriginsConfig, Source } from '../services/videoStorage/interfaces';
 
 // Define Zod schemas for each part of the configuration
 
@@ -104,6 +107,19 @@ const ResponsiveBreakpointSchema = z.object({
 
 // Complete Video Configuration Schema
 export const VideoConfigSchema = z.object({
+  // Schema version
+  version: z.string().optional(),
+  
+  // New Origins-based configuration - can be array or config object
+  origins: z.union([
+    z.array(OriginSchema),
+    z.object({
+      enabled: z.boolean().optional(),
+      useLegacyPathPatterns: z.boolean().optional(),
+      items: z.array(OriginSchema).optional()
+    })
+  ]).optional(),
+  
   derivatives: DerivativeSchema,
   defaults: z.object({
     width: z.number().nullable(),
@@ -185,8 +201,28 @@ export class VideoConfigurationManager {
       // Ensure we're starting with defaultConfig if nothing is provided
       const configToUse = initialConfig || defaultConfig;
       
+      // Auto-generate Origins from legacy config if not already present
+      let configWithOrigins = configToUse as any;
+      if (!configWithOrigins.origins && configWithOrigins.pathPatterns) {
+        try {
+          // Generate Origins from path patterns
+          configWithOrigins = {
+            ...configWithOrigins,
+            origins: convertLegacyConfigToOrigins(configWithOrigins)
+          };
+          
+          console.debug('VideoConfigurationManager: Auto-generated Origins from legacy config', {
+            originCount: configWithOrigins.origins.length
+          });
+        } catch (conversionError) {
+          console.warn('VideoConfigurationManager: Failed to auto-generate Origins', {
+            error: conversionError instanceof Error ? conversionError.message : String(conversionError)
+          });
+        }
+      }
+      
       // Validate and parse the configuration
-      this.config = VideoConfigSchema.parse(configToUse);
+      this.config = VideoConfigSchema.parse(configWithOrigins);
     } catch (error) {
       if (error instanceof z.ZodError) {
         const issues = error.errors.map(issue => 
@@ -539,6 +575,194 @@ export class VideoConfigurationManager {
   }
   
   /**
+   * Get all configured origins
+   * Origins define URL patterns to match and how to process them,
+   * combining path pattern and storage configuration.
+   * 
+   * @returns Array of origin configurations or empty array if not defined
+   */
+  public getOrigins(): Origin[] {
+    const origins = this.config.origins;
+    
+    if (!origins) {
+      return [];
+    }
+    
+    // If origins is an array, return it
+    if (Array.isArray(origins)) {
+      return origins;
+    }
+    
+    // If origins is an OriginsConfig object, return the items array
+    const originsConfig = origins as OriginsConfig;
+    if (originsConfig.items && Array.isArray(originsConfig.items)) {
+      return originsConfig.items;
+    }
+    
+    return [];
+  }
+  
+  /**
+   * Check if Origins are configured and should be used
+   * @returns True if Origins should be used for video handling
+   */
+  public shouldUseOrigins(): boolean {
+    const origins = this.config.origins;
+    
+    if (!origins) {
+      return false;
+    }
+    
+    // If origins is an array, check if it has items
+    if (Array.isArray(origins)) {
+      return origins.length > 0;
+    }
+    
+    // If origins is an OriginsConfig object, check if it has items and is enabled
+    const originsConfig = origins as OriginsConfig;
+    return originsConfig.enabled !== false && 
+           Array.isArray(originsConfig.items) && 
+           originsConfig.items.length > 0;
+  }
+  
+  /**
+   * Auto-convert legacy configuration to Origins format
+   * @returns Array of converted Origins
+   */
+  public generateOriginsFromLegacy() {
+    return convertLegacyConfigToOrigins(this.config);
+  }
+  
+  /**
+   * Get origin by name
+   * @param name Name of the origin to retrieve
+   * @returns The origin configuration or null if not found
+   */
+  public getOriginByName(name: string) {
+    const origins = this.getOrigins();
+    return origins.find(origin => origin.name === name) || null;
+  }
+  
+  /**
+   * Add a new origin to the configuration
+   * @param origin The origin to add
+   * @returns The validated origin that was added
+   * @throws ConfigurationError if the origin is invalid
+   */
+  public addOrigin(origin: unknown) {
+    try {
+      // Use the safe validation function
+      const result = safeValidateOrigin(origin);
+      
+      if (!result.success) {
+        // Format validation errors
+        const issues = result.error?.errors.map(issue => 
+          `${issue.path.join('.')}: ${issue.message}`
+        ).join(', ');
+        
+        // Type check for error reporting
+        const originName = typeof origin === 'object' && origin !== null && 'name' in origin 
+          ? String(origin.name) 
+          : 'unknown';
+        
+        throw ConfigurationError.patternError(
+          `Invalid origin: ${issues}`,
+          originName,
+          { parameters: { origin } }
+        );
+      }
+      
+      // Validation successful, get the validated origin
+      const validatedOrigin = result.data;
+      
+      // Initialize origins array if not exists
+      if (!this.config.origins) {
+        this.config.origins = [];
+      } else if (!Array.isArray(this.config.origins)) {
+        // If origins is an object, convert to array or initialize items array
+        if (!this.config.origins.items) {
+          this.config.origins.items = [];
+        }
+      }
+      
+      // Add the new origin (ensures validatedOrigin is not undefined)
+      if (validatedOrigin) {
+        if (Array.isArray(this.config.origins)) {
+          this.config.origins.push(validatedOrigin);
+        } else if (this.config.origins.items) {
+          this.config.origins.items.push(validatedOrigin);
+        }
+      }
+      
+      return validatedOrigin;
+    } catch (error) {
+      if (error instanceof ConfigurationError) {
+        throw error;
+      }
+      
+      // Type check for error reporting
+      const originName = typeof origin === 'object' && origin !== null && 'name' in origin 
+        ? String(origin.name) 
+        : 'unknown';
+      
+      // Handle unexpected errors
+      throw ConfigurationError.patternError(
+        'Invalid origin',
+        originName,
+        { parameters: { origin } }
+      );
+    }
+  }
+  
+  /**
+   * Get diagnostics for Origins configuration
+   * This method provides detailed information about the Origins status
+   * 
+   * @returns Detailed Origins diagnostics
+   */
+  // CDN URL handling removed - we now use request origin directly
+
+  public getOriginsDiagnostics() {
+    const origins = this.getOrigins();
+    const usingOrigins = this.shouldUseOrigins();
+    const pathPatternsCount = this.getPathPatterns().length;
+    
+    // Count source types
+    const sourceCounts = {
+      r2: 0,
+      remote: 0,
+      fallback: 0,
+      total: 0
+    };
+    
+    // Count origins with various configurations
+    let originsWithTtl = 0;
+    let originsWithCacheability = 0;
+    
+    origins.forEach(origin => {
+      origin.sources.forEach((source: Source) => {
+        sourceCounts[source.type as keyof typeof sourceCounts]++;
+        sourceCounts.total++;
+      });
+      
+      if (origin.ttl) originsWithTtl++;
+      if (origin.cacheability !== undefined) originsWithCacheability++;
+    });
+    
+    return {
+      origins: {
+        count: origins.length,
+        enabled: usingOrigins,
+        status: usingOrigins ? 'active' : 'inactive',
+        sourceCounts,
+        originsWithTtl,
+        originsWithCacheability,
+        pathPatternsCount
+      }
+    };
+  }
+  
+  /**
    * Get passthrough configuration for non-MP4 files
    * @returns The passthrough configuration with defaults if not explicitly set
    */
@@ -609,6 +833,8 @@ export class VideoConfigurationManager {
         ...newConfig,
         // Ensure path patterns from the new config completely replace the old ones if present
         pathPatterns: newConfig.pathPatterns || this.config.pathPatterns,
+        // Ensure origins from the new config completely replace the old ones if present
+        origins: newConfig.origins || this.config.origins,
       };
       
       // Validate the merged configuration
@@ -631,17 +857,32 @@ export class VideoConfigurationManager {
               patterns: this.config.pathPatterns.map(p => p.name).join(', ')
             });
           }
+          
+          // Log origins information if it was updated
+          if (newConfig.origins) {
+            const originsCount = this.getOrigins().length;
+            const originsNames = this.getOrigins().map(o => o.name).join(', ') || 'none';
+            
+            info('VideoConfigurationManager', 'Updated origins', {
+              originsCount,
+              origins: originsNames
+            });
+          }
         }).catch(() => {
           // Fall back to legacy logger if loggerUtils isn't available
           import('../utils/legacyLoggerAdapter').then(({ info }) => {
             info('VideoConfigurationManager', 'Updated configuration', {
-              pathPatternCount: this.config.pathPatterns.length
+              pathPatternCount: this.config.pathPatterns.length,
+              originsCount: this.getOrigins().length
             });
           }).catch(() => {
             // Fallback to console logging
             console.info('[VideoConfigurationManager] Updated configuration');
             if (newConfig.pathPatterns) {
               console.info(`[VideoConfigurationManager] Updated path patterns: ${this.config.pathPatterns.length} patterns`);
+            }
+            if (newConfig.origins) {
+              console.info(`[VideoConfigurationManager] Updated origins: ${this.getOrigins().length} origins`);
             }
           });
         });
