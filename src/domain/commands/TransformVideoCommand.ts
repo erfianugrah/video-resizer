@@ -506,6 +506,69 @@ export class TransformVideoCommand {
             );
           }
           sourceUrl = sourceResolution.sourceUrl;
+          
+          // Check if authentication is needed for this source
+          if (sourceResolution.source.auth?.enabled) {
+            const auth = sourceResolution.source.auth;
+            pinoDebug(
+              this.requestContext,
+              this.logger,
+              "TransformVideoCommand",
+              "Source requires authentication",
+              {
+                sourceType: sourceResolution.originType,
+                authType: auth.type,
+              }
+            );
+            
+            // Handle bearer token authentication
+            if (auth.type === 'bearer' && auth.accessKeyVar) {
+              // Get the token from environment variables
+              const envRecord = env as unknown as Record<string, string | undefined>;
+              const accessToken = envRecord[auth.accessKeyVar];
+              
+              if (accessToken) {
+                pinoDebug(
+                  this.requestContext,
+                  this.logger,
+                  "TransformVideoCommand",
+                  "Adding bearer token to source URL",
+                  {
+                    accessKeyVar: auth.accessKeyVar,
+                  }
+                );
+                
+                // For CDN-CGI, we don't need to modify the sourceUrl or add auth headers
+                // The auth is handled within fetchVideoWithOrigins when it makes the actual request
+                
+                // Add authentication info to diagnostics
+                diagnosticsInfo.authentication = {
+                  type: "bearer",
+                  tokenSource: auth.accessKeyVar,
+                  available: true
+                };
+              } else {
+                // Log warning about missing token
+                pinoDebug(
+                  this.requestContext,
+                  this.logger,
+                  "TransformVideoCommand",
+                  "Bearer token not found in environment variable",
+                  {
+                    accessKeyVar: auth.accessKeyVar,
+                  }
+                );
+                
+                // Add to diagnostics
+                diagnosticsInfo.authentication = {
+                  type: "bearer",
+                  tokenSource: auth.accessKeyVar,
+                  available: false,
+                  error: "Token not found in environment variable"
+                };
+              }
+            }
+          }
           break;
 
         default:
