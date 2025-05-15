@@ -314,7 +314,7 @@
 					"sources": [
 						{
 							"type": "r2",
-							"priority": 0,
+							"priority": 1,
 							"bucketBinding": "VIDEOS_BUCKET",
 							"path": "${videoId}.${extension}",
 							"auth": {
@@ -324,7 +324,7 @@
 						},
 						{
 							"type": "remote",
-							"priority": 1,
+							"priority": 0,
 							"url": "https://videos.erfi.dev",
 							"path": "${videoId}.${extension}",
 							"auth": {
