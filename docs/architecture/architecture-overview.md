@@ -1,6 +1,6 @@
 # Video Resizer Architecture Overview
 
-*Last Updated: May 10, 2025*
+*Last Updated: May 15, 2025*
 
 ## Table of Contents
 
@@ -37,8 +37,11 @@ The system architecture uses a layered approach with specialized components:
 flowchart TB
     subgraph Request Flow
         A[Client Request] --> B[Edge Request Handler]
-        B --> |Path Matching| C[videoHandler]
-        C --> |Command Pattern| D[TransformVideoCommand]
+        B --> C[videoHandler]
+        C --> |Origins System| OR[OriginResolver]
+        C --> |Legacy Path Matching| PM[Path Matcher]
+        OR --> D[TransformVideoCommand]
+        PM --> D
         D --> |Strategy Pattern| E{Mode?}
         E --> |video| V[VideoStrategy]
         E --> |frame| F[FrameStrategy]
@@ -56,7 +59,8 @@ flowchart TB
         CM2[CacheConfigurationManager]
         CM3[DebugConfigurationManager]
         CM4[LoggingConfigurationManager]
-        CM1 & CM2 & CM3 & CM4 --> |Provides| CONFIG[Runtime Configuration]
+        CM5[OriginConfigurationManager]
+        CM1 & CM2 & CM3 & CM4 & CM5 --> |Provides| CONFIG[Runtime Configuration]
     end
     
     subgraph Services
@@ -76,6 +80,7 @@ flowchart TB
     D --> SVC5
     
     CONFIG --> D
+    CONFIG --> OR
     CONFIG --> SVC1
     CONFIG --> SVC2
     CONFIG --> SVC3
@@ -366,13 +371,17 @@ The singleton pattern is used for configuration managers:
 The request flow through the system follows these steps:
 
 1. **Request Entry**: Cloudflare Worker receives the request
-2. **Path Matching**: URL is matched against configured path patterns
-3. **Parameter Extraction**: URL parameters and path captures are processed
-4. **Strategy Selection**: Based on mode (video, frame, spritesheet)
-5. **Cache Check**: Check if transformed response is already cached
-6. **Transformation**: If needed, transform video using Cloudflare Media API
-7. **Caching**: Cache the response for future requests
-8. **Response**: Return the transformed video to the client
+2. **Origin Resolution**: URL is matched against configured Origins using OriginResolver (when enabled)
+   - Pattern matching with regex capture groups
+   - Source selection based on priority
+   - Path transformation using capture groups
+3. **Legacy Path Matching**: As a fallback, URL is matched against configured path patterns
+4. **Parameter Extraction**: URL parameters and path captures are processed
+5. **Strategy Selection**: Based on mode (video, frame, spritesheet)
+6. **Cache Check**: Check if transformed response is already cached
+7. **Transformation**: If needed, transform video using Cloudflare Media API
+8. **Caching**: Cache the response for future requests
+9. **Response**: Return the transformed video to the client
 
 ## Caching Architecture
 
@@ -522,12 +531,22 @@ The architecture has evolved through several phases:
 - Storage abstraction
 - Debug UI integration
 
-### Phase 4: Future Direction
+### Phase 4: Current Evolution
+
+- Origins system implementation
+  - Priority-based source selection
+  - Pattern matching with capture groups
+  - Flexible path template transformations
+  - Compatibility with legacy path patterns
+- Enhanced error handling for source resolution
+- Improved diagnostic information
+
+### Phase 5: Future Direction
 
 - Further dependency inversion
-- Unified origins system
 - Expanded transform options
 - Enhanced metrics and observability
+- Complete migration from path patterns to Origins
 
 ## Conclusion
 
