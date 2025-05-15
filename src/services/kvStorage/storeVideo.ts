@@ -136,7 +136,14 @@ async function storeTransformedVideoImpl(
         ...singleEntryMetadata.customData,
         originTtl: originTtl
       };
+      
+      // If we're using an origin TTL, make sure expiresAt is set based on it for countdown
+      // This ensures Cache-Control headers count down correctly from the origin-defined TTL
+      singleEntryMetadata.expiresAt = Date.now() + (originTtl * 1000);
     }
+    
+    // Mark if we're using indefinite storage
+    singleEntryMetadata.storeIndefinitely = useIndefiniteStorage;
     
     // Mark as non-chunked and store actual video size for integrity checks
     singleEntryMetadata.isChunked = false;
@@ -348,7 +355,14 @@ async function storeTransformedVideoImpl(
         ...manifestEntryMetadata.customData,
         originTtl: originTtl
       };
+      
+      // If we're using an origin TTL, make sure expiresAt is set based on it for countdown
+      // This ensures Cache-Control headers count down correctly from the origin-defined TTL
+      manifestEntryMetadata.expiresAt = Date.now() + (originTtl * 1000);
     }
+    
+    // Mark if we're using indefinite storage
+    manifestEntryMetadata.storeIndefinitely = useIndefiniteStorage;
 
     // Mark as chunked and store actual video size for integrity checks
     manifestEntryMetadata.isChunked = true;

@@ -95,14 +95,18 @@ export async function refreshKeyTtl({
   // Update metadata with new expiresAt
   const updatedMetadata = { ...metadata };
   
-  // Only set expiresAt if we're not using indefinite storage
-  if (!useIndefiniteStorage) {
-    updatedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
-  } else if (updatedMetadata.expiresAt) {
-    // Remove expiresAt if it exists and we're using indefinite storage
-    delete updatedMetadata.expiresAt;
-    logDebug('Removed expiresAt for indefinitely stored item', { key });
-  }
+  // Even with indefinite storage, we still want to set the expiresAt for browser cache countdown
+  // This ensures Cache-Control headers have a proper max-age that counts down
+  updatedMetadata.expiresAt = Date.now() + (originalTtl * 1000);
+  
+  // Mark that we're using indefinite storage for diagnostics
+  updatedMetadata.storeIndefinitely = useIndefiniteStorage;
+  
+  logDebug('Updated expiresAt for cache TTL countdown', { 
+    key, 
+    expiresAt: new Date(updatedMetadata.expiresAt).toISOString(),
+    useIndefiniteStorage
+  });
 
   // Get request context for breadcrumb
   const requestContext = getCurrentContext();

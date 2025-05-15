@@ -57,4 +57,6 @@ export interface TransformationMetadata {
   isChunked?: boolean;
   // Actual total size of the video content (for both chunked and non-chunked)
   actualTotalVideoSize?: number;
+  // Flag indicating if the asset should be stored indefinitely (no expiration)
+  storeIndefinitely?: boolean;
 }
