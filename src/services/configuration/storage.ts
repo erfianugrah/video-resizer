@@ -62,11 +62,11 @@ export async function storeToKV(
   metrics.kvStoreCount = (metrics.kvStoreCount as number) + 1;
   
   try {
-    // Store configuration in KV
+    // Store configuration in KV without expiration
     await env.VIDEO_CONFIGURATION_STORE.put(
       CONFIG_KEY,
-      JSON.stringify(updatedConfig),
-      { expirationTtl: 86400 * 30 } // 30 days expiration
+      JSON.stringify(updatedConfig)
+      // Removed the expirationTtl to prevent configuration expiration
     );
     
     // Update metrics

@@ -383,10 +383,45 @@ async function fetchFromRemoteImpl(
       }
     } else if (remoteAuth.type === 'bearer') {
       // Implement bearer token auth
+      // Check if authorization is in headers directly
       if (remoteAuth.headers && 'Authorization' in remoteAuth.headers) {
         if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
           (fetchOptions.headers as Record<string, string>)['Authorization'] = 
             remoteAuth.headers['Authorization'];
+        }
+      } 
+      // Check for environment variable based token
+      else if (remoteAuth.accessKeyVar) {
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        const accessToken = envRecord[remoteAuth.accessKeyVar];
+        
+        if (accessToken) {
+          // Add bearer token to headers
+          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+            (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+              `Bearer ${accessToken}`;
+          }
+          
+          // Log that we added the bearer token
+          logDebug('VideoStorageService', 'Added bearer token from environment variable', {
+            accessKeyVar: remoteAuth.accessKeyVar
+          });
+        } else {
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'Bearer token not found in environment variable',
+            new Error('Missing token'),
+            {
+              accessKeyVar: remoteAuth.accessKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Continue without authentication if in permissive mode
+          if (config.storage.auth?.securityLevel !== 'permissive') {
+            return null;
+          }
         }
       }
     } else if (remoteAuth.type === 'header') {

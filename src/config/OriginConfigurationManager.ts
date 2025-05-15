@@ -9,13 +9,28 @@ import { Origin, Source, OriginsConfig } from '../services/videoStorage/interfac
 import { safeValidateOrigin } from './originSchema';
 import { convertPathPatternToOrigin } from './originConverters';
 import { VideoConfigurationManager } from './VideoConfigurationManager';
+import { getCurrentContext } from '../utils/requestContext';
+import { createLogger } from '../utils/pinoLogger';
+import { debug as logDebug, info as logInfo, error as logError, warn as logWarn } from '../utils/loggerUtils';
+import pino from 'pino';
 
 /**
  * Extend the globalThis interface to include WORKER_CONFIG
  */
 declare global {
   var WORKER_CONFIG: {
-    origins?: Origin[];
+    video?: {
+      origins?: Origin[] | {
+        enabled?: boolean;
+        useLegacyPathPatterns?: boolean;
+        convertPathPatternsToOrigins?: boolean;
+        fallbackHandling?: {
+          enabled?: boolean;
+          maxRetries?: number;
+        };
+        items?: Origin[];
+      };
+    };
     [key: string]: unknown;
   };
 }
@@ -81,34 +96,102 @@ export class OriginConfigurationManager {
     let originsEnabled = true;
     let useLegacyPathPatterns = true;
     
+    logDebug('OriginConfigurationManager', 'Initializing origins', {
+      hasOriginsConfig: !!originsConfig,
+      originsType: originsConfig ? typeof originsConfig : 'undefined',
+      isArray: originsConfig ? Array.isArray(originsConfig) : false,
+      hasItems: originsConfig && typeof originsConfig === 'object' ? 'items' in originsConfig : false
+    });
+    
     // Check what kind of origins configuration we have
     if (this.isOriginsConfig(originsConfig)) {
       // If we have an object with control flags
       originsEnabled = originsConfig.enabled !== false;
       useLegacyPathPatterns = originsConfig.useLegacyPathPatterns !== false;
       
+      logDebug('OriginConfigurationManager', 'Found origins config object', {
+        enabled: originsEnabled,
+        useLegacyPathPatterns,
+        hasItems: Array.isArray(originsConfig.items),
+        itemsCount: Array.isArray(originsConfig.items) ? originsConfig.items.length : 0
+      });
+      
       // If we have items in the config, use those
       if (Array.isArray(originsConfig.items) && originsConfig.items.length > 0) {
         this.origins = [...originsConfig.items];
+        logDebug('OriginConfigurationManager', 'Loaded origins from items array', {
+          count: this.origins.length
+        });
       }
     } else if (this.isOriginsArray(originsConfig)) {
       // If we have a direct array of Origins, use that
       this.origins = [...originsConfig];
+      logDebug('OriginConfigurationManager', 'Loaded origins from direct array', {
+        count: this.origins.length
+      });
     }
     
     // If we have a direct origins configuration from WORKER_CONFIG, use that
-    if (originsEnabled && typeof globalThis.WORKER_CONFIG !== 'undefined' && Array.isArray(globalThis.WORKER_CONFIG.origins)) {
-      this.origins = [...globalThis.WORKER_CONFIG.origins];
+    if (originsEnabled && typeof globalThis.WORKER_CONFIG !== 'undefined') {
+      const workerConfig = globalThis.WORKER_CONFIG;
+      
+      // Debug the worker config structure
+      logDebug('OriginConfigurationManager', 'Checking WORKER_CONFIG structure', {
+        hasVideoConfig: !!workerConfig.video,
+        hasVideoOrigins: !!workerConfig.video?.origins,
+        videoOriginsType: workerConfig.video?.origins ? typeof workerConfig.video.origins : 'undefined'
+      });
+      
+      // Check for origins configuration in video config
+      
+      // Check WORKER_CONFIG.video.origins (as array)
+      if (workerConfig.video && Array.isArray(workerConfig.video.origins)) {
+        this.origins = [...workerConfig.video.origins];
+        logInfo('OriginConfigurationManager', 'Loaded origins array from WORKER_CONFIG.video.origins', {
+          count: this.origins.length,
+          names: this.origins.map(o => o.name).join(', ')
+        });
+      }
+      // Check WORKER_CONFIG.video.origins as object with items array
+      else if (workerConfig.video && 
+               workerConfig.video.origins && 
+               typeof workerConfig.video.origins === 'object' && 
+               'items' in workerConfig.video.origins && 
+               Array.isArray((workerConfig.video.origins as any).items)) {
+        this.origins = [...(workerConfig.video.origins as any).items];
+        logInfo('OriginConfigurationManager', 'Loaded origins from WORKER_CONFIG.video.origins.items', {
+          count: this.origins.length,
+          names: this.origins.map(o => o.name).join(', ')
+        });
+      }
+      // Log if no origins were found in WORKER_CONFIG
+      else {
+        logWarn('OriginConfigurationManager', 'No origins found in WORKER_CONFIG', {
+          hasWorkerConfig: !!workerConfig,
+          hasVideoConfig: !!workerConfig.video,
+          hasVideoOrigins: !!workerConfig.video?.origins,
+          videoOriginsType: workerConfig.video?.origins ? typeof workerConfig.video.origins : 'undefined'
+        });
+      }
     }
     
-    // If we should also use legacy path patterns and we have access to them
-    else if (originsEnabled && useLegacyPathPatterns && config.pathPatterns) {
+    // If we still don't have origins and should use legacy path patterns
+    if (this.origins.length === 0 && originsEnabled && useLegacyPathPatterns && config.pathPatterns) {
       // Convert path patterns to Origins for backward compatibility
       this.origins = this.convertFromPathPatterns();
+      logDebug('OriginConfigurationManager', 'Converted path patterns to origins', {
+        patternCount: config.pathPatterns.length,
+        originCount: this.origins.length
+      });
     }
     
     // Validate and index the origins by name
     this.validateAndIndexOrigins();
+    
+    logDebug('OriginConfigurationManager', 'Origins initialization complete', {
+      totalOrigins: this.origins.length,
+      originNames: this.origins.length > 0 ? this.origins.map(o => o.name).join(', ') : 'none'
+    });
   }
   
   /**
@@ -124,13 +207,26 @@ export class OriginConfigurationManager {
       if (result.success && result.data) {
         validOrigins.push(result.data);
         this.originMap.set(result.data.name, result.data);
+        logDebug('OriginConfigurationManager', 'Validated origin', {
+          name: result.data.name,
+          matcher: result.data.matcher,
+          sourceCount: result.data.sources?.length || 0
+        });
       } else if (result.error) {
-        console.error(`Invalid origin configuration: ${result.error.message}`);
+        logError('OriginConfigurationManager', 'Invalid origin configuration', {
+          error: result.error.message,
+          origin: origin.name || 'unnamed'
+        });
       }
     }
     
     // Replace origins with validated ones
     this.origins = validOrigins;
+    
+    logInfo('OriginConfigurationManager', 'Origins validated and indexed', {
+      validCount: validOrigins.length,
+      totalAttempted: this.origins.length
+    });
   }
   
   /**

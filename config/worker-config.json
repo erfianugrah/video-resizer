@@ -1,7 +1,485 @@
 {
-	"version": "2.0.0",
-	"lastUpdated": "2025-05-15T12:00:00Z",
+	"version": "2.1.0",
+	"lastUpdated": "2025-05-15T15:45:00Z",
 	"video": {
+		"origins": {
+			"enabled": true,
+			"useLegacyPathPatterns": false,
+			"fallbackHandling": {
+				"enabled": true,
+				"maxRetries": 2,
+				"tryAllMatchingOrigins": true
+			},
+			"items": [
+				{
+					"name": "videos",
+					"matcher": "^/videos/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+					"captureGroups": [
+						"videoId",
+						"extension"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "videos/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://assets.exp.ingka.com",
+							"path": "videos/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream",
+								"X-Client-ID": "video-resizer"
+							}
+						},
+						{
+							"type": "fallback",
+							"priority": 2,
+							"url": "https://cdn.erfi.dev",
+							"path": "fallback-videos/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 3600,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "videos-alt",
+					"matcher": "^/videos/([^.]+)",
+					"captureGroups": [
+						"videoId"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "videos/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://assets.exp.ingka.com",
+							"path": "videos/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream",
+								"X-Client-ID": "video-resizer"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 2,
+							"url": "https://videos.erfi.dev",
+							"path": "videos/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 3600,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "popular",
+					"matcher": "^/popular/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+					"captureGroups": [
+						"videoId",
+						"extension"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "popular/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "popular-videos/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 2,
+							"url": "https://popular.videos.erfi.dev",
+							"path": "${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 604800,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "popular-alt",
+					"matcher": "^/popular/([^.]+)",
+					"captureGroups": [
+						"videoId"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "popular/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "popular-videos/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 604800,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "shorts",
+					"matcher": "^/shorts/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+					"captureGroups": [
+						"videoId",
+						"extension"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "shorts/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "shorts/${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 2,
+							"url": "https://shorts.videos.erfi.dev",
+							"path": "${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 172800,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"quality": "medium",
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "shorts-alt",
+					"matcher": "^/shorts/([^.]+)",
+					"captureGroups": [
+						"videoId"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "shorts/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "shorts/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 172800,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"quality": "medium",
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "standard",
+					"matcher": "^/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+					"captureGroups": [
+						"videoId",
+						"extension"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 2,
+							"url": "https://fallback.videos.erfi.dev",
+							"path": "${videoId}.${extension}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 86400,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "standard-alt",
+					"matcher": "^/([^.]+)",
+					"captureGroups": [
+						"videoId"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://videos.erfi.dev",
+							"path": "${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 86400,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "authenticated-videos",
+					"matcher": "^/authenticated-videos/(.*)",
+					"captureGroups": [
+						"videoId"
+					],
+					"processPath": true,
+					"sources": [
+						{
+							"type": "r2",
+							"priority": 0,
+							"bucketBinding": "VIDEOS_BUCKET",
+							"path": "auth/${videoId}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 1,
+							"url": "https://auth.videos.erfi.dev",
+							"path": "authenticated/${videoId}",
+							"auth": {
+								"enabled": true,
+								"type": "bearer",
+								"accessKeyVar": "AUTH_VIDEO_ACCESS_KEY",
+								"secretKeyVar": "AUTH_VIDEO_SECRET_KEY"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream"
+							}
+						},
+						{
+							"type": "remote",
+							"priority": 2,
+							"url": "https://auth-backup.videos.erfi.dev",
+							"path": "authenticated/${videoId}",
+							"auth": {
+								"enabled": true,
+								"type": "bearer",
+								"accessKeyVar": "AUTH_VIDEO_BACKUP_ACCESS_KEY",
+								"secretKeyVar": "AUTH_VIDEO_BACKUP_SECRET_KEY"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 1800,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"quality": "high",
+					"cacheability": true,
+					"videoCompression": "auto"
+				},
+				{
+					"name": "default",
+					"matcher": ".*",
+					"processPath": false,
+					"sources": [
+						{
+							"type": "remote",
+							"priority": 0,
+							"url": "https://videos.erfi.dev",
+							"path": "${request_path}",
+							"auth": {
+								"enabled": false,
+								"type": "basic"
+							}
+						}
+					],
+					"ttl": {
+						"ok": 300,
+						"redirects": 300,
+						"clientError": 60,
+						"serverError": 10
+					},
+					"useTtlByStatus": true,
+					"cacheability": true,
+					"videoCompression": "auto"
+				}
+			]
+		},
 		"derivatives": {
 			"desktop": {
 				"width": 1920,
@@ -221,15 +699,6 @@
 		},
 		"cdnCgi": {
 			"basePath": "/cdn-cgi/media"
-		},
-		"origins": {
-			"enabled": true,
-			"useLegacyPathPatterns": true,
-			"convertPathPatternsToOrigins": true,
-			"fallbackHandling": {
-				"enabled": true,
-				"maxRetries": 2
-			}
 		}
 	},
 	"cache": {
@@ -285,6 +754,13 @@
 				"image/webp",
 				"image/gif",
 				"image/avif"
+			],
+			"audio": [
+				"audio/mpeg",
+				"audio/mp3",
+				"audio/wav",
+				"audio/ogg",
+				"audio/aac"
 			]
 		},
 		"ttl": {
@@ -327,8 +803,16 @@
 		"includeTimestamps": true,
 		"includeComponentName": true,
 		"colorize": true,
-		"enabledComponents": [],
-		"disabledComponents": [],
+		"enabledComponents": [
+			"auth",
+			"cache",
+			"storage",
+			"transform",
+			"origins"
+		],
+		"disabledComponents": [
+			"healthcheck"
+		],
 		"sampleRate": 1,
 		"enablePerformanceLogging": true,
 		"performanceThresholdMs": 1000,
@@ -346,176 +830,5 @@
 				"env": "production"
 			}
 		}
-	},
-	"origins": [
-		{
-			"name": "videos",
-			"matcher": "^/videos/([a-zA-Z0-9]+)$",
-			"captureGroups": [
-				"videoId"
-			],
-			"sources": [
-				{
-					"type": "r2",
-					"priority": 1,
-					"bucketBinding": "VIDEOS_BUCKET",
-					"path": "videos/${videoId}.mp4"
-				},
-				{
-					"type": "remote",
-					"priority": 2,
-					"url": "https://videos.erfi.dev",
-					"path": "videos/${videoId}"
-				},
-				{
-					"type": "fallback",
-					"priority": 3,
-					"url": "https://cdn.erfi.dev",
-					"path": "fallback-videos/${videoId}"
-				}
-			],
-			"ttl": {
-				"ok": 300,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			}
-		},
-		{
-			"name": "popular",
-			"matcher": "^/popular/(.*\\.mp4)",
-			"captureGroups": [
-				"videoId"
-			],
-			"sources": [
-				{
-					"type": "r2",
-					"priority": 1,
-					"bucketBinding": "VIDEOS_BUCKET",
-					"path": "popular/${videoId}"
-				},
-				{
-					"type": "remote",
-					"priority": 2,
-					"url": "https://videos.erfi.dev",
-					"path": "popular-videos/${videoId}"
-				}
-			],
-			"ttl": {
-				"ok": 604800,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			}
-		},
-		{
-			"name": "shorts",
-			"matcher": "^/shorts/(.*\\.mp4)",
-			"captureGroups": [
-				"videoId"
-			],
-			"sources": [
-				{
-					"type": "r2",
-					"priority": 1,
-					"bucketBinding": "VIDEOS_BUCKET",
-					"path": "shorts/${videoId}"
-				},
-				{
-					"type": "remote",
-					"priority": 2,
-					"url": "https://videos.erfi.dev",
-					"path": "shorts/${videoId}"
-				}
-			],
-			"ttl": {
-				"ok": 172800,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			},
-			"quality": "medium"
-		},
-		{
-			"name": "standard",
-			"matcher": "^/(.*\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv))",
-			"captureGroups": [
-				"videoId",
-				"extension"
-			],
-			"sources": [
-				{
-					"type": "r2",
-					"priority": 1,
-					"bucketBinding": "VIDEOS_BUCKET",
-					"path": "${videoId}.${extension}"
-				},
-				{
-					"type": "remote",
-					"priority": 2,
-					"url": "https://videos.erfi.dev",
-					"path": "${videoId}.${extension}"
-				}
-			],
-			"ttl": {
-				"ok": 86400,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			}
-		},
-		{
-			"name": "authenticated-videos",
-			"matcher": "^/authenticated-videos/(.*)",
-			"captureGroups": [
-				"videoId"
-			],
-			"sources": [
-				{
-					"type": "r2",
-					"priority": 1,
-					"bucketBinding": "VIDEOS_BUCKET",
-					"path": "auth/${videoId}"
-				},
-				{
-					"type": "remote",
-					"priority": 2,
-					"url": "https://auth.videos.erfi.dev",
-					"path": "authenticated/${videoId}",
-					"auth": {
-						"enabled": true,
-						"type": "bearer",
-						"accessKeyVar": "AUTH_VIDEO_ACCESS_KEY",
-						"secretKeyVar": "AUTH_VIDEO_SECRET_KEY"
-					}
-				}
-			],
-			"ttl": {
-				"ok": 1800,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			},
-			"quality": "high"
-		},
-		{
-			"name": "default",
-			"matcher": ".*",
-			"sources": [
-				{
-					"type": "remote",
-					"priority": 1,
-					"url": "https://videos.erfi.dev",
-					"path": "${request_path}"
-				}
-			],
-			"ttl": {
-				"ok": 300,
-				"redirects": 300,
-				"clientError": 60,
-				"serverError": 10
-			},
-			"processPath": false
-		}
-	]
+	}
 }

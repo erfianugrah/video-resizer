@@ -291,6 +291,8 @@ The video-resizer system includes a compatibility layer that:
 
 6. **Future Extensibility**: The system can be more easily extended with new features.
 
+7. **Enhanced Resilience**: Multiple matching origins provide fallback paths when one origin fails or returns a 404, improving overall reliability.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -303,6 +305,12 @@ The video-resizer system includes a compatibility layer that:
 
 4. **Authentication**: For auth issues, verify environment variables and authentication configuration.
 
+5. **Origin Fallback**: If fallback to other origins isn't working as expected:
+   - Ensure you have multiple patterns that match the same path with different specificity
+   - Check that each pattern has proper origin URL and authentication configured
+   - Examine the diagnostic headers to see which patterns were attempted
+   - Look for `X-Pattern-Fallback-Index` and `X-Pattern-Fallback-Total` headers in responses
+
 ### Diagnostic Headers
 
 The Origins system adds informational headers to responses:
@@ -312,9 +320,18 @@ The Origins system adds informational headers to responses:
 - `X-Source-Type`: The type of source used (r2, remote, fallback)
 - `X-Source-Path`: The resolved path for the source
 - `X-Handler`: Set to "Origins" for Origins-handled requests
+- `X-Pattern-Fallback-Index`: Which pattern in sequence was used when multiple patterns match
+- `X-Pattern-Fallback-Total`: Total number of patterns that matched the request path
+- `X-Pattern-Fallback-Applied`: Set to "true" when a pattern-specific fallback is used
+
+## Related Features
+
+- [Multi-Origin Fallback](./multi-origin-fallback.md) - Details of the enhanced fallback strategy
+- [Background Fallback Caching](./background-fallback-caching.md) - Background caching for fallback content
+- [Large Fallback Chunking](./large-fallback-chunking.md) - Handling large files that exceed transformation limits
 
 ## Conclusion
 
 The Origins system provides a more flexible and maintainable approach to configuring video sources in the video-resizer project. By consolidating the configuration into a single, intuitive model, it simplifies both initial setup and ongoing maintenance.
 
-Whether you're migrating from the legacy configuration or setting up a new project, the Origins system offers a powerful way to manage video sources with explicit prioritization, comprehensive path templating, and source-specific settings.
+Whether you're migrating from the legacy configuration or setting up a new project, the Origins system offers a powerful way to manage video sources with explicit prioritization, comprehensive path templating, and source-specific settings. The enhanced multi-origin fallback capability ensures maximum resilience by trying multiple matching origins when one fails.

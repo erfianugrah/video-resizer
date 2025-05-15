@@ -1,6 +1,6 @@
 # Video Resizer Architecture
 
-*Last Updated: May 10, 2025*
+*Last Updated: May 15, 2025*
 
 This section provides comprehensive documentation on the Video Resizer architecture, including system design, components, patterns, and evolution.
 
@@ -9,6 +9,9 @@ This section provides comprehensive documentation on the Video Resizer architect
 - [Architecture Overview](./architecture-overview.md) - Comprehensive system design overview
 - [Design Patterns](./design-patterns.md) - Strategy, Command, and other patterns used
 - [Service Separation](./service-separation.md) - Modular service architecture
+- [Origins System](./origins-system.md) - Origins-based configuration architecture
+- [Origins Migration](./origins-migration.md) - Migration from legacy to Origins system
+- [Multi-Origin Fallback](./multi-origin-fallback.md) - Enhanced origin fallback strategy
 - [Dependency Management](./dependency-management.md) - Dependency injection approach
 - [Architecture Roadmap](./roadmap.md) - Future architecture plans
 
@@ -32,6 +35,17 @@ The architecture uses several design patterns:
 - **Service Separation Pattern**: For modular, maintainable code organization
 
 ## Recent Architectural Improvements
+
+### Multi-Origin Fallback
+
+The system now implements an enhanced fallback strategy when transformation fails:
+
+- **Multi-Pattern Matching**: Finds all patterns that match the requested path
+- **Sequential Fallback**: Tries each matching origin in sequence until one succeeds
+- **Tiered Approach**: Falls back to direct fetch and then storage service if needed
+- **Error Isolation**: Properly handles errors from one origin without affecting others
+
+This improvement enhances resilience by trying all possible sources before giving up. See [Multi-Origin Fallback](./multi-origin-fallback.md) for details.
 
 ### Service Separation Pattern
 

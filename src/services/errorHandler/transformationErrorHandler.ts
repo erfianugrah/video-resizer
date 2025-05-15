@@ -239,409 +239,451 @@ export async function handleTransformationError({
     }
   }
 
-  // --- Find matched path pattern with its origin and auth for pattern-specific fallback ---
+  // --- Find matched path patterns with their origins and auth for pattern-specific fallback ---
   const url = new URL(originalRequest.url);
   const path = url.pathname;
-  let matchedPattern = null;
+  let matchedPatterns = [];
   
-  // Find matching path pattern for potential pattern-specific auth
+  // Find matching path patterns for potential pattern-specific auth
   try {
     // Import pathUtils to find the matching pattern
     const { findMatchingPathPattern } = await import('../../utils/pathUtils');
-    matchedPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
     
-    logDebug('handleTransformationError', 'Found matching pattern for fallback', { 
-      hasPattern: !!matchedPattern,
-      patternName: matchedPattern?.name,
-      hasOriginUrl: !!matchedPattern?.originUrl,
-      hasAuth: !!matchedPattern?.auth?.enabled
+    // First find the primary matching pattern as before
+    const primaryPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
+    
+    if (primaryPattern) {
+      matchedPatterns.push(primaryPattern);
+      
+      // Then find additional patterns that also match but weren't the first match
+      // This preserves the priority ordering of the original logic
+      for (const pattern of context.pathPatterns ?? []) {
+        if (pattern.name !== primaryPattern.name) {
+          try {
+            const regex = new RegExp(pattern.matcher);
+            if (regex.test(path)) {
+              matchedPatterns.push(pattern);
+            }
+          } catch (err) {
+            // Skip invalid patterns
+          }
+        }
+      }
+    }
+    
+    logDebug('handleTransformationError', 'Found matching patterns for fallback', { 
+      matchCount: matchedPatterns.length,
+      patternNames: matchedPatterns.map(p => p.name),
+      hasOriginUrl: matchedPatterns.length > 0 ? !!matchedPatterns[0].originUrl : false,
+      hasAuth: matchedPatterns.length > 0 ? !!matchedPatterns[0].auth?.enabled : false
     });
   } catch (patternError) {
-    logErrorWithContext('Error finding matching pattern for fallback', patternError, { path }, 'handleTransformationError');
+    logErrorWithContext('Error finding matching patterns for fallback', patternError, { path }, 'handleTransformationError');
   }
 
-  // --- Fallback Logic (Pattern-specific, Direct Fetch, or Storage Service) ---
+  // --- Fallback Logic with multiple patterns (Pattern-specific, Direct Fetch, or Storage Service) ---
   let fallbackResponse: Response | undefined;
   let patternFetchAttempted = false;
   
-  // First priority: Try pattern-specific origin and auth if available
-  if (matchedPattern && matchedPattern.originUrl && matchedPattern.auth?.enabled) {
-    patternFetchAttempted = true;
-    addBreadcrumb(requestContext, 'Fallback', 'Attempting fetch using matched pattern origin/auth', { 
-      pattern: matchedPattern.name, 
-      origin: matchedPattern.originUrl, 
-      authType: matchedPattern.auth.type 
-    });
+  // Try each pattern in sequence until one succeeds
+  for (let i = 0; i < matchedPatterns.length; i++) {
+    const matchedPattern = matchedPatterns[i];
     
-    logDebug('handleTransformationError', 'Attempting pattern-specific fallback', { 
-      pattern: matchedPattern.name,
-      originUrl: matchedPattern.originUrl,
-      authType: matchedPattern.auth.type
-    });
+    // First priority: Try pattern-specific origin and auth if available
+    if (matchedPattern && matchedPattern.originUrl && matchedPattern.auth?.enabled) {
+      patternFetchAttempted = true;
+      addBreadcrumb(requestContext, 'Fallback', `Attempting fetch using pattern ${i+1}/${matchedPatterns.length}`, { 
+        pattern: matchedPattern.name, 
+        origin: matchedPattern.originUrl, 
+        authType: matchedPattern.auth.type 
+      });
+      
+      logDebug('handleTransformationError', `Attempting pattern-specific fallback with pattern ${i+1}/${matchedPatterns.length}`, { 
+        pattern: matchedPattern.name,
+        originUrl: matchedPattern.originUrl,
+        authType: matchedPattern.auth.type
+      });
 
-    try {
-      const originToFetch = matchedPattern.originUrl; // Base origin
-      const pathSegment = url.pathname; // Original request path
-      
-      // Refine URL construction with careful path segment handling
-      let s3ObjectPath = pathSegment.startsWith('/') ? pathSegment.substring(1) : pathSegment;
-      
-      if (originToFetch.endsWith('/')) {
-        // Already has trailing slash, just append path without leading slash
-        s3ObjectPath = s3ObjectPath; // no change needed
-      } else if (!s3ObjectPath.startsWith('/')) {
-        // Needs slash between base and path
-        s3ObjectPath = '/' + s3ObjectPath;
-      } else {
-        // Base doesn't end with /, path starts with /, remove path's leading slash
-        s3ObjectPath = pathSegment.substring(1);
-      }
-      
-      // Construct the full URL
-      let finalUrlToFetch = originToFetch + s3ObjectPath;
-      
-      // Handle different auth types
-      if (matchedPattern.auth.type === 'aws-s3-presigned-url') {
-        try {
-          const { getOrGeneratePresignedUrl, encodePresignedUrl } = await import('../../utils/presignedUrlUtils');
-          
-          // Use pattern name for auth configuration to ensure proper variable naming
-          // The problem was we were using remoteAuth which caused the utils to look for REMOTE_ prefixed variables
-          // Instead we need to construct a storage config that will look for pattern-specific variables
-          // We need to create a custom configuration object with the correct property names
-          
-          // TypeScript-friendly approach with a Record type
-          const storageConfigForUtil: Record<string, any> = {
-            remoteUrl: originToFetch
-          };
-          
-          // Create a property key using the pattern's name (e.g., standardAuth instead of remoteAuth)
-          // This ensures pattern-specific credentials are used
-          const authKey = `${matchedPattern.name}Auth`;
-          storageConfigForUtil[authKey] = matchedPattern.auth;
-          
-          // Log the storage config to help with debugging
-          logDebug('handleTransformationError', 'Created pattern-specific storage config for presigned URL', {
-            pattern: matchedPattern.name,
-            authKey: authKey,
-            authType: matchedPattern.auth.type,
-            accessKeyVar: matchedPattern.auth.accessKeyVar || `${matchedPattern.name.toUpperCase()}_AWS_ACCESS_KEY_ID`,
-            secretKeyVar: matchedPattern.auth.secretKeyVar || `${matchedPattern.name.toUpperCase()}_AWS_SECRET_ACCESS_KEY`
-          });
-          
-          // Generate presigned URL with the pattern's specific auth configuration
-          addBreadcrumb(requestContext, 'Fallback', 'Generating presigned URL for pattern fallback', { 
-            pattern: matchedPattern.name,
-            authKey: authKey
-          });
-          
-          // Ensure we have the correct environment
-          const env = context.env || {};
-          
-          // Get the presigned URL - pass null as patternContext since we'll use the config
-          const presignedUrl = await getOrGeneratePresignedUrl(env, finalUrlToFetch, storageConfigForUtil, null);
-          
-          if (presignedUrl && presignedUrl !== finalUrlToFetch) {
-            finalUrlToFetch = presignedUrl; // Use the presigned URL
-            addBreadcrumb(requestContext, 'Fallback', 'Using presigned URL for pattern fallback fetch', { 
-              pattern: matchedPattern.name 
-            });
+      try {
+        const originToFetch = matchedPattern.originUrl; // Base origin
+        const pathSegment = url.pathname; // Original request path
+        
+        // Refine URL construction with careful path segment handling
+        let s3ObjectPath = pathSegment.startsWith('/') ? pathSegment.substring(1) : pathSegment;
+        
+        if (originToFetch.endsWith('/')) {
+          // Already has trailing slash, just append path without leading slash
+          s3ObjectPath = s3ObjectPath; // no change needed
+        } else if (!s3ObjectPath.startsWith('/')) {
+          // Needs slash between base and path
+          s3ObjectPath = '/' + s3ObjectPath;
+        } else {
+          // Base doesn't end with /, path starts with /, remove path's leading slash
+          s3ObjectPath = pathSegment.substring(1);
+        }
+        
+        // Construct the full URL
+        let finalUrlToFetch = originToFetch + s3ObjectPath;
+        
+        // Handle different auth types
+        if (matchedPattern.auth.type === 'aws-s3-presigned-url') {
+          try {
+            const { getOrGeneratePresignedUrl, encodePresignedUrl } = await import('../../utils/presignedUrlUtils');
             
-            logDebug('handleTransformationError', 'Generated presigned URL for pattern fallback', {
+            // Use pattern name for auth configuration to ensure proper variable naming
+            // The problem was we were using remoteAuth which caused the utils to look for REMOTE_ prefixed variables
+            // Instead we need to construct a storage config that will look for pattern-specific variables
+            // We need to create a custom configuration object with the correct property names
+            
+            // TypeScript-friendly approach with a Record type
+            const storageConfigForUtil: Record<string, any> = {
+              remoteUrl: originToFetch
+            };
+            
+            // Create a property key using the pattern's name (e.g., standardAuth instead of remoteAuth)
+            // This ensures pattern-specific credentials are used
+            const authKey = `${matchedPattern.name}Auth`;
+            storageConfigForUtil[authKey] = matchedPattern.auth;
+            
+            // Log the storage config to help with debugging
+            logDebug('handleTransformationError', 'Created pattern-specific storage config for presigned URL', {
               pattern: matchedPattern.name,
-              urlLength: presignedUrl.length
+              authKey: authKey,
+              authType: matchedPattern.auth.type,
+              accessKeyVar: matchedPattern.auth.accessKeyVar || `${matchedPattern.name.toUpperCase()}_AWS_ACCESS_KEY_ID`,
+              secretKeyVar: matchedPattern.auth.secretKeyVar || `${matchedPattern.name.toUpperCase()}_AWS_SECRET_ACCESS_KEY`
             });
             
-            // Perform the fetch with the presigned URL
+            // Generate presigned URL with the pattern's specific auth configuration
+            addBreadcrumb(requestContext, 'Fallback', 'Generating presigned URL for pattern fallback', { 
+              pattern: matchedPattern.name,
+              authKey: authKey
+            });
+            
+            // Ensure we have the correct environment
+            const env = context.env || {};
+            
+            // Get the presigned URL - pass null as patternContext since we'll use the config
+            const presignedUrl = await getOrGeneratePresignedUrl(env, finalUrlToFetch, storageConfigForUtil, null);
+            
+            if (presignedUrl && presignedUrl !== finalUrlToFetch) {
+              finalUrlToFetch = presignedUrl; // Use the presigned URL
+              addBreadcrumb(requestContext, 'Fallback', 'Using presigned URL for pattern fallback fetch', { 
+                pattern: matchedPattern.name 
+              });
+              
+              logDebug('handleTransformationError', 'Generated presigned URL for pattern fallback', {
+                pattern: matchedPattern.name,
+                urlLength: presignedUrl.length
+              });
+              
+              // Perform the fetch with the presigned URL
+              try {
+                // Create a new request with the presigned URL
+                const presignedRequest = new Request(presignedUrl, {
+                  method: originalRequest.method,
+                  headers: originalRequest.headers,
+                  redirect: 'follow'
+                });
+                
+                // Log the request details
+                logDebug('handleTransformationError', 'Fetching with presigned URL', {
+                  pattern: matchedPattern.name,
+                  method: originalRequest.method,
+                  urlLength: presignedUrl.length
+                });
+                
+                // Fetch the content directly using the presigned URL
+                fallbackResponse = await fetch(presignedRequest);
+                
+                // If successful, return immediately - no need to try other options
+                if (fallbackResponse && fallbackResponse.ok) {
+                  logDebug('handleTransformationError', 'Presigned URL fetch successful', {
+                    pattern: matchedPattern.name,
+                    status: fallbackResponse.status,
+                    contentType: fallbackResponse.headers.get('Content-Type')
+                  });
+                }
+              } catch (presignedFetchError) {
+                logErrorWithContext('Error fetching with presigned URL', presignedFetchError, {
+                  pattern: matchedPattern.name
+                }, 'handleTransformationError');
+                
+                // Don't throw, continue to other fallback mechanisms
+                logDebug('handleTransformationError', 'Presigned URL fetch failed, trying other fallbacks', {
+                  error: presignedFetchError instanceof Error ? presignedFetchError.message : String(presignedFetchError)
+                });
+              }
+            } else if (!presignedUrl) {
+              throw new Error('Failed to generate presigned URL for pattern fallback');
+            }
+          } catch (presignError) {
+            logErrorWithContext('Error generating presigned URL for pattern fallback', presignError, { 
+              pattern: matchedPattern.name,
+              origin: matchedPattern.originUrl
+            }, 'handleTransformationError');
+            
+            // Continue using the direct URL as fallback
+            logDebug('handleTransformationError', 'Continuing with direct pattern URL after presigning failure', {
+              pattern: matchedPattern.name,
+              url: finalUrlToFetch
+            });
+          }
+        } else if (matchedPattern.auth.type === 'aws-s3') {
+          try {
+            // For aws-s3 auth, sign the request headers
+            addBreadcrumb(requestContext, 'Fallback', 'Using AWS S3 direct auth for pattern fallback', {
+              pattern: matchedPattern.name
+            });
+            
+            // Ensure we have the env
+            const env = context.env || {};
+            const envRecord = env as unknown as Record<string, string | undefined>;
+            
+            // Get credentials from env using the pattern's specific auth config
+            const accessKeyVar = matchedPattern.auth.accessKeyVar || 'AWS_ACCESS_KEY_ID';
+            const secretKeyVar = matchedPattern.auth.secretKeyVar || 'AWS_SECRET_ACCESS_KEY';
+            const sessionTokenVar = matchedPattern.auth.sessionTokenVar;
+            
+            const accessKey = envRecord[accessKeyVar] as string;
+            const secretKey = envRecord[secretKeyVar] as string;
+            const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+            
+            if (accessKey && secretKey) {
+              // Import AWS client
+              const { AwsClient } = await import('aws4fetch');
+              
+              // Setup AWS client with pattern-specific auth config
+              const aws = new AwsClient({
+                accessKeyId: accessKey,
+                secretAccessKey: secretKey,
+                sessionToken,
+                service: matchedPattern.auth.service || 's3',
+                region: matchedPattern.auth.region || 'us-east-1'
+              });
+              
+              // Create and sign the request
+              const signRequest = new Request(finalUrlToFetch, {
+                method: originalRequest.method,
+                headers: originalRequest.headers
+              });
+              
+              const signedRequest = await aws.sign(signRequest);
+              
+              // Extract headers for logging
+              const authHeader = signedRequest.headers.get('Authorization');
+              const hasAuthHeader = !!authHeader;
+              
+              logDebug('handleTransformationError', 'Signed request for pattern fallback', {
+                pattern: matchedPattern.name,
+                hasAuthHeader,
+                authHeaderPrefix: authHeader ? authHeader.substring(0, 15) + '...' : 'none'
+              });
+              
+              // Perform the fetch with signed request
+              fallbackResponse = await fetch(signedRequest);
+            } else {
+              // Missing credentials, attempt direct fetch without auth
+              logDebug('handleTransformationError', 'Missing AWS credentials for pattern fallback, trying direct fetch', {
+                pattern: matchedPattern.name,
+                url: finalUrlToFetch
+              });
+              
+              // Use original request's method and headers for direct fetch
+              const directRequest = new Request(finalUrlToFetch, {
+                method: originalRequest.method,
+                headers: originalRequest.headers,
+                redirect: 'follow' // Important for potential redirects at origin
+              });
+              
+              fallbackResponse = await fetch(directRequest);
+            }
+          } catch (awsError) {
+            logErrorWithContext('Error using AWS S3 auth for pattern fallback', awsError, {
+              pattern: matchedPattern.name,
+              origin: matchedPattern.originUrl
+            }, 'handleTransformationError');
+            
+            // Try a direct fetch as fallback
             try {
-              // Create a new request with the presigned URL
-              const presignedRequest = new Request(presignedUrl, {
+              const directRequest = new Request(finalUrlToFetch, {
                 method: originalRequest.method,
                 headers: originalRequest.headers,
                 redirect: 'follow'
               });
               
-              // Log the request details
-              logDebug('handleTransformationError', 'Fetching with presigned URL', {
+              fallbackResponse = await fetch(directRequest);
+            } catch (directError) {
+              logErrorWithContext('Error with direct fetch after AWS auth failure', directError, {
                 pattern: matchedPattern.name,
-                method: originalRequest.method,
-                urlLength: presignedUrl.length
-              });
-              
-              // Fetch the content directly using the presigned URL
-              fallbackResponse = await fetch(presignedRequest);
-              
-              // If successful, return immediately - no need to try other options
-              if (fallbackResponse && fallbackResponse.ok) {
-                logDebug('handleTransformationError', 'Presigned URL fetch successful', {
-                  pattern: matchedPattern.name,
-                  status: fallbackResponse.status,
-                  contentType: fallbackResponse.headers.get('Content-Type')
-                });
-              }
-            } catch (presignedFetchError) {
-              logErrorWithContext('Error fetching with presigned URL', presignedFetchError, {
-                pattern: matchedPattern.name
+                url: finalUrlToFetch
               }, 'handleTransformationError');
-              
-              // Don't throw, continue to other fallback mechanisms
-              logDebug('handleTransformationError', 'Presigned URL fetch failed, trying other fallbacks', {
-                error: presignedFetchError instanceof Error ? presignedFetchError.message : String(presignedFetchError)
-              });
-            }
-          } else if (!presignedUrl) {
-            throw new Error('Failed to generate presigned URL for pattern fallback');
-          }
-        } catch (presignError) {
-          logErrorWithContext('Error generating presigned URL for pattern fallback', presignError, { 
-            pattern: matchedPattern.name,
-            origin: matchedPattern.originUrl
-          }, 'handleTransformationError');
-          
-          // Continue using the direct URL as fallback
-          logDebug('handleTransformationError', 'Continuing with direct pattern URL after presigning failure', {
-            pattern: matchedPattern.name,
-            url: finalUrlToFetch
-          });
-        }
-      } else if (matchedPattern.auth.type === 'aws-s3') {
-        try {
-          // For aws-s3 auth, sign the request headers
-          addBreadcrumb(requestContext, 'Fallback', 'Using AWS S3 direct auth for pattern fallback', {
-            pattern: matchedPattern.name
-          });
-          
-          // Ensure we have the env
-          const env = context.env || {};
-          const envRecord = env as unknown as Record<string, string | undefined>;
-          
-          // Get credentials from env using the pattern's specific auth config
-          const accessKeyVar = matchedPattern.auth.accessKeyVar || 'AWS_ACCESS_KEY_ID';
-          const secretKeyVar = matchedPattern.auth.secretKeyVar || 'AWS_SECRET_ACCESS_KEY';
-          const sessionTokenVar = matchedPattern.auth.sessionTokenVar;
-          
-          const accessKey = envRecord[accessKeyVar] as string;
-          const secretKey = envRecord[secretKeyVar] as string;
-          const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
-          
-          if (accessKey && secretKey) {
-            // Import AWS client
-            const { AwsClient } = await import('aws4fetch');
-            
-            // Setup AWS client with pattern-specific auth config
-            const aws = new AwsClient({
-              accessKeyId: accessKey,
-              secretAccessKey: secretKey,
-              sessionToken,
-              service: matchedPattern.auth.service || 's3',
-              region: matchedPattern.auth.region || 'us-east-1'
-            });
-            
-            // Create and sign the request
-            const signRequest = new Request(finalUrlToFetch, {
-              method: originalRequest.method,
-              headers: originalRequest.headers
-            });
-            
-            const signedRequest = await aws.sign(signRequest);
-            
-            // Extract headers for logging
-            const authHeader = signedRequest.headers.get('Authorization');
-            const hasAuthHeader = !!authHeader;
-            
-            logDebug('handleTransformationError', 'Signed request for pattern fallback', {
-              pattern: matchedPattern.name,
-              hasAuthHeader,
-              authHeaderPrefix: authHeader ? authHeader.substring(0, 15) + '...' : 'none'
-            });
-            
-            // Perform the fetch with signed request
-            fallbackResponse = await fetch(signedRequest);
-          } else {
-            // Missing credentials, attempt direct fetch without auth
-            logDebug('handleTransformationError', 'Missing AWS credentials for pattern fallback, trying direct fetch', {
-              pattern: matchedPattern.name,
-              url: finalUrlToFetch
-            });
-            
-            // Use original request's method and headers for direct fetch
-            const directRequest = new Request(finalUrlToFetch, {
-              method: originalRequest.method,
-              headers: originalRequest.headers,
-              redirect: 'follow' // Important for potential redirects at origin
-            });
-            
-            fallbackResponse = await fetch(directRequest);
-          }
-        } catch (awsError) {
-          logErrorWithContext('Error using AWS S3 auth for pattern fallback', awsError, {
-            pattern: matchedPattern.name,
-            origin: matchedPattern.originUrl
-          }, 'handleTransformationError');
-          
-          // Try a direct fetch as fallback
-          try {
-            const directRequest = new Request(finalUrlToFetch, {
-              method: originalRequest.method,
-              headers: originalRequest.headers,
-              redirect: 'follow'
-            });
-            
-            fallbackResponse = await fetch(directRequest);
-          } catch (directError) {
-            logErrorWithContext('Error with direct fetch after AWS auth failure', directError, {
-              pattern: matchedPattern.name,
-              url: finalUrlToFetch
-            }, 'handleTransformationError');
-          }
-        }
-      } else {
-        // For other auth types or no specific auth implementation, try direct fetch
-        addBreadcrumb(requestContext, 'Fallback', 'Using direct fetch for pattern origin', {
-          pattern: matchedPattern.name,
-          authType: matchedPattern.auth.type
-        });
-        
-        // Use original request's method and headers for direct fetch
-        const directRequest = new Request(finalUrlToFetch, {
-          method: originalRequest.method,
-          headers: originalRequest.headers,
-          redirect: 'follow' // Important for potential redirects at origin
-        });
-        
-        fallbackResponse = await fetch(directRequest);
-      }
-      
-      // Check if the pattern-specific fetch succeeded
-      if (fallbackResponse && fallbackResponse.ok) {
-        logDebug('handleTransformationError', 'Pattern-specific fallback successful', {
-          pattern: matchedPattern?.name || 'direct',
-          status: fallbackResponse.status,
-          contentType: fallbackResponse.headers.get('Content-Type')
-        });
-        
-        addBreadcrumb(requestContext, 'Fallback', 'Successfully fetched using pattern origin/auth', {
-          pattern: matchedPattern?.name || 'direct',
-          status: fallbackResponse.status
-        });
-        
-        // Store pattern-specific fallback video in KV cache in the background
-        // This is particularly important for S3 presigned URLs which expire
-        if (fallbackResponse.body) {
-          // Get the path from the original request
-          const path = new URL(originalRequest.url).pathname;
-          
-          // Use our centralized helper function for background caching
-          await initiateBackgroundCaching(context.env, path, fallbackResponse, requestContext, {
-            pattern: matchedPattern?.name
-          });
-        }
-        
-        // Add pattern-specific fallback header
-        const headers = new Headers(fallbackResponse.headers);
-        headers.set('X-Fallback-Applied', 'true');
-        
-        if (matchedPattern) {
-          headers.set('X-Pattern-Fallback-Applied', 'true');
-          headers.set('X-Pattern-Name', matchedPattern.name);
-          
-          // Add detailed debugging information
-          if (matchedPattern.auth?.type) {
-            headers.set('X-Pattern-Auth-Type', matchedPattern.auth.type);
-          }
-          
-          // Add pattern origin info (with domain only for security)
-          if (matchedPattern.originUrl) {
-            try {
-              const originDomain = new URL(matchedPattern.originUrl).hostname;
-              headers.set('X-Pattern-Origin-Domain', originDomain);
-            } catch (e) {
-              // If URL parsing fails, just use a placeholder
-              headers.set('X-Pattern-Origin-Domain', 'unknown');
             }
           }
+        } else {
+          // For other auth types or no specific auth implementation, try direct fetch
+          addBreadcrumb(requestContext, 'Fallback', 'Using direct fetch for pattern origin', {
+            pattern: matchedPattern.name,
+            authType: matchedPattern.auth.type
+          });
+          
+          // Use original request's method and headers for direct fetch
+          const directRequest = new Request(finalUrlToFetch, {
+            method: originalRequest.method,
+            headers: originalRequest.headers,
+            redirect: 'follow' // Important for potential redirects at origin
+          });
+          
+          fallbackResponse = await fetch(directRequest);
         }
         
-        // Add fallback-specific headers
-        headers.set('X-Fallback-Reason', parsedError.specificError || errorText.substring(0, 100));
-        
-        // Add original error information for debugging
-        headers.set('X-Original-Error-Status', String(errorResponse.status));
-        headers.set('X-Original-Error-Type', parsedError.errorType || 'unknown');
-        
-        // Add Cache-Control header to prevent caching of fallback response
-        headers.set('Cache-Control', 'no-store');
-        
-        // Ensure correct content type for video playback in browser
-        const contentType = fallbackResponse.headers.get('Content-Type');
-        if (contentType === 'application/octet-stream' || contentType === 'binary/octet-stream') {
-          // Set proper video content type based on the file extension
-          const url = new URL(originalRequest.url);
-          const path = url.pathname;
-          if (path.endsWith('.mp4')) {
-            headers.set('Content-Type', 'video/mp4');
-          } else if (path.endsWith('.webm')) {
-            headers.set('Content-Type', 'video/webm');
-          } else if (path.endsWith('.mov')) {
-            headers.set('Content-Type', 'video/quicktime');
-          } else if (path.endsWith('.avi')) {
-            headers.set('Content-Type', 'video/x-msvideo');
-          } else if (path.endsWith('.wmv')) {
-            headers.set('Content-Type', 'video/x-ms-wmv');
-          } else if (path.endsWith('.m4v')) {
-            headers.set('Content-Type', 'video/mp4');
-          } else if (path.endsWith('.mkv')) {
-            headers.set('Content-Type', 'video/x-matroska');
-          } else {
-            // Default to MP4 if we can't determine from extension
-            headers.set('Content-Type', 'video/mp4');
+        // Check if the pattern-specific fetch succeeded
+        if (fallbackResponse && fallbackResponse.ok) {
+          logDebug('handleTransformationError', 'Pattern-specific fallback successful', {
+            pattern: matchedPattern?.name || 'direct',
+            status: fallbackResponse.status,
+            contentType: fallbackResponse.headers.get('Content-Type'),
+            patternIndex: i + 1,
+            totalPatterns: matchedPatterns.length
+          });
+          
+          addBreadcrumb(requestContext, 'Fallback', 'Successfully fetched using pattern origin/auth', {
+            pattern: matchedPattern?.name || 'direct',
+            status: fallbackResponse.status,
+            patternIndex: i + 1,
+            totalPatterns: matchedPatterns.length
+          });
+          
+          // Store pattern-specific fallback video in KV cache in the background
+          // This is particularly important for S3 presigned URLs which expire
+          if (fallbackResponse.body) {
+            // Get the path from the original request
+            const path = new URL(originalRequest.url).pathname;
+            
+            // Use our centralized helper function for background caching
+            await initiateBackgroundCaching(context.env, path, fallbackResponse, requestContext, {
+              pattern: matchedPattern?.name
+            });
           }
           
-          logDebug('handleTransformationError', 'Fixed content type for video playback', {
-            original: contentType,
-            updated: headers.get('Content-Type'),
-            path: path
+          // Add pattern-specific fallback header
+          const headers = new Headers(fallbackResponse.headers);
+          headers.set('X-Fallback-Applied', 'true');
+          
+          if (matchedPattern) {
+            headers.set('X-Pattern-Fallback-Applied', 'true');
+            headers.set('X-Pattern-Name', matchedPattern.name);
+            
+            // Add multi-pattern debugging information
+            if (matchedPatterns.length > 1) {
+              headers.set('X-Pattern-Fallback-Index', `${i + 1}`);
+              headers.set('X-Pattern-Fallback-Total', `${matchedPatterns.length}`);
+            }
+            
+            // Add detailed debugging information
+            if (matchedPattern.auth?.type) {
+              headers.set('X-Pattern-Auth-Type', matchedPattern.auth.type);
+            }
+            
+            // Add pattern origin info (with domain only for security)
+            if (matchedPattern.originUrl) {
+              try {
+                const originDomain = new URL(matchedPattern.originUrl).hostname;
+                headers.set('X-Pattern-Origin-Domain', originDomain);
+              } catch (e) {
+                // If URL parsing fails, just use a placeholder
+                headers.set('X-Pattern-Origin-Domain', 'unknown');
+              }
+            }
+          }
+          
+          // Add fallback-specific headers
+          headers.set('X-Fallback-Reason', parsedError.specificError || errorText.substring(0, 100));
+          
+          // Add original error information for debugging
+          headers.set('X-Original-Error-Status', String(errorResponse.status));
+          headers.set('X-Original-Error-Type', parsedError.errorType || 'unknown');
+          
+          // Add Cache-Control header to prevent caching of fallback response
+          headers.set('Cache-Control', 'no-store');
+          
+          // Ensure correct content type for video playback in browser
+          const contentType = fallbackResponse.headers.get('Content-Type');
+          if (contentType === 'application/octet-stream' || contentType === 'binary/octet-stream') {
+            // Set proper video content type based on the file extension
+            const url = new URL(originalRequest.url);
+            const path = url.pathname;
+            if (path.endsWith('.mp4')) {
+              headers.set('Content-Type', 'video/mp4');
+            } else if (path.endsWith('.webm')) {
+              headers.set('Content-Type', 'video/webm');
+            } else if (path.endsWith('.mov')) {
+              headers.set('Content-Type', 'video/quicktime');
+            } else if (path.endsWith('.avi')) {
+              headers.set('Content-Type', 'video/x-msvideo');
+            } else if (path.endsWith('.wmv')) {
+              headers.set('Content-Type', 'video/x-ms-wmv');
+            } else if (path.endsWith('.m4v')) {
+              headers.set('Content-Type', 'video/mp4');
+            } else if (path.endsWith('.mkv')) {
+              headers.set('Content-Type', 'video/x-matroska');
+            } else {
+              // Default to MP4 if we can't determine from extension
+              headers.set('Content-Type', 'video/mp4');
+            }
+            
+            logDebug('handleTransformationError', 'Fixed content type for video playback', {
+              original: contentType,
+              updated: headers.get('Content-Type'),
+              path: path
+            });
+          }
+          
+          // Create a response with our custom headers
+          const finalResponse = new Response(fallbackResponse.body, {
+            status: fallbackResponse.status,
+            statusText: fallbackResponse.statusText,
+            headers
           });
+          
+          // Return the response - we found a successful pattern
+          return finalResponse;
+        } else if (fallbackResponse) {
+          // Didn't get an OK response, log the failure and continue to next pattern
+          logDebug('handleTransformationError', `Pattern-specific fallback returned non-OK status (trying next pattern ${i+2}/${matchedPatterns.length})`, {
+            pattern: matchedPattern.name,
+            status: fallbackResponse.status,
+            statusText: fallbackResponse.statusText,
+            remainingPatterns: matchedPatterns.length - i - 1
+          });
+          
+          addBreadcrumb(requestContext, 'Fallback', `Pattern origin/auth fetch failed, trying next pattern`, {
+            pattern: matchedPattern.name,
+            status: fallbackResponse.status,
+            currentIndex: i + 1, 
+            totalPatterns: matchedPatterns.length
+          });
+          
+          // Reset the fallbackResponse to try the next pattern
+          fallbackResponse = undefined;
         }
-        
-        // Create a response with our custom headers
-        const finalResponse = new Response(fallbackResponse.body, {
-          status: fallbackResponse.status,
-          statusText: fallbackResponse.statusText,
-          headers
-        });
-        
-        // Return the response
-        return finalResponse;
-      } else if (fallbackResponse) {
-        // Didn't get an OK response, log the failure
-        logDebug('handleTransformationError', 'Pattern-specific fallback returned non-OK status', {
+      } catch (patternFetchError) {
+        logErrorWithContext(`Error during pattern-specific fallback fetch (${i+1}/${matchedPatterns.length})`, patternFetchError, {
           pattern: matchedPattern.name,
-          status: fallbackResponse.status,
-          statusText: fallbackResponse.statusText
-        });
+          url: matchedPattern.originUrl,
+          remainingPatterns: matchedPatterns.length - i - 1
+        }, 'handleTransformationError');
         
-        addBreadcrumb(requestContext, 'Fallback', 'Pattern origin/auth fetch failed with status', {
+        addBreadcrumb(requestContext, 'Error', `Pattern-specific fallback fetch error, trying next pattern`, {
           pattern: matchedPattern.name,
-          status: fallbackResponse.status
+          error: patternFetchError instanceof Error ? patternFetchError.message : 'Unknown',
+          currentIndex: i + 1,
+          totalPatterns: matchedPatterns.length
         });
         
-        // Reset the fallbackResponse to try other fallback mechanisms
+        // Reset the fallbackResponse to try the next pattern
         fallbackResponse = undefined;
       }
-    } catch (patternFetchError) {
-      logErrorWithContext('Error during pattern-specific fallback fetch', patternFetchError, {
-        pattern: matchedPattern.name,
-        url: matchedPattern.originUrl
-      }, 'handleTransformationError');
-      
-      addBreadcrumb(requestContext, 'Error', 'Pattern-specific fallback fetch error', {
-        pattern: matchedPattern.name,
-        error: patternFetchError instanceof Error ? patternFetchError.message : 'Unknown'
-      });
-      
-      // Reset the fallbackResponse to try other fallback mechanisms
-      fallbackResponse = undefined;
     }
   }
 
@@ -655,8 +697,9 @@ export async function handleTransformationError({
     parsedError.specificError?.includes('256MiB')
   );
   
-  // Only attempt direct fetch if pattern-specific fetch wasn't attempted or failed, and we have a direct URL
-  if (!fallbackResponse && !patternFetchAttempted && ((isServerError || isFileSizeError) || is256MiBSizeError) && sourceUrlForDirectFetch) {
+  // Only attempt direct fetch if we don't already have a successful fallbackResponse, and we have a direct URL
+  // We should attempt direct fetch even if pattern fetch was attempted but failed (we need patternFetchAttempted only for diagnostic purposes)
+  if (!fallbackResponse && ((isServerError || isFileSizeError) || is256MiBSizeError) && sourceUrlForDirectFetch) {
     // If it's specifically a 256MiB size error, log it differently
     if (is256MiBSizeError) {
       logDebug('handleTransformationError', 'Video exceeds 256MiB limit, attempting direct source fetch with range support', { 
@@ -810,20 +853,23 @@ export async function handleTransformationError({
     
     if (isServerError) headers.set('X-Server-Error-Fallback', 'true');
     
-    // Add pattern info if a pattern was matched but direct fetch was used
-    if (matchedPattern && patternFetchAttempted) {
+    // Add pattern info if any patterns were matched but direct fetch was used
+    if (matchedPatterns.length > 0 && patternFetchAttempted) {
+      // Use the first matched pattern for diagnostics
+      const firstMatchedPattern = matchedPatterns[0];
       headers.set('X-Pattern-Fallback-Attempted', 'true');
-      headers.set('X-Pattern-Name', matchedPattern.name);
+      headers.set('X-Pattern-Name', firstMatchedPattern.name);
+      headers.set('X-Pattern-Fallback-Count', String(matchedPatterns.length));
       
       // Add more detailed information for debugging
-      if (matchedPattern.auth?.type) {
-        headers.set('X-Pattern-Auth-Type', matchedPattern.auth.type);
+      if (firstMatchedPattern.auth?.type) {
+        headers.set('X-Pattern-Auth-Type', firstMatchedPattern.auth.type);
       }
       
       // Add pattern origin info (with domain only for security)
-      if (matchedPattern.originUrl) {
+      if (firstMatchedPattern.originUrl) {
         try {
-          const originDomain = new URL(matchedPattern.originUrl).hostname;
+          const originDomain = new URL(firstMatchedPattern.originUrl).hostname;
           headers.set('X-Pattern-Origin-Domain', originDomain);
         } catch (e) {
           // If URL parsing fails, just use a placeholder

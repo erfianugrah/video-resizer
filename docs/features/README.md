@@ -1,6 +1,6 @@
 # Video Resizer Features
 
-*Last Updated: May 10, 2025*
+*Last Updated: May 15, 2025*
 
 This section provides comprehensive documentation on the features available in the Video Resizer service.
 
@@ -24,7 +24,9 @@ This section provides comprehensive documentation on the features available in t
 ## Architecture Improvements
 
 - [Service Separation Pattern](../architecture/service-separation.md) - Modular service architecture
-- [Error Resilience](../error-handling/implementation.md) - Robust error handling
+- [Origins System](../architecture/origins-system.md) - Origins-based architecture
+- [Multi-Origin Fallback](../architecture/multi-origin-fallback.md) - Enhanced resilience
+- [Error Handling](../error-handling/implementation.md) - Robust error handling
 
 ## Developer Experience
 
@@ -48,5 +50,6 @@ This section provides comprehensive documentation on the features available in t
 | **Derivatives** | ✅ | ✅ | ❌ |
 | **Range Requests** | ✅ | ❌ | ❌ |
 | **Non-Blocking Cache** | ✅ | ✅ | ✅ |
+| **Multi-Origin Fallback** | ✅ | ✅ | ✅ |
 
 See the specific feature documentation for detailed information on usage and configuration.

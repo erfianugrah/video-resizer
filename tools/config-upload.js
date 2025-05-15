@@ -136,18 +136,23 @@ async function main() {
       });
     }
 
-    // Validate Origins configuration if present
-    if (config.origins) {
+    // Validate Origins configuration if present - can be in video.origins
+    const origins = config.video?.origins;
+    if (origins) {
       console.log('Validating Origins configuration...');
       
-      // Check if it's an array
-      if (!Array.isArray(config.origins)) {
-        console.error('❌ Origins configuration must be an array.');
+      // Check if it's an array or has the 'items' property
+      if (!Array.isArray(origins) && 
+          !(origins.items && Array.isArray(origins.items))) {
+        console.error('❌ Origins configuration must be an array or have an items array property.');
         process.exit(1);
       }
       
+      // Use the correct array for validation
+      const originsArray = Array.isArray(origins) ? origins : origins.items;
+      
       // Check each origin for required properties
-      for (const origin of config.origins) {
+      for (const origin of originsArray) {
         if (!origin.name) {
           console.error(`❌ Origin missing required name property.`);
           process.exit(1);

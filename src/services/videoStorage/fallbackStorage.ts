@@ -381,10 +381,45 @@ async function fetchFromFallbackImpl(
       }
     } else if (fallbackAuth.type === 'bearer') {
       // Implement bearer token auth
+      // Check if authorization is in headers directly
       if (fallbackAuth.headers && 'Authorization' in fallbackAuth.headers) {
         if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
           (fetchOptions.headers as Record<string, string>)['Authorization'] = 
             fallbackAuth.headers['Authorization'];
+        }
+      } 
+      // Check for environment variable based token
+      else if (fallbackAuth.accessKeyVar) {
+        // Access environment variables
+        const envRecord = env as unknown as Record<string, string | undefined>;
+        const accessToken = envRecord[fallbackAuth.accessKeyVar];
+        
+        if (accessToken) {
+          // Add bearer token to headers
+          if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+            (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+              `Bearer ${accessToken}`;
+          }
+          
+          // Log that we added the bearer token
+          logDebug('VideoStorageService', 'Added bearer token from environment variable to fallback request', {
+            accessKeyVar: fallbackAuth.accessKeyVar
+          });
+        } else {
+          // Log error with standardized error handling
+          logErrorWithContext(
+            'Bearer token not found in environment variable for fallback',
+            new Error('Missing token'),
+            {
+              accessKeyVar: fallbackAuth.accessKeyVar
+            },
+            'VideoStorageService'
+          );
+          
+          // Continue without authentication if in permissive mode
+          if (config.storage.auth?.securityLevel !== 'permissive') {
+            return null;
+          }
         }
       }
     } else if (fallbackAuth.type === 'header') {

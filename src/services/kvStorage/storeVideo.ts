@@ -118,6 +118,9 @@ async function storeTransformedVideoImpl(
     });
     
     // Create single entry metadata
+    // Check if there's an explicit ttl in customData.originTtl from the origin config
+    const originTtl = options.customData?.originTtl as number | undefined;
+    
     const singleEntryMetadata = createBaseMetadata(
       sourcePath, 
       options, 
@@ -126,6 +129,21 @@ async function storeTransformedVideoImpl(
       cacheVersion, 
       ttl
     );
+    
+    // Store the origin TTL in the metadata for retrieval
+    if (originTtl) {
+      singleEntryMetadata.customData = {
+        ...singleEntryMetadata.customData,
+        originTtl: originTtl
+      };
+      
+      // If we're using an origin TTL, make sure expiresAt is set based on it for countdown
+      // This ensures Cache-Control headers count down correctly from the origin-defined TTL
+      singleEntryMetadata.expiresAt = Date.now() + (originTtl * 1000);
+    }
+    
+    // Mark if we're using indefinite storage
+    singleEntryMetadata.storeIndefinitely = useIndefiniteStorage;
     
     // Mark as non-chunked and store actual video size for integrity checks
     singleEntryMetadata.isChunked = false;
@@ -317,6 +335,9 @@ async function storeTransformedVideoImpl(
       originalContentType: originalVideoContentType,
     };
     
+    // Check if there's an explicit ttl in customData.originTtl from the origin config
+    const originTtl = options.customData?.originTtl as number | undefined;
+    
     // Create metadata for the manifest entry with video content type for cache tags
     // but application/json as the actual content type for the manifest itself
     const manifestEntryMetadata = createBaseMetadata(
@@ -327,6 +348,21 @@ async function storeTransformedVideoImpl(
       cacheVersion,
       ttl
     );
+    
+    // Store the origin TTL in the metadata for retrieval
+    if (originTtl) {
+      manifestEntryMetadata.customData = {
+        ...manifestEntryMetadata.customData,
+        originTtl: originTtl
+      };
+      
+      // If we're using an origin TTL, make sure expiresAt is set based on it for countdown
+      // This ensures Cache-Control headers count down correctly from the origin-defined TTL
+      manifestEntryMetadata.expiresAt = Date.now() + (originTtl * 1000);
+    }
+    
+    // Mark if we're using indefinite storage
+    manifestEntryMetadata.storeIndefinitely = useIndefiniteStorage;
 
     // Mark as chunked and store actual video size for integrity checks
     manifestEntryMetadata.isChunked = true;

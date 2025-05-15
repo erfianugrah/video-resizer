@@ -217,12 +217,55 @@ async function fetchVideoWithOriginsImpl(
     
     // Try remote URL
     else if (source.type === 'remote' && source.url) {
-      result = await fetchFromRemote(resolvedPath, source.url, config, env);
+      // Check if source has authentication configuration
+      // We need to ensure the source.auth configuration is correctly passed to fetchFromRemote
+      if (source.auth?.enabled) {
+        logDebug('VideoStorageService', 'Remote source requires authentication', {
+          sourceType: source.type,
+          authType: source.auth.type,
+          authEnabled: source.auth.enabled
+        });
+        
+        // Merge the source-specific auth configuration into the config.storage.remoteAuth field
+        // This ensures that the existing fetchFromRemote function can use the auth configuration
+        const configWithAuth = { ...config };
+        if (!configWithAuth.storage) {
+          configWithAuth.storage = {};
+        }
+        
+        // Set remoteAuth in storage config to use the source's auth configuration
+        configWithAuth.storage.remoteAuth = {
+          enabled: source.auth.enabled,
+          type: source.auth.type,
+          accessKeyVar: source.auth.accessKeyVar,
+          secretKeyVar: source.auth.secretKeyVar,
+          headers: source.auth.headers,
+          region: source.auth.region,
+          service: source.auth.service,
+          expiresInSeconds: source.auth.expiresInSeconds,
+          sessionTokenVar: source.auth.sessionTokenVar
+        };
+        
+        // If we have auth.useOriginAuth in the global config, preserve it
+        if (config.storage?.auth?.useOriginAuth) {
+          if (!configWithAuth.storage.auth) {
+            configWithAuth.storage.auth = {};
+          }
+          configWithAuth.storage.auth.useOriginAuth = config.storage.auth.useOriginAuth;
+        }
+        
+        // Use the enhanced config with merged auth settings
+        result = await fetchFromRemote(resolvedPath, source.url, configWithAuth, env);
+      } else {
+        // No auth needed, use standard config
+        result = await fetchFromRemote(resolvedPath, source.url, config, env);
+      }
       
       if (result) {
         logDebug('VideoStorageService', 'Remote fetch successful (Origins)', {
           size: result.size,
-          contentType: result.contentType
+          contentType: result.contentType,
+          hasAuth: !!source.auth?.enabled
         });
         
         if (requestContext) {
@@ -230,7 +273,8 @@ async function fetchVideoWithOriginsImpl(
             path: resolvedPath,
             url: source.url,
             contentType: result.contentType,
-            size: result.size
+            size: result.size,
+            authType: source.auth?.type
           });
         }
       }
@@ -238,12 +282,53 @@ async function fetchVideoWithOriginsImpl(
     
     // Try fallback URL
     else if (source.type === 'fallback' && source.url) {
-      result = await fetchFromFallback(resolvedPath, source.url, config, env);
+      // Check if source has authentication configuration (similar to remote source)
+      if (source.auth?.enabled) {
+        logDebug('VideoStorageService', 'Fallback source requires authentication', {
+          sourceType: source.type,
+          authType: source.auth.type,
+          authEnabled: source.auth.enabled
+        });
+        
+        // Merge the source-specific auth configuration into the config.storage.fallbackAuth field
+        const configWithAuth = { ...config };
+        if (!configWithAuth.storage) {
+          configWithAuth.storage = {};
+        }
+        
+        // Set fallbackAuth in storage config to use the source's auth configuration
+        configWithAuth.storage.fallbackAuth = {
+          enabled: source.auth.enabled,
+          type: source.auth.type,
+          accessKeyVar: source.auth.accessKeyVar,
+          secretKeyVar: source.auth.secretKeyVar,
+          headers: source.auth.headers,
+          region: source.auth.region,
+          service: source.auth.service,
+          expiresInSeconds: source.auth.expiresInSeconds,
+          sessionTokenVar: source.auth.sessionTokenVar
+        };
+        
+        // If we have auth.useOriginAuth in the global config, preserve it
+        if (config.storage?.auth?.useOriginAuth) {
+          if (!configWithAuth.storage.auth) {
+            configWithAuth.storage.auth = {};
+          }
+          configWithAuth.storage.auth.useOriginAuth = config.storage.auth.useOriginAuth;
+        }
+        
+        // Use the enhanced config with merged auth settings
+        result = await fetchFromFallback(resolvedPath, source.url, configWithAuth, env);
+      } else {
+        // No auth needed, use standard config
+        result = await fetchFromFallback(resolvedPath, source.url, config, env);
+      }
       
       if (result) {
         logDebug('VideoStorageService', 'Fallback fetch successful (Origins)', {
           size: result.size,
-          contentType: result.contentType
+          contentType: result.contentType,
+          hasAuth: !!source.auth?.enabled
         });
         
         if (requestContext) {
@@ -251,7 +336,8 @@ async function fetchVideoWithOriginsImpl(
             path: resolvedPath,
             url: source.url,
             contentType: result.contentType,
-            size: result.size
+            size: result.size,
+            authType: source.auth?.type
           });
         }
       }

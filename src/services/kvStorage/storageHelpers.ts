@@ -87,7 +87,8 @@ export function createBaseMetadata(
     metadata.height = options.height;
   }
   
-  // If TTL is provided, set expiresAt
+  // Always set expiresAt for browser cache countdown, even with indefinite storage
+  // This allows Cache-Control: max-age header to count down properly
   if (ttl) {
     metadata.expiresAt = Date.now() + (ttl * 1000);
   }
@@ -375,17 +376,76 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
   // Always set Accept-Ranges header for video content to indicate range request support
   headers.set('Accept-Ranges', 'bytes');
   
-  // Add Cache-Control header if expiresAt is set
+  // Add Cache-Control header based on metadata
   const now = Date.now();
+  
+  // Check for indefinite storage flag in metadata
+  const isIndefiniteStorage = metadata.storeIndefinitely === true;
+  
+  // Check for origin TTL in customData
+  const hasOriginTtl = !!metadata.customData?.originTtl;
+  const originTtl = hasOriginTtl ? (metadata.customData?.originTtl as number) : null;
+  
+  // With our fix, expiresAt should always be set for TTL countdown
+  // But if it's missing, we have fallbacks
   if (metadata.expiresAt) {
+    // Calculate remaining TTL for countdown
     const remainingTtl = Math.max(0, Math.floor((metadata.expiresAt - now) / 1000));
+    
+    // Add diagnostic headers
+    if (hasOriginTtl) {
+      headers.set('X-Origin-TTL', originTtl!.toString());
+      headers.set('X-Original-TTL', originTtl!.toString());
+    }
+    
+    headers.set('X-TTL-Source', isIndefiniteStorage ? 'origin-indefinite-countdown' : 'expires-at');
+    if (isIndefiniteStorage) {
+      headers.set('X-Storage-Type', 'indefinite');
+    }
+    
+    // Always use the remaining TTL for Cache-Control to enable countdown
     headers.set('Cache-Control', `public, max-age=${remainingTtl}`);
-  } else {
+    
+    // Log the TTL calculation for debugging
+    try {
+      const { logDebug } = require('../../utils/pinoLogger');
+      logDebug('KV cache TTL countdown', {
+        expiresAt: new Date(metadata.expiresAt).toISOString(),
+        createdAt: new Date(metadata.createdAt).toISOString(),
+        now: new Date(now).toISOString(),
+        remainingTtl,
+        hasOriginTtl,
+        originTtl: hasOriginTtl ? originTtl : null,
+        isIndefiniteStorage
+      });
+    } catch (e) {
+      // Ignore logging errors
+    }
+  }
+  // Fallback to origin TTL if available but no expiresAt (shouldn't happen with our changes)
+  else if (hasOriginTtl) {
+    headers.set('Cache-Control', `public, max-age=${originTtl}`);
+    headers.set('X-TTL-Source', 'origin-config-fixed');
+    headers.set('X-Origin-TTL', originTtl!.toString());
+    
+    // Mark indefinite storage in headers
+    if (isIndefiniteStorage) {
+      headers.set('X-Storage-Type', 'indefinite');
+    }
+  } 
+  // Final fallback to default TTL from cache configuration
+  else {
     // Get the cache configuration manager
     const { CacheConfigurationManager } = require('../../config');
     const cacheConfig = CacheConfigurationManager.getInstance();
     const ttl = cacheConfig.getConfig().defaultMaxAge;
     headers.set('Cache-Control', `public, max-age=${ttl}`);
+    headers.set('X-TTL-Source', 'default-config');
+    
+    // Mark indefinite storage in headers
+    if (isIndefiniteStorage) {
+      headers.set('X-Storage-Type', 'indefinite');
+    }
   }
   
   // Add Cache-Tag header with the cache tags from metadata

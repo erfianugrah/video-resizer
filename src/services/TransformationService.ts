@@ -6,7 +6,7 @@ import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand'
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
+import { createLogger, debug as pinoDebug, info } from '../utils/pinoLogger';
 import { addBreadcrumb, RequestContext } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
@@ -36,6 +36,20 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
   } else {
     // Fall back to console as a last resort
     console.debug(`TransformationService: ${message}`, data || {});
+  }
+}
+
+/**
+ * Log an info message with proper context handling
+ */
+function logInfo(message: string, data?: Record<string, unknown>): void {
+  const requestContext = getCurrentContext();
+  if (requestContext) {
+    const logger = createLogger(requestContext);
+    info(requestContext, logger, 'TransformationService', message, data);
+  } else {
+    // Fall back to console as a last resort
+    console.info(`TransformationService: ${message}`, data || {});
   }
 }
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
@@ -756,6 +770,30 @@ export const prepareVideoTransformation = withErrorHandling<
       if (derivativeDimensions.height) {
         cdnParams.height = derivativeDimensions.height;
       }
+
+      // Log detailed information about derivative application
+      logDebug('Applied derivative dimensions to CDN params', {
+        derivative: options.derivative,
+        originalWidth: options.width,
+        originalHeight: options.height,
+        derivativeWidth: derivativeDimensions.width,
+        derivativeHeight: derivativeDimensions.height,
+        finalCdnWidth: cdnParams.width,
+        finalCdnHeight: cdnParams.height,
+        hasImQueryParams: isIMQuery,
+        isUsingDerivative: hasDerivative
+      });
+      
+      // Add breadcrumb if request context is available
+      if (requestContext) {
+        addBreadcrumb(requestContext, 'Transform', 'Applied derivative dimensions', {
+          derivative: options.derivative,
+          derivativeWidth: derivativeDimensions.width,
+          derivativeHeight: derivativeDimensions.height,
+          finalCdnWidth: cdnParams.width,
+          finalCdnHeight: cdnParams.height
+        });
+      }
       
       // Rebuild the CDN-CGI media URL with the derivative's dimensions using async function
       // Pass the environment variables and path pattern for presigning
@@ -1142,7 +1180,23 @@ export async function executeTransformation({
   const fetchOptions = { method: request.method, headers: request.headers };
   
   addBreadcrumb(requestContext, 'Transform', 'Fetching from CDN-CGI', { 
-    url: cdnCgiUrl.split('?')[0] 
+    url: cdnCgiUrl,
+    options: JSON.stringify(fetchOptions),
+    hasIMQuery: options.derivative ? true : false,
+    derivative: options.derivative || 'none',
+    width: options.width,
+    height: options.height
+  });
+  
+  // Use the proper logger at INFO level for visibility
+  logInfo(`Fetching media from CDN-CGI URL: ${cdnCgiUrl}`, {
+    url: cdnCgiUrl,
+    derivative: options.derivative || 'none',
+    width: options.width,
+    height: options.height,
+    imquery: options.source === 'imquery',
+    category: 'CDN-CGI', // Explicitly set category for consistent filtering
+    originSourceUrl: options.source || 'none'
   });
 
   // Use the original request as the key for cacheResponse

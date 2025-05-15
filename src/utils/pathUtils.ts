@@ -517,6 +517,8 @@ function buildCdnCgiMediaUrlImpl(
 
   // Helper function to build the final CDN-CGI URL
   const buildFinalUrl = (url: string): string => {
+    // Don't URL encode the origin URL - use it directly for best compatibility with CDN-CGI
+    // CDN-CGI doesn't require URL encoding on the source URL parameter
     const finalUrl = `${baseUrl}${basePath}/${optionsString}/${url}`;
 
     // Log the transformation details (critical for debugging)
@@ -693,11 +695,11 @@ function buildCdnCgiMediaUrlImpl(
                       signaturePresent:
                         presignedUrl.includes("X-Amz-Signature") ||
                         presignedUrl.includes("Signature="),
-                      useEncoding: presignedUrl !== encodedPresignedUrl,
+                      useEncoding: presignedUrl !== encodedPresignedUrl
                     },
                   );
 
-                  // Build the CDN-CGI URL with the properly encoded presigned URL
+                  // Build the CDN-CGI URL with the encoded presigned URL
                   const finalUrl = buildFinalUrl(encodedPresignedUrl);
                   addBreadcrumbForUrl(presignedUrl, finalUrl);
                   return finalUrl;
