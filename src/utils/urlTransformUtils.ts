@@ -5,6 +5,8 @@ import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { EnvironmentConfig } from '../config/environmentConfig';
 import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 
+// No need for CDN URL - we use the request origin directly
+
 /**
  * Interface for the response from URL transformation
  */

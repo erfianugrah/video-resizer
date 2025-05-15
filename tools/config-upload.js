@@ -136,6 +136,67 @@ async function main() {
       });
     }
 
+    // Validate Origins configuration if present
+    if (config.origins) {
+      console.log('Validating Origins configuration...');
+      
+      // Check if it's an array
+      if (!Array.isArray(config.origins)) {
+        console.error('❌ Origins configuration must be an array.');
+        process.exit(1);
+      }
+      
+      // Check each origin for required properties
+      for (const origin of config.origins) {
+        if (!origin.name) {
+          console.error(`❌ Origin missing required name property.`);
+          process.exit(1);
+        }
+        
+        if (!origin.matcher) {
+          console.error(`❌ Origin '${origin.name}' missing required matcher property.`);
+          process.exit(1);
+        }
+        
+        if (!origin.sources || !Array.isArray(origin.sources) || origin.sources.length === 0) {
+          console.error(`❌ Origin '${origin.name}' has missing or empty sources array.`);
+          process.exit(1);
+        }
+        
+        // Check each source for required properties
+        for (const source of origin.sources) {
+          if (!source.type) {
+            console.error(`❌ Source in origin '${origin.name}' missing required type property.`);
+            process.exit(1);
+          }
+          
+          if (!['r2', 'remote', 'fallback'].includes(source.type)) {
+            console.error(`❌ Source in origin '${origin.name}' has invalid type: ${source.type}`);
+            process.exit(1);
+          }
+          
+          if (source.type === 'r2' && !source.bucketBinding) {
+            console.error(`❌ R2 source in origin '${origin.name}' missing required bucketBinding property.`);
+            process.exit(1);
+          }
+          
+          if ((source.type === 'remote' || source.type === 'fallback') && !source.url) {
+            console.error(`❌ ${source.type} source in origin '${origin.name}' missing required url property.`);
+            process.exit(1);
+          }
+          
+          if (!source.path) {
+            console.error(`❌ Source in origin '${origin.name}' missing required path property.`);
+            process.exit(1);
+          }
+        }
+      }
+      
+      console.log('✅ Origins configuration is valid.');
+    } else if (!config.video.pathPatterns) {
+      console.warn('⚠️ Warning: No Origins or pathPatterns found in configuration.');
+    }
+    
     // Perform the upload
     const response = await fetch(endpoint, {
       method: 'POST',

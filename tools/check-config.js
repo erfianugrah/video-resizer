@@ -63,6 +63,9 @@ const requiredArrayFields = [
   { path: 'video.storage.priority', description: 'Storage priority order' },
   { path: 'video.passthrough.whitelistedFormats', description: 'Formats allowed for passthrough' },
   
+  // Origins config arrays
+  { path: 'origins', description: 'Origins configuration array' },
+  
   // Cache config arrays
   { path: 'cache.bypassQueryParameters', description: 'Query parameters that bypass cache' },
   { path: 'cache.mimeTypes.video', description: 'Video MIME types to cache' },
@@ -86,7 +89,16 @@ const requiredFields = [
   { path: 'video', description: 'Video configuration section' },
   { path: 'video.derivatives', description: 'Video derivative configurations' },
   { path: 'video.validOptions', description: 'Valid video transformation options' },
-  { path: 'video.pathPatterns', description: 'URL path patterns for matching' },
+  
+  // Allow either pathPatterns or origins
+  { path: 'video.pathPatterns|origins', description: 'URL path patterns or Origins for matching', 
+    custom: (config) => {
+      return (config.video && config.video.pathPatterns) || 
+             (config.origins && Array.isArray(config.origins)) ||
+             (config.video && config.video.origins && config.video.origins.enabled);
+    } 
+  },
+  
   { path: 'cache', description: 'Cache configuration section' },
   { path: 'cache.method', description: 'Cache method (should be "kv")' },
   { path: 'logging', description: 'Logging configuration section' },
@@ -153,6 +165,41 @@ async function main() {
     let missingFields = [];
     
     for (const field of requiredFields) {
+      // Handle custom validators
+      if (field.custom) {
+        const isValid = field.custom(config);
+        const status = isValid ? '✅' : '❌';
+        console.log(`${status} ${field.path}: ${field.description}`);
+        
+        if (!isValid) {
+          missingFields.push(field.path);
+        }
+        continue;
+      }
+      
+      // Handle pipe-separated paths (OR condition)
+      if (field.path.includes('|')) {
+        const paths = field.path.split('|');
+        let found = false;
+        
+        for (const path of paths) {
+          const value = getNestedProperty(config, path);
+          if (value !== undefined) {
+            found = true;
+            break;
+          }
+        }
+        
+        const status = found ? '✅' : '❌';
+        console.log(`${status} ${field.path}: ${field.description}`);
+        
+        if (!found) {
+          missingFields.push(field.path);
+        }
+        continue;
+      }
+      
+      // Standard field check
       const value = getNestedProperty(config, field.path);
       const status = value !== undefined ? '✅' : '❌';
       console.log(`${status} ${field.path}: ${field.description}`);
@@ -166,6 +213,62 @@ async function main() {
     if (config.cache && !config.cache.method) {
       console.log('❌ cache.method: Missing but required (should be "kv")');
       missingFields.push('cache.method');
+    }
+    
+    // Check for Origins-specific validation
+    if (config.origins && Array.isArray(config.origins) && config.origins.length > 0) {
+      console.log('\nChecking Origins configuration:');
+      
+      // Check each origin for required properties
+      for (let i = 0; i < config.origins.length; i++) {
+        const origin = config.origins[i];
+        
+        // Check name
+        if (!origin.name) {
+          console.log(`❌ origins[${i}].name: Missing required name property`);
+          missingFields.push(`origins[${i}].name`);
+        }
+        
+        // Check matcher
+        if (!origin.matcher) {
+          console.log(`❌ origins[${i}].matcher: Missing required matcher property`);
+          missingFields.push(`origins[${i}].matcher`);
+        }
+        
+        // Check sources
+        if (!origin.sources || !Array.isArray(origin.sources) || origin.sources.length === 0) {
+          console.log(`❌ origins[${i}].sources: Missing or empty sources array`);
+          missingFields.push(`origins[${i}].sources`);
+        } else {
+          // Check each source
+          for (let j = 0; j < origin.sources.length; j++) {
+            const source = origin.sources[j];
+            
+            // Check type
+            if (!source.type || !['r2', 'remote', 'fallback'].includes(source.type)) {
+              console.log(`❌ origins[${i}].sources[${j}].type: Invalid or missing source type`);
+              missingFields.push(`origins[${i}].sources[${j}].type`);
+            }
+            
+            // Check required properties per type
+            if (source.type === 'r2' && !source.bucketBinding) {
+              console.log(`❌ origins[${i}].sources[${j}].bucketBinding: Missing required bucketBinding for R2 source`);
+              missingFields.push(`origins[${i}].sources[${j}].bucketBinding`);
+            }
+            
+            if ((source.type === 'remote' || source.type === 'fallback') && !source.url) {
+              console.log(`❌ origins[${i}].sources[${j}].url: Missing required URL for ${source.type} source`);
+              missingFields.push(`origins[${i}].sources[${j}].url`);
+            }
+            
+            // Check path
+            if (!source.path) {
+              console.log(`❌ origins[${i}].sources[${j}].path: Missing required path`);
+              missingFields.push(`origins[${i}].sources[${j}].path`);
+            }
+          }
+        }
+      }
     }
     
     console.log();

@@ -66,6 +66,7 @@ export interface DiagnosticsInfo {
   // Extended diagnostics info
   derivative?: string;
   source?: string;
+  sourceUrl?: string;
   videoInfo?: {
     width?: number;
     height?: number;
@@ -91,11 +92,44 @@ export interface DiagnosticsInfo {
   finalHeaders?: Record<string, string>;
   originalRequestHeaders?: Record<string, string>;
   
+  // Origin system information
+  origin?: {
+    name: string;
+    matcher: string;
+    processPath?: boolean;
+    capturedParams?: Record<string, string>;
+  };
+  
+  sourceResolution?: {
+    type: string;
+    resolvedPath: string;
+    url?: string;
+    source?: Record<string, unknown>;
+  };
+  
+  originUrl?: string;
+  fallbackUrl?: string;
+  transformRequest?: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+  };
+  transformResponse?: {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+  };
+  
   // Special flags
   isRangeRequest?: boolean;
   isMediaContent?: boolean;
   originalRequestHadRange?: boolean;
   cachingMethod?: string;
+  
+  // Fallback information
+  fallbackApplied?: boolean;
+  fallbackReason?: string;
+  fallbackResponse?: Record<string, unknown>;
   
   // Akamai translation info
   originalAkamaiParams?: Record<string, string>;
@@ -110,6 +144,16 @@ export interface DiagnosticsInfo {
     derivativeHeight?: number | null;
     percentDifference?: string;
     mappingMethod?: string;
+  };
+  
+  // Component timing info
+  componentTiming?: Record<string, number>;
+  executionTiming?: {
+    originResolution?: number;
+    sourceResolution?: number;
+    transformation?: number;
+    caching?: number;
+    responseBuilding?: number;
   };
   
   // Additional data

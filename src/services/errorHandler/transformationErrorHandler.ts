@@ -206,7 +206,7 @@ export async function handleTransformationError({
       const adjustedOptions = { ...context.options, duration: adjustedDuration };
       try {
         const transformResult = await prepareVideoTransformation(
-          context.request, adjustedOptions, context.pathPatterns, context.debugInfo, context.env
+          context.request, adjustedOptions, context.pathPatterns ?? [], context.debugInfo, context.env
         );
         const adjustedCdnCgiUrl = transformResult.cdnCgiUrl;
 
@@ -248,7 +248,7 @@ export async function handleTransformationError({
   try {
     // Import pathUtils to find the matching pattern
     const { findMatchingPathPattern } = await import('../../utils/pathUtils');
-    matchedPattern = findMatchingPathPattern(path, context.pathPatterns);
+    matchedPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
     
     logDebug('handleTransformationError', 'Found matching pattern for fallback', { 
       hasPattern: !!matchedPattern,

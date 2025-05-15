@@ -24,6 +24,14 @@ export enum ErrorType {
   // Configuration errors - 500 range
   CONFIG_ERROR = 'CONFIG_ERROR',
   
+  // Origins errors - mixed 400/500
+  ORIGIN_NOT_FOUND = 'ORIGIN_NOT_FOUND',
+  SOURCE_RESOLUTION_FAILED = 'SOURCE_RESOLUTION_FAILED',
+  SOURCE_TYPE_NOT_SUPPORTED = 'SOURCE_TYPE_NOT_SUPPORTED',
+  ORIGIN_VALIDATION_FAILED = 'ORIGIN_VALIDATION_FAILED',
+  PATH_RESOLUTION_FAILED = 'PATH_RESOLUTION_FAILED',
+  AUTH_CONFIGURATION_ERROR = 'AUTH_CONFIGURATION_ERROR',
+  
   // Unknown errors
   UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
@@ -85,6 +93,7 @@ export class VideoTransformError extends Error {
     const notFoundErrors = [
       ErrorType.PATTERN_NOT_FOUND,
       ErrorType.RESOURCE_NOT_FOUND,
+      ErrorType.ORIGIN_NOT_FOUND,
     ];
     
     // Server errors (500 range)
@@ -93,6 +102,11 @@ export class VideoTransformError extends Error {
       ErrorType.URL_CONSTRUCTION_FAILED,
       ErrorType.FETCH_FAILED,
       ErrorType.CONFIG_ERROR,
+      ErrorType.SOURCE_RESOLUTION_FAILED,
+      ErrorType.SOURCE_TYPE_NOT_SUPPORTED,
+      ErrorType.ORIGIN_VALIDATION_FAILED,
+      ErrorType.PATH_RESOLUTION_FAILED,
+      ErrorType.AUTH_CONFIGURATION_ERROR,
     ];
     
     if (clientErrors.includes(errorType)) {
