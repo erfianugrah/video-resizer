@@ -29,11 +29,12 @@ import {
   executeTransformation,
   prepareVideoTransformation,
 } from "../../services/TransformationService";
+import { addVersionToUrl } from "../../utils/urlVersionUtils";
 import { handleTransformationError } from "../../services/errorHandlerService";
 import { generateDebugPage } from "../../services/debugService";
 import { ResponseBuilder } from "../../utils/responseBuilder";
 import type { Logger } from "pino";
-import { Origin } from "../../services/videoStorage/interfaces";
+import { Origin, Source } from "../../services/videoStorage/interfaces";
 import {
   OriginResolver,
   SourceResolutionResult,
@@ -744,8 +745,135 @@ export class TransformVideoCommand {
         const r2Object = await r2Bucket.get(sourcePath);
 
         if (!r2Object) {
-          // Object not found in R2
-          throw new Error(`Object not found in R2 bucket: ${sourcePath}`);
+          // Object not found in R2 - this should trigger fallback to other origins
+          // Create an error response that will be handled by the error handler
+          // Use status 500 to ensure it's seen as a server error and triggers fallback
+          const notFoundResponse = new Response(
+            `Object not found in R2 bucket: ${sourcePath}`,
+            {
+              status: 500,
+              headers: {
+                "Content-Type": "text/plain",
+                "X-Error-Source": "r2",
+                "X-Error-Path": sourcePath,
+                "X-Error-Type": "NotFoundInR2"
+              }
+            }
+          );
+          
+          // Find the next source to try based on priority
+          const nextSource = this.findNextSourceByPriority(origin, sourceResolution.source.priority);
+          
+          if (nextSource) {
+            // Log that we're moving to the next source
+            pinoDebug(
+              this.requestContext,
+              this.logger,
+              "TransformVideoCommand",
+              "Moving to next source by priority",
+              {
+                currentSource: sourceResolution.source.type,
+                currentPriority: sourceResolution.source.priority,
+                nextSource: nextSource.type,
+                nextPriority: nextSource.priority,
+                path: sourcePath
+              }
+            );
+            
+            // Update sourceResolution to use the next source
+            // Construct the full URL including the path for non-R2 sources
+            let fullSourceUrl: string | undefined = nextSource.url;
+            
+            // If this is a remote or fallback source, append the path
+            if ((nextSource.type === 'remote' || nextSource.type === 'fallback') && fullSourceUrl) {
+              // Build the complete URL including path - this is critical for fallback to work
+              // Ensure URL doesn't end with slash and path doesn't start with slash (to avoid double slash)
+              const baseUrl = fullSourceUrl.endsWith('/') ? fullSourceUrl.slice(0, -1) : fullSourceUrl;
+              const pathSegment = sourcePath.startsWith('/') ? sourcePath.substring(1) : sourcePath;
+              
+              // Create the full URL, preserving any version parameter
+              fullSourceUrl = `${baseUrl}/${pathSegment}`;
+              
+              // Check if we should add version parameter
+              if (options.version !== undefined) {
+                // Apply version to the URL - this will ensure the version from the original request is maintained
+                const originalUrl = fullSourceUrl;
+                fullSourceUrl = addVersionToUrl(fullSourceUrl, options.version);
+                
+                pinoDebug(
+                  this.requestContext,
+                  this.logger,
+                  "TransformVideoCommand",
+                  "Applied version parameter to fallback URL",
+                  {
+                    originalUrl,
+                    versionedUrl: fullSourceUrl,
+                    version: options.version
+                  }
+                );
+              }
+              
+              pinoDebug(
+                this.requestContext,
+                this.logger,
+                "TransformVideoCommand",
+                "Created full source URL for fallback",
+                {
+                  baseUrl,
+                  path: pathSegment,
+                  fullUrl: fullSourceUrl,
+                  hasVersion: options.version !== undefined
+                }
+              );
+            }
+            
+            const nextSourceResolution: SourceResolutionResult = {
+              ...sourceResolution,
+              source: nextSource,
+              originType: nextSource.type,
+              sourceUrl: fullSourceUrl
+            };
+            
+            // Change context.sourceResolution to the next source
+            this.context.sourceResolution = nextSourceResolution;
+            
+            // Retry with the new source
+            // Call executeWithOrigins recursively to try the next source
+            return await this.executeWithOrigins();
+          }
+          
+          // If there's no next source or the recursive call fails, fall back to error handler
+          // Handle this error through the transformation error handler
+          // which supports multi-origin fallback
+          // Make sure we're passing a properly versioned fallbackOriginUrl to the error handler
+          let fallbackOriginUrl = this.getNextSourceUrl(origin, sourceResolution.source.priority);
+          
+          // Apply version to fallback URL if needed
+          if (fallbackOriginUrl && options.version !== undefined) {
+            fallbackOriginUrl = addVersionToUrl(fallbackOriginUrl, options.version);
+            pinoDebug(
+              this.requestContext,
+              this.logger,
+              "TransformVideoCommand",
+              "Applied version to fallback URL in error handler",
+              {
+                fallbackOriginUrl,
+                version: options.version
+              }
+            );
+          }
+          
+          return await handleTransformationError({
+            errorResponse: notFoundResponse,
+            originalRequest: request,
+            context: this.context,
+            requestContext: this.requestContext,
+            diagnosticsInfo,
+            // Pass properly versioned fallback URL
+            fallbackOriginUrl,
+            cdnCgiUrl,
+            source: sourceResolution.originType,
+          });
         }
 
         // Create a response from the R2 object to pass to CDN-CGI
@@ -782,13 +910,31 @@ export class TransformVideoCommand {
       // Check if the response was successful
       if (!response.ok) {
         // Handle error with the extracted error handler
+        // Make sure we're passing a properly versioned fallbackOriginUrl
+        let fallbackOriginUrl = sourceResolution.sourceUrl || null;
+        
+        // Apply version to fallback URL if needed
+        if (fallbackOriginUrl && options.version !== undefined) {
+          fallbackOriginUrl = addVersionToUrl(fallbackOriginUrl, options.version);
+          pinoDebug(
+            this.requestContext,
+            this.logger,
+            "TransformVideoCommand",
+            "Applied version to fallback URL in CDN-CGI error handler",
+            {
+              fallbackOriginUrl,
+              version: options.version
+            }
+          );
+        }
+        
         return await handleTransformationError({
           errorResponse: response,
           originalRequest: request,
           context: this.context,
           requestContext: this.requestContext,
           diagnosticsInfo,
-          fallbackOriginUrl: sourceResolution.sourceUrl || null,
+          fallbackOriginUrl,
           cdnCgiUrl,
           source: sourceResolution.originType,
         });
@@ -931,6 +1077,55 @@ export class TransformVideoCommand {
 
       return await responseBuilder.build();
     }
+  }
+
+  /**
+   * Find the next source to try based on priority order
+   * @param origin The origin containing sources
+   * @param currentPriority The priority of the current source that failed
+   * @returns The next source to try, or null if there are no more sources
+   */
+  private findNextSourceByPriority(origin: Origin, currentPriority: number): Source | null {
+
+    // Get all sources with higher priority number (lower priority = higher precedence)
+    const higherPrioritySources = origin.sources
+      .filter(source => source.priority > currentPriority)
+      .sort((a, b) => a.priority - b.priority);
+    
+    // Return the source with the next highest priority, or null if there are none
+    return higherPrioritySources.length > 0 ? higherPrioritySources[0] : null;
+  }
+
+  /**
+   * Gets a valid URL from the current source or the next source by priority that can be used for fallback
+   * @param origin The origin containing sources
+   * @param currentPriority The priority of the current source that failed
+   * @returns A valid fallback URL or null if no valid URL is available
+   */
+  private getNextSourceUrl(origin: Origin, currentPriority: number): string | null {
+    // First check if the current source has a valid URL (for non-R2 sources)
+    const currentSource = origin.sources.find(source => source.priority === currentPriority);
+    
+    // If current source is not R2 and has a URL, use it for direct fetch from same origin
+    if (currentSource && currentSource.type !== 'r2' && currentSource.url) {
+      return currentSource.url;
+    }
+    
+    // If current source doesn't have a valid URL or is R2, find the next source
+    // Find all sources with higher priority number (lower priority = higher precedence)
+    const higherPrioritySources = origin.sources
+      .filter(source => source.priority > currentPriority)
+      .sort((a, b) => a.priority - b.priority);
+      
+    // Look for the first source with a valid URL
+    for (const source of higherPrioritySources) {
+      // Only remote and fallback sources have valid URLs
+      if ((source.type === 'remote' || source.type === 'fallback') && source.url) {
+        return source.url;
+      }
+    }
+    
+    return null;
   }
 
   /**
