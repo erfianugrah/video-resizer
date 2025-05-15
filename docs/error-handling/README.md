@@ -1,6 +1,6 @@
 # Video Resizer Error Handling
 
-*Last Updated: May 10, 2025* (Updated with implementation and error types documentation)
+*Last Updated: May 15, 2025* (Updated with transformation error handling documentation)
 
 This section provides documentation on the error handling system used in the Video Resizer.
 
@@ -8,6 +8,7 @@ This section provides documentation on the error handling system used in the Vid
 
 - [Error Handling Implementation](./implementation.md) - Detailed implementation guide
 - [Error Types](./error-types.md) - Reference for error classes and types
+- [Transformation Error Handling](./transformation-error-handling.md) - Specialized handling for transformation errors
 
 ## Error Handling Overview
 
@@ -32,4 +33,10 @@ The Video Resizer implements a comprehensive error handling system with:
    - Detailed context objects
    - Request information preservation
 
-See the [Error Handling Implementation](./implementation.md) document for detailed information on using these features.
+4. **Fallback Mechanisms**:
+   - Multi-origin fallback for resilient content delivery
+   - Pattern-specific fallbacks with authentication
+   - Direct fetch fallback for large files
+   - Storage service fallback as a last resort
+
+See the [Error Handling Implementation](./implementation.md) and [Transformation Error Handling](./transformation-error-handling.md) documents for detailed information on using these features.

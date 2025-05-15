@@ -10,6 +10,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - KV chunking for large videos beyond KV size limits
 - Background fallback caching with streaming for large videos
 - Cache versioning for invalidation without purging
+- Multi-origin fallback for improved resilience
 - Enhanced range request support for seeking and streaming
 - Client-aware responsive transformations
 - Automatic device and bandwidth detection
@@ -146,7 +147,20 @@ flowchart TD
     %% Transformation execution
     Transform --> CDN[Create cdn-cgi URL]
     CDN --> Execute[executeTransformation]
-    Execute --> FetchVid[fetchVideo.ts]
+    Execute --> TransformErr{Transform Error?}
+    TransformErr -->|No| FetchVid[fetchVideo.ts]
+    TransformErr -->|Yes| ErrorHdl[transformationErrorHandler.ts]
+    
+    %% Error fallback flow
+    ErrorHdl --> MatchPatterns[Find All Matching Origins]
+    MatchPatterns --> TryOrigins[Try Each Origin in Sequence]
+    TryOrigins --> OriginSuccess{Success?}
+    OriginSuccess -->|Yes| Return[Return Origin Content]
+    OriginSuccess -->|No| DirectFetch[Try Direct Fetch]
+    DirectFetch --> DirectSuccess{Success?}
+    DirectSuccess -->|Yes| Return
+    DirectSuccess -->|No| StorageFallback[Try Storage Service]
+    StorageFallback --> Return
     
     %% Storage backend
     FetchVid --> Storage{Storage Priority}

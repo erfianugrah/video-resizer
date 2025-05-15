@@ -486,7 +486,77 @@ try {
 
 ## Fallback Mechanisms
 
-The system implements sophisticated fallback mechanisms for graceful degradation:
+The system implements sophisticated fallback mechanisms for graceful degradation. These mechanisms ensure that video content is always served to users, even when transformation or specific origins fail.
+
+### Multi-Origin Fallback
+
+Our enhanced fallback strategy uses a tiered approach that tries multiple matching origins when one fails:
+
+1. **Find All Matching Patterns**: When transformation fails, the system identifies all matching patterns for the path
+2. **Try Each Pattern in Sequence**: Each pattern with an origin URL and authentication is tried in priority order
+3. **Direct Fetch Fallback**: If all pattern-specific fetches fail, fall back to direct fetch from source URL
+4. **Storage Service Fallback**: As a last resort, attempt to fetch from the storage service
+
+```typescript
+// In transformationErrorHandler.ts
+// Find all matching patterns for the request path
+const matchedPatterns = [];
+
+// First find the primary matching pattern
+const primaryPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
+if (primaryPattern) {
+  matchedPatterns.push(primaryPattern);
+  
+  // Then find additional patterns that also match but weren't the first match
+  for (const pattern of context.pathPatterns ?? []) {
+    if (pattern.name !== primaryPattern.name) {
+      try {
+        const regex = new RegExp(pattern.matcher);
+        if (regex.test(path)) {
+          matchedPatterns.push(pattern);
+        }
+      } catch (err) {
+        // Skip invalid patterns
+      }
+    }
+  }
+}
+
+// Try each pattern in sequence until one succeeds
+for (let i = 0; i < matchedPatterns.length; i++) {
+  const matchedPattern = matchedPatterns[i];
+  
+  if (matchedPattern && matchedPattern.originUrl && matchedPattern.auth?.enabled) {
+    // Attempt to fetch with this pattern's origin and auth
+    try {
+      // [Authentication and fetch logic]
+      
+      // If successful, return the response
+      if (fallbackResponse && fallbackResponse.ok) {
+        return new Response(fallbackResponse.body, {
+          status: fallbackResponse.status,
+          statusText: fallbackResponse.statusText,
+          headers: enhancedHeaders
+        });
+      }
+    } catch (patternFetchError) {
+      // Log error and try next pattern
+      logErrorWithContext('Error during pattern fetch', patternFetchError);
+      fallbackResponse = undefined;
+    }
+  }
+}
+
+// Fall back to direct fetch if all patterns failed
+if (!fallbackResponse && sourceUrlForDirectFetch) {
+  // [Direct fetch logic]
+}
+
+// Final fallback to storage service
+if (!fallbackResponse) {
+  // [Storage service fallback logic]
+}
+```
 
 ### Error Handling Service
 
@@ -542,7 +612,7 @@ export class ErrorHandlerService {
       throw transformError;
     }
     
-    // Try pattern-specific fallback first
+    // Try pattern-specific fallback first (now enhanced with multi-origin support)
     try {
       const response = await this.patternSpecificFallback(url, options);
       
@@ -555,7 +625,7 @@ export class ErrorHandlerService {
       // Log fallback failure
       this.logger.warn(
         { err: fallbackError, originalError: error },
-        'Pattern-specific fallback failed, trying storage service'
+        'All pattern-specific fallbacks failed, trying storage service'
       );
       
       // Try storage service as a last resort
@@ -597,7 +667,7 @@ export class ErrorHandlerService {
 }
 ```
 
-### Specialized Fallback Strategies
+### Multi-Pattern Fallback Strategy
 
 ```typescript
 // src/services/errorHandlerService.ts
@@ -605,30 +675,66 @@ private async patternSpecificFallback(
   url: string,
   options: VideoFallbackOptions
 ): Promise<Response> {
-  // Get matched pattern for URL
-  const pattern = this.configService.getPatternForPath(url);
-  if (!pattern) {
+  // Get all matched patterns for URL in priority order
+  const matchedPatterns = this.configService.getAllPatternsForPath(url);
+  if (!matchedPatterns || matchedPatterns.length === 0) {
     throw new NotFoundError(`No pattern found for path: ${url}`);
   }
   
-  // Use pattern-specific origin
-  const originUrl = pattern.originUrl || this.configService.getDefaultOrigin();
-  if (!originUrl) {
-    throw new ConfigurationError('No origin URL configured for fallback');
+  // Try each pattern in sequence
+  for (const pattern of matchedPatterns) {
+    try {
+      // Use pattern-specific origin
+      const originUrl = pattern.originUrl || this.configService.getDefaultOrigin();
+      if (!originUrl) {
+        this.logger.warn(`Skipping pattern ${pattern.name}: No origin URL configured`);
+        continue;
+      }
+      
+      // Construct full origin URL
+      const fullUrl = new URL(url.replace(pattern.match, pattern.pathExpression), originUrl);
+      
+      let response: Response;
+      
+      // Handle authentication if required
+      if (pattern.authentication === 'aws-s3-presigned-url') {
+        response = await this.fetchWithPresignedUrl(fullUrl.toString(), pattern);
+      } else if (pattern.authentication === 'aws-s3') {
+        response = await this.fetchWithAwsAuth(fullUrl.toString(), pattern);
+      } else {
+        // Direct fetch for no authentication
+        response = await fetch(fullUrl.toString());
+      }
+      
+      // If this pattern's fetch was successful, return the response
+      if (response.ok) {
+        const headers = new Headers(response.headers);
+        headers.set('X-Pattern-Fallback-Applied', 'true');
+        headers.set('X-Pattern-Name', pattern.name);
+        
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers
+        });
+      }
+      
+      // Log the failure and continue to next pattern
+      this.logger.warn(
+        { pattern: pattern.name, status: response.status },
+        'Pattern-specific fetch failed, trying next pattern'
+      );
+    } catch (error) {
+      // Log error but continue to next pattern
+      this.logger.warn(
+        { err: error, pattern: pattern.name },
+        'Error during pattern fetch, trying next pattern'
+      );
+    }
   }
   
-  // Construct full origin URL
-  const fullUrl = new URL(url.replace(pattern.match, pattern.pathExpression), originUrl);
-  
-  // Handle authentication if required
-  if (pattern.authentication === 'aws-s3-presigned-url') {
-    return this.fetchWithPresignedUrl(fullUrl.toString(), pattern);
-  } else if (pattern.authentication === 'aws-s3') {
-    return this.fetchWithAwsAuth(fullUrl.toString(), pattern);
-  }
-  
-  // Direct fetch for no authentication
-  return fetch(fullUrl.toString());
+  // If we get here, all patterns failed
+  throw new Error('All pattern-specific fallbacks failed');
 }
 ```
 
