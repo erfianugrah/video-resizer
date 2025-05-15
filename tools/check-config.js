@@ -63,8 +63,8 @@ const requiredArrayFields = [
   { path: 'video.storage.priority', description: 'Storage priority order' },
   { path: 'video.passthrough.whitelistedFormats', description: 'Formats allowed for passthrough' },
   
-  // Origins config arrays
-  { path: 'origins', description: 'Origins configuration array' },
+  // Origins config arrays (should be inside video object)
+  { path: 'video.origins.items', description: 'Origins configuration items array' },
   
   // Cache config arrays
   { path: 'cache.bypassQueryParameters', description: 'Query parameters that bypass cache' },
@@ -90,12 +90,12 @@ const requiredFields = [
   { path: 'video.derivatives', description: 'Video derivative configurations' },
   { path: 'video.validOptions', description: 'Valid video transformation options' },
   
-  // Allow either pathPatterns or origins
-  { path: 'video.pathPatterns|origins', description: 'URL path patterns or Origins for matching', 
+  // Allow either pathPatterns or video.origins
+  { path: 'video.pathPatterns|video.origins', description: 'URL path patterns or Origins for matching', 
     custom: (config) => {
       return (config.video && config.video.pathPatterns) || 
-             (config.origins && Array.isArray(config.origins)) ||
-             (config.video && config.video.origins && config.video.origins.enabled);
+             (config.video && config.video.origins && 
+              (Array.isArray(config.video.origins) || config.video.origins.enabled));
     } 
   },
   
@@ -215,30 +215,42 @@ async function main() {
       missingFields.push('cache.method');
     }
     
-    // Check for Origins-specific validation
-    if (config.origins && Array.isArray(config.origins) && config.origins.length > 0) {
+    // Check for Origins-specific validation (inside video config)
+    if (config.video?.origins) {
       console.log('\nChecking Origins configuration:');
       
+      // Handle either array format or object with items array
+      let originsArray;
+      if (Array.isArray(config.video.origins)) {
+        originsArray = config.video.origins;
+      } else if (config.video.origins.items && Array.isArray(config.video.origins.items)) {
+        originsArray = config.video.origins.items;
+      } else {
+        console.log(`❌ video.origins: Invalid format - must be array or have items array`);
+        missingFields.push(`video.origins.items`);
+        originsArray = [];
+      }
+      
       // Check each origin for required properties
-      for (let i = 0; i < config.origins.length; i++) {
-        const origin = config.origins[i];
+      for (let i = 0; i < originsArray.length; i++) {
+        const origin = originsArray[i];
         
         // Check name
         if (!origin.name) {
-          console.log(`❌ origins[${i}].name: Missing required name property`);
-          missingFields.push(`origins[${i}].name`);
+          console.log(`❌ video.origins.items[${i}].name: Missing required name property`);
+          missingFields.push(`video.origins.items[${i}].name`);
         }
         
         // Check matcher
         if (!origin.matcher) {
-          console.log(`❌ origins[${i}].matcher: Missing required matcher property`);
-          missingFields.push(`origins[${i}].matcher`);
+          console.log(`❌ video.origins.items[${i}].matcher: Missing required matcher property`);
+          missingFields.push(`video.origins.items[${i}].matcher`);
         }
         
         // Check sources
         if (!origin.sources || !Array.isArray(origin.sources) || origin.sources.length === 0) {
-          console.log(`❌ origins[${i}].sources: Missing or empty sources array`);
-          missingFields.push(`origins[${i}].sources`);
+          console.log(`❌ video.origins.items[${i}].sources: Missing or empty sources array`);
+          missingFields.push(`video.origins.items[${i}].sources`);
         } else {
           // Check each source
           for (let j = 0; j < origin.sources.length; j++) {
@@ -246,25 +258,25 @@ async function main() {
             
             // Check type
             if (!source.type || !['r2', 'remote', 'fallback'].includes(source.type)) {
-              console.log(`❌ origins[${i}].sources[${j}].type: Invalid or missing source type`);
-              missingFields.push(`origins[${i}].sources[${j}].type`);
+              console.log(`❌ video.origins.items[${i}].sources[${j}].type: Invalid or missing source type`);
+              missingFields.push(`video.origins.items[${i}].sources[${j}].type`);
             }
             
             // Check required properties per type
             if (source.type === 'r2' && !source.bucketBinding) {
-              console.log(`❌ origins[${i}].sources[${j}].bucketBinding: Missing required bucketBinding for R2 source`);
-              missingFields.push(`origins[${i}].sources[${j}].bucketBinding`);
+              console.log(`❌ video.origins.items[${i}].sources[${j}].bucketBinding: Missing required bucketBinding for R2 source`);
+              missingFields.push(`video.origins.items[${i}].sources[${j}].bucketBinding`);
             }
             
             if ((source.type === 'remote' || source.type === 'fallback') && !source.url) {
-              console.log(`❌ origins[${i}].sources[${j}].url: Missing required URL for ${source.type} source`);
-              missingFields.push(`origins[${i}].sources[${j}].url`);
+              console.log(`❌ video.origins.items[${i}].sources[${j}].url: Missing required URL for ${source.type} source`);
+              missingFields.push(`video.origins.items[${i}].sources[${j}].url`);
             }
             
             // Check path
             if (!source.path) {
-              console.log(`❌ origins[${i}].sources[${j}].path: Missing required path`);
-              missingFields.push(`origins[${i}].sources[${j}].path`);
+              console.log(`❌ video.origins.items[${i}].sources[${j}].path: Missing required path`);
+              missingFields.push(`video.origins.items[${i}].sources[${j}].path`);
             }
           }
         }

@@ -108,18 +108,24 @@ export class ResponseBuilder {
     }
     
     if (cacheConfig?.cacheability !== false) {
-      // Safely cast ttl config to our interface, defaulting to empty object
-      const ttlConfig = (cacheConfig?.ttl || {}) as CacheTTLConfig;
-      
-      // Determine TTL based on status code category
-      if (status >= 200 && status < 300) {
-        cacheTtl = ttlConfig.ok || 3600;
-      } else if (status >= 300 && status < 400) {
-        cacheTtl = ttlConfig.redirects || 60;
-      } else if (status >= 400 && status < 500) {
-        cacheTtl = ttlConfig.clientError || 10;
+      // Check if ttl is a direct number or a complex config object
+      if (typeof cacheConfig?.ttl === 'number') {
+        // Direct TTL value provided (from Origins system)
+        cacheTtl = cacheConfig.ttl;
       } else {
-        cacheTtl = ttlConfig.serverError || 0;
+        // Safely cast ttl config to our interface, defaulting to empty object
+        const ttlConfig = (cacheConfig?.ttl || {}) as CacheTTLConfig;
+        
+        // Determine TTL based on status code category
+        if (status >= 200 && status < 300) {
+          cacheTtl = ttlConfig.ok || 3600;
+        } else if (status >= 300 && status < 400) {
+          cacheTtl = ttlConfig.redirects || 60;
+        } else if (status >= 400 && status < 500) {
+          cacheTtl = ttlConfig.clientError || 10;
+        } else {
+          cacheTtl = ttlConfig.serverError || 0;
+        }
       }
       
       // Add cache headers

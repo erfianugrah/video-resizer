@@ -94,6 +94,47 @@ export function initializeConfiguration(env?: EnvVariables): ConfigurationSystem
     applyEnvironmentVariables(env);
   }
   
+  // Import and set worker config globally to ensure Origins configuration is available
+  // This is critical for the OriginConfigurationManager to access the origins configuration
+  try {
+    // Dynamic import to avoid webpack/bundler issues
+    const workerConfig = require('../../config/worker-config.json');
+    if (workerConfig && typeof workerConfig === 'object') {
+      // Set the worker config globally so it can be accessed by OriginConfigurationManager
+      if (typeof globalThis !== 'undefined') {
+        globalThis.WORKER_CONFIG = workerConfig;
+        
+        // Check for origins configuration in the video section
+        const videoOrigins = workerConfig.video?.origins;
+        const originsItems = typeof videoOrigins === 'object' && !Array.isArray(videoOrigins) 
+          ? videoOrigins.items 
+          : null;
+        
+        const originsCount = Array.isArray(originsItems) 
+          ? originsItems.length 
+          : (Array.isArray(videoOrigins) ? videoOrigins.length : 0);
+        
+        // Log success
+        logInfo('Loaded worker-config.json into globalThis.WORKER_CONFIG', {
+          version: workerConfig.version,
+          hasVideoConfig: !!workerConfig.video,
+          hasOrigins: !!videoOrigins,
+          originsType: typeof videoOrigins,
+          originsCount: originsCount,
+          originsEnabled: typeof videoOrigins === 'object' && !Array.isArray(videoOrigins) 
+            ? videoOrigins.enabled !== false
+            : true
+        });
+      }
+    }
+  } catch (err) {
+    // Log error but continue with environment defaults
+    logError('Failed to load worker-config.json', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+  }
+  
   // Return the configuration system with existing instances
   return {
     videoConfig: VideoConfigurationManager.getInstance(),

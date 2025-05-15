@@ -698,22 +698,20 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
                 tagCount: tags.length
               });
               
-              // Clone the response to modify headers
-              const newHeaders = new Headers(finalResponse.headers);
-              newHeaders.set('Cache-Tag', tags.join(','));
-              // Add Origins identifier header
-              newHeaders.set('X-Handler', 'Origins');
-              
-              finalResponse = new Response(finalResponse.body, {
-                status: finalResponse.status,
-                statusText: finalResponse.statusText,
-                headers: newHeaders
+              // Get the existing headers, don't try to clone the body which might be disturbed
+              // IMPORTANT: We'll use headers.append in the ResponseBuilder instead of cloning the Response
+              const responseBuilder = new ResponseBuilder(finalResponse, context);
+              responseBuilder.withHeaders({
+                'Cache-Tag': tags.join(','),
+                'X-Handler': 'Origins' 
               });
               
               addBreadcrumb(context, 'Cache', 'Applied Cache-Tags to final response', {
                 count: tags.length,
                 firstTags: tags.slice(0, 3).join(',')
               });
+              
+              // Continue with the response, tags will be applied in the final responseBuilder.build()
             }
           }
         } catch (tagError) {
@@ -723,29 +721,22 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
           });
         }
       } else {
-        // For non-ok responses, still add the Origins handler header
-        const newHeaders = new Headers(finalResponse.headers);
-        newHeaders.set('X-Handler', 'Origins');
-        
-        finalResponse = new Response(finalResponse.body, {
-          status: finalResponse.status,
-          statusText: finalResponse.statusText,
-          headers: newHeaders
+        // For non-ok responses, still add the Origins handler header via the ResponseBuilder
+        const responseBuilder = new ResponseBuilder(finalResponse, context);
+        responseBuilder.withHeaders({
+          'X-Handler': 'Origins'
         });
       }
       
-      // Add the origin name to the response for tracking
-      const headersWithOrigin = new Headers(finalResponse.headers);
-      headersWithOrigin.set('X-Origin', originMatch.origin.name);
-      headersWithOrigin.set('X-Source-Type', sourceResolution.originType);
-      
-      finalResponse = new Response(finalResponse.body, {
-        status: finalResponse.status,
-        statusText: finalResponse.statusText,
-        headers: headersWithOrigin
+      // Add the origin information directly via the ResponseBuilder instead of creating a new Response
+      // This avoids the "ReadableStream is disturbed" error when trying to create a new Response with the same body
+      const responseBuilder = new ResponseBuilder(finalResponse, context);
+      responseBuilder.withHeaders({
+        'X-Origin': originMatch.origin.name,
+        'X-Source-Type': sourceResolution.originType
       });
       
-      const responseBuilder = new ResponseBuilder(finalResponse, context);
+      // Use the existing ResponseBuilder instance and chain the methods
       const result = await responseBuilder.withDebugInfo().build();
       endTimedOperation(context, 'response-building');
       
