@@ -107,9 +107,8 @@ export async function handleRangeRequestForInitialAccess(
       
       try {
         // Log bypass if context is available
-        const { getCurrentContext } = await import('./requestContext');
+        const { getCurrentContext, addBreadcrumb } = await import('./requestContext');
         const { createLogger, debug } = await import('./pinoLogger');
-        const { addBreadcrumb } = await import('./requestContext');
         
         const context = getCurrentContext();
         if (context) {
@@ -178,14 +177,14 @@ export async function handleRangeRequestForInitialAccess(
 
     // Use the full URL from the original request as the cache key
     const cacheKeyForPut = request.url; // Use the full URL string
-
-    // For logging consistency, we can keep track of the pathname + search if needed
-    const url = new URL(request.url);
-    const pathAndSearchForLogging = url.pathname + url.search;
-
-    // Get the cache or open a new one
     const cache = await caches.open('VIDEO_BUFFER_CACHE');
+    let responseUsedForCachePut = false;
     
+    // Logging utilities
+    const { getCurrentContext, addBreadcrumb } = await import('./requestContext');
+    const { createLogger, debug, error: logErrorPino } = await import('./pinoLogger');
+    const context = getCurrentContext();
+
     // In a real implementation, we would determine the TTL from config
     // But since we can't directly import those functions without creating circular dependencies
     // And the Cache API doesn't directly support TTL, we'll focus on storing the video
@@ -201,19 +200,52 @@ export async function handleRangeRequestForInitialAccess(
       }
     }
     
-    // Use proper logging utility
-    try {
-      // Get request context if available
-      const { getCurrentContext } = await import('./requestContext');
-      const { createLogger, debug } = await import('./pinoLogger');
+    // For logging consistency, we can keep track of the pathname + search if needed
+    const url = new URL(request.url);
+    const pathAndSearchForLogging = url.pathname + url.search;
+    
+    // Get the current range header before any operations
+    const rangeHeader = request.headers.get('Range');
+    
+    // Only attempt to cache 200 OK responses that have a body
+    if (originalResponse.status === 200 && originalResponse.body) {
+      // First, prepare a properly TTL-enabled response
+      // Calculate TTL from Cache-Control header for proper HTTP caching
+      let ttl = 3600; // Default 1 hour
+      const cacheControl = originalResponse.headers.get('Cache-Control');
+      if (cacheControl && cacheControl.includes('max-age=')) {
+        const match = cacheControl.match(/max-age=(\d+)/);
+        if (match && match[1]) {
+          ttl = parseInt(match[1], 10);
+        }
+      }
       
-      const context = getCurrentContext();
+      // Create a response that includes current date and age headers
+      // This enables proper HTTP caching with TTL countdown
+      const enhancedHeaders = new Headers(originalResponse.headers);
+      enhancedHeaders.set('Date', new Date().toUTCString());
+      enhancedHeaders.set('Age', '0'); // Start with fresh content
+      
+      // Make sure Cache-Control is properly set if not already
+      if (!cacheControl || !cacheControl.includes('max-age=')) {
+        enhancedHeaders.set('Cache-Control', `public, max-age=${ttl}`);
+      }
+      
+      // Create a response for cache without excessive cloning
+      // Only clone once and reuse the stream efficiently
+      const clonedResponse = originalResponse.clone();
+      const responseToCache = new Response(clonedResponse.body, {
+        status: originalResponse.status,
+        statusText: originalResponse.statusText,
+        headers: enhancedHeaders
+      });
+      
+      responseUsedForCachePut = true; // Mark that we are attempting to use a stream for cache.put
+      
       if (context) {
         const logger = createLogger(context);
-        const { addBreadcrumb } = await import('./requestContext');
-        
         // Add breadcrumb for tracking
-        addBreadcrumb(context, 'CacheAPI', 'Storing video in Cache API for range support', {
+        addBreadcrumb(context, 'CacheAPI', 'Preparing to store video in Cache API for range support', {
           status: originalResponse.status,
           contentType: originalResponse.headers.get('Content-Type'),
           approximateTtl: ttl,
@@ -228,105 +260,284 @@ export async function handleRangeRequestForInitialAccess(
           approximateTtl: ttl,
           note: 'Cache API entries expire when worker restarts, KV provides persistent storage'
         });
+      } else {
+        // Fall back to console if context is not available
+        console.debug('Cache API storage with TTL alignment:', {
+          status: originalResponse.status,
+          contentType: originalResponse.headers.get('Content-Type'),
+          approximateTtl: ttl
+        });
       }
-    } catch (logError) {
-      // Fall back to console if logging utilities fail
-      console.debug('Cache API storage with TTL alignment:', {
+      
+      try {
+        // Use the CLONED response for cache.put
+        await cache.put(cacheKeyForPut, responseToCache);
+        if (context) {
+          const logger = createLogger(context);
+          debug(context, logger, 'CacheAPI', 'Successfully stored response in Cache API', { 
+            cacheKey: cacheKeyForPut 
+          });
+        }
+      } catch (cachePutError) {
+        responseUsedForCachePut = false; // Cache put failed, stream was not fully consumed by *this* operation on the clone
+        if (context) {
+          const logger = createLogger(context);
+          logErrorPino(context, logger, 'CacheAPI', 'Error storing in Cache API', {
+            error: cachePutError instanceof Error ? cachePutError.message : String(cachePutError),
+            cacheKey: cacheKeyForPut,
+          });
+        } else {
+          // Log warning - we should never get here if the videoHandler is properly cloning before range handling
+          console.warn('Error storing in Cache API:', {
+            error: cachePutError instanceof Error ? cachePutError.message : String(cachePutError),
+            status: originalResponse.status,
+            url: cacheKeyForPut
+          });
+        }
+        // If cache.put fails, we will proceed to try cache.match,
+        // and if that fails, we'll fall back to originalResponse.
+        // Since we used a clone for the failed cache.put, originalResponse.body *should* still be intact.
+      }
+    } else if (context) {
+      // Log warning - we should never get here if the videoHandler is properly cloning before range handling
+      const logger = createLogger(context);
+      debug(context, logger, 'CacheAPI', 'Skipping Cache API storage for non-200 response or no body', {
         status: originalResponse.status,
-        contentType: originalResponse.headers.get('Content-Type'),
-        approximateTtl: ttl
+        hasBody: !!originalResponse.body,
+        cacheKey: cacheKeyForPut
+      });
+    } else {
+      console.warn('Skipping Cache API storage for non-200 response or no body:', {
+        status: originalResponse.status,
+        hasBody: !!originalResponse.body,
+        url: cacheKeyForPut
       });
     }
     
-    try {
-      // Store the full response in the cache using the full URL as the key
-      // Only cache 200 OK responses, NEVER 206 Partial Content responses
-      if (originalResponse.status === 200) {
-        // Important: originalResponse is now consumed by this operation and can't be used again!
-        await cache.put(cacheKeyForPut, originalResponse);
-      } else {
-        // Log warning - we should never get here if the videoHandler is properly cloning before range handling
-        console.warn('Skipping Cache API storage for non-200 response:', {
-          status: originalResponse.status,
-          url: cacheKeyForPut
-        });
-      }
-    } catch (cacheError) {
-      // Log the cache error
-      try {
-        const { getCurrentContext } = await import('./requestContext');
-        const { createLogger, error } = await import('./pinoLogger');
-        
-        const context = getCurrentContext();
-        if (context) {
-          const logger = createLogger(context);
-          error(context, logger, 'CacheAPI', 'Error storing in Cache API', {
-            error: cacheError instanceof Error ? cacheError.message : String(cacheError),
-            status: originalResponse.status,
-            contentType: originalResponse.headers.get('Content-Type'),
-            contentLength: originalResponse.headers.get('Content-Length')
-          });
-        }
-      } catch (logError) {
-        // Silent fail - logging should not break function
-      }
-      
-      // If we fail to store in cache, create a fresh response to return
-      // This is needed because originalResponse is now consumed
-      return new Response('Error caching response', { status: 500 });
-    }
-    
-    // If this is a range request, use cache.match with ignoreSearch: false to respect ranges
-    const rangeHeader = request.headers.get('Range');
+    // ALWAYS try to serve from cache after the put attempt.
+    // cache.match() returns a NEW Response with a fresh, readable stream.
     if (rangeHeader) {
-      // Create a new request with the same URL and the Range header
       const rangeRequest = new Request(request.url, {
-        headers: new Headers({
+        headers: new Headers({ 
           'Range': rangeHeader,
           // Preserve any other important headers
           'Accept': request.headers.get('Accept') || '*/*',
           'Accept-Encoding': request.headers.get('Accept-Encoding') || ''
-        })
+        }),
       });
-      
-      // Match the range request against the cached response
-      // The Cache API automatically handles range requests!
-      const rangeResponse = await cache.match(rangeRequest);
-      
-      if (rangeResponse) {
-        try {
-          // Add breadcrumb for successful range request handling
-          const { getCurrentContext } = await import('./requestContext');
-          const { addBreadcrumb } = await import('./requestContext');
+      const rangeResponseFromCache = await cache.match(rangeRequest);
+      if (rangeResponseFromCache) {
+        // Update Age header for proper TTL countdown
+        const ageHeader = rangeResponseFromCache.headers.get('Age');
+        const dateHeader = rangeResponseFromCache.headers.get('Date');
+        const newHeaders = new Headers(rangeResponseFromCache.headers);
+        
+        if (dateHeader) {
+          // Calculate the correct Age value
+          const dateValue = new Date(dateHeader).getTime();
+          const currentTime = Date.now();
+          const ageInSeconds = Math.floor((currentTime - dateValue) / 1000);
           
-          const context = getCurrentContext();
-          if (context) {
-            addBreadcrumb(context, 'CacheAPI', 'Successfully handled range request', {
-              range: rangeHeader,
-              status: rangeResponse.status,
-              contentRange: rangeResponse.headers.get('Content-Range'),
-              contentLength: rangeResponse.headers.get('Content-Length'),
-              cacheKey: cacheKeyForPut,
-              path: pathAndSearchForLogging
-            });
+          // Start with existing Age value if present, otherwise use calculated age
+          let newAge = ageInSeconds;
+          if (ageHeader) {
+            newAge = Math.max(parseInt(ageHeader, 10), ageInSeconds);
           }
-        } catch (logError) {
-          // Ignore logging errors - don't break main functionality
+          
+          // Set updated Age header
+          newHeaders.set('Age', newAge.toString());
+        } else {
+          // If no Date header exists, set a default Age increment
+          const currentAge = ageHeader ? parseInt(ageHeader, 10) : 0;
+          newHeaders.set('Age', (currentAge + 10).toString()); // Add 10 seconds as default increment
+          // Also add a Date header to enable proper age calculation in future
+          newHeaders.set('Date', new Date().toUTCString());
         }
         
-        return rangeResponse;
+        // Create a new response with updated headers
+        // Also incorporate max-age countdown based on the Age header
+        // Calculate remaining TTL by checking Cache-Control max-age against Age
+        const cacheControl = newHeaders.get('Cache-Control');
+        if (cacheControl && cacheControl.includes('max-age=')) {
+          const match = cacheControl.match(/max-age=(\d+)/);
+          if (match && match[1]) {
+            const maxAge = parseInt(match[1], 10);
+            const age = parseInt(newHeaders.get('Age') || '0', 10);
+            
+            // Calculate remaining TTL
+            const remainingTtl = Math.max(0, maxAge - age);
+            
+            // Update Cache-Control header with the remaining TTL
+            newHeaders.set('Cache-Control', `public, max-age=${remainingTtl}`);
+            
+            if (context) {
+              const logger = createLogger(context);
+              debug(context, logger, 'CacheAPI', 'Updated Cache-Control with remaining TTL for range request', {
+                originalMaxAge: maxAge,
+                age: age,
+                remainingTtl: remainingTtl,
+                range: rangeHeader
+              });
+            }
+          }
+        }
+        
+        const updatedResponse = new Response(rangeResponseFromCache.body, {
+          status: rangeResponseFromCache.status,
+          statusText: rangeResponseFromCache.statusText,
+          headers: newHeaders
+        });
+        
+        if (context) {
+          addBreadcrumb(context, 'CacheAPI', 'Serving ranged response from Cache API with updated Age', {
+            range: rangeHeader, 
+            status: updatedResponse.status, 
+            contentRange: updatedResponse.headers.get('Content-Range'),
+            contentLength: updatedResponse.headers.get('Content-Length'),
+            age: updatedResponse.headers.get('Age'),
+            cacheKey: cacheKeyForPut,
+            path: pathAndSearchForLogging
+          });
+        }
+        return updatedResponse;
+      }
+      // If ranged request is not found in cache (e.g. cache.put failed or item expired quickly)
+      // We'll fall through to try a full match, or eventually originalResponse.
+      if (context) {
+        const logger = createLogger(context);
+        debug(context, logger, 'CacheAPI', 'Ranged request not found in Cache API, will try full match or fallback.', { 
+          range: rangeHeader, 
+          cacheKey: cacheKeyForPut 
+        });
+      }
+    }
+
+    // Attempt to match the full request (non-ranged or if ranged failed above)
+    // Use a new Request object for cache.match to ensure no unintended header interference.
+    const fullRequestForMatch = new Request(cacheKeyForPut);
+    const fullResponseFromCache = await cache.match(fullRequestForMatch);
+    if (fullResponseFromCache) {
+      // Update Age header for proper TTL countdown, same as for ranged response
+      const ageHeader = fullResponseFromCache.headers.get('Age');
+      const dateHeader = fullResponseFromCache.headers.get('Date');
+      const newHeaders = new Headers(fullResponseFromCache.headers);
+      
+      if (dateHeader) {
+        // Calculate the correct Age value
+        const dateValue = new Date(dateHeader).getTime();
+        const currentTime = Date.now();
+        const ageInSeconds = Math.floor((currentTime - dateValue) / 1000);
+        
+        // Start with existing Age value if present, otherwise use calculated age
+        let newAge = ageInSeconds;
+        if (ageHeader) {
+          newAge = Math.max(parseInt(ageHeader, 10), ageInSeconds);
+        }
+        
+        // Set updated Age header
+        newHeaders.set('Age', newAge.toString());
+      } else {
+        // If no Date header exists, set a default Age increment
+        const currentAge = ageHeader ? parseInt(ageHeader, 10) : 0;
+        newHeaders.set('Age', (currentAge + 10).toString()); // Add 10 seconds as default increment
+        // Also add a Date header to enable proper age calculation in future
+        newHeaders.set('Date', new Date().toUTCString());
+      }
+      
+      // Create a new response with updated headers
+      // Also incorporate max-age countdown based on the Age header
+      // Calculate remaining TTL by checking Cache-Control max-age against Age
+      const cacheControl = newHeaders.get('Cache-Control');
+      if (cacheControl && cacheControl.includes('max-age=')) {
+        const match = cacheControl.match(/max-age=(\d+)/);
+        if (match && match[1]) {
+          const maxAge = parseInt(match[1], 10);
+          const age = parseInt(newHeaders.get('Age') || '0', 10);
+          
+          // Calculate remaining TTL
+          const remainingTtl = Math.max(0, maxAge - age);
+          
+          // Update Cache-Control header with the remaining TTL
+          newHeaders.set('Cache-Control', `public, max-age=${remainingTtl}`);
+          
+          if (context) {
+            const logger = createLogger(context);
+            debug(context, logger, 'CacheAPI', 'Updated Cache-Control with remaining TTL', {
+              originalMaxAge: maxAge,
+              age: age,
+              remainingTtl: remainingTtl
+            });
+          }
+        }
+      }
+      
+      const updatedResponse = new Response(fullResponseFromCache.body, {
+        status: fullResponseFromCache.status,
+        statusText: fullResponseFromCache.statusText,
+        headers: newHeaders
+      });
+      
+      if (context) {
+        addBreadcrumb(context, 'CacheAPI', 'Serving full response from Cache API with updated Age', {
+          status: updatedResponse.status,
+          age: updatedResponse.headers.get('Age'),
+          cacheKey: cacheKeyForPut
+        });
+      }
+      return updatedResponse;
+    }
+
+    // --- Fallback to originalResponse ---
+    // This section is reached if:
+    // 1. The originalResponse was not cacheable (e.g., not status 200).
+    // 2. Caching was attempted (for a 200 response) but then cache.match failed for both ranged and full requests.
+    // Since we used a clone for cache.put(), originalResponse.body *should* still be readable.
+    if (context) {
+      const logger = createLogger(context);
+      addBreadcrumb(context, 'CacheAPI', 'Cache API miss for all attempts, falling back to originalResponse.', {
+        originalStatus: originalResponse.status,
+        cacheKey: cacheKeyForPut,
+        wasCachePutAttempted: responseUsedForCachePut, // Indicates if the clone's stream was given to cache.put
+        hasRangeHeader: !!rangeHeader
+      });
+      debug(context, logger, 'CacheAPI', 'Falling back to originalResponse after Cache API miss.', {
+        cacheKey: cacheKeyForPut,
+        originalStatus: originalResponse.status
+      });
+    }
+    
+    // If this is a range request and we had to fall back to originalResponse,
+    // we should handle the range request directly on the original response
+    if (rangeHeader && originalResponse.status === 200) {
+      try {
+        const { handleRangeRequest } = await import('./streamUtils');
+        if (context) {
+          const logger = createLogger(context);
+          debug(context, logger, 'CacheAPI', 'Handling range request on fallback originalResponse', {
+            range: rangeHeader,
+            contentType: originalResponse.headers.get('Content-Type')
+          });
+        }
+        
+        return await handleRangeRequest(originalResponse, rangeHeader, {
+          bypassCacheAPI: false,
+          preserveHeaders: true,
+          handlerTag: 'CacheAPI-Miss-Range-Handler'
+        });
+      } catch (rangeError) {
+        if (context) {
+          const logger = createLogger(context);
+          logErrorPino(context, logger, 'CacheAPI', 'Error handling range on fallback response', {
+            error: rangeError instanceof Error ? rangeError.message : String(rangeError),
+            stack: rangeError instanceof Error ? rangeError.stack : undefined
+          });
+        }
+        // Still fall back to originalResponse if range handling fails
       }
     }
     
-    // If this is not a range request or if range request didn't work,
-    // return the original response (cache.match will handle Range headers automatically)
-    const cachedResponse = await cache.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    
-    // Fallback to original response if cache fails
     return originalResponse;
+    
   } catch (error) {
     // If anything goes wrong, fall back to the original response
     try {
@@ -337,16 +548,16 @@ export async function handleRangeRequestForInitialAccess(
       const context = getCurrentContext();
       if (context) {
         const logger = createLogger(context);
-        logError(context, logger, 'CacheAPI', 'Error handling range request with Cache API', {
+        logError(context, logger, 'CacheAPI', 'Critical error in handleRangeRequestForInitialAccess', {
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined
         });
       } else {
-        console.error('Error handling range request with Cache API:', error);
+        console.error('Critical error in handleRangeRequestForInitialAccess (no context):', error);
       }
     } catch (logError) {
       // Fall back to console if logging utilities fail
-      console.error('Error handling range request with Cache API:', error);
+      console.error('Critical error in handleRangeRequestForInitialAccess:', error);
     }
     
     // If we still have a range request, try the manual method as fallback
@@ -410,6 +621,8 @@ export async function handleRangeRequestForInitialAccess(
       }
     }
     
+    // Final fallback: return the originalResponse.
+    // Its stream state is uncertain if an error occurred mid-logic, but it's the best we have.
     return originalResponse;
   }
 }

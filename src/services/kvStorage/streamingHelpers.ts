@@ -28,6 +28,7 @@ export async function streamChunkedRangeResponse(
     
     // Pre-calculate which chunks we'll need to fetch for this range
     // This allows skipping unnecessary chunks more efficiently
+    // Use a more memory-efficient approach to track needed chunks
     const chunksToFetch: { 
       index: number; 
       key: string; 
@@ -187,8 +188,9 @@ export async function streamChunkedRangeResponse(
         continue;
       }
       
-      // Prepare the data slice to send
-      const chunkSliceToSend = chunkArrayBuffer.slice(chunkInfo.sliceStart, chunkInfo.sliceEnd);
+      // Prepare the data slice to send - use Uint8Array.subarray instead of slice to avoid copy
+      const chunkData = new Uint8Array(chunkArrayBuffer);
+      const chunkSliceToSend = chunkData.subarray(chunkInfo.sliceStart, chunkInfo.sliceEnd);
       
       // Attempt to write to the stream, handling potential errors
       try {
@@ -206,21 +208,96 @@ export async function streamChunkedRangeResponse(
           break;
         }
 
-        // Set a timeout for the write operation to detect stalled clients
-        const writePromise = writer.write(new Uint8Array(chunkSliceToSend));
-        const writeTimeoutMs = Math.max(5000, chunkSliceToSend.byteLength / 5000); // ~5MB/s minimum rate expected
-
-        // Create a timeout promise that resolves to an error after writeTimeoutMs
-        const writeTimeoutPromise = new Promise<void>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error('Write operation timed out, client may be stalled'));
-          }, writeTimeoutMs);
-        });
-
-        // Race the write operation against the timeout
-        await Promise.race([writePromise, writeTimeoutPromise]);
-
-        bytesSentForRange += chunkSliceToSend.byteLength;
+        // CRITICAL OPTIMIZATION: Process in smaller segments to avoid memory pressure
+        // We'll process in 512KB segments for range requests to prevent memory issues
+        const SEGMENT_SIZE = 512 * 1024; // 512KB segments
+        const totalSegments = Math.ceil(chunkSliceToSend.byteLength / SEGMENT_SIZE);
+        let segmentsSent = 0;
+        
+        for (let i = 0; i < totalSegments; i++) {
+          // Check for abort conditions between segments
+          if (isStreamAborted || isStreamClosed) {
+            logDebug('[GET_VIDEO] Stream was closed/aborted during segmented range write', {
+              chunkKey: chunkInfo.key,
+              segment: i,
+              totalSegments
+            });
+            break;
+          }
+          
+          // Calculate segment boundaries
+          const start = i * SEGMENT_SIZE;
+          const end = Math.min((i + 1) * SEGMENT_SIZE, chunkSliceToSend.byteLength);
+          const segmentSize = end - start;
+          
+          // Create a view of just this segment (no copying)
+          const segment = chunkSliceToSend.subarray(start, end);
+          
+          // Set an adaptive timeout for the segment write operation
+          // Scale timeout based on segment size to handle network latency
+          const writeTimeoutMs = Math.max(2000, segmentSize / 128); // ~128KB/sec minimum rate
+          
+          // Create a timeout promise that resolves to an error after writeTimeoutMs
+          const writeTimeoutPromise = new Promise<void>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Segment write operation timed out'));
+            }, writeTimeoutMs);
+          });
+          
+          try {
+            // Check writer status before attempting to write
+            if (writer.desiredSize === null) {
+              // Writer is already closed or being closed
+              logDebug('[GET_VIDEO] Writer is already closed or being closed', {
+                chunkKey: chunkInfo.key,
+                segment: i,
+                totalSegments
+              });
+              isStreamAborted = true;
+              break;
+            }
+            
+            // Race the write operation against the timeout
+            await Promise.race([writer.write(segment), writeTimeoutPromise]);
+            
+            // Check writer status after write (in case it was closed during the write)
+            if (writer.desiredSize === null) {
+              logDebug('[GET_VIDEO] Writer was closed during write operation', {
+                chunkKey: chunkInfo.key,
+                segment: i,
+                totalSegments
+              });
+              isStreamAborted = true;
+              break;
+            }
+            
+            segmentsSent++;
+          } catch (segmentError) {
+            logDebug('[GET_VIDEO] Range segment write failed', {
+              chunkKey: chunkInfo.key,
+              segment: i,
+              totalSegments,
+              error: segmentError instanceof Error ? segmentError.message : String(segmentError)
+            });
+            
+            // Stop processing this chunk on first segment error
+            isStreamAborted = true;
+            try {
+              // Only attempt to abort if the stream hasn't been closed
+              if (!isStreamClosed) {
+                writer.abort(segmentError);
+              }
+            } catch (abortError) {
+              // Ignore abort errors
+            }
+            break;
+          }
+        }
+        
+        // Only count bytes if all segments were sent successfully
+        if (segmentsSent === totalSegments) {
+          bytesSentForRange += chunkSliceToSend.byteLength;
+        }
 
         // Log progress for large ranges
         if (bytesSentForRange % 1000000 === 0) { // Log every ~1MB
@@ -300,11 +377,26 @@ export async function streamChunkedRangeResponse(
       try {
         isStreamAborted = true;
         logDebug('[GET_VIDEO] Aborting stream due to error', {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          isTransformStreamError: error instanceof Error && (
+            error.message.includes('TransformStream') || 
+            error.message.includes('readable side')
+          )
         });
-        writer.abort(error);
+        
+        // Check writer state before attempting to abort
+        if (writer.desiredSize !== null) {
+          writer.abort(error);
+        } else {
+          logDebug('[GET_VIDEO] Skipping writer abort because writer is already closed', {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       } catch (abortError) {
         // Ignore errors from aborting
+        logDebug('[GET_VIDEO] Error occurred during writer abort', {
+          error: abortError instanceof Error ? abortError.message : String(abortError)
+        });
       }
     }
     
@@ -465,21 +557,98 @@ export async function streamFullChunkedResponse(
           break;
         }
 
-        // Set a timeout for the write operation to detect stalled clients
-        const writePromise = writer.write(new Uint8Array(chunkArrayBuffer));
-        const writeTimeoutMs = Math.max(5000, chunkArrayBuffer.byteLength / 5000); // ~5MB/s minimum rate expected
-
-        // Create a timeout promise that resolves to an error after writeTimeoutMs
-        const writeTimeoutPromise = new Promise<void>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error('Write operation timed out, client may be stalled'));
-          }, writeTimeoutMs);
-        });
-
-        // Race the write operation against the timeout
-        await Promise.race([writePromise, writeTimeoutPromise]);
-
-        totalBytesSent += chunkArrayBuffer.byteLength;
+        // CRITICAL OPTIMIZATION: Process chunk in smaller segments to avoid memory pressure
+        // We'll process chunks in 1MB segments to prevent memory buildup
+        const SEGMENT_SIZE = 1024 * 1024; // 1MB segments
+        const totalSegments = Math.ceil(chunkArrayBuffer.byteLength / SEGMENT_SIZE);
+        let segmentsSent = 0;
+        
+        for (let i = 0; i < totalSegments; i++) {
+          // Check for abort conditions between segments
+          if (isStreamAborted || isStreamClosed) {
+            logDebug('[GET_VIDEO] Stream was closed/aborted during segmented write', {
+              chunkKey,
+              segment: i,
+              totalSegments
+            });
+            break;
+          }
+          
+          // Calculate segment boundaries
+          const start = i * SEGMENT_SIZE;
+          const end = Math.min((i + 1) * SEGMENT_SIZE, chunkArrayBuffer.byteLength);
+          const segmentSize = end - start;
+          
+          // Create a view (not a copy) of just this segment
+          // Use a more efficient approach that avoids copying data
+          const chunkData = new Uint8Array(chunkArrayBuffer);
+          const segment = chunkData.subarray(start, end);
+          
+          // Set an adaptive timeout for the segment write operation
+          // Scale timeout more generously for full content streaming
+          const writeTimeoutMs = Math.max(3000, segmentSize / 64); // ~64KB/sec minimum rate
+          
+          // Create a timeout promise that resolves to an error after writeTimeoutMs
+          const writeTimeoutPromise = new Promise<void>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Segment write operation timed out'));
+            }, writeTimeoutMs);
+          });
+          
+          try {
+            // Check writer status before attempting to write
+            if (writer.desiredSize === null) {
+              // Writer is already closed or being closed
+              logDebug('[GET_VIDEO] Writer is already closed or being closed', {
+                chunkKey,
+                segment: i,
+                totalSegments
+              });
+              isStreamAborted = true;
+              break;
+            }
+            
+            // Race the write operation against the timeout
+            await Promise.race([writer.write(segment), writeTimeoutPromise]);
+            
+            // Check writer status after write (in case it was closed during the write)
+            if (writer.desiredSize === null) {
+              logDebug('[GET_VIDEO] Writer was closed during write operation', {
+                chunkKey,
+                segment: i,
+                totalSegments
+              });
+              isStreamAborted = true;
+              break;
+            }
+            
+            segmentsSent++;
+          } catch (segmentError) {
+            logDebug('[GET_VIDEO] Segment write failed', {
+              chunkKey,
+              segment: i,
+              totalSegments,
+              error: segmentError instanceof Error ? segmentError.message : String(segmentError)
+            });
+            
+            // Stop processing this chunk on first segment error
+            isStreamAborted = true;
+            try {
+              // Only attempt to abort if the stream hasn't been closed
+              if (!isStreamClosed) {
+                writer.abort(segmentError);
+              }
+            } catch (abortError) {
+              // Ignore abort errors
+            }
+            break;
+          }
+        }
+        
+        // Only count bytes if all segments were sent successfully
+        if (segmentsSent === totalSegments) {
+          totalBytesSent += chunkArrayBuffer.byteLength;
+        }
 
         // Log progress for large videos
         if (totalBytesSent % 5000000 === 0) { // Log every ~5MB
@@ -558,11 +727,26 @@ export async function streamFullChunkedResponse(
       try {
         isStreamAborted = true;
         logDebug('[GET_VIDEO] Aborting stream due to error', {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          isTransformStreamError: error instanceof Error && (
+            error.message.includes('TransformStream') || 
+            error.message.includes('readable side')
+          )
         });
-        writer.abort(error);
+        
+        // Check writer state before attempting to abort
+        if (writer.desiredSize !== null) {
+          writer.abort(error);
+        } else {
+          logDebug('[GET_VIDEO] Skipping writer abort because writer is already closed', {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       } catch (abortError) {
         // Ignore errors from aborting
+        logDebug('[GET_VIDEO] Error occurred during writer abort', {
+          error: abortError instanceof Error ? abortError.message : String(abortError)
+        });
       }
     }
     

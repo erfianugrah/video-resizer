@@ -55,11 +55,12 @@ export async function processRangeRequest(
       });
     }
     
-    // Create streaming pipeline
-    const { readable, writable } = new TransformStream();
+    // Use IdentityTransformStream for optimal binary streaming with BYOB support
+    // This is more efficient than TransformStream for binary data
+    const { readable, writable } = new IdentityTransformStream();
     const writer = writable.getWriter();
     
-    // Clone the response to avoid consuming it
+    // Clone the response only once to avoid consuming it
     const clonedResponse = response.clone();
     const reader = clonedResponse.body?.getReader();
     
@@ -89,12 +90,84 @@ export async function processRangeRequest(
               const startOffset = Math.max(0, start - chunkStart);
               const endOffset = Math.min(chunkSize, end - chunkStart + 1);
               
-              // Extract the relevant portion
-              const relevantPortion = chunk.slice(startOffset, endOffset);
+              // Use subarray() which creates a view of the original data without copying
+              // This avoids memory overhead of creating new arrays while preventing detached ArrayBuffer issues
+              const relevantPortion = chunk.subarray(startOffset, endOffset);
               
-              // Write to the output stream
-              await writer.write(relevantPortion);
-              bytesWritten += relevantPortion.byteLength;
+              // CRITICAL OPTIMIZATION: Process in smaller segments to avoid memory pressure
+              // For video streams, always write in small chunks to prevent memory issues with concurrent requests
+              const SEGMENT_SIZE = 256 * 1024; // 256KB segments for stream processing
+              const totalSegments = Math.ceil(relevantPortion.byteLength / SEGMENT_SIZE);
+              
+              // Track bytes actually written for this portion
+              let portionBytesWritten = 0;
+              
+              for (let i = 0; i < totalSegments; i++) {
+                // Calculate segment boundaries
+                const start = i * SEGMENT_SIZE;
+                const end = Math.min((i + 1) * SEGMENT_SIZE, relevantPortion.byteLength);
+                const segmentSize = end - start;
+                
+                // Create a view of just this segment (no copying)
+                const segment = relevantPortion.subarray(start, end);
+                
+                try {
+                  // Check writer status before attempting to write
+                  if (writer.desiredSize === null) {
+                    // Writer is already closed or being closed
+                    if (logger && requestContext) {
+                      debug(requestContext, logger, 'StreamUtils', 'Writer is already closed or being closed', {
+                        segment: i,
+                        totalSegments,
+                        start,
+                        end
+                      });
+                    }
+                    throw new Error('Writer is already closed or being closed');
+                  }
+                  
+                  // Write segment with adaptive timeout based on segment size
+                  // Larger segments need more time to write, especially with network latency
+                  const timeoutMs = Math.max(2000, segment.byteLength / 128); // ~128KB/sec minimum
+                  
+                  await Promise.race([
+                    writer.write(segment),
+                    new Promise<void>((_, reject) => 
+                      setTimeout(() => reject(new Error('Segment write timed out')), timeoutMs)
+                    )
+                  ]);
+                  
+                  // Check writer status after write (in case it was closed during the write)
+                  if (writer.desiredSize === null) {
+                    if (logger && requestContext) {
+                      debug(requestContext, logger, 'StreamUtils', 'Writer was closed during write operation', {
+                        segment: i,
+                        totalSegments,
+                        start,
+                        end
+                      });
+                    }
+                    throw new Error('Writer was closed during write operation');
+                  }
+                  
+                  portionBytesWritten += segmentSize;
+                } catch (err) {
+                  // If writing fails, we'll exit the loop and the function will handle cleanup
+                  if (logger && requestContext) {
+                    error(requestContext, logger, 'StreamUtils', 'Error writing stream segment', {
+                      error: err instanceof Error ? err.message : String(err),
+                      segment: i,
+                      totalSegments
+                    });
+                  } else {
+                    console.error('Error writing stream segment:', err);
+                  }
+                  throw err; // Let the outer try/catch handle this
+                }
+              }
+              
+              // Track total bytes successfully written
+              bytesWritten += portionBytesWritten;
             }
             
             // Track total bytes processed
@@ -135,15 +208,39 @@ export async function processRangeRequest(
     
     // Start processing in the background
     if (requestContext?.executionContext?.waitUntil) {
-      requestContext.executionContext.waitUntil(streamProcessing().catch(err => {
-        if (logger) {
-          error(requestContext, logger, 'StreamUtils', 'Background stream processing error', {
-            error: err instanceof Error ? err.message : String(err)
-          });
-        } else {
-          console.error('Background stream processing error:', err);
-        }
-      }));
+      requestContext.executionContext.waitUntil(
+        streamProcessing().catch(err => {
+          if (logger) {
+            error(requestContext, logger, 'StreamUtils', 'Background stream processing error', {
+              error: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+              isTransformStreamError: err instanceof Error && err.message.includes('TransformStream'),
+              range: `bytes=${start}-${end}`
+            });
+          } else {
+            console.error('Background stream processing error:', err);
+          }
+          
+          // Attempt to abort the writer if there's a TransformStream error
+          if (err instanceof Error && 
+              (err.message.includes('TransformStream') || 
+               err.message.includes('readable side') || 
+               err.message.includes('Writer is already closed'))) {
+            try {
+              if (writer.desiredSize !== null) {
+                writer.abort(err);
+              }
+            } catch (abortError) {
+              // Ignore abort errors
+              if (logger && requestContext) {
+                debug(requestContext, logger, 'StreamUtils', 'Failed to abort writer after error', {
+                  abortError: abortError instanceof Error ? abortError.message : String(abortError)
+                });
+              }
+            }
+          }
+        })
+      );
     } else {
       void streamProcessing();
     }
