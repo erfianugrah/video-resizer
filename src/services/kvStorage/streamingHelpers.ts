@@ -6,6 +6,7 @@ import { STANDARD_CHUNK_SIZE, MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY } from './const
 import { generateCacheTags } from '../videoStorage/cacheTags';
 import { storeWithRetry } from './storageHelpers';
 import { createBaseMetadata } from './storageHelpers';
+import { withTimeout } from '../../utils/streamUtils';
 
 /**
  * Helper function to stream a range of a chunked video with improved robustness
@@ -237,13 +238,6 @@ export async function streamChunkedRangeResponse(
           // Scale timeout based on segment size to handle network latency
           const writeTimeoutMs = Math.max(2000, segmentSize / 128); // ~128KB/sec minimum rate
           
-          // Create a timeout promise that resolves to an error after writeTimeoutMs
-          const writeTimeoutPromise = new Promise<void>((_, reject) => {
-            setTimeout(() => {
-              reject(new Error('Segment write operation timed out'));
-            }, writeTimeoutMs);
-          });
-          
           try {
             // Check writer status before attempting to write
             if (writer.desiredSize === null) {
@@ -257,8 +251,12 @@ export async function streamChunkedRangeResponse(
               break;
             }
             
-            // Race the write operation against the timeout
-            await Promise.race([writer.write(segment), writeTimeoutPromise]);
+            // Use the centralized withTimeout utility to avoid hitting timeout limits
+            await withTimeout(
+              writer.write(segment), 
+              writeTimeoutMs,
+              'Segment write operation timed out'
+            );
             
             // Check writer status after write (in case it was closed during the write)
             if (writer.desiredSize === null) {

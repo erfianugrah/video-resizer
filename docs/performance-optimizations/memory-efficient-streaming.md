@@ -171,15 +171,73 @@ This implementation has been validated with:
 3. Memory profiling during high concurrency
 4. Stream abortion and timeout scenarios
 
+## Timeout Management
+
+When streaming large files, timeouts are used to prevent stalled connections from consuming resources indefinitely. However, this can lead to issues with the Cloudflare Workers timeout quota:
+
+### Problem: Timeout Quota Exceeded
+
+Using `Promise.race()` with `setTimeout()` in the traditional way:
+
+```typescript
+await Promise.race([
+  someOperation(),
+  new Promise<void>((_, reject) => 
+    setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+  )
+]);
+```
+
+This creates a new timeout for each segment, which can lead to quota errors when processing large files:
+
+```
+QuotaExceededError: You have exceeded the number of active timeouts you may set. 
+max active timeouts: 10000, current active timeouts: 10000, finished timeouts: 0
+```
+
+### Solution: Proper Timeout Cleanup
+
+The system implements a utility function that ensures timeouts are always cleaned up:
+
+```typescript
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage = 'Operation timed out'
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  
+  // Create a promise that rejects after the timeout
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+  });
+  
+  try {
+    // Race the original promise against the timeout
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    // Always clear the timeout to avoid memory leaks
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+```
+
+This approach ensures that timeouts are always cleared, preventing timeout quota issues and allowing the system to handle very large files (260MB+) without hitting resource limits.
+
 ## Future Considerations
 
 1. **Further segment size optimization** based on real-world performance metrics
 2. **Adaptive segment sizing** based on available system memory
 3. **Transfer rate monitoring** for better timeout calibration
 4. **Enhanced metrics collection** for memory usage monitoring
+5. **Resource quota monitoring** to prevent hitting other Cloudflare Worker limits
 
 ## Conclusion
 
-The segmented streaming approach with zero-copy buffer processing significantly improves memory efficiency in video streaming operations. These optimizations ensure the system can handle multiple concurrent video requests while maintaining memory safety and preventing resource exhaustion.
+The segmented streaming approach with zero-copy buffer processing and proper timeout management significantly improves memory efficiency and resource utilization in video streaming operations. These optimizations ensure the system can handle multiple concurrent video requests while maintaining memory safety and preventing resource exhaustion.
 
-By focusing on small, efficient operations rather than processing large chunks, the system now gracefully handles high-concurrency scenarios while providing better reliability and stability.
+By focusing on small, efficient operations rather than processing large chunks, and by ensuring proper cleanup of system resources, the system now gracefully handles high-concurrency scenarios while providing better reliability and stability.

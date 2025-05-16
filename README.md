@@ -12,6 +12,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - Cache versioning for invalidation without purging
 - Multi-origin fallback for improved resilience
 - Memory-efficient video streaming with zero-copy buffer handling
+- Optimized timeout management to prevent quota exceeded errors
 - Enhanced range request support for seeking and streaming
 - Client-aware responsive transformations
 - Automatic device and bandwidth detection

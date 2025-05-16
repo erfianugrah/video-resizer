@@ -9,6 +9,59 @@ import { createLogger, debug, error } from './pinoLogger';
 import { addBreadcrumb } from './requestContext';
 
 /**
+ * Utility function that wraps a Promise with a timeout that automatically cleans up
+ * to avoid having too many active timeouts which can lead to quota exceeded errors.
+ * 
+ * IMPORTANT: When streaming large files (especially >100MB), Cloudflare Workers have
+ * a limit of 10,000 active timeouts. Without proper cleanup, the system can hit:
+ * "Error: You have exceeded the number of active timeouts you may set. 
+ * max active timeouts: 10000, current active timeouts: 10000, finished timeouts: 0"
+ * 
+ * This utility ensures that timeouts are properly cleared to prevent hitting the limit
+ * by using a try/finally pattern that always clears the timeout regardless of whether
+ * the promise resolves or rejects.
+ * 
+ * @param promise The promise to wrap with a timeout
+ * @param timeoutMs Timeout in milliseconds
+ * @param errorMessage Custom error message for timeout
+ * @returns Promise that resolves/rejects with the original promise or rejects with timeout
+ * 
+ * @example
+ * // Instead of:
+ * await Promise.race([
+ *   someOperation(), 
+ *   new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+ * ]);
+ * 
+ * // Use:
+ * await withTimeout(someOperation(), 5000, 'Timeout');
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage = 'Operation timed out'
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  
+  // Create a promise that rejects after the timeout
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+  });
+  
+  try {
+    // Race the original promise against the timeout
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    // Always clear the timeout to avoid memory leaks
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/**
  * Processes a range request by efficiently streaming only the requested byte range
  * Used for both direct fallback streaming and KV streaming
  * 
@@ -130,12 +183,12 @@ export async function processRangeRequest(
                   // Larger segments need more time to write, especially with network latency
                   const timeoutMs = Math.max(2000, segment.byteLength / 128); // ~128KB/sec minimum
                   
-                  await Promise.race([
+                  // Use the withTimeout utility to avoid active timeout limits
+                  await withTimeout(
                     writer.write(segment),
-                    new Promise<void>((_, reject) => 
-                      setTimeout(() => reject(new Error('Segment write timed out')), timeoutMs)
-                    )
-                  ]);
+                    timeoutMs,
+                    'Segment write timed out'
+                  );
                   
                   // Check writer status after write (in case it was closed during the write)
                   if (writer.desiredSize === null) {
