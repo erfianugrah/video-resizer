@@ -119,11 +119,44 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       // Start timing operations
       startTimedOperation(context, 'kv-cache-lookup', 'KVCache');
       
+      // Prepare video options early for both cache check and speculative fetch
+      const sourcePath = url.pathname;
+      const initialVideoOptions = determineVideoOptions(request, url.searchParams, path);
+      
+      // Start speculative origin resolution while checking cache
+      let speculativeOriginPromise: Promise<any> | null = null;
+      let originMatch: any = null;
+      let sourceResolution: any = null;
+      
+      if (!skipCache) {
+        // Start origin resolution in parallel with cache check
+        speculativeOriginPromise = (async () => {
+          try {
+            const originResolver = new OriginResolver(videoConfig.getConfig());
+            originMatch = originResolver.matchOriginWithCaptures(path);
+            
+            if (originMatch) {
+              sourceResolution = originResolver.resolvePathToSource(path);
+              
+              debug(context, logger, 'VideoHandlerWithOrigins', 'Speculative origin resolution completed', {
+                origin: originMatch.origin.name,
+                hasSource: !!sourceResolution,
+                timing: 'parallel-with-cache'
+              });
+            }
+            
+            return { originMatch, sourceResolution };
+          } catch (err) {
+            debug(context, logger, 'VideoHandlerWithOrigins', 'Error in speculative origin resolution', {
+              error: err instanceof Error ? err.message : String(err)
+            });
+            return null;
+          }
+        })();
+      }
+      
       // Prepare KV cache check if env is available and not skipped
       if (env && !skipCache) {
-        const sourcePath = url.pathname;
-        const videoOptions = determineVideoOptions(request, url.searchParams, path);
-        
         // Get KV cache configuration
         const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
         const cacheConfig = CacheConfigurationManager.getInstance();
@@ -134,18 +167,18 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
           addBreadcrumb(context, 'Cache', 'Checking KV cache', {
             url: request.url,
             path: sourcePath,
-            options: JSON.stringify(videoOptions)
+            options: JSON.stringify(initialVideoOptions)
           });
           
           debug(context, logger, 'KVCacheUtils', 'Checking KV cache for video', {
             sourcePath: sourcePath,
-            derivative: videoOptions.derivative,
+            derivative: initialVideoOptions.derivative,
             hasQuery: url.search.length > 0
           });
           
           try {
             // Check KV cache with request for range handling support
-            kvResponse = await getFromKVCache(env, sourcePath, videoOptions as unknown as TransformOptions, request);
+            kvResponse = await getFromKVCache(env, sourcePath, initialVideoOptions as unknown as TransformOptions, request);
           } catch (err) {
             debug(context, logger, 'KVCacheUtils', 'Error checking KV cache', {
               error: err instanceof Error ? err.message : String(err),
@@ -169,6 +202,13 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       
       // If KV cache hit, return the response
       if (kvResponse) {
+        // Cancel speculative origin resolution if we have a cache hit
+        if (speculativeOriginPromise) {
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Cancelling speculative origin resolution due to cache hit', {
+            path: url.pathname
+          });
+        }
+        
         // Get cache details from headers
         const cacheAge = kvResponse.headers.get('X-KV-Cache-Age') || 'unknown';
         const cacheTtl = kvResponse.headers.get('X-KV-Cache-TTL') || 'unknown';
@@ -237,11 +277,30 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       
       endTimedOperation(context, 'cache-lookup');
 
-      // Initialize OriginResolver with the video configuration
-      const originResolver = new OriginResolver(videoConfig.getConfig());
+      // Use speculative origin resolution if available, otherwise resolve now
+      if (speculativeOriginPromise) {
+        const speculativeResult = await speculativeOriginPromise;
+        if (speculativeResult) {
+          originMatch = speculativeResult.originMatch;
+          sourceResolution = speculativeResult.sourceResolution;
+          
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Using speculative origin resolution result', {
+            origin: originMatch?.origin?.name,
+            hasSource: !!sourceResolution,
+            latencySaved: 'cache-check-time'
+          });
+        }
+      }
       
-      // Match the request path to an origin
-      const originMatch = originResolver.matchOriginWithCaptures(path);
+      // If speculative resolution didn't work or wasn't done, resolve now
+      if (!originMatch) {
+        const originResolver = new OriginResolver(videoConfig.getConfig());
+        originMatch = originResolver.matchOriginWithCaptures(path);
+        
+        if (originMatch) {
+          sourceResolution = originResolver.resolvePathToSource(path);
+        }
+      }
       
       if (!originMatch) {
         // No matching origin found
@@ -288,15 +347,13 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         captures: originMatch.captures
       });
       
-      // Resolve the path to a source
-      const sourceResolution = originResolver.resolvePathToSource(path);
-      
+      // Check if we have source resolution (either from speculative or just resolved)
       if (!sourceResolution) {
         // No valid source found in the origin
         debug(context, logger, 'VideoHandlerWithOrigins', 'No valid source found in origin', {
           origin: originMatch.origin.name,
           sourceCount: originMatch.origin.sources.length,
-          sources: originMatch.origin.sources.map(s => s.type)
+          sources: originMatch.origin.sources.map((s: any) => s.type)
         });
         
         // Return error response
