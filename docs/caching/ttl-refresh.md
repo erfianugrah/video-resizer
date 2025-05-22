@@ -127,6 +127,7 @@ The `storeIndefinitely` setting allows you to store KV items permanently without
 {
   "cache": {
     "storeIndefinitely": true,
+    "refreshIndefiniteStorage": false,
     "defaultMaxAge": 300,
     "ttlRefresh": {
       "minElapsedPercent": 10,
@@ -143,7 +144,8 @@ When `storeIndefinitely` is set to `true`:
 1. KV items are stored **without** the `expirationTtl` parameter, making them persist indefinitely
 2. The `expiresAt` field is still set in metadata, ensuring Cache-Control headers work properly
 3. Client browsers will still respect cache expiration as specified in your TTL configuration
-4. The `TTL refresh` mechanism becomes irrelevant for KV storage, though still functional for metadata
+4. With `refreshIndefiniteStorage: false` (recommended), no KV write operations are performed for indefinite storage items, eliminating potential race conditions and rate limiting issues
+5. With `refreshIndefiniteStorage: true`, metadata is still refreshed even for indefinite storage items (not recommended for production)
 
 ### Use Cases
 
@@ -162,8 +164,11 @@ Consider these trade-offs when using indefinite storage:
 - Maximum KV hit rates (no TTL expirations)
 - Simplified architecture (no TTL refresh needed)
 - Reduced operations on hot content
+- With `refreshIndefiniteStorage: false`, eliminates KV write operations for every cache hit
+- Prevents rate limiting issues on frequently accessed content
 
 **Disadvantages:**
 - Increased KV storage usage and potential costs
 - Requires manual purging of outdated content
 - No automatic cleanup of rarely accessed content
+- With `refreshIndefiniteStorage: true`, can cause unnecessary load and rate limiting for popular items

@@ -66,6 +66,10 @@ export const CacheConfigSchema = z.object({
   // Enable storing KV items indefinitely without expiration
   storeIndefinitely: z.boolean().default(false),
   
+  // Enable TTL refresh for indefinitely stored items
+  // When false, indefinitely stored items won't have their metadata refreshed
+  refreshIndefiniteStorage: z.boolean().default(false),
+  
   // Enable debug logging for cache operations
   debug: z.boolean().default(false),
   
@@ -126,6 +130,7 @@ const defaultCacheConfig: CacheConfiguration = {
   enableKVCache: true,
   enableVersioning: true,
   storeIndefinitely: false,
+  refreshIndefiniteStorage: false,
   debug: false,
   defaultMaxAge: 300,
   respectOriginHeaders: true,

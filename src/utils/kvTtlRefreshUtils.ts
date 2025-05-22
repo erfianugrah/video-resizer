@@ -92,6 +92,12 @@ export async function refreshKeyTtl({
   // Check if indefinite storage is enabled
   const useIndefiniteStorage = cacheConfig.storeIndefinitely === true;
   
+  // Skip refresh for indefinite storage items when the refreshIndefiniteStorage flag is disabled
+  if (useIndefiniteStorage && cacheConfig.refreshIndefiniteStorage !== true) {
+    logDebug('Skipping TTL refresh for indefinitely stored item', { key });
+    return true; // Return success without doing any KV operations
+  }
+  
   // Update metadata with new expiresAt
   const updatedMetadata = { ...metadata };
   
