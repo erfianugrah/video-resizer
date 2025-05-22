@@ -418,41 +418,63 @@ export class ConfigurationService {
       const requestContext = getCurrentContext();
       const logger = requestContext ? createLogger(requestContext) : null;
       
-      // Ensure we have a base configuration
-      if (!this.config) {
+      let configToStore: WorkerConfiguration;
+      
+      // Check if we're storing a complete configuration or just updates
+      const isCompleteConfig = 
+        'version' in updates && 
+        'video' in updates && 
+        'cache' in updates && 
+        'logging' in updates;
+      
+      // If it's a complete configuration, use it directly
+      if (isCompleteConfig) {
         if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'No base configuration available for update');
+          pinoDebug(requestContext, logger, 'ConfigurationService', 'Storing complete configuration', {
+            version: (updates as WorkerConfiguration).version
+          });
         }
         
-        throw new ConfigurationError('No base configuration available for update');
-      }
-      
-      // Create updated configuration
-      const updatedConfig = createUpdatedConfiguration(this.config, updates);
-      
-      // Validate the updated configuration
-      validateConfig(updatedConfig);
-      
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'Storing updated configuration', {
-          version: updatedConfig.version,
-          previousVersion: this.config.version
-        });
+        // Validate the configuration
+        validateConfig(updates as WorkerConfiguration);
+        configToStore = updates as WorkerConfiguration;
+      } else {
+        // Ensure we have a base configuration for updates
+        if (!this.config) {
+          if (logger && requestContext) {
+            pinoError(requestContext, logger, 'ConfigurationService', 'No base configuration available for update');
+          }
+          
+          throw new ConfigurationError('No base configuration available for update');
+        }
+        
+        // Create updated configuration
+        configToStore = createUpdatedConfiguration(this.config, updates);
+        
+        // Validate the updated configuration
+        validateConfig(configToStore);
+        
+        if (logger && requestContext) {
+          pinoDebug(requestContext, logger, 'ConfigurationService', 'Storing updated configuration', {
+            version: configToStore.version,
+            previousVersion: this.config.version
+          });
+        }
       }
       
       // Store to KV
-      const success = await storeToKV(env, updatedConfig, this.memoryCache, this.metrics);
+      const success = await storeToKV(env, configToStore, this.memoryCache, this.metrics);
       
       if (success) {
         // Update local configuration
-        this.config = updatedConfig;
+        this.config = configToStore;
         
         // Distribute updated configuration
-        await this.distributeConfiguration(updatedConfig);
+        await this.distributeConfiguration(configToStore);
         
         if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'Updated configuration stored and distributed', {
-            version: updatedConfig.version
+          pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration stored and distributed', {
+            version: configToStore.version
           });
         }
       }

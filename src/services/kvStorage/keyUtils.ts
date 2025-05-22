@@ -45,6 +45,7 @@ function generateKVKeyImpl(
     compression?: string | null;
     derivative?: string | null;
     time?: string | null;
+    duration?: string | number | null;
     columns?: number | null;
     rows?: number | null;
     interval?: string | null;
@@ -74,6 +75,8 @@ function generateKVKeyImpl(
       if (options.time) key += `:t=${options.time}`;
       if (options.format) key += `:f=${options.format}`;
     } else if (mode === 'spritesheet') {
+      if (options.time) key += `:t=${options.time}`;
+      if (options.duration) key += `:duration=${options.duration}`;
       if (options.columns) key += `:cols=${options.columns}`;
       if (options.rows) key += `:rows=${options.rows}`;
       if (options.interval) key += `:interval=${options.interval}`;
@@ -110,6 +113,7 @@ export const generateKVKey = tryOrDefault<
     compression?: string | null;
     derivative?: string | null;
     time?: string | null;
+    duration?: string | number | null;
     columns?: number | null;
     rows?: number | null;
     interval?: string | null;

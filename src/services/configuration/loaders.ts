@@ -11,8 +11,8 @@ import { ConfigurationCache } from './caching';
 
 // Constants
 const CONFIG_KEY = 'worker-config';
-const DEFAULT_CONFIG_PATH = '/config/worker-config.json';
-const COMPREHENSIVE_CONFIG_PATH = '/config/worker-config-comprehensive.json';
+const DEFAULT_CONFIG_PATH = 'config/worker-config.json';
+const COMPREHENSIVE_CONFIG_PATH = 'config/worker-config-comprehensive.json';
 
 /**
  * Load configuration from KV storage

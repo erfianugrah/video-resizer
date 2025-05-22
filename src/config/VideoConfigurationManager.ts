@@ -166,7 +166,8 @@ export const VideoConfigSchema = z.object({
     enabled: z.boolean(),
     whitelistedFormats: z.array(z.string())
   }).optional(),
-  pathPatterns: z.array(PathPatternSchema),
+  // Make pathPatterns optional when origins is present
+  pathPatterns: z.array(PathPatternSchema).optional(),
   caching: z.object({
     method: z.enum(['kv']),
     debug: z.boolean(),
@@ -181,7 +182,17 @@ export const VideoConfigSchema = z.object({
   cache: z.record(CacheConfigSchema).optional(), // Make cache optional
   // Include storage configuration
   storage: StorageConfigSchema.optional(),
-});
+})
+// Add refinement to require either pathPatterns or origins
+.refine(
+  (data) => {
+    return !!data.pathPatterns || !!data.origins;
+  },
+  {
+    message: "Either pathPatterns or origins must be provided",
+    path: ["configuration"]
+  }
+);
 
 // Type exported from the schema
 export type VideoConfiguration = z.infer<typeof VideoConfigSchema>;
@@ -302,7 +313,7 @@ export class VideoConfigurationManager {
    */
 
   public getPathPatterns() {
-    return this.config.pathPatterns;
+    return this.config.pathPatterns || [];
   }
 
   /**
@@ -329,6 +340,12 @@ export class VideoConfigurationManager {
       }
       
       const validatedPattern = PathPatternSchema.parse(pattern);
+      
+      // Initialize pathPatterns array if it doesn't exist
+      if (!this.config.pathPatterns) {
+        this.config.pathPatterns = [];
+      }
+      
       this.config.pathPatterns.push(validatedPattern);
       return validatedPattern;
     } catch (error) {
@@ -832,9 +849,10 @@ export class VideoConfigurationManager {
         ...this.config,
         ...newConfig,
         // Ensure path patterns from the new config completely replace the old ones if present
-        pathPatterns: newConfig.pathPatterns || this.config.pathPatterns,
+        // Use undefined for pathPatterns if they don't exist in either config
+        pathPatterns: newConfig.pathPatterns !== undefined ? newConfig.pathPatterns : this.config.pathPatterns,
         // Ensure origins from the new config completely replace the old ones if present
-        origins: newConfig.origins || this.config.origins,
+        origins: newConfig.origins !== undefined ? newConfig.origins : this.config.origins,
       };
       
       // Validate the merged configuration
@@ -853,8 +871,8 @@ export class VideoConfigurationManager {
           // Log path pattern information if it was updated
           if (newConfig.pathPatterns) {
             info('VideoConfigurationManager', 'Updated path patterns', {
-              patternCount: this.config.pathPatterns.length,
-              patterns: this.config.pathPatterns.map(p => p.name).join(', ')
+              patternCount: this.config.pathPatterns?.length || 0,
+              patterns: this.config.pathPatterns ? this.config.pathPatterns.map(p => p.name).join(', ') : 'none'
             });
           }
           
@@ -872,14 +890,14 @@ export class VideoConfigurationManager {
           // Fall back to legacy logger if loggerUtils isn't available
           import('../utils/legacyLoggerAdapter').then(({ info }) => {
             info('VideoConfigurationManager', 'Updated configuration', {
-              pathPatternCount: this.config.pathPatterns.length,
+              pathPatternCount: this.config.pathPatterns?.length || 0,
               originsCount: this.getOrigins().length
             });
           }).catch(() => {
             // Fallback to console logging
             console.info('[VideoConfigurationManager] Updated configuration');
             if (newConfig.pathPatterns) {
-              console.info(`[VideoConfigurationManager] Updated path patterns: ${this.config.pathPatterns.length} patterns`);
+              console.info(`[VideoConfigurationManager] Updated path patterns: ${this.config.pathPatterns?.length || 0} patterns`);
             }
             if (newConfig.origins) {
               console.info(`[VideoConfigurationManager] Updated origins: ${this.getOrigins().length} origins`);

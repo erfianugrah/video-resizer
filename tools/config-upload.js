@@ -42,6 +42,8 @@ program
     'Environment (development, staging, production)',
   )
   .option('--dry-run', 'Validate configuration without uploading')
+  .option('--initial-upload', 'Perform initial direct upload to KV, bypassing ConfigurationService validation')
+  .option('--force', 'Force configuration upload even if no base configuration exists')
   .option('-v, --verbose', 'Verbose output')
   .parse(process.argv);
 
@@ -106,7 +108,14 @@ async function main() {
     }
 
     // Upload configuration
-    const endpoint = `${targetUrl}/admin/config`;
+    let endpoint = `${targetUrl}/admin/config`;
+    
+    // Add force parameter to URL if specified
+    if (options.force) {
+      endpoint += '?force=true';
+      console.log('Force flag enabled - will attempt to upload even without base configuration');
+    }
+    
     console.log(`Uploading configuration to ${endpoint}...`);
 
     // Production confirmation
