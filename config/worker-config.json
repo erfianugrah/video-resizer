@@ -22,7 +22,7 @@
 					"sources": [
 						{
 							"type": "r2",
-							"priority": 0,
+							"priority": 1,
 							"bucketBinding": "VIDEOS_BUCKET",
 							"path": "videos/${videoId}.${extension}",
 							"auth": {
@@ -32,7 +32,7 @@
 						},
 						{
 							"type": "remote",
-							"priority": 1,
+							"priority": 0,
 							"url": "https://assets.exp.ingka.com",
 							"path": "videos/${videoId}.${extension}",
 							"auth": {
