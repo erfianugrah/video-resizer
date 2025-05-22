@@ -82,6 +82,7 @@ export async function processRangeRequest(
     preserveHeaders?: boolean;
     handlerTag?: string;
     fallbackApplied?: boolean;
+    abortSignal?: AbortSignal;
   } = {}
 ): Promise<Response> {
   try {
@@ -126,8 +127,27 @@ export async function processRangeRequest(
       let bytesRead = 0;
       let bytesWritten = 0;
       
+      // Set up abort signal handler if provided
+      const abortHandler = () => {
+        try {
+          reader.cancel('Request aborted');
+          writer.abort(new DOMException('Request aborted', 'AbortError'));
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+      };
+      
+      if (options.abortSignal) {
+        options.abortSignal.addEventListener('abort', abortHandler);
+      }
+      
       try {
         while (true) {
+          // Check abort signal before reading
+          if (options.abortSignal?.aborted) {
+            throw new DOMException('Stream processing aborted', 'AbortError');
+          }
+          
           const { done, value: chunk } = await reader.read();
           
           if (done) break;
@@ -243,18 +263,33 @@ export async function processRangeRequest(
           });
         }
       } catch (streamError) {
-        if (logger && requestContext) {
-          error(requestContext, logger, 'StreamUtils', 'Error processing stream for range request', {
-            error: streamError instanceof Error ? streamError.message : String(streamError)
-          });
+        // Handle abort differently from other errors
+        if (streamError instanceof DOMException && streamError.name === 'AbortError') {
+          if (logger && requestContext) {
+            debug(requestContext, logger, 'StreamUtils', 'Stream processing aborted by client', {
+              bytesRead,
+              bytesWritten
+            });
+          }
         } else {
-          console.error('Error processing stream for range request:', streamError);
+          if (logger && requestContext) {
+            error(requestContext, logger, 'StreamUtils', 'Error processing stream for range request', {
+              error: streamError instanceof Error ? streamError.message : String(streamError)
+            });
+          } else {
+            console.error('Error processing stream for range request:', streamError);
+          }
         }
         
         try {
           writer.abort(streamError);
         } catch (abortError) {
           // Ignore abort errors
+        }
+      } finally {
+        // Clean up abort signal listener
+        if (options.abortSignal) {
+          options.abortSignal.removeEventListener('abort', abortHandler);
         }
       }
     };
@@ -356,6 +391,7 @@ export async function handleRangeRequest(
     preserveHeaders?: boolean;
     handlerTag?: string;
     fallbackApplied?: boolean;
+    abortSignal?: AbortSignal;
   } = {}
 ): Promise<Response> {
   try {

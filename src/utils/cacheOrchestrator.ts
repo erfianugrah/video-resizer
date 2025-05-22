@@ -260,6 +260,18 @@ export async function withCaching(
     // If no in-flight request, create one
     if (!inFlightRequest) {
       isFirstRequest = true;
+      
+      // Check concurrency limit before creating new in-flight request
+      const MAX_CONCURRENT_ORIGINS = 100;
+      if (inFlightOriginFetches.size >= MAX_CONCURRENT_ORIGINS) {
+        logDebug('Origin fetch concurrency limit reached', {
+          cacheKey,
+          requestId,
+          currentInFlightCount: inFlightOriginFetches.size,
+          limit: MAX_CONCURRENT_ORIGINS
+        });
+        throw new Error(`Origin fetch concurrency limit reached (${MAX_CONCURRENT_ORIGINS})`);
+      }
 
       // Log detailed information about the new request
       logDebug('No existing in-flight request, initiating new origin fetch', {
@@ -269,7 +281,8 @@ export async function withCaching(
         derivative: options?.derivative,
         timestamp: Date.now(),
         isRangeRequest,
-        rangeHeaderValue: isRangeRequest ? rangeHeaderValue : undefined
+        rangeHeaderValue: isRangeRequest ? rangeHeaderValue : undefined,
+        currentInFlightCount: inFlightOriginFetches.size
       });
 
       if (requestContext) {
@@ -335,26 +348,7 @@ export async function withCaching(
           });
 
           // Clean up the in-flight request when done, regardless of success/failure
-          // Use a small delay to handle near-simultaneous requests but ensure cleanup happens
-          setTimeout(() => {
-            if (inFlightOriginFetches.has(cacheKey)) {
-              const removedRequest = inFlightOriginFetches.get(cacheKey);
-              inFlightOriginFetches.delete(cacheKey);
-
-              logDebug('Removed in-flight request from tracking map', {
-                cacheKey,
-                requestId,
-                duration: Date.now() - (removedRequest?.startTime || startTime),
-                referenceCount: removedRequest?.referenceCount || 1,
-                activeFetchesRemaining: inFlightOriginFetches.size
-              });
-            }
-
-            // Also clean up the coalesced requests log after a longer period
-            setTimeout(() => {
-              coalescedRequestsLog.delete(requestId);
-            }, 1000);
-          }, 50); // Small delay to handle near-simultaneous requests
+          // No cleanup here - it will be done when all references are released
         }
       })();
 
@@ -442,6 +436,35 @@ export async function withCaching(
 
       // Re-throw to propagate to error handling
       throw error;
+    } finally {
+      // Decrement reference count and clean up if this was the last reference
+      if (inFlightRequest) {
+        inFlightRequest.referenceCount--;
+        
+        logDebug('Decremented reference count for in-flight request', {
+          cacheKey,
+          requestId,
+          newReferenceCount: inFlightRequest.referenceCount,
+          isFirstRequest
+        });
+        
+        // If this was the last reference, clean up the in-flight request
+        if (inFlightRequest.referenceCount === 0) {
+          inFlightOriginFetches.delete(cacheKey);
+          
+          logDebug('Removed in-flight request from tracking map (last reference released)', {
+            cacheKey,
+            requestId,
+            duration: Date.now() - inFlightRequest.startTime,
+            activeFetchesRemaining: inFlightOriginFetches.size
+          });
+          
+          // Clean up the coalesced requests log for the initiator
+          if (inFlightRequest.requesterId) {
+            coalescedRequestsLog.delete(inFlightRequest.requesterId);
+          }
+        }
+      }
     }
 
     // **CRITICAL FIX**: Clone the full origin response immediately for KV storage

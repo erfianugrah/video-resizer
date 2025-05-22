@@ -76,8 +76,12 @@ export async function streamChunkedRangeResponse(
       totalChunks: manifest.chunkCount
     });
     
-    // Second pass: fetch and process chunks
-    for (const chunkInfo of chunksToFetch) {
+    // Second pass: fetch and process chunks with prefetching
+    let nextChunkPromise: Promise<ArrayBuffer | null> | null = null;
+    
+    for (let i = 0; i < chunksToFetch.length; i++) {
+      const chunkInfo = chunksToFetch[i];
+      
       // Check if stream was aborted during processing
       if (isStreamAborted) {
         logDebug('[GET_VIDEO] Stream was aborted, stopping chunk processing', {
@@ -91,23 +95,20 @@ export async function streamChunkedRangeResponse(
         chunkIndex: chunkInfo.index, 
         expectedSize: chunkInfo.size,
         sliceStart: chunkInfo.sliceStart,
-        sliceEnd: chunkInfo.sliceEnd
+        sliceEnd: chunkInfo.sliceEnd,
+        isPrefetched: !!nextChunkPromise
       });
       
-      // Fetch chunk with timeout handling
-      let chunkArrayBuffer: ArrayBuffer | null = null;
-      try {
-        // Use Promise.race for timeout to prevent hanging on problematic chunks
-        // Calculate dynamic timeout based on chunk size - larger chunks need more time
-        // Base timeout is 5 seconds + 1 second per MB, capped at 30 seconds
-        const chunkSizeMB = chunkInfo.size / (1024 * 1024);
+      // Helper function to fetch a chunk
+      const fetchChunkWithTimeout = async (info: typeof chunkInfo) => {
+        const chunkSizeMB = info.size / (1024 * 1024);
         const timeoutMs = Math.min(5000 + Math.ceil(chunkSizeMB) * 1000, 30000);
 
-        const fetchPromise = namespace.get(chunkInfo.key, { type: 'arrayBuffer', ...kvReadOptions });
+        const fetchPromise = namespace.get(info.key, { type: 'arrayBuffer', ...kvReadOptions });
         const timeoutPromise = new Promise<null>((resolve) => {
           setTimeout(() => {
             logDebug('[GET_VIDEO] Chunk fetch timeout', {
-              chunkKey: chunkInfo.key,
+              chunkKey: info.key,
               chunkSizeMB: chunkSizeMB.toFixed(2),
               timeoutMs
             });
@@ -115,7 +116,34 @@ export async function streamChunkedRangeResponse(
           }, timeoutMs);
         });
 
-        chunkArrayBuffer = await Promise.race([fetchPromise, timeoutPromise]);
+        return Promise.race([fetchPromise, timeoutPromise]);
+      };
+      
+      // Use prefetched chunk or fetch current one
+      let chunkArrayBuffer: ArrayBuffer | null = null;
+      try {
+        if (nextChunkPromise) {
+          chunkArrayBuffer = await nextChunkPromise;
+          nextChunkPromise = null;
+        } else {
+          chunkArrayBuffer = await fetchChunkWithTimeout(chunkInfo);
+        }
+        
+        // Start prefetching next chunk while processing current one
+        if (i + 1 < chunksToFetch.length && !isStreamAborted) {
+          const nextChunkInfo = chunksToFetch[i + 1];
+          logDebug('[GET_VIDEO] Starting prefetch for next chunk', {
+            currentChunk: chunkInfo.index,
+            nextChunk: nextChunkInfo.index
+          });
+          nextChunkPromise = fetchChunkWithTimeout(nextChunkInfo).catch(err => {
+            logDebug('[GET_VIDEO] Prefetch error (will retry when needed)', {
+              chunkKey: nextChunkInfo.key,
+              error: err instanceof Error ? err.message : String(err)
+            });
+            return null;
+          });
+        }
       } catch (fetchError) {
         logErrorWithContext(
           '[GET_VIDEO] Error fetching chunk', 
