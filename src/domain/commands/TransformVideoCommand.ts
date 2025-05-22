@@ -630,35 +630,57 @@ export class TransformVideoCommand {
       // Use the possibly overridden width/height
       if (width) urlParams.push(`width=${width}`);
       if (height) urlParams.push(`height=${height}`);
+      if (options.mode) urlParams.push(`mode=${options.mode}`);
       if (options.fit) urlParams.push(`fit=${options.fit}`);
-      if (options.quality) urlParams.push(`quality=${options.quality}`);
-      if (options.format) urlParams.push(`format=${options.format}`);
-      if (options.compression) {
-        urlParams.push(`compression=${options.compression}`);
+      
+      // Mode-specific parameter handling
+      const mode = options.mode || 'video';
+      
+      if (mode === 'spritesheet') {
+        // Spritesheet mode - Only include compatible parameters
+        // No format, quality, compression, or playback parameters allowed for spritesheet
+        if (options.time) urlParams.push(`time=${options.time}`);
+        if (options.duration) urlParams.push(`duration=${options.duration}`);
+      } else if (mode === 'frame') {
+        // Frame mode - Include format but no playback or audio parameters
+        if (options.quality) urlParams.push(`quality=${options.quality}`);
+        if (options.format) urlParams.push(`format=${options.format}`);
+        if (options.compression) {
+          urlParams.push(`compression=${options.compression}`);
+        }
+        if (options.time) urlParams.push(`time=${options.time}`);
+        // No audio parameter for frame mode (still image)
+        // No playback parameters for frame mode
+      } else {
+        // Video mode - Include all standard parameters
+        if (options.quality) urlParams.push(`quality=${options.quality}`);
+        if (options.format) urlParams.push(`format=${options.format}`);
+        if (options.compression) {
+          urlParams.push(`compression=${options.compression}`);
+        }
+        
+        // Video-specific parameters
+        if (options.time) urlParams.push(`time=${options.time}`);
+        if (options.duration) urlParams.push(`duration=${options.duration}`);
+        if (options.fps !== undefined && options.fps !== null) {
+          urlParams.push(`fps=${options.fps}`);
+        }
+        if (options.audio !== undefined) {
+          urlParams.push(`audio=${options.audio ? "true" : "false"}`);
+        }
+        
+        // Video controls - only for video mode
+        if (options.loop !== undefined) {
+          urlParams.push(`loop=${options.loop ? "true" : "false"}`);
+        }
+        if (options.autoplay !== undefined) {
+          urlParams.push(`autoplay=${options.autoplay ? "true" : "false"}`);
+        }
+        if (options.muted !== undefined) {
+          urlParams.push(`muted=${options.muted ? "true" : "false"}`);
+        }
+        if (options.preload) urlParams.push(`preload=${options.preload}`);
       }
-
-      // Video-specific parameters
-      if (options.time) urlParams.push(`time=${options.time}`);
-      if (options.duration) urlParams.push(`duration=${options.duration}`);
-      if (options.fps !== undefined && options.fps !== null) {
-        urlParams.push(`fps=${options.fps}`);
-      }
-      if (options.audio !== undefined) {
-        urlParams.push(`audio=${options.audio ? "true" : "false"}`);
-      }
-
-      // Video controls
-      if (options.loop !== undefined) {
-        urlParams.push(`loop=${options.loop ? "true" : "false"}`);
-      }
-      if (options.autoplay !== undefined) {
-        urlParams.push(`autoplay=${options.autoplay ? "true" : "false"}`);
-      }
-      if (options.muted !== undefined) {
-        urlParams.push(`muted=${options.muted ? "true" : "false"}`);
-      }
-
-      if (options.preload) urlParams.push(`preload=${options.preload}`);
 
       // Join parameters
       cdnCgiUrl += urlParams.join(",");
@@ -909,6 +931,115 @@ export class TransformVideoCommand {
 
       // Check if the response was successful
       if (!response.ok) {
+        // Add more detailed diagnostics for specific error codes
+        if (response.status === 404) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push('Source video not found (404)');
+          diagnosticsInfo.errorDetails = {
+            status: 404,
+            type: 'not_found',
+            message: 'The source video URL returned a 404 Not Found response',
+            source: sourceResolution.sourceUrl || 'unknown',
+            originType: sourceResolution.originType
+          };
+        } else if (response.status === 400) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push('Bad request (400) - Possible parameter issue');
+          
+          // Clone the response to read the body without consuming it
+          const clonedResponse = response.clone();
+          let errorResponseBody = '';
+          
+          try {
+            errorResponseBody = await clonedResponse.text();
+            
+            // Try to parse more specific error details if available
+            // First check for time parameter errors
+            if (errorResponseBody.includes('time') && errorResponseBody.includes('exceeds')) {
+              diagnosticsInfo.errorDetails = {
+                status: 400,
+                type: 'seek_time_error',
+                message: 'The specified timestamp (time parameter) exceeds the video duration',
+                parameter: 'time',
+                requestedTime: options.time || 'unknown'
+              };
+            } 
+            // Check for invalid mode combinations
+            else if (errorResponseBody.includes('invalid') && 
+                    (errorResponseBody.includes('mode') || errorResponseBody.includes('combination'))) {
+              diagnosticsInfo.errorDetails = {
+                status: 400,
+                type: 'invalid_mode_error',
+                message: 'Invalid parameter combination for the specified mode',
+                parameter: 'mode',
+                requestedMode: options.mode || 'video'
+              };
+            }
+            // Check for format errors
+            else if (errorResponseBody.includes('format') && errorResponseBody.includes('invalid')) {
+              diagnosticsInfo.errorDetails = {
+                status: 400,
+                type: 'format_error',
+                message: 'Invalid format specified for transformation',
+                parameter: 'format',
+                requestedFormat: options.format || 'unknown'
+              };
+            }
+            // General parameter error fallback
+            else {
+              diagnosticsInfo.errorDetails = {
+                status: 400,
+                type: 'parameter_error',
+                message: 'The transformation request was rejected, possibly due to invalid parameters',
+                errorText: errorResponseBody.substring(0, 200) // Include first 200 chars of error
+              };
+            }
+            
+            // Add the original error text to diagnostics for debugging
+            diagnosticsInfo.rawErrorText = errorResponseBody.substring(0, 500); // Limit to 500 chars
+          } catch (bodyReadError) {
+            // If we can't read the response body, use a generic message
+            diagnosticsInfo.errorDetails = {
+              status: 400,
+              type: 'parameter_error',
+              message: 'The transformation request was rejected, possibly due to invalid parameters',
+              bodyReadError: 'Failed to read error response body'
+            };
+          }
+        } else if (response.status === 413) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push('Payload too large (413) - Video file size exceeds limits');
+          diagnosticsInfo.errorDetails = {
+            status: 413,
+            type: 'file_size_limit',
+            message: 'The video file size exceeds the maximum allowed for transformation'
+          };
+        } else if (response.status === 415) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push('Unsupported Media Type (415) - Video format not supported');
+          diagnosticsInfo.errorDetails = {
+            status: 415,
+            type: 'unsupported_format',
+            message: 'The video format or codec is not supported for transformation'
+          };
+        } else if (response.status === 429) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push('Too Many Requests (429) - Rate limit exceeded');
+          diagnosticsInfo.errorDetails = {
+            status: 429,
+            type: 'rate_limit',
+            message: 'Rate limit exceeded for video transformation requests'
+          };
+        } else if (response.status >= 500) {
+          diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+          diagnosticsInfo.errors.push(`Server Error (${response.status}) - Cloudflare transformation service error`);
+          diagnosticsInfo.errorDetails = {
+            status: response.status,
+            type: 'server_error',
+            message: 'The Cloudflare transformation service encountered an internal error'
+          };
+        }
+        
         // Handle error with the extracted error handler
         // Make sure we're passing a properly versioned fallbackOriginUrl
         let fallbackOriginUrl = sourceResolution.sourceUrl || null;
@@ -928,6 +1059,107 @@ export class TransformVideoCommand {
           );
         }
         
+        // Add detailed error headers for better client debugging
+        if (response.status !== 200) {
+          try {
+            // Clone the response to add additional headers with error details
+            const enhancedResponse = new Response(response.body, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers
+            });
+            
+            // Add error information headers
+            const enhancedHeaders = new Headers(enhancedResponse.headers);
+            
+            // Add generic error headers
+            enhancedHeaders.set('X-Error-Status', String(response.status));
+            
+            // Use the error body text from diagnostics if available, otherwise try to read it
+            let errorResponseBody = '';
+            
+            if (diagnosticsInfo.rawErrorText && typeof diagnosticsInfo.rawErrorText === 'string') {
+              // Use the error text we already read earlier
+              errorResponseBody = diagnosticsInfo.rawErrorText;
+            } else {
+              // Try to read it if not already available
+              try {
+                const clonedResponse = response.clone();
+                errorResponseBody = await clonedResponse.text();
+              } catch (readError) {
+                logErrorWithContext(
+                  'Error reading error response body',
+                  readError,
+                  { status: response.status },
+                  'TransformVideoCommand.executeWithOrigins'
+                );
+                // Continue with empty error text if we can't read it
+              }
+            }
+            
+            // Add specific error headers based on status code
+            if (response.status === 404) {
+              enhancedHeaders.set('X-Error-Type', 'not_found');
+              enhancedHeaders.set('X-Error-Source', sourceResolution.originType);
+            } else if (response.status === 400) {
+              enhancedHeaders.set('X-Error-Type', 'parameter_error');
+              
+              // Add more specific information if available from diagnosticsInfo
+              if (diagnosticsInfo.errorDetails && 
+                  typeof diagnosticsInfo.errorDetails === 'object' && 
+                  'type' in diagnosticsInfo.errorDetails) {
+                enhancedHeaders.set('X-Error-Subtype', String(diagnosticsInfo.errorDetails.type));
+              }
+              
+              if (diagnosticsInfo.errorDetails && 
+                  typeof diagnosticsInfo.errorDetails === 'object' && 
+                  'parameter' in diagnosticsInfo.errorDetails) {
+                enhancedHeaders.set('X-Error-Parameter', String(diagnosticsInfo.errorDetails.parameter));
+              }
+            } else if (response.status === 413) {
+              enhancedHeaders.set('X-Error-Type', 'file_size_limit');
+              enhancedHeaders.set('X-Video-Too-Large', 'true');
+            } else if (response.status === 415) {
+              enhancedHeaders.set('X-Error-Type', 'unsupported_format');
+            } else if (response.status === 429) {
+              enhancedHeaders.set('X-Error-Type', 'rate_limit');
+              enhancedHeaders.set('X-Rate-Limit-Exceeded', 'true');
+            } else if (response.status >= 500) {
+              enhancedHeaders.set('X-Error-Type', 'server_error');
+              enhancedHeaders.set('X-Server-Error', 'true');
+            }
+            
+            // Create a new response with the enhanced headers and the original error text
+            // The body stream can only be read once, so we need to create a new response with the text we've already read
+            const finalResponse = new Response(errorResponseBody, {
+              status: enhancedResponse.status,
+              statusText: enhancedResponse.statusText,
+              headers: enhancedHeaders
+            });
+            
+            // Use the enhanced response for error handling
+            return await handleTransformationError({
+              errorResponse: finalResponse,
+              originalRequest: request,
+              context: this.context,
+              requestContext: this.requestContext,
+              diagnosticsInfo,
+              fallbackOriginUrl,
+              cdnCgiUrl,
+              source: sourceResolution.originType,
+            });
+          } catch (headerError) {
+            // If there's an error adding headers, log it but continue with the original response
+            logErrorWithContext(
+              'Error adding detailed error headers',
+              headerError,
+              { status: response.status },
+              'TransformVideoCommand.executeWithOrigins'
+            );
+          }
+        }
+        
+        // Default case - use original response if header enhancement failed
         return await handleTransformationError({
           errorResponse: response,
           originalRequest: request,

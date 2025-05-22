@@ -112,6 +112,142 @@ function parseErrorMessageImpl(errorText: string): {
     };
   }
   
+  // Check for seek time exceeding video duration
+  const seekTimeMatch = errorText.match(/seek time exceeds video duration/i);
+  if (seekTimeMatch) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected seek time error from API', {
+        errorType: 'seek_time_error',
+        pattern: 'seek time exceeds video duration'
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for seek time error',
+        err,
+        { errorType: 'seek_time_error' },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: 'The specified timestamp (time parameter) exceeds the video duration',
+      errorType: 'seek_time_error',
+      limitType: 'time',
+      parameter: 'time'
+    };
+  }
+  
+  // Check for invalid mode combinations
+  const invalidModeMatch = errorText.match(/invalid (?:mode|combination)/i);
+  if (invalidModeMatch) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected invalid mode error from API', {
+        errorType: 'invalid_mode_error',
+        pattern: 'invalid mode combination'
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for mode error',
+        err,
+        { errorType: 'invalid_mode_error' },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: 'Invalid parameter combination for the specified mode',
+      errorType: 'invalid_mode_error',
+      limitType: 'mode',
+      parameter: 'mode'
+    };
+  }
+  
+  // Check for invalid parameter format or validation errors
+  const invalidParameterMatch = errorText.match(/invalid (?:parameter|value|format)(?:\s+for\s+(\w+))?/i);
+  if (invalidParameterMatch) {
+    // Extract the specific parameter if mentioned in the error
+    const parameterName = invalidParameterMatch[1] ? invalidParameterMatch[1].toLowerCase() : 'unknown';
+    
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected invalid parameter error from API', {
+        errorType: 'invalid_parameter_error',
+        pattern: 'invalid parameter format or value',
+        parameter: parameterName
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for parameter validation error',
+        err,
+        { 
+          errorType: 'invalid_parameter_error',
+          parameter: parameterName
+        },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: parameterName !== 'unknown' 
+        ? `Invalid value or format for the "${parameterName}" parameter`
+        : 'Invalid parameter value or format',
+      errorType: 'invalid_parameter_error',
+      limitType: 'validation',
+      parameter: parameterName
+    };
+  }
+  
+  // Check for video not found or unreadable
+  const videoNotReadableMatch = errorText.match(/(?:video not found|unable to read video|unable to process video|404 not found|resource not found|source does not exist)/i);
+  if (videoNotReadableMatch) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected video not readable error from API', {
+        errorType: 'video_not_readable',
+        pattern: 'video not found or not readable',
+        hasNotFound: errorText.toLowerCase().includes('404 not found') || errorText.toLowerCase().includes('resource not found'),
+        matchedPattern: videoNotReadableMatch[0]
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for video not readable error',
+        err,
+        { 
+          errorType: 'video_not_readable',
+          hasNotFound: errorText.toLowerCase().includes('404 not found') || errorText.toLowerCase().includes('resource not found'),
+          matchedPattern: videoNotReadableMatch[0]
+        },
+        'TransformationUtils'
+      );
+    });
+    
+    let specificErrorMessage = 'The source video could not be found or is not in a readable format';
+    
+    // For 404 errors, provide a more specific message
+    if (errorText.toLowerCase().includes('404 not found') || errorText.toLowerCase().includes('resource not found')) {
+      specificErrorMessage = 'The source video URL returned a 404 Not Found response';
+    } else if (errorText.toLowerCase().includes('source does not exist')) {
+      specificErrorMessage = 'The source video does not exist at the specified location';
+    }
+    
+    return {
+      ...result,
+      specificError: specificErrorMessage,
+      errorType: 'video_not_readable',
+      limitType: 'source',
+      parameter: 'source'
+    };
+  }
+  
   // Log that no specific error pattern was matched
   import('../legacyLoggerAdapter').then(({ debug }) => {
     debug('TransformationUtils', 'No specific error pattern matched', {
@@ -121,6 +257,102 @@ function parseErrorMessageImpl(errorText: string): {
     // For debug level, we can skip detailed error logging to reduce noise
     console.debug(`[TransformationUtils] No specific error pattern matched in: ${errorText.substring(0, 50)}...`);
   });
+  
+  // Check for codec or format incompatibility errors
+  const codecError = errorText.match(/(?:unsupported codec|unsupported format|codec not supported|format not supported|incompatible format)/i);
+  if (codecError) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected codec/format compatibility error from API', {
+        errorType: 'codec_error',
+        pattern: 'unsupported codec or format',
+        matchedPattern: codecError[0]
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for codec error',
+        err,
+        { 
+          errorType: 'codec_error',
+          matchedPattern: codecError[0]
+        },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: 'The video codec or format is not supported for transformation',
+      errorType: 'codec_error',
+      limitType: 'format',
+      parameter: 'format'
+    };
+  }
+  
+  // Check for time format errors
+  const timeFormatError = errorText.match(/(?:invalid time format|time format not recognized|malformed time|time: attribute must be in the format)/i);
+  if (timeFormatError) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected time format error from API', {
+        errorType: 'time_format_error',
+        pattern: 'invalid time format',
+        matchedPattern: timeFormatError[0]
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for time format error',
+        err,
+        { 
+          errorType: 'time_format_error',
+          matchedPattern: timeFormatError[0]
+        },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: 'The time parameter has an invalid format. Use format like "10s" or "1m30s"',
+      errorType: 'time_format_error',
+      limitType: 'format',
+      parameter: 'time'
+    };
+  }
+  
+  // Check for resource limits or rate limiting
+  const resourceLimitError = errorText.match(/(?:resource limit exceeded|rate limit exceeded|too many requests|service unavailable temporarily)/i);
+  if (resourceLimitError) {
+    // Log the discovered error
+    import('../legacyLoggerAdapter').then(({ info }) => {
+      info('TransformationUtils', 'Detected resource/rate limit error from API', {
+        errorType: 'resource_limit_error',
+        pattern: 'resource limit or rate limit exceeded',
+        matchedPattern: resourceLimitError[0]
+      });
+    }).catch((err) => {
+      // Log error with standardized error handling
+      logErrorWithContext(
+        'Failed to import logger for resource limit error',
+        err,
+        { 
+          errorType: 'resource_limit_error',
+          matchedPattern: resourceLimitError[0]
+        },
+        'TransformationUtils'
+      );
+    });
+    
+    return {
+      ...result,
+      specificError: 'The service is currently experiencing high load or rate limits have been reached',
+      errorType: 'resource_limit_error',
+      limitType: 'service',
+      parameter: 'service'
+    };
+  }
   
   // Add more error patterns as they are discovered
   
