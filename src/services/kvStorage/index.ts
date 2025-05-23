@@ -15,3 +15,4 @@ export * from './versionHandlers';
 export * from './storeVideo';
 export * from './getVideo';
 export * from './listVariants';
+export * from './chunkLockManager';

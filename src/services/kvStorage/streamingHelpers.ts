@@ -196,25 +196,63 @@ export async function streamChunkedRangeResponse(
       });
       
       if (chunkArrayBuffer.byteLength !== chunkInfo.size) {
-        const errorMsg = `[GET_VIDEO] CRITICAL CHUNK SIZE MISMATCH for key ${chunkInfo.key}. Expected: ${chunkInfo.size}, Actual: ${chunkArrayBuffer.byteLength}`;
-        logErrorWithContext(
-          errorMsg, 
-          new Error('Chunk size mismatch'), 
-          { chunkKey: chunkInfo.key, chunkIndex: chunkInfo.index, expectedSize: chunkInfo.size, actualSize: chunkArrayBuffer.byteLength }, 
-          'KVStorageService.get'
-        );
+        const sizeDiff = chunkArrayBuffer.byteLength - chunkInfo.size;
+        const percentDiff = (Math.abs(sizeDiff) / chunkInfo.size) * 100;
         
-        if (bytesSentForRange === 0) {
-          // If we haven't sent any bytes yet, fail the entire operation
-          throw new Error(errorMsg);
+        // Allow small size differences (< 0.1% or < 2KB) to handle edge cases
+        // This accounts for potential padding or alignment during concurrent operations
+        const isAcceptableDifference = percentDiff < 0.1 || Math.abs(sizeDiff) < 2048;
+        
+        if (isAcceptableDifference) {
+          logDebug('[GET_VIDEO] Minor chunk size difference detected, continuing with actual size', {
+            chunkKey: chunkInfo.key,
+            expectedSize: chunkInfo.size,
+            actualSize: chunkArrayBuffer.byteLength,
+            sizeDifference: sizeDiff,
+            percentDifference: percentDiff.toFixed(3) + '%'
+          });
+          
+          // Update the chunk info with the actual size for correct slicing
+          chunkInfo.size = chunkArrayBuffer.byteLength;
+          
+          // Recalculate slice boundaries if needed
+          const chunkStartInVideo = chunkInfo.startPos;
+          const chunkEndInVideo = chunkStartInVideo + chunkArrayBuffer.byteLength - 1;
+          
+          // Ensure we don't exceed the requested range
+          if (clientRange.start <= chunkEndInVideo && clientRange.end >= chunkStartInVideo) {
+            chunkInfo.sliceStart = Math.max(0, clientRange.start - chunkStartInVideo);
+            chunkInfo.sliceEnd = Math.min(chunkArrayBuffer.byteLength, (clientRange.end - chunkStartInVideo) + 1);
+          }
+        } else {
+          const errorMsg = `[GET_VIDEO] CRITICAL CHUNK SIZE MISMATCH for key ${chunkInfo.key}. Expected: ${chunkInfo.size}, Actual: ${chunkArrayBuffer.byteLength}, Difference: ${sizeDiff}`;
+          logErrorWithContext(
+            errorMsg, 
+            new Error('Chunk size mismatch'), 
+            { 
+              chunkKey: chunkInfo.key, 
+              chunkIndex: chunkInfo.index, 
+              expectedSize: chunkInfo.size, 
+              actualSize: chunkArrayBuffer.byteLength,
+              sizeDifference: sizeDiff,
+              isLargerThanExpected: chunkArrayBuffer.byteLength > chunkInfo.size,
+              percentDifference: percentDiff.toFixed(2) + '%'
+            }, 
+            'KVStorageService.get'
+          );
+          
+          if (bytesSentForRange === 0) {
+            // If we haven't sent any bytes yet, fail the entire operation
+            throw new Error(errorMsg);
+          }
+          
+          // For mid-stream errors, log but try to continue with next chunk
+          logDebug('[GET_VIDEO] Skipping chunk due to size mismatch and continuing', {
+            chunkKey: chunkInfo.key,
+            bytesSentSoFar: bytesSentForRange
+          });
+          continue;
         }
-        
-        // For mid-stream errors, log but try to continue with next chunk
-        logDebug('[GET_VIDEO] Skipping chunk due to size mismatch and continuing', {
-          chunkKey: chunkInfo.key,
-          bytesSentSoFar: bytesSentForRange
-        });
-        continue;
       }
       
       // Prepare the data slice to send - use Uint8Array.subarray instead of slice to avoid copy

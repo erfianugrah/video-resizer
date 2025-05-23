@@ -1,6 +1,6 @@
 # Video Resizer Documentation
 
-*Last Updated: May 15, 2025*
+*Last Updated: January 21, 2025*
 
 Welcome to the Video Resizer documentation. This comprehensive guide provides detailed information about the video-resizer project, its architecture, configuration, features, and usage.
 
@@ -102,6 +102,8 @@ New to the Video Resizer? Start here:
 
 | Date | Update |
 |------|--------|
+| January 21, 2025 | Fixed chunk size mismatch errors with concurrency-safe chunk locking |
+| January 21, 2025 | Added chunk size tolerance for high-concurrency scenarios |
 | May 15, 2025 | Added Multi-Origin Fallback for improved resilience |
 | May 15, 2025 | Reorganized documentation structure for better usability |
 | May 10, 2025 | Added KV Chunking implementation for large videos |

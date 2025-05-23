@@ -14,6 +14,7 @@ import { CacheConfigurationManager } from '../../config';
 import { handleVersionStorage, logStorageSuccess } from './storageHelpers';
 import { EnvVariables } from '../../config/environmentConfig';
 import { ConcurrencyQueue } from '../../utils/concurrencyQueue';
+import { chunkLockManager } from './chunkLockManager';
 
 /**
  * Processes a ReadableStream in chunks and stores them in KV storage
@@ -230,6 +231,16 @@ async function processStreamInChunks(
         offset += chunk.byteLength;
       }
       
+      // Verify chunk integrity before storing
+      if (combinedChunk.byteLength !== totalLength) {
+        logDebug('[STREAM_STORE] CRITICAL: Chunk size mismatch during concatenation', {
+          expectedLength: totalLength,
+          actualLength: combinedChunk.byteLength,
+          chunkIndex
+        });
+        throw new Error(`Chunk size mismatch: expected ${totalLength}, got ${combinedChunk.byteLength}`);
+      }
+      
       const chunkKey = `${key}_chunk_${chunkIndex}`;
       chunkKeys.push(chunkKey);
       actualChunkSizes.push(totalLength);
@@ -254,37 +265,61 @@ async function processStreamInChunks(
       
       // Queue the chunk upload to prevent overwhelming KV namespace
       const uploadPromise = uploadQueue.add(async () => {
-        logDebug('[STREAM_STORE] Starting queued chunk upload', { 
-          key: chunkKey, 
-          chunkIndex,
-          queueSize: uploadQueue.pending,
-          running: uploadQueue.runningCount
-        });
+        // Acquire lock for this chunk to prevent concurrent writes
+        const releaseLock = await chunkLockManager.acquireLock(chunkKey);
         
-        const success = await storeWithRetry(
-          namespace,
-          chunkKey,
-          combinedChunk.buffer,
-          chunkMetadata,
-          ttl,
-          useIndefiniteStorage
-        );
-        
-        if (success) {
-          logDebug('[STREAM_STORE] Successfully stored chunk', { 
+        try {
+          logDebug('[STREAM_STORE] Starting queued chunk upload', { 
             key: chunkKey, 
             chunkIndex,
-            size: totalLength
+            queueSize: uploadQueue.pending,
+            running: uploadQueue.runningCount
           });
-        } else {
-          logDebug('[STREAM_STORE] Failed to store chunk', { 
-            key: chunkKey, 
-            chunkIndex,
-            size: totalLength
-          });
+          
+          // CRITICAL: Store the exact Uint8Array data, not the underlying buffer
+          // The buffer might be larger than the actual data if it's a view
+          // Create a fresh copy to avoid any shared buffer issues during concurrent access
+          const dataToStore = combinedChunk.slice().buffer;
+          
+          // Verify the size matches before storing
+          if (dataToStore.byteLength !== totalLength) {
+            throw new Error(`Chunk buffer size mismatch during copy: expected ${totalLength}, got ${dataToStore.byteLength}`);
+          }
+          
+          // Update metadata with the actual size to ensure consistency
+          const finalChunkMetadata = {
+            ...chunkMetadata,
+            size: dataToStore.byteLength
+          };
+          
+          const success = await storeWithRetry(
+            namespace,
+            chunkKey,
+            dataToStore,
+            finalChunkMetadata,
+            ttl,
+            useIndefiniteStorage
+          );
+          
+          if (success) {
+            logDebug('[STREAM_STORE] Successfully stored chunk', { 
+              key: chunkKey, 
+              chunkIndex,
+              size: totalLength
+            });
+          } else {
+            logDebug('[STREAM_STORE] Failed to store chunk', { 
+              key: chunkKey, 
+              chunkIndex,
+              size: totalLength
+            });
+          }
+          
+          return success;
+        } finally {
+          // Always release the lock
+          releaseLock();
         }
-        
-        return success;
       });
       
       // Add to promises array to track all uploads
@@ -308,14 +343,15 @@ async function processStreamInChunks(
         break;
       }
       
-      // Add the new chunk to our buffer
-      currentChunkData.push(value);
-      currentAccumulatedSize += value.byteLength;
+      // Note: The chunk is added in the size check logic above
       
       // If we've accumulated enough data, store it as a chunk
       // Use custom chunk size if provided, otherwise use standard
       const targetChunkSize = options.chunkSize || STANDARD_CHUNK_SIZE;
-      if (currentAccumulatedSize >= targetChunkSize) {
+      
+      // Check if adding this chunk would exceed the target size
+      // If so, store the current buffer first, then start a new chunk
+      if (currentAccumulatedSize > 0 && currentAccumulatedSize + value.byteLength > targetChunkSize) {
         const success = await storeCurrentChunk();
         if (!success) throw new Error(`Failed to store chunk ${chunkIndex}`);
         
@@ -324,6 +360,11 @@ async function processStreamInChunks(
         currentAccumulatedSize = 0;
         chunkIndex++;
       }
+      
+      // Now add the current value to the buffer
+      // This ensures chunks don't exceed the target size unless a single value is larger than target
+      currentChunkData.push(value);
+      currentAccumulatedSize += value.byteLength;
     }
     
     logDebug('[STREAM_STORE] All chunks queued for upload', {

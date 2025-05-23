@@ -7,7 +7,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - Video transformation and optimization
 - Multiple transformation strategies (video, frame, spritesheet)
 - Caching with KV store integration and efficient TTL refresh
-- KV chunking for large videos beyond KV size limits
+- KV chunking for large videos with concurrency-safe chunk locking
 - Background fallback caching with streaming for large videos
 - Cache versioning for invalidation without purging
 - Multi-origin fallback for improved resilience
@@ -17,6 +17,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - Client-aware responsive transformations
 - Automatic device and bandwidth detection
 - Debug UI for monitoring and troubleshooting
+- High-concurrency chunk size validation and tolerance
 
 ## Quick Start
 
@@ -542,6 +543,57 @@ flowchart TB
     class E,H response
     class K,L,M cache
     class C,J,K version
+```
+</details>
+
+<details>
+<summary><strong>KV Chunking Architecture</strong> - Large video storage with concurrency control</summary>
+
+```mermaid
+flowchart TB
+    %% Define node styles
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef storage fill:#E8EAF6,stroke:#3949AB,color:#000000;
+    classDef lock fill:#F3E5F5,stroke:#7B1FA2,color:#000000;
+    classDef chunk fill:#FFF3E0,stroke:#F57C00,color:#000000;
+
+    %% Storage flow
+    A([Video Response > 20MB]) --> B{Check Active Locks}
+    B -->|Locked| C[Wait in Queue]
+    B -->|Available| D[Acquire Chunk Locks]
+    
+    C --> D
+    D --> E[Split into 5MB Chunks]
+    E --> F[Concurrent Upload Queue<br>Max 5 parallel]
+    
+    F --> G[Store Chunk 0]
+    F --> H[Store Chunk 1]
+    F --> I[Store Chunk N]
+    
+    G & H & I --> J[Create Manifest]
+    J --> K[Store at Base Key]
+    K --> L[Release All Locks]
+    L --> M([Success Response])
+
+    %% Retrieval flow
+    N([Range Request]) --> O[Read Manifest]
+    O --> P{Calculate Chunks}
+    P --> Q[Fetch Only Required Chunks]
+    Q --> R{Size Validation}
+    R -->|Match| S([Stream to Client])
+    R -->|Minor Diff < 0.1%| T[Log & Continue]
+    T --> S
+    R -->|Major Diff| U[Error Recovery]
+
+    %% Apply styles
+    class A,N request
+    class B,P,R decision
+    class C,D,L lock
+    class E,F,J,K,O,Q,T,U process
+    class G,H,I chunk
+    class M,S storage
 ```
 </details>
 

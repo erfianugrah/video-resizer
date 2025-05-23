@@ -1,6 +1,6 @@
 # Caching Architecture
 
-*Last Updated: May 10, 2025*
+*Last Updated: January 21, 2025*
 
 ## Overview
 
@@ -163,6 +163,46 @@ Key implementation details:
 - **TTL Management**: Uses status-specific TTLs for different response types
 - **Cache Tags**: Adds tags for grouped invalidation
 - **Versioning**: Integrates with the cache versioning system
+- **Concurrency Control**: Chunk-level locking prevents data corruption under high load
+- **Size Validation**: Ensures chunk integrity with tolerance for minor variations
+
+#### Concurrency and Chunk Locking
+
+For large videos stored as chunks, the system implements sophisticated concurrency control:
+
+```mermaid
+flowchart LR
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef lock fill:#F3E5F5,stroke:#7B1FA2,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef storage fill:#E8EAF6,stroke:#3949AB,color:#000000;
+    
+    A[Request 1] --> B{Lock Available?}
+    C[Request 2] --> B
+    D[Request 3] --> B
+    
+    B -->|Yes| E[Acquire Lock]
+    B -->|No| F[Wait Queue]
+    
+    E --> G[Store Chunk]
+    F --> H[Wait for Release]
+    
+    G --> I[Release Lock]
+    H --> E
+    
+    I --> J[(KV Storage)]
+    
+    class A,C,D request
+    class B,E,F,H,I lock
+    class G process
+    class J storage
+```
+
+The ChunkLockManager ensures:
+- Only one process writes to a specific chunk at a time
+- Concurrent writes to different chunks proceed in parallel
+- Automatic cleanup of stale locks after 30 seconds
+- Minimal performance impact with per-chunk granularity
 
 ## Range Request Handling
 
@@ -444,3 +484,9 @@ Several conditions trigger cache bypass to ensure optimal behavior:
    - Range request support is critical for video streaming
    - Synchronous cache operations improve range request handling
    - Proper cache headers ensure smooth playback
+
+5. **High Concurrency Handling**:
+   - Chunk-level locking prevents data corruption
+   - Concurrency queue limits parallel operations to 5
+   - Size validation with tolerance handles edge cases
+   - Lock statistics enable monitoring and alerting

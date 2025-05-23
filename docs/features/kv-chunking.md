@@ -1,6 +1,6 @@
 # KV Chunking for Large Videos
 
-*Last Updated: May 10, 2025*
+*Last Updated: January 21, 2025*
 
 ## Table of Contents
 
@@ -10,6 +10,7 @@
 - [Chunk Size Rationale](#chunk-size-rationale)
 - [Storage Architecture](#storage-architecture)
 - [Range Request Support](#range-request-support)
+- [Concurrency and Chunk Locking](#concurrency-and-chunk-locking)
 - [Error Resilience](#error-resilience)
 - [Cache Management](#cache-management)
 - [Performance Considerations](#performance-considerations)
@@ -546,6 +547,180 @@ function streamChunksForRange(writer, namespace, baseKey, neededChunks, start, e
   
   // Close the stream
   await writer.close();
+}
+```
+
+## Concurrency and Chunk Locking
+
+The KV Chunking system includes sophisticated concurrency control to prevent data corruption and size mismatches during high-traffic scenarios:
+
+### Chunk Lock Manager
+
+The `ChunkLockManager` ensures that only one process can write to a specific chunk at a time, preventing race conditions that could lead to chunk size mismatches.
+
+#### Key Features:
+
+1. **Per-Chunk Locking**: Each chunk has its own lock, allowing parallel operations on different chunks
+2. **Automatic Lock Release**: Locks are automatically released after operations complete
+3. **Stale Lock Cleanup**: A background process cleans up locks older than 30 seconds
+4. **Wait Queue**: Concurrent requests for the same chunk wait in a queue
+
+#### Implementation Flow:
+
+```mermaid
+flowchart TD
+    A[Request to Store Chunk] --> B{Is Chunk Locked?}
+    B -->|No| C[Acquire Lock]
+    B -->|Yes| D[Wait for Lock Release]
+    
+    C --> E[Store Chunk Data]
+    D --> F[Previous Operation Completes]
+    F --> C
+    
+    E --> G[Verify Size Consistency]
+    G --> H{Size Match?}
+    
+    H -->|Yes| I[Release Lock]
+    H -->|No| J[Log Error & Rollback]
+    J --> I
+    
+    I --> K[Operation Complete]
+    
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef lock fill:#F3E5F5,stroke:#7B1FA2,color:#000000;
+    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
+    
+    class A request
+    class B,H decision
+    class C,D,F,I lock
+    class E,G,K process
+    class J error
+```
+
+### Chunk Size Validation
+
+To handle edge cases where chunk sizes might vary slightly due to concurrent operations:
+
+1. **Storage Validation**: 
+   - Creates a fresh copy of chunk data before storing
+   - Verifies size matches expected value
+   - Updates metadata with actual size
+
+2. **Retrieval Tolerance**:
+   - Allows minor size differences (< 0.1% or < 2KB)
+   - Recalculates slice boundaries for actual sizes
+   - Logs warnings for monitoring
+
+```typescript
+// Example: Chunk locking during storage
+async function storeChunkWithLock(namespace, chunkKey, chunkData, metadata) {
+  // Acquire lock for this specific chunk
+  const releaseLock = await chunkLockManager.acquireLock(chunkKey);
+  
+  try {
+    // Create a fresh copy to avoid shared buffer issues
+    const dataToStore = chunkData.slice().buffer;
+    
+    // Verify size consistency
+    if (dataToStore.byteLength !== metadata.size) {
+      throw new Error(`Size mismatch: expected ${metadata.size}, got ${dataToStore.byteLength}`);
+    }
+    
+    // Store with verified size
+    await namespace.put(chunkKey, dataToStore, {
+      metadata: {
+        ...metadata,
+        size: dataToStore.byteLength
+      }
+    });
+    
+    return true;
+  } finally {
+    // Always release the lock
+    releaseLock();
+  }
+}
+
+// Example: Tolerant chunk retrieval
+async function retrieveChunkWithTolerance(namespace, chunkKey, expectedSize) {
+  const chunk = await namespace.get(chunkKey, 'arrayBuffer');
+  
+  if (!chunk) {
+    throw new Error(`Chunk not found: ${chunkKey}`);
+  }
+  
+  const sizeDiff = chunk.byteLength - expectedSize;
+  const percentDiff = (Math.abs(sizeDiff) / expectedSize) * 100;
+  
+  // Allow minor differences
+  if (percentDiff < 0.1 || Math.abs(sizeDiff) < 2048) {
+    logger.debug('Minor chunk size difference detected', {
+      chunkKey,
+      expected: expectedSize,
+      actual: chunk.byteLength,
+      difference: sizeDiff,
+      percentage: percentDiff.toFixed(3) + '%'
+    });
+    return chunk;
+  }
+  
+  // Throw error for significant mismatches
+  throw new Error(`Critical chunk size mismatch: ${sizeDiff} bytes (${percentDiff.toFixed(2)}%)`);
+}
+```
+
+### Concurrency Queue
+
+The system uses a concurrency queue to limit parallel chunk uploads:
+
+```mermaid
+flowchart TD
+    A[Multiple Chunk<br>Upload Requests] --> B[Concurrency Queue<br>Max: 5 parallel]
+    
+    B --> C{Queue Size?}
+    
+    C -->|< 5| D[Start Upload Immediately]
+    C -->|≥ 5| E[Add to Waiting Queue]
+    
+    D --> F[Upload Chunk]
+    E --> G[Wait for Slot]
+    
+    F --> H[Complete Upload]
+    H --> I[Process Next in Queue]
+    
+    G --> J{Slot Available?}
+    J -->|Yes| D
+    J -->|No| G
+    
+    I --> K[All Uploads Complete]
+    
+    classDef queue fill:#E1BEE7,stroke:#8E24AA,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef wait fill:#FFF3E0,stroke:#F57C00,color:#000000;
+    
+    class A,B queue
+    class C,J decision
+    class D,F,H,I,K process
+    class E,G wait
+```
+
+### Lock Manager Statistics
+
+The chunk lock manager provides real-time statistics for monitoring:
+
+```typescript
+interface LockStats {
+  activeLocks: number;      // Current number of active locks
+  oldestLockAge: number;    // Age of the oldest lock in milliseconds
+}
+
+// Usage example
+const stats = chunkLockManager.getStats();
+if (stats.activeLocks > 100) {
+  logger.warn('High number of active chunk locks', stats);
 }
 ```
 

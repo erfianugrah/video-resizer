@@ -112,6 +112,32 @@ export async function storeWithRetry(
   let success = false;
   let lastError: Error | null = null;
   
+  // Log the size of data being stored for debugging
+  const valueSize = value instanceof ArrayBuffer ? value.byteLength : new Blob([value]).size;
+  logDebug('[STORE_HELPER] Preparing to store data', {
+    key,
+    valueSize,
+    metadataSize: metadata?.size,
+    isArrayBuffer: value instanceof ArrayBuffer
+  });
+  
+  // Verify size consistency for chunks
+  if (metadata?.size && value instanceof ArrayBuffer && metadata.size !== value.byteLength) {
+    logErrorWithContext(
+      '[STORE_HELPER] CRITICAL: Value size mismatch with metadata',
+      new Error('Size mismatch'),
+      {
+        key,
+        metadataSize: metadata.size,
+        actualSize: value.byteLength,
+        sizeDifference: value.byteLength - metadata.size
+      },
+      'KVStorageService.store'
+    );
+    // Don't proceed with mismatched sizes
+    return false;
+  }
+  
   while (attemptCount < maxRetries && !success) {
     try {
       attemptCount++;
