@@ -90,8 +90,26 @@ export function determineVideoOptions(
         const requestedWidth = imwidth;
         const requestedHeight = imheight;
         
-        // Apply derivative configuration
-        Object.assign(options, configManager.getConfig().derivatives[matchedDerivative]);
+        // Get derivative configuration
+        const derivativeConfig = configManager.getConfig().derivatives[matchedDerivative];
+        
+        // Only apply properties that are explicitly defined in the derivative
+        // This prevents unintended defaults from being applied
+        if ('width' in derivativeConfig && derivativeConfig.width !== undefined) options.width = derivativeConfig.width;
+        if ('height' in derivativeConfig && derivativeConfig.height !== undefined) options.height = derivativeConfig.height;
+        if ('mode' in derivativeConfig && derivativeConfig.mode !== undefined) options.mode = derivativeConfig.mode;
+        if ('fit' in derivativeConfig && derivativeConfig.fit !== undefined) options.fit = derivativeConfig.fit;
+        if ('format' in derivativeConfig && derivativeConfig.format !== undefined) options.format = derivativeConfig.format;
+        if ('quality' in derivativeConfig && derivativeConfig.quality !== undefined) options.quality = derivativeConfig.quality;
+        if ('time' in derivativeConfig && derivativeConfig.time !== undefined) options.time = derivativeConfig.time;
+        if ('duration' in derivativeConfig && derivativeConfig.duration !== undefined) options.duration = derivativeConfig.duration;
+        if ('compression' in derivativeConfig && derivativeConfig.compression !== undefined) options.compression = derivativeConfig.compression;
+        if ('audio' in derivativeConfig && derivativeConfig.audio !== undefined) options.audio = derivativeConfig.audio;
+        if ('loop' in derivativeConfig && derivativeConfig.loop !== undefined) options.loop = derivativeConfig.loop;
+        if ('preload' in derivativeConfig && derivativeConfig.preload !== undefined) options.preload = derivativeConfig.preload;
+        if ('autoplay' in derivativeConfig && derivativeConfig.autoplay !== undefined) options.autoplay = derivativeConfig.autoplay;
+        if ('muted' in derivativeConfig && derivativeConfig.muted !== undefined) options.muted = derivativeConfig.muted;
+        
         options.derivative = matchedDerivative;
         options.source = 'imquery-derivative';
         
@@ -222,13 +240,29 @@ export function determineVideoOptions(
   // Check if a derivative was specified
   const derivative = params.get('derivative');
   if (derivative && isValidDerivative(derivative)) {
-    // Apply derivative configuration
-    Object.assign(options, configManager.getConfig().derivatives[derivative]);
+    const derivativeConfig = configManager.getConfig().derivatives[derivative];
+    
+    // Only apply properties that are explicitly defined in the derivative
+    // This prevents unintended defaults from being applied
+    if ('width' in derivativeConfig && derivativeConfig.width !== undefined) options.width = derivativeConfig.width;
+    if ('height' in derivativeConfig && derivativeConfig.height !== undefined) options.height = derivativeConfig.height;
+    if ('mode' in derivativeConfig && derivativeConfig.mode !== undefined) options.mode = derivativeConfig.mode;
+    if ('fit' in derivativeConfig && derivativeConfig.fit !== undefined) options.fit = derivativeConfig.fit;
+    if ('format' in derivativeConfig && derivativeConfig.format !== undefined) options.format = derivativeConfig.format;
+    if ('quality' in derivativeConfig && derivativeConfig.quality !== undefined) options.quality = derivativeConfig.quality;
+    if ('time' in derivativeConfig && derivativeConfig.time !== undefined) options.time = derivativeConfig.time;
+    if ('duration' in derivativeConfig && derivativeConfig.duration !== undefined) options.duration = derivativeConfig.duration;
+    if ('compression' in derivativeConfig && derivativeConfig.compression !== undefined) options.compression = derivativeConfig.compression;
+    if ('audio' in derivativeConfig && derivativeConfig.audio !== undefined) options.audio = derivativeConfig.audio;
+    if ('loop' in derivativeConfig && derivativeConfig.loop !== undefined) options.loop = derivativeConfig.loop;
+    if ('preload' in derivativeConfig && derivativeConfig.preload !== undefined) options.preload = derivativeConfig.preload;
+    if ('autoplay' in derivativeConfig && derivativeConfig.autoplay !== undefined) options.autoplay = derivativeConfig.autoplay;
+    if ('muted' in derivativeConfig && derivativeConfig.muted !== undefined) options.muted = derivativeConfig.muted;
+    
     options.derivative = derivative;
     
     // Add breadcrumb for derivative selection
     if (requestContext) {
-      const derivativeConfig = configManager.getConfig().derivatives[derivative];
       addBreadcrumb(requestContext, 'Client', 'Applied video derivative', {
         derivative,
         width: derivativeConfig.width,

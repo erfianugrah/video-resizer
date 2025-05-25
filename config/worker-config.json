@@ -510,6 +510,15 @@
 				"loop": true,
 				"duration": "5m",
 				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
+			},
+			"thumbnail": {
+				"width": 640,
+				"height": 360,
+				"mode": "frame",
+				"time": "2s",
+				"format": "png",
+				"fit": "cover",
+				"description": "640x360 thumbnail extracted at 2 seconds."
 			}
 		},
 		"passthrough": {

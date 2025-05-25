@@ -59,7 +59,7 @@ export const SourceSchema = z.object({
   }
   return true;
 }, {
-  message: "Invalid source configuration. For r2 sources, bucketBinding is required. For remote or fallback sources, url is required."
+  message: 'Invalid source configuration. For r2 sources, bucketBinding is required. For remote or fallback sources, url is required.'
 });
 
 /**

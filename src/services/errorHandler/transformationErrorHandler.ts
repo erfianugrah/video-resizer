@@ -242,7 +242,7 @@ export async function handleTransformationError({
   // --- Find matched path patterns with their origins and auth for pattern-specific fallback ---
   const url = new URL(originalRequest.url);
   const path = url.pathname;
-  let matchedPatterns = [];
+  const matchedPatterns = [];
   
   // Find matching path patterns for potential pattern-specific auth
   try {
@@ -657,7 +657,7 @@ export async function handleTransformationError({
             remainingPatterns: matchedPatterns.length - i - 1
           });
           
-          addBreadcrumb(requestContext, 'Fallback', `Pattern origin/auth fetch failed, trying next pattern`, {
+          addBreadcrumb(requestContext, 'Fallback', 'Pattern origin/auth fetch failed, trying next pattern', {
             pattern: matchedPattern.name,
             status: fallbackResponse.status,
             currentIndex: i + 1, 
@@ -674,7 +674,7 @@ export async function handleTransformationError({
           remainingPatterns: matchedPatterns.length - i - 1
         }, 'handleTransformationError');
         
-        addBreadcrumb(requestContext, 'Error', `Pattern-specific fallback fetch error, trying next pattern`, {
+        addBreadcrumb(requestContext, 'Error', 'Pattern-specific fallback fetch error, trying next pattern', {
           pattern: matchedPattern.name,
           error: patternFetchError instanceof Error ? patternFetchError.message : 'Unknown',
           currentIndex: i + 1,
@@ -895,7 +895,7 @@ export async function handleTransformationError({
       videoExceedsSize: is256MiBSizeError,
       isFallback: true,
       fileSizeError: isFileSizeError || parsedError.errorType === 'file_size_limit' || errorText.includes('file size limit')
-    })
+    });
     
     // For large videos specifically, add some browser cache hints to improve playback
     if (is256MiBSizeError) {

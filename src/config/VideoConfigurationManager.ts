@@ -189,8 +189,8 @@ export const VideoConfigSchema = z.object({
     return !!data.pathPatterns || !!data.origins;
   },
   {
-    message: "Either pathPatterns or origins must be provided",
-    path: ["configuration"]
+    message: 'Either pathPatterns or origins must be provided',
+    path: ['configuration']
   }
 );
 

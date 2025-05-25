@@ -122,7 +122,7 @@ export class OriginResolver {
       }
     }
 
-    console.debug(`[OriginResolver] No matching origin found for path`, { path });
+    console.debug('[OriginResolver] No matching origin found for path', { path });
     
     if (throwIfNotFound) {
       throw OriginError.notFound(path, {

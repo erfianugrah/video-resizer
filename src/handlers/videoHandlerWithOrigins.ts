@@ -397,12 +397,13 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       const videoOptions = determineVideoOptions(request, url.searchParams, path);
       
       // Add origin-specific options if available
-      if (originMatch.origin.quality) {
-        videoOptions.quality = videoOptions.quality || originMatch.origin.quality;
+      if (originMatch.origin.quality && !videoOptions.quality) {
+        videoOptions.quality = originMatch.origin.quality;
       }
       
-      if (originMatch.origin.videoCompression) {
-        videoOptions.compression = videoOptions.compression || originMatch.origin.videoCompression;
+      // Only apply videoCompression if not already set by derivative or explicit parameter
+      if (originMatch.origin.videoCompression && !videoOptions.compression) {
+        videoOptions.compression = originMatch.origin.videoCompression;
       }
       
       // Configure debug options

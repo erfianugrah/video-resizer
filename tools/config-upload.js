@@ -163,7 +163,7 @@ async function main() {
       // Check each origin for required properties
       for (const origin of originsArray) {
         if (!origin.name) {
-          console.error(`❌ Origin missing required name property.`);
+          console.error('❌ Origin missing required name property.');
           process.exit(1);
         }
         

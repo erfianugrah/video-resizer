@@ -66,7 +66,7 @@ export class HeadersManager {
     private?: boolean;
     immutable?: boolean;
   } = {}): HeadersManager {
-    let directives: string[] = [];
+    const directives: string[] = [];
     
     if (options.noStore) {
       directives.push('no-store');

@@ -55,7 +55,7 @@ describe('OriginError', () => {
     const error = OriginError.sourceResolutionFailed(originName, path, reason);
     
     expect(error.message).toBe(
-      `Failed to resolve source for origin 'videos' and path '/videos/sample.mp4': Source type not supported`
+      'Failed to resolve source for origin \'videos\' and path \'/videos/sample.mp4\': Source type not supported'
     );
     expect(error.errorType).toBe(OriginErrorType.SOURCE_RESOLUTION_FAILED);
     expect(error.context.parameters).toEqual({
@@ -72,7 +72,7 @@ describe('OriginError', () => {
     const error = OriginError.sourceTypeNotSupported(sourceType, originName);
     
     expect(error.message).toBe(
-      `Source type 'invalid' is not supported in origin 'videos'`
+      'Source type \'invalid\' is not supported in origin \'videos\''
     );
     expect(error.errorType).toBe(OriginErrorType.SOURCE_TYPE_NOT_SUPPORTED);
     expect(error.context.parameters).toEqual({
@@ -88,7 +88,7 @@ describe('OriginError', () => {
     const error = OriginError.validationFailed(originName, validationError);
     
     expect(error.message).toBe(
-      `Validation failed for origin 'videos': Missing required property: sources`
+      'Validation failed for origin \'videos\': Missing required property: sources'
     );
     expect(error.errorType).toBe(OriginErrorType.ORIGIN_VALIDATION_FAILED);
     expect(error.context.parameters).toEqual({
@@ -105,7 +105,7 @@ describe('OriginError', () => {
     const error = OriginError.pathResolutionFailed(path, originName, reason);
     
     expect(error.message).toBe(
-      `Failed to resolve path '/videos/sample.mp4' for origin 'videos': Invalid capture group reference`
+      'Failed to resolve path \'/videos/sample.mp4\' for origin \'videos\': Invalid capture group reference'
     );
     expect(error.errorType).toBe(OriginErrorType.PATH_RESOLUTION_FAILED);
     expect(error.context.parameters).toEqual({
@@ -123,7 +123,7 @@ describe('OriginError', () => {
     const error = OriginError.authConfigurationError(sourceType, originName, reason);
     
     expect(error.message).toBe(
-      `Authentication configuration error for remote source in origin 'premium-videos': Missing required credentials`
+      'Authentication configuration error for remote source in origin \'premium-videos\': Missing required credentials'
     );
     expect(error.errorType).toBe(OriginErrorType.AUTH_CONFIGURATION_ERROR);
     expect(error.context.parameters).toEqual({

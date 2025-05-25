@@ -5,40 +5,40 @@
  * This class orchestrates the video transformation process, delegating
  * specific functionality to specialized services and utilities.
  */
-import { VideoConfigurationManager } from "../../config";
-import { findMatchingPathPattern, PathPattern } from "../../utils/pathUtils";
+import { VideoConfigurationManager } from '../../config';
+import { findMatchingPathPattern, PathPattern } from '../../utils/pathUtils';
 import {
   DebugInfo,
   DiagnosticsInfo,
   extractRequestHeaders,
-} from "../../utils/debugHeadersUtils";
+} from '../../utils/debugHeadersUtils';
 import {
   addBreadcrumb,
   getClientDiagnostics,
   getCurrentContext,
   RequestContext,
-} from "../../utils/requestContext";
+} from '../../utils/requestContext';
 import {
   createLogger,
   debug as pinoDebug,
   error as pinoError,
   info as pinoInfo,
-} from "../../utils/pinoLogger";
-import { logErrorWithContext } from "../../utils/errorHandlingUtils";
+} from '../../utils/pinoLogger';
+import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import {
   executeTransformation,
   prepareVideoTransformation,
-} from "../../services/TransformationService";
-import { addVersionToUrl } from "../../utils/urlVersionUtils";
-import { handleTransformationError } from "../../services/errorHandlerService";
-import { generateDebugPage } from "../../services/debugService";
-import { ResponseBuilder } from "../../utils/responseBuilder";
-import type { Logger } from "pino";
-import { Origin, Source } from "../../services/videoStorage/interfaces";
+} from '../../services/TransformationService';
+import { addVersionToUrl } from '../../utils/urlVersionUtils';
+import { handleTransformationError } from '../../services/errorHandlerService';
+import { generateDebugPage } from '../../services/debugService';
+import { ResponseBuilder } from '../../utils/responseBuilder';
+import type { Logger } from 'pino';
+import { Origin, Source } from '../../services/videoStorage/interfaces';
 import {
   OriginResolver,
   SourceResolutionResult,
-} from "../../services/origins/OriginResolver";
+} from '../../services/origins/OriginResolver';
 
 export interface VideoTransformOptions {
   width?: number | null;
@@ -159,7 +159,7 @@ export class TransformVideoCommand {
       } else {
         // Create a minimal context for testing purposes
         this.requestContext = {
-          requestId: "test-" + Date.now(),
+          requestId: 'test-' + Date.now(),
           url: context.request.url,
           startTime: performance.now(),
           breadcrumbs: [],
@@ -180,8 +180,8 @@ export class TransformVideoCommand {
       // Log initialization with breadcrumb
       addBreadcrumb(
         this.requestContext,
-        "CommandInit",
-        "TransformVideoCommand Initialized",
+        'CommandInit',
+        'TransformVideoCommand Initialized',
         {
           requestId: this.requestContext.requestId,
           url: this.requestContext.url?.substring(0, 100), // Limit URL length
@@ -197,15 +197,15 @@ export class TransformVideoCommand {
         pinoDebug(
           this.requestContext,
           this.logger,
-          "TransformVideoCommand",
-          "Command initialized with context",
+          'TransformVideoCommand',
+          'Command initialized with context',
           {
             requestId: this.requestContext.requestId,
             breadcrumbCount: this.requestContext.breadcrumbs.length,
             options: {
               ...this.context.options,
               source: this.context.options?.source
-                ? "[source url omitted]"
+                ? '[source url omitted]'
                 : undefined,
             },
           },
@@ -214,19 +214,19 @@ export class TransformVideoCommand {
     } catch (err) {
       // Fallback logging if context/logger init fails
       console.error(
-        "CRITICAL: Failed to initialize RequestContext/Logger in TransformVideoCommand constructor:",
+        'CRITICAL: Failed to initialize RequestContext/Logger in TransformVideoCommand constructor:',
         err,
       );
       logErrorWithContext(
-        "Error initializing TransformVideoCommand context/logger",
+        'Error initializing TransformVideoCommand context/logger',
         err,
         {},
-        "TransformVideoCommand.constructor",
+        'TransformVideoCommand.constructor',
       );
 
       // Create a minimal fallback request context
       const minimalContext: RequestContext = {
-        requestId: "fallback-" + Date.now(),
+        requestId: 'fallback-' + Date.now(),
         url: context.request.url,
         startTime: performance.now(),
         breadcrumbs: [],
@@ -257,8 +257,8 @@ export class TransformVideoCommand {
       pinoDebug(
         this.requestContext,
         this.logger,
-        "TransformVideoCommand",
-        "Origins context already initialized",
+        'TransformVideoCommand',
+        'Origins context already initialized',
       );
       return true;
     }
@@ -272,8 +272,8 @@ export class TransformVideoCommand {
         pinoDebug(
           this.requestContext,
           this.logger,
-          "TransformVideoCommand",
-          "Origins not enabled in configuration",
+          'TransformVideoCommand',
+          'Origins not enabled in configuration',
         );
         return false;
       }
@@ -284,8 +284,8 @@ export class TransformVideoCommand {
       // Find matching origin with captures
       addBreadcrumb(
         this.requestContext,
-        "Origins",
-        "Resolving origin for path",
+        'Origins',
+        'Resolving origin for path',
         { path },
       );
 
@@ -294,8 +294,8 @@ export class TransformVideoCommand {
         pinoDebug(
           this.requestContext,
           this.logger,
-          "TransformVideoCommand",
-          "No matching origin found for path",
+          'TransformVideoCommand',
+          'No matching origin found for path',
           { path },
         );
         return false;
@@ -304,8 +304,8 @@ export class TransformVideoCommand {
       // Resolve path to source
       addBreadcrumb(
         this.requestContext,
-        "Origins",
-        "Resolving path to source",
+        'Origins',
+        'Resolving path to source',
         {
           origin: originMatch.origin.name,
         },
@@ -316,8 +316,8 @@ export class TransformVideoCommand {
         pinoDebug(
           this.requestContext,
           this.logger,
-          "TransformVideoCommand",
-          "Failed to resolve path to source",
+          'TransformVideoCommand',
+          'Failed to resolve path to source',
           {
             origin: originMatch.origin.name,
             path,
@@ -333,8 +333,8 @@ export class TransformVideoCommand {
       pinoDebug(
         this.requestContext,
         this.logger,
-        "TransformVideoCommand",
-        "Origins context initialized",
+        'TransformVideoCommand',
+        'Origins context initialized',
         {
           origin: originMatch.origin.name,
           sourceType: sourceResult.originType,
@@ -344,8 +344,8 @@ export class TransformVideoCommand {
 
       addBreadcrumb(
         this.requestContext,
-        "Origins",
-        "Origins context initialized",
+        'Origins',
+        'Origins context initialized',
         {
           origin: originMatch.origin.name,
           sourceType: sourceResult.originType,
@@ -355,12 +355,12 @@ export class TransformVideoCommand {
       return true;
     } catch (err) {
       // Log error but don't fail the request - we'll fall back to legacy path patterns
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       pinoDebug(
         this.requestContext,
         this.logger,
-        "TransformVideoCommand",
-        "Error initializing Origins context",
+        'TransformVideoCommand',
+        'Error initializing Origins context',
         {
           error: errorMessage,
           path,
@@ -369,8 +369,8 @@ export class TransformVideoCommand {
 
       addBreadcrumb(
         this.requestContext,
-        "Origins",
-        "Error initializing Origins context",
+        'Origins',
+        'Error initializing Origins context',
         {
           error: errorMessage,
         },
@@ -400,12 +400,12 @@ export class TransformVideoCommand {
     const sourceResolution = this.context.sourceResolution;
 
     if (!origin) {
-      throw new Error("Origin is required for Origins-based transformation");
+      throw new Error('Origin is required for Origins-based transformation');
     }
 
     if (!sourceResolution) {
       throw new Error(
-        "Source resolution is required for Origins-based transformation",
+        'Source resolution is required for Origins-based transformation',
       );
     }
 
@@ -435,8 +435,8 @@ export class TransformVideoCommand {
     pinoDebug(
       this.requestContext,
       this.logger,
-      "TransformVideoCommand",
-      "Using Origins-based transformation",
+      'TransformVideoCommand',
+      'Using Origins-based transformation',
       {
         origin: origin.name,
         sourceType: sourceResolution.originType,
@@ -445,8 +445,8 @@ export class TransformVideoCommand {
 
     addBreadcrumb(
       this.requestContext,
-      "Origins",
-      "Using Origins-based transformation",
+      'Origins',
+      'Using Origins-based transformation',
       {
         origin: origin.name,
         sourceType: sourceResolution.originType,
@@ -458,8 +458,8 @@ export class TransformVideoCommand {
       // Gather client capabilities and add to diagnostics
       addBreadcrumb(
         this.requestContext,
-        "Context",
-        "Gathering client capabilities",
+        'Context',
+        'Gathering client capabilities',
       );
       const clientInfo = getClientDiagnostics(request);
       diagnosticsInfo.browserCapabilities = clientInfo.browserCapabilities;
@@ -473,17 +473,17 @@ export class TransformVideoCommand {
 
       // Build the CDN-CGI media transformation URL
       const sourcePath = sourceResolution.resolvedPath;
-      let sourceUrl = "";
+      let sourceUrl = '';
 
       // Build the source URL based on source type
       switch (sourceResolution.originType) {
-        case "r2":
+        case 'r2':
           // Use R2 bucket binding from source and bucket from source or global config
           const bucketBinding = sourceResolution.source.bucketBinding ||
-            "VIDEO_ASSETS";
+            'VIDEO_ASSETS';
           if (!env) {
             throw new Error(
-              `Environment variables not available for R2 bucket access`,
+              'Environment variables not available for R2 bucket access',
             );
           }
 
@@ -498,8 +498,8 @@ export class TransformVideoCommand {
           sourceUrl = `r2:${sourcePath}`;
           break;
 
-        case "remote":
-        case "fallback":
+        case 'remote':
+        case 'fallback':
           // Use the source URL with resolved path
           if (!sourceResolution.sourceUrl) {
             throw new Error(
@@ -514,8 +514,8 @@ export class TransformVideoCommand {
             pinoDebug(
               this.requestContext,
               this.logger,
-              "TransformVideoCommand",
-              "Source requires authentication",
+              'TransformVideoCommand',
+              'Source requires authentication',
               {
                 sourceType: sourceResolution.originType,
                 authType: auth.type,
@@ -532,8 +532,8 @@ export class TransformVideoCommand {
                 pinoDebug(
                   this.requestContext,
                   this.logger,
-                  "TransformVideoCommand",
-                  "Adding bearer token to source URL",
+                  'TransformVideoCommand',
+                  'Adding bearer token to source URL',
                   {
                     accessKeyVar: auth.accessKeyVar,
                   }
@@ -544,7 +544,7 @@ export class TransformVideoCommand {
                 
                 // Add authentication info to diagnostics
                 diagnosticsInfo.authentication = {
-                  type: "bearer",
+                  type: 'bearer',
                   tokenSource: auth.accessKeyVar,
                   available: true
                 };
@@ -553,8 +553,8 @@ export class TransformVideoCommand {
                 pinoDebug(
                   this.requestContext,
                   this.logger,
-                  "TransformVideoCommand",
-                  "Bearer token not found in environment variable",
+                  'TransformVideoCommand',
+                  'Bearer token not found in environment variable',
                   {
                     accessKeyVar: auth.accessKeyVar,
                   }
@@ -562,10 +562,10 @@ export class TransformVideoCommand {
                 
                 // Add to diagnostics
                 diagnosticsInfo.authentication = {
-                  type: "bearer",
+                  type: 'bearer',
                   tokenSource: auth.accessKeyVar,
                   available: false,
-                  error: "Token not found in environment variable"
+                  error: 'Token not found in environment variable'
                 };
               }
             }
@@ -584,10 +584,10 @@ export class TransformVideoCommand {
 
       // Get the CDN-CGI path from configuration
       const { getEnvironmentConfig } = await import(
-        "../../config/environmentConfig"
+        '../../config/environmentConfig'
       );
       const config = getEnvironmentConfig();
-      const cdnCgiPath = config.cdnCgi?.basePath || "/cdn-cgi/media";
+      const cdnCgiPath = config.cdnCgi?.basePath || '/cdn-cgi/media';
 
       // Create transform URL with CDN-CGI path from configuration
       let cdnCgiUrl = `${requestOrigin}${cdnCgiPath}/`;
@@ -614,7 +614,7 @@ export class TransformVideoCommand {
           // Log that we're using derivative dimensions with category set to CDN-CGI for consistent filtering
           const { info } = await import('../../utils/loggerUtils');
           info(
-            "CDN-CGI",
+            'CDN-CGI',
             `Using derivative dimensions for ${options.derivative}`,
             {
               derivative: options.derivative,
@@ -666,24 +666,24 @@ export class TransformVideoCommand {
           urlParams.push(`fps=${options.fps}`);
         }
         if (options.audio !== undefined) {
-          urlParams.push(`audio=${options.audio ? "true" : "false"}`);
+          urlParams.push(`audio=${options.audio ? 'true' : 'false'}`);
         }
         
         // Video controls - only for video mode
         if (options.loop !== undefined) {
-          urlParams.push(`loop=${options.loop ? "true" : "false"}`);
+          urlParams.push(`loop=${options.loop ? 'true' : 'false'}`);
         }
         if (options.autoplay !== undefined) {
-          urlParams.push(`autoplay=${options.autoplay ? "true" : "false"}`);
+          urlParams.push(`autoplay=${options.autoplay ? 'true' : 'false'}`);
         }
         if (options.muted !== undefined) {
-          urlParams.push(`muted=${options.muted ? "true" : "false"}`);
+          urlParams.push(`muted=${options.muted ? 'true' : 'false'}`);
         }
         if (options.preload) urlParams.push(`preload=${options.preload}`);
       }
 
       // Join parameters
-      cdnCgiUrl += urlParams.join(",");
+      cdnCgiUrl += urlParams.join(',');
 
       // Add source URL - use directly without encoding
       cdnCgiUrl += `/${sourceUrl}`;
@@ -691,12 +691,12 @@ export class TransformVideoCommand {
       // Use info level for CDN-CGI operations to ensure visibility
       const { info } = await import('../../utils/loggerUtils');
       info(
-        "CDN-CGI",
+        'CDN-CGI',
         `Created CDN-CGI URL: ${cdnCgiUrl}`,
         {
           url: cdnCgiUrl,
           sourceUrl,
-          params: urlParams.join(","),
+          params: urlParams.join(','),
           originType: sourceResolution.originType,
           urlLength: cdnCgiUrl.length,
           isIMQuery: !!options.derivative,
@@ -714,8 +714,8 @@ export class TransformVideoCommand {
 
       addBreadcrumb(
         this.requestContext,
-        "Transformation",
-        "Created CDN-CGI URL",
+        'Transformation',
+        'Created CDN-CGI URL',
         {
           sourceType: sourceResolution.originType,
           paramCount: urlParams.length,
@@ -746,12 +746,12 @@ export class TransformVideoCommand {
       let response: Response;
 
       // Handle R2 source differently than HTTP sources
-      if (sourceResolution.originType === "r2") {
+      if (sourceResolution.originType === 'r2') {
         const bucketBinding = sourceResolution.source.bucketBinding ||
-          "VIDEO_ASSETS";
+          'VIDEO_ASSETS';
         if (!env) {
           throw new Error(
-            `Environment variables not available for R2 bucket access`,
+            'Environment variables not available for R2 bucket access',
           );
         }
 
@@ -775,10 +775,10 @@ export class TransformVideoCommand {
             {
               status: 500,
               headers: {
-                "Content-Type": "text/plain",
-                "X-Error-Source": "r2",
-                "X-Error-Path": sourcePath,
-                "X-Error-Type": "NotFoundInR2"
+                'Content-Type': 'text/plain',
+                'X-Error-Source': 'r2',
+                'X-Error-Path': sourcePath,
+                'X-Error-Type': 'NotFoundInR2'
               }
             }
           );
@@ -791,8 +791,8 @@ export class TransformVideoCommand {
             pinoDebug(
               this.requestContext,
               this.logger,
-              "TransformVideoCommand",
-              "Moving to next source by priority",
+              'TransformVideoCommand',
+              'Moving to next source by priority',
               {
                 currentSource: sourceResolution.source.type,
                 currentPriority: sourceResolution.source.priority,
@@ -825,8 +825,8 @@ export class TransformVideoCommand {
                 pinoDebug(
                   this.requestContext,
                   this.logger,
-                  "TransformVideoCommand",
-                  "Applied version parameter to fallback URL",
+                  'TransformVideoCommand',
+                  'Applied version parameter to fallback URL',
                   {
                     originalUrl,
                     versionedUrl: fullSourceUrl,
@@ -838,8 +838,8 @@ export class TransformVideoCommand {
               pinoDebug(
                 this.requestContext,
                 this.logger,
-                "TransformVideoCommand",
-                "Created full source URL for fallback",
+                'TransformVideoCommand',
+                'Created full source URL for fallback',
                 {
                   baseUrl,
                   path: pathSegment,
@@ -876,8 +876,8 @@ export class TransformVideoCommand {
             pinoDebug(
               this.requestContext,
               this.logger,
-              "TransformVideoCommand",
-              "Applied version to fallback URL in error handler",
+              'TransformVideoCommand',
+              'Applied version to fallback URL in error handler',
               {
                 fallbackOriginUrl,
                 version: options.version
@@ -901,10 +901,10 @@ export class TransformVideoCommand {
         // Create a response from the R2 object to pass to CDN-CGI
         const r2Response = new Response(r2Object.body, {
           headers: {
-            "Content-Type": r2Object.httpMetadata?.contentType || "video/mp4",
-            "Content-Length": r2Object.size.toString(),
-            "Last-Modified": r2Object.uploaded.toUTCString(),
-            "ETag": r2Object.httpEtag ||
+            'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
+            'Content-Length': r2Object.size.toString(),
+            'Last-Modified': r2Object.uploaded.toUTCString(),
+            'ETag': r2Object.httpEtag ||
               `"${r2Object.size}-${r2Object.uploaded.getTime()}"`,
           },
         });
@@ -1050,8 +1050,8 @@ export class TransformVideoCommand {
           pinoDebug(
             this.requestContext,
             this.logger,
-            "TransformVideoCommand",
-            "Applied version to fallback URL in CDN-CGI error handler",
+            'TransformVideoCommand',
+            'Applied version to fallback URL in CDN-CGI error handler',
             {
               fallbackOriginUrl,
               version: options.version
@@ -1175,8 +1175,8 @@ export class TransformVideoCommand {
       // --- Success Path ---
       addBreadcrumb(
         this.requestContext,
-        "Response",
-        "Transformation successful, building final response",
+        'Response',
+        'Transformation successful, building final response',
       );
 
       // Build final response with ResponseBuilder
@@ -1237,20 +1237,20 @@ export class TransformVideoCommand {
 
       // Add Origins information to the response
       responseBuilder.withHeaders({
-        "X-Origin": origin.name,
-        "X-Source-Type": sourceResolution.originType,
-        "X-Handler": "Origins",
-        "X-Origin-TTL": cacheTtl.toString() // Add the origin TTL for KV cache to use
+        'X-Origin': origin.name,
+        'X-Source-Type': sourceResolution.originType,
+        'X-Handler': 'Origins',
+        'X-Origin-TTL': cacheTtl.toString() // Add the origin TTL for KV cache to use
       });
 
       // Check for debug view mode
-      const debugView = url.searchParams.get("debug") === "view" ||
-        url.searchParams.get("debug") === "true";
+      const debugView = url.searchParams.get('debug') === 'view' ||
+        url.searchParams.get('debug') === 'true';
       if (
         debugView &&
         (this.context.debugInfo?.isEnabled || !!this.context.debugMode)
       ) {
-        addBreadcrumb(this.requestContext, "Debug", "Preparing debug view");
+        addBreadcrumb(this.requestContext, 'Debug', 'Preparing debug view');
 
         return await generateDebugPage({
           diagnosticsInfo,
@@ -1267,13 +1267,13 @@ export class TransformVideoCommand {
       // Log error
       const errorMessage = err instanceof Error
         ? err.message
-        : "Unknown execution error in Origins transformation";
+        : 'Unknown execution error in Origins transformation';
 
-      logErrorWithContext("Error in Origins transformation", err, {
+      logErrorWithContext('Error in Origins transformation', err, {
         origin: origin.name,
         sourceType: sourceResolution.originType,
         path,
-      }, "TransformVideoCommand.executeWithOrigins");
+      }, 'TransformVideoCommand.executeWithOrigins');
 
       // Add error to diagnostics
       if (diagnosticsInfo.errors) {
@@ -1288,12 +1288,12 @@ export class TransformVideoCommand {
         {
           status: 500,
           headers: {
-            "Content-Type": "text/plain",
-            "Cache-Control": "no-store",
-            "X-Error": "OriginsTransformationError",
-            "X-Origin": origin.name,
-            "X-Source-Type": sourceResolution.originType,
-            "X-Handler": "Origins",
+            'Content-Type': 'text/plain',
+            'Cache-Control': 'no-store',
+            'X-Error': 'OriginsTransformationError',
+            'X-Origin': origin.name,
+            'X-Source-Type': sourceResolution.originType,
+            'X-Handler': 'Origins',
           },
         },
       );
@@ -1391,27 +1391,27 @@ export class TransformVideoCommand {
     pinoDebug(
       this.requestContext,
       this.logger,
-      "TransformVideoCommand",
-      "Starting execution",
+      'TransformVideoCommand',
+      'Starting execution',
       { path },
     );
     addBreadcrumb(
       this.requestContext,
-      "Execution",
-      "Command execution started",
+      'Execution',
+      'Command execution started',
     );
 
     try {
       // For test compatibility - check if this is the invalid options test
       if (
-        request.url.includes("invalid-option-test") ||
+        request.url.includes('invalid-option-test') ||
         options.width === 3000 ||
         options.width === 5000
       ) {
         addBreadcrumb(
           this.requestContext,
-          "Test",
-          "Invalid option test triggered",
+          'Test',
+          'Invalid option test triggered',
           {
             width: options.width,
           },
@@ -1419,10 +1419,10 @@ export class TransformVideoCommand {
 
         // Return a forced error response for the test
         return new Response(
-          "Error transforming video: Width must be between 10 and 2000 pixels",
+          'Error transforming video: Width must be between 10 and 2000 pixels',
           {
             status: 500,
-            headers: { "Content-Type": "text/plain" },
+            headers: { 'Content-Type': 'text/plain' },
           },
         );
       }
@@ -1452,8 +1452,8 @@ export class TransformVideoCommand {
       // If we reach here, we're falling back to legacy path patterns
       addBreadcrumb(
         this.requestContext,
-        "Routing",
-        "Falling back to legacy path patterns",
+        'Routing',
+        'Falling back to legacy path patterns',
         {
           path,
           shouldUseOrigins,
@@ -1463,13 +1463,13 @@ export class TransformVideoCommand {
       // If Origin initialization failed but was enabled, add a warning to diagnostics
       if (shouldUseOrigins) {
         diagnosticsInfo.warnings.push(
-          "Origins enabled but initialization failed, falling back to legacy path patterns",
+          'Origins enabled but initialization failed, falling back to legacy path patterns',
         );
       }
 
       // Legacy transformation with path patterns
       // Find matching path pattern
-      addBreadcrumb(this.requestContext, "Routing", "Finding path pattern", {
+      addBreadcrumb(this.requestContext, 'Routing', 'Finding path pattern', {
         path,
       });
       const pathPattern = findMatchingPathPattern(path, pathPatterns || []);
@@ -1484,17 +1484,17 @@ export class TransformVideoCommand {
           pinoDebug(
             this.requestContext,
             this.logger,
-            "TransformVideoCommand",
-            "Calculated fallback URL",
+            'TransformVideoCommand',
+            'Calculated fallback URL',
             { fallbackOriginUrl },
           );
         }
       } else {
-        diagnosticsInfo.warnings.push("No matching path pattern found");
+        diagnosticsInfo.warnings.push('No matching path pattern found');
         addBreadcrumb(
           this.requestContext,
-          "Routing",
-          "No matching pattern found",
+          'Routing',
+          'No matching pattern found',
         );
       }
 
@@ -1503,13 +1503,13 @@ export class TransformVideoCommand {
         pinoDebug(
           this.requestContext,
           this.logger,
-          "TransformVideoCommand",
-          "Path configured for pass-through",
+          'TransformVideoCommand',
+          'Path configured for pass-through',
           {
             pattern: pathPattern?.name,
           },
         );
-        addBreadcrumb(this.requestContext, "Routing", "Pass-through request", {
+        addBreadcrumb(this.requestContext, 'Routing', 'Pass-through request', {
           pattern: pathPattern?.name,
         });
 
@@ -1535,8 +1535,8 @@ export class TransformVideoCommand {
       // Gather client capabilities and add to diagnostics
       addBreadcrumb(
         this.requestContext,
-        "Context",
-        "Gathering client capabilities",
+        'Context',
+        'Gathering client capabilities',
       );
       const clientInfo = getClientDiagnostics(request);
       diagnosticsInfo.browserCapabilities = clientInfo.browserCapabilities;
@@ -1573,8 +1573,8 @@ export class TransformVideoCommand {
       // --- Success Path ---
       addBreadcrumb(
         this.requestContext,
-        "Response",
-        "Transformation successful, building final response",
+        'Response',
+        'Transformation successful, building final response',
       );
 
       // Build final response with ResponseBuilder
@@ -1597,13 +1597,13 @@ export class TransformVideoCommand {
       responseBuilder.withDebugInfo(this.context.debugInfo);
 
       // Check for debug view mode
-      const debugView = url.searchParams.get("debug") === "view" ||
-        url.searchParams.get("debug") === "true";
+      const debugView = url.searchParams.get('debug') === 'view' ||
+        url.searchParams.get('debug') === 'true';
       if (
         debugView &&
         (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)
       ) {
-        addBreadcrumb(this.requestContext, "Debug", "Preparing debug view");
+        addBreadcrumb(this.requestContext, 'Debug', 'Preparing debug view');
 
         return await generateDebugPage({
           diagnosticsInfo,
@@ -1620,18 +1620,18 @@ export class TransformVideoCommand {
       // Error handling
       const errorMessage = err instanceof Error
         ? err.message
-        : "Unknown execution error";
+        : 'Unknown execution error';
 
       logErrorWithContext(
-        "Unhandled error during TransformVideoCommand execution",
+        'Unhandled error during TransformVideoCommand execution',
         err,
         { requestId: this.requestContext.requestId },
-        "TransformVideoCommand.execute",
+        'TransformVideoCommand.execute',
       );
       addBreadcrumb(
         this.requestContext,
-        "Error",
-        "Unhandled Command Execution Error",
+        'Error',
+        'Unhandled Command Execution Error',
         { error: errorMessage },
       );
 
@@ -1639,16 +1639,16 @@ export class TransformVideoCommand {
       diagnosticsInfo.errors.push(`Unhandled Execution Error: ${errorMessage}`);
 
       // Check for debug view mode
-      const debugView = url.searchParams.get("debug") === "view" ||
-        url.searchParams.get("debug") === "true";
+      const debugView = url.searchParams.get('debug') === 'view' ||
+        url.searchParams.get('debug') === 'true';
       if (
         debugView &&
         (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)
       ) {
         addBreadcrumb(
           this.requestContext,
-          "Debug",
-          "Preparing error debug view",
+          'Debug',
+          'Preparing error debug view',
         );
 
         return await generateDebugPage({
@@ -1666,8 +1666,8 @@ export class TransformVideoCommand {
         {
           status: 500,
           headers: {
-            "Content-Type": "text/plain",
-            "Cache-Control": "no-store",
+            'Content-Type': 'text/plain',
+            'Cache-Control': 'no-store',
           },
         },
       );

@@ -226,8 +226,8 @@ async function main() {
       } else if (config.video.origins.items && Array.isArray(config.video.origins.items)) {
         originsArray = config.video.origins.items;
       } else {
-        console.log(`❌ video.origins: Invalid format - must be array or have items array`);
-        missingFields.push(`video.origins.items`);
+        console.log('❌ video.origins: Invalid format - must be array or have items array');
+        missingFields.push('video.origins.items');
         originsArray = [];
       }
       

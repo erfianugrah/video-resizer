@@ -193,7 +193,7 @@ describe('Origin Resolution Integration', () => {
 
     it('should fallback to default origin if no specific match is found', () => {
       const resolver = new OriginResolver(testConfig);
-      const path = `/unknown/path`;
+      const path = '/unknown/path';
 
       const result = resolver.resolvePathToSource(path);
 
@@ -326,7 +326,7 @@ describe('Origin Resolution Integration', () => {
       };
 
       const resolver = new OriginResolver(customConfig);
-      const path = `/empty/test`;
+      const path = '/empty/test';
 
       const highestPriority = resolver.matchOriginWithCaptures(path);
       expect(highestPriority).not.toBeNull();

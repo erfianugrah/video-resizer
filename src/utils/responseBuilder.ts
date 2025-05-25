@@ -802,7 +802,7 @@ export class ResponseBuilder {
     }
     
     // Create the error response body
-    let responseBody = JSON.stringify({
+    const responseBody = JSON.stringify({
       success: false,
       ...errorInfo
     }, null, 2);

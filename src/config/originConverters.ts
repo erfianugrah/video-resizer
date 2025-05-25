@@ -56,7 +56,7 @@ export function convertPathPatternToOrigin(
   }
   
   // Set default videoCompression if not specified
-  origin.videoCompression = "auto";
+  origin.videoCompression = 'auto';
   
   // Get path transforms for this pattern if available
   const pathTransforms = storageConfig?.pathTransforms?.[pathPattern.name] as Record<string, PathTransform> | undefined;
