@@ -924,13 +924,35 @@ export async function handleTransformationError({
     });
   }
 
-  // If all fallbacks fail, return a generic error response
-  logErrorWithContext('All fallback mechanisms failed', new Error('No fallback content available'), { requestId: requestContext.requestId }, 'handleTransformationError');
+  // If all fallbacks fail, return an error response with the actual proxy error
+  logErrorWithContext('All fallback mechanisms failed', new Error('No fallback content available'), { 
+    requestId: requestContext.requestId,
+    originalError: errorText,
+    originalStatus: status 
+  }, 'handleTransformationError');
   addBreadcrumb(requestContext, 'Error', 'All fallbacks failed');
   
-  // Return a generic 500
-  return new Response(`Transformation failed and fallback could not be retrieved. Original error status: ${status}`, {
-    status: 500,
-    headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }
+  // Return the actual error from the transformation proxy
+  const errorResponse = {
+    error: parsedError.errorType || 'transformation_failed',
+    message: parsedError.specificError || errorText || `Media transformation failed with status ${status}`,
+    statusCode: status,
+    details: {
+      originalError: errorText,
+      parsedError: parsedError,
+      fallbackAttempted: true,
+      fallbackFailed: true
+    }
+  };
+  
+  return new Response(JSON.stringify(errorResponse), {
+    status: status || 500,
+    headers: { 
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-Error-Type': parsedError.errorType || 'transformation_failed',
+      'X-Original-Error': errorText.substring(0, 200), // Include in header for diagnostics
+      'X-Fallback-Failed': 'true'
+    }
   });
 }

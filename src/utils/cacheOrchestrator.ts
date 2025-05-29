@@ -14,6 +14,7 @@ import { getFromKVCache, storeInKVCache } from './kvCacheUtils';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
+import { BoundedLRUMap } from './BoundedLRUMap';
 
 /**
  * Interface for in-flight request tracking with metadata
@@ -34,11 +35,27 @@ interface InFlightRequest {
 // This is a per-worker isolate map to prevent redundant fetches when multiple requests arrive simultaneously
 // Enhanced with metadata for better observability and debugging
 // Note: Map<cacheKey, InFlightRequest>
-const inFlightOriginFetches = new Map<string, InFlightRequest>();
+// Using BoundedLRUMap to prevent unbounded memory growth
+const inFlightOriginFetches = new BoundedLRUMap<string, InFlightRequest>({
+  maxSize: 1000, // Limit to 1000 concurrent in-flight requests
+  ttlMs: 300000, // 5 minute TTL for in-flight requests
+  onEvict: (key, value) => {
+    // Log when entries are evicted
+    console.warn(`[CacheOrchestrator] Evicting in-flight request for key: ${key}`, {
+      requesterId: value.requesterId,
+      startTime: value.startTime,
+      age: Date.now() - value.startTime
+    });
+  }
+});
 
 // Track all coalescable requests by requestId for diagnostic purposes
 // This helps identify which requests were coalesced together
-const coalescedRequestsLog = new Map<string, string[]>();
+// Also using BoundedLRUMap to prevent memory leaks
+const coalescedRequestsLog = new BoundedLRUMap<string, string[]>({
+  maxSize: 500, // Smaller size for diagnostic logs
+  ttlMs: 600000 // 10 minute TTL for diagnostic data
+});
 
 // Generate a unique ID for tracking requests
 function generateRequestId(): string {
@@ -874,80 +891,34 @@ export async function withCaching(
 
           if (parsedRange) {
             try {
-              // We need to create a proper 206 Partial Content response
-              // Clone the response to avoid consuming it
-              logDebug('Creating ArrayBuffer from full response for range processing', {
+              // Use streaming range handling instead of loading entire video into memory
+              logDebug('Using streaming for range processing', {
                 requestId,
                 parsedRange,
                 contentLength
               });
 
-              const clonedBody = await responseForClient.arrayBuffer();
+              // Import the streaming utilities
+              const { processRangeRequest } = await import('./streamUtils');
 
-              logDebug('Successfully created ArrayBuffer from full response', {
-                requestId,
-                arrayBufferSize: clonedBody.byteLength,
-                expectedSize: contentLength
-              });
+              // Process the range request using streaming
+              responseForClient = await processRangeRequest(
+                responseForClient,
+                parsedRange.start,
+                parsedRange.end,
+                contentLength,
+                {
+                  preserveHeaders: true,
+                  handlerTag: 'cacheOrchestrator-origin-miss',
+                  bypassCacheAPI: false,
+                  fallbackApplied: false
+                }
+              );
 
-              // Validate buffer size against expected content length
-              if (clonedBody.byteLength !== contentLength) {
-                logDebug('WARNING: ArrayBuffer size does not match Content-Length header', {
-                  requestId,
-                  arrayBufferSize: clonedBody.byteLength,
-                  contentLengthHeader: contentLength,
-                  difference: clonedBody.byteLength - contentLength
-                });
-                // Continue anyway - the buffer we have is what we'll use
-              }
-
-              // Get just the requested portion of the body
-              const rangeStart = Math.min(parsedRange.start, clonedBody.byteLength - 1);
-              const rangeEnd = Math.min(parsedRange.end, clonedBody.byteLength - 1);
-
-              // Double-check range is valid
-              if (rangeStart > rangeEnd || rangeStart < 0 || rangeEnd >= clonedBody.byteLength) {
-                throw new Error(`Invalid range values after validation: ${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`);
-              }
-
-              const partialContent = clonedBody.slice(rangeStart, rangeEnd + 1);
-
-              logDebug('Created partial content slice for range request', {
-                requestId,
-                originalRange: `${parsedRange.start}-${parsedRange.end}`,
-                adjustedRange: rangeStart !== parsedRange.start || rangeEnd !== parsedRange.end ?
-                  `${rangeStart}-${rangeEnd}` : undefined,
-                totalSize: clonedBody.byteLength,
-                partialSize: partialContent.byteLength,
-                requestedRangeSize: parsedRange.end - parsedRange.start + 1
-              });
-
-              // Create new headers for the partial response
-              const partialHeaders = new Headers(responseForClient.headers);
-              partialHeaders.set('Content-Range', `bytes ${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`);
-              partialHeaders.set('Content-Length', partialContent.byteLength.toString());
-              partialHeaders.set('Accept-Ranges', 'bytes');
-
-              // Add tracking headers for diagnostics
-              partialHeaders.set('X-Range-Processed-By', 'cacheOrchestrator');
-
-              // Only add this header if using adjusted range
-              if (rangeStart !== parsedRange.start || rangeEnd !== parsedRange.end) {
-                partialHeaders.set('X-Range-Adjusted', 'true');
-              }
-
-              // Create the 206 Partial Content response
-              responseForClient = new Response(partialContent, {
-                status: 206,
-                statusText: 'Partial Content',
-                headers: partialHeaders
-              });
-
-              logDebug('Successfully created 206 Partial Content response', {
+              logDebug('Successfully created 206 Partial Content response using streaming', {
                 requestId,
                 originalRangeHeader: rangeHeader,
-                processedRange: `${rangeStart}-${rangeEnd}/${clonedBody.byteLength}`,
-                partialSize: partialContent.byteLength
+                processedRange: `${parsedRange.start}-${parsedRange.end}/${contentLength}`
               });
             } catch (bufferErr) {
               // Specific error for buffer processing issues

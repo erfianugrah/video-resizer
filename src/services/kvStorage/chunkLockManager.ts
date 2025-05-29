@@ -4,6 +4,7 @@
  */
 
 import { logDebug } from './logging';
+import { BoundedLRUMap } from '../../utils/BoundedLRUMap';
 
 interface ChunkLock {
   promise: Promise<void>;
@@ -13,11 +14,25 @@ interface ChunkLock {
 }
 
 class ChunkLockManager {
-  private locks: Map<string, ChunkLock> = new Map();
+  private locks: BoundedLRUMap<string, ChunkLock>;
   private readonly lockTimeout = 30000; // 30 seconds
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
+    // Use BoundedLRUMap to prevent unbounded growth
+    this.locks = new BoundedLRUMap<string, ChunkLock>({
+      maxSize: 500, // Limit concurrent locks
+      ttlMs: 30000, // 30 second TTL
+      onEvict: (key, lock) => {
+        // Release the lock when evicted
+        lock.resolve();
+        logDebug('[CHUNK_LOCK] Lock evicted due to LRU/TTL', {
+          key,
+          age: Date.now() - lock.acquiredAt
+        });
+      }
+    });
+    
     // Start cleanup interval to remove stale locks
     // Note: In Cloudflare Workers, this interval will be automatically
     // cleaned up when the worker instance is terminated
@@ -94,7 +109,10 @@ class ChunkLockManager {
       const now = Date.now();
       const staleKeys: string[] = [];
 
-      for (const [key, lock] of this.locks) {
+      // BoundedLRUMap handles TTL automatically, but we can do additional cleanup
+      // Get all entries to check for stale locks
+      const entries = this.locks.entries();
+      for (const [key, lock] of entries) {
         if (now - lock.acquiredAt > this.lockTimeout) {
           staleKeys.push(key);
         }
@@ -110,7 +128,7 @@ class ChunkLockManager {
           this.releaseLock(key);
         });
       }
-    }, 10000); // Check every 10 seconds
+    }, 5000); // Check every 5 seconds for more aggressive cleanup
   }
 
   /**
@@ -130,7 +148,8 @@ class ChunkLockManager {
     let oldestLockAge: number | null = null;
     const now = Date.now();
 
-    for (const lock of this.locks.values()) {
+    const values = this.locks.values();
+    for (const lock of values) {
       const age = now - lock.acquiredAt;
       if (oldestLockAge === null || age > oldestLockAge) {
         oldestLockAge = age;
