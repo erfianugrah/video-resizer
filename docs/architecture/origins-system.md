@@ -116,6 +116,8 @@ Origins are configured as an array in the top-level configuration:
 | `sources` | Array of source configurations in priority order |
 | `ttl` | Cache TTL settings for different response types |
 | `transformOptions` | Video transformation options for this origin |
+| `quality` | Default quality setting for videos from this origin (affects cache keys) |
+| `videoCompression` | Default compression setting for videos from this origin (affects cache keys) |
 
 #### Source Object
 
@@ -292,6 +294,39 @@ The video-resizer system includes a compatibility layer that:
 6. **Future Extensibility**: The system can be more easily extended with new features.
 
 7. **Enhanced Resilience**: Multiple matching origins provide fallback paths when one origin fails or returns a 404, improving overall reliability.
+
+### Cache Key Generation with Origin Options
+
+When an origin has transformation options like `quality` or `videoCompression`, these must be applied before any cache lookup operations to ensure consistent cache key generation. This is critical for cache hit rates.
+
+#### How It Works
+
+1. **Origin Matching**: When a request path matches an origin pattern, the origin is resolved first
+2. **Option Application**: Origin-specific options are applied to the initial video options before cache lookup
+3. **Cache Key Generation**: The cache key includes these origin options, ensuring consistency between storage and retrieval
+
+#### Example
+
+If an origin has `videoCompression: "auto"` configured:
+- Cache lookup key: `video:path/video.mp4:w=1920:h=1080:c=auto`
+- Storage key: `video:path/video.mp4:w=1920:h=1080:c=auto`
+
+Without early option application, these would mismatch causing cache misses.
+
+#### Implementation Note
+
+The system applies origin options in `videoHandlerWithOrigins.ts` before KV cache lookup:
+
+```typescript
+// Apply origin-specific options to initial video options for consistent cache keys
+if (originMatch.origin.quality && !initialVideoOptions.quality) {
+  initialVideoOptions.quality = originMatch.origin.quality;
+}
+
+if (originMatch.origin.videoCompression && !initialVideoOptions.compression) {
+  initialVideoOptions.compression = originMatch.origin.videoCompression;
+}
+```
 
 ## Troubleshooting
 
