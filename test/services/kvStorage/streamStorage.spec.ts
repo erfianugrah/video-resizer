@@ -155,8 +155,7 @@ describe('Streaming Storage', () => {
     // Verify chunked storage metrics were logged
     const { logDebug } = await import('../../../src/services/kvStorage/logging');
     expect(logDebug).toHaveBeenCalledWith(
-      expect.stringContaining('[STREAM_STORE]'),
-      expect.stringContaining('Successfully stored manifest and all chunks'),
+      '[STREAM_STORE] Successfully stored manifest and all chunks',
       expect.objectContaining({ 
         key: expect.stringContaining('transformed:videos/large.mp4'),
         chunkCount: expect.any(Number),
@@ -201,8 +200,12 @@ describe('Streaming Storage', () => {
     // Verify error was logged
     const { logDebug } = await import('../../../src/services/kvStorage/logging');
     expect(logDebug).toHaveBeenCalledWith(
-      'Response body is null',
-      expect.objectContaining({ sourcePath: 'videos/null-body.mp4' })
+      '[STREAM_STORE] Failed to store video using streaming',
+      expect.objectContaining({ 
+        key: expect.stringContaining('transformed:videos/error.mp4'),
+        totalProcessedBytes: expect.any(Number),
+        chunksStored: expect.any(Number)
+      })
     );
   });
   
