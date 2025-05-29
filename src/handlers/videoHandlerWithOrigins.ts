@@ -21,6 +21,9 @@ import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/clou
 import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
 import type { Origin, Source, VideoOptions } from '../services/videoStorage/interfaces';
 
+// In-flight transformation tracking to prevent duplicate origin fetches
+const inFlightTransformations = new Map<string, Promise<Response>>();
+
 /**
  * Main handler for video requests using the Origins system
  * 
@@ -128,32 +131,31 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       let originMatch: any = null;
       let sourceResolution: any = null;
       
-      if (!skipCache) {
-        // Start origin resolution in parallel with cache check
-        speculativeOriginPromise = (async () => {
-          try {
-            const originResolver = new OriginResolver(videoConfig.getConfig());
-            originMatch = originResolver.matchOriginWithCaptures(path);
-            
-            if (originMatch) {
-              sourceResolution = originResolver.resolvePathToSource(path);
-              
-              debug(context, logger, 'VideoHandlerWithOrigins', 'Speculative origin resolution completed', {
-                origin: originMatch.origin.name,
-                hasSource: !!sourceResolution,
-                timing: 'parallel-with-cache'
-              });
-            }
-            
-            return { originMatch, sourceResolution };
-          } catch (err) {
-            debug(context, logger, 'VideoHandlerWithOrigins', 'Error in speculative origin resolution', {
-              error: err instanceof Error ? err.message : String(err)
-            });
-            return null;
-          }
-        })();
+      // We need to resolve the origin first to get origin-specific options
+      // This ensures cache keys match between storage and retrieval
+      const originResolver = new OriginResolver(videoConfig.getConfig());
+      originMatch = originResolver.matchOriginWithCaptures(path);
+      
+      if (originMatch) {
+        sourceResolution = originResolver.resolvePathToSource(path);
+        
+        // Apply origin-specific options to initial video options for consistent cache keys
+        if (originMatch.origin.quality && !initialVideoOptions.quality) {
+          initialVideoOptions.quality = originMatch.origin.quality;
+        }
+        
+        if (originMatch.origin.videoCompression && !initialVideoOptions.compression) {
+          initialVideoOptions.compression = originMatch.origin.videoCompression;
+        }
+        
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Applied origin options for cache lookup', {
+          origin: originMatch.origin.name,
+          compression: initialVideoOptions.compression,
+          quality: initialVideoOptions.quality
+        });
       }
+      
+      // No need for speculative origin resolution since we already resolved it
       
       // Prepare KV cache check if env is available and not skipped
       if (env && !skipCache) {
@@ -277,30 +279,7 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       
       endTimedOperation(context, 'cache-lookup');
 
-      // Use speculative origin resolution if available, otherwise resolve now
-      if (speculativeOriginPromise) {
-        const speculativeResult = await speculativeOriginPromise;
-        if (speculativeResult) {
-          originMatch = speculativeResult.originMatch;
-          sourceResolution = speculativeResult.sourceResolution;
-          
-          debug(context, logger, 'VideoHandlerWithOrigins', 'Using speculative origin resolution result', {
-            origin: originMatch?.origin?.name,
-            hasSource: !!sourceResolution,
-            latencySaved: 'cache-check-time'
-          });
-        }
-      }
-      
-      // If speculative resolution didn't work or wasn't done, resolve now
-      if (!originMatch) {
-        const originResolver = new OriginResolver(videoConfig.getConfig());
-        originMatch = originResolver.matchOriginWithCaptures(path);
-        
-        if (originMatch) {
-          sourceResolution = originResolver.resolvePathToSource(path);
-        }
-      }
+      // Origin resolution already done before cache check, no need to do it again
       
       if (!originMatch) {
         // No matching origin found
@@ -415,20 +394,89 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         debug: context.debugEnabled
       };
       
-      // Time the video transformation operation
-      startTimedOperation(context, 'video-transformation', 'Transform');
+      // Generate a unique key for this transformation to enable request coalescing
+      const transformKey = `${originMatch.origin.name}:${sourceResolution.resolvedPath}:${JSON.stringify({
+        width: videoOptions.width,
+        height: videoOptions.height,
+        derivative: videoOptions.derivative,
+        quality: videoOptions.quality,
+        compression: videoOptions.compression,
+        format: videoOptions.format,
+        mode: videoOptions.mode
+      })}`;
       
-      // Transform the video with origins
-      const response = await transformVideoWithOrigins(
-        request, 
-        videoOptions as any, 
-        originMatch.origin,
-        sourceResolution,
-        debugInfo, 
-        env
-      );
+      // Check if there's already an in-flight transformation for this exact request
+      const existingTransform = inFlightTransformations.get(transformKey);
       
-      endTimedOperation(context, 'video-transformation');
+      let response: Response;
+      
+      if (existingTransform) {
+        // Join the existing transformation to avoid duplicate origin fetches
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Joining existing transformation request', {
+          transformKey: transformKey.substring(0, 100), // Log first 100 chars
+          inFlightCount: inFlightTransformations.size
+        });
+        
+        addBreadcrumb(context, 'Transform', 'Coalescing with existing transformation', {
+          origin: originMatch.origin.name,
+          path: sourceResolution.resolvedPath
+        });
+        
+        // Time the coalesced wait
+        startTimedOperation(context, 'video-transformation-coalesced', 'Transform');
+        
+        try {
+          response = await existingTransform;
+          
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Successfully joined existing transformation', {
+            origin: originMatch.origin.name,
+            status: response.status
+          });
+        } finally {
+          endTimedOperation(context, 'video-transformation-coalesced');
+        }
+      } else {
+        // This is the first request for this transformation
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Initiating new transformation', {
+          transformKey: transformKey.substring(0, 100), // Log first 100 chars
+          origin: originMatch.origin.name,
+          path: sourceResolution.resolvedPath
+        });
+        
+        // Time the video transformation operation
+        startTimedOperation(context, 'video-transformation', 'Transform');
+        
+        // Create the transformation promise
+        const transformPromise = transformVideoWithOrigins(
+          request, 
+          videoOptions as any, 
+          originMatch.origin,
+          sourceResolution,
+          debugInfo, 
+          env
+        );
+        
+        // Store it for potential reuse by concurrent requests
+        inFlightTransformations.set(transformKey, transformPromise);
+        
+        try {
+          response = await transformPromise;
+          
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Transformation completed successfully', {
+            origin: originMatch.origin.name,
+            status: response.status,
+            contentType: response.headers.get('Content-Type')
+          });
+        } finally {
+          // Clean up the in-flight transformation
+          inFlightTransformations.delete(transformKey);
+          endTimedOperation(context, 'video-transformation');
+          
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Cleaned up in-flight transformation', {
+            remainingInFlight: inFlightTransformations.size
+          });
+        }
+      }
       
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);

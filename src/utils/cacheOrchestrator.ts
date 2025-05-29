@@ -204,6 +204,16 @@ export async function withCaching(
       if (options.derivative) {
         cacheKey += `:derivative=${options.derivative}`;
       }
+      
+      // Add width/height parameters to cache key for proper request coalescing
+      // This ensures requests with different dimensions don't share the same in-flight request
+      if (options.width) {
+        cacheKey += `:width=${options.width}`;
+      }
+      if (options.height) {
+        cacheKey += `:height=${options.height}`;
+      }
+      
       // Add IMQuery parameters if present - these should match how KV keys are generated
       const imwidth = url.searchParams.get('imwidth');
       const imheight = url.searchParams.get('imheight');
@@ -232,6 +242,8 @@ export async function withCaching(
       url: request.url,
       path: sourcePath,
       derivative: options?.derivative,
+      width: options?.width,
+      height: options?.height,
       imwidth: url.searchParams.get('imwidth'),
       imheight: url.searchParams.get('imheight')
     });

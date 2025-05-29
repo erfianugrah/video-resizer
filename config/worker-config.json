@@ -66,18 +66,19 @@
 					"videoCompression": "auto"
 				},
 				{
-					"name": "videos-alt",
-					"matcher": "^/videos/([^.]+)",
+					"name": "bynder",
+					"matcher": "^/m/([^/]+)/original/(.+\\.mp4)$",
 					"captureGroups": [
-						"videoId"
+						"hash",
+						"filename"
 					],
 					"processPath": true,
 					"sources": [
 						{
 							"type": "r2",
-							"priority": 0,
+							"priority": 1,
 							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "videos/${videoId}",
+							"path": "m/${hash}/original/${filename}",
 							"auth": {
 								"enabled": false,
 								"type": "basic"
@@ -85,9 +86,9 @@
 						},
 						{
 							"type": "remote",
-							"priority": 1,
-							"url": "https://assets.exp.ingka.com",
-							"path": "videos/${videoId}",
+							"priority": 0,
+							"url": "https://ikea.getbynder.com",
+							"path": "m/${hash}/original/${filename}",
 							"auth": {
 								"enabled": false,
 								"type": "basic"
@@ -101,7 +102,7 @@
 							"type": "remote",
 							"priority": 2,
 							"url": "https://videos.erfi.dev",
-							"path": "videos/${videoId}",
+							"path": "m/${hash}/original/${filename}",
 							"auth": {
 								"enabled": false,
 								"type": "basic"
