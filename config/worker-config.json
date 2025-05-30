@@ -86,7 +86,7 @@
 						},
 						{
 							"type": "remote",
-							"priority": 0,
+							"priority": 1,
 							"url": "https://ikea.getbynder.com",
 							"path": "m/${hash}/original/${filename}",
 							"auth": {
@@ -100,12 +100,16 @@
 						},
 						{
 							"type": "remote",
-							"priority": 2,
-							"url": "https://videos.erfi.dev",
+							"priority": 0,
+							"url": "https://r2.www.cte.ikeadt.com",
 							"path": "m/${hash}/original/${filename}",
 							"auth": {
 								"enabled": false,
 								"type": "basic"
+							},
+							"headers": {
+								"Accept": "video/*,application/octet-stream",
+								"X-Client-ID": "video-resizer"
 							}
 						}
 					],
