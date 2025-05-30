@@ -35,11 +35,7 @@ export function createBaseMetadata(
   ttl?: number
 ): TransformationMetadata {
   const metadata: TransformationMetadata = {
-    sourcePath,
     mode: options.mode || 'video',
-    format: options.format,
-    quality: options.quality,
-    compression: options.compression,
     derivative: options.derivative,
     cacheTags: generateCacheTags(sourcePath, options, new Headers({
       'Content-Type': contentType
@@ -48,17 +44,21 @@ export function createBaseMetadata(
     contentType,
     contentLength,
     createdAt: Date.now(),
-    duration: options.duration,
-    fps: options.fps,
-    // Add mode-specific metadata
-    time: options.time,
-    columns: options.columns,
-    rows: options.rows,
-    interval: options.interval,
     customData: {
       ...(options.customData || {})
     }
   };
+  
+  // Only add optional fields if they have values
+  if (options.format) metadata.format = options.format;
+  if (options.quality) metadata.quality = options.quality;
+  if (options.compression) metadata.compression = options.compression;
+  if (options.duration) metadata.duration = options.duration;
+  if (options.fps) metadata.fps = options.fps;
+  if (options.time) metadata.time = options.time;
+  if (options.columns) metadata.columns = options.columns;
+  if (options.rows) metadata.rows = options.rows;
+  if (options.interval) metadata.interval = options.interval;
   
   // When we have a derivative, use the actual derivative dimensions for width/height
   // but store the original requested dimensions in customData
@@ -141,6 +141,48 @@ export async function storeWithRetry(
   while (attemptCount < maxRetries && !success) {
     try {
       attemptCount++;
+      
+      // Log key and metadata sizes before storage
+      const keySize = new Blob([key]).size;
+      const metadataSize = new Blob([JSON.stringify(metadata)]).size;
+      
+      if (attemptCount === 1) {
+        logDebug('[STORE_HELPER] Storage size diagnostics', {
+          key,
+          keySize,
+          metadataSize,
+          keyWarning: keySize > 400 ? 'Key approaching 512 byte limit' : undefined,
+          metadataWarning: metadataSize > 800 ? 'Metadata approaching 1KB limit' : undefined,
+          cacheTags: metadata.cacheTags?.length || 0,
+          cacheTagsSize: metadata.cacheTags ? new Blob([JSON.stringify(metadata.cacheTags)]).size : 0
+        });
+        
+        // Log error if sizes are too large
+        if (keySize > 512) {
+          logErrorWithContext(
+            '[STORE_HELPER] Key exceeds 512 byte limit',
+            new Error('Key too large'),
+            { key, keySize },
+            'KVStorageService.store'
+          );
+        }
+        
+        if (metadataSize > 1024) {
+          logErrorWithContext(
+            '[STORE_HELPER] Metadata exceeds 1KB limit',
+            new Error('Metadata too large'),
+            { 
+              key, 
+              metadataSize,
+              fieldsSize: {
+                cacheTags: metadata.cacheTags ? new Blob([JSON.stringify(metadata.cacheTags)]).size : 0,
+                customData: metadata.customData ? new Blob([JSON.stringify(metadata.customData)]).size : 0
+              }
+            },
+            'KVStorageService.store'
+          );
+        }
+      }
       
       if (ttl && !useIndefiniteStorage) {
         // Normal case with TTL (when storeIndefinitely is false)

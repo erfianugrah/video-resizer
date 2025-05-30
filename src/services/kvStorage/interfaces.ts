@@ -20,8 +20,8 @@ export interface ChunkManifest {
  * Interface for transformation metadata
  */
 export interface TransformationMetadata {
-  // Original source path
-  sourcePath: string;
+  // Original source path (optional - path is already in the key)
+  sourcePath?: string;
   // Transformation mode
   mode?: string | null;
   // Transformation parameters

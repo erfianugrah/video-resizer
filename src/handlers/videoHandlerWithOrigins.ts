@@ -7,11 +7,11 @@
 
 import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
-import { TransformOptions } from '../utils/kvCacheUtils';
+import { TransformOptions, storeInKVCache, getFromKVCache } from '../utils/kvCacheUtils';
 import { OriginResolver } from '../services/origins/OriginResolver';
 import { createRequestContext, addBreadcrumb, 
          startTimedOperation, endTimedOperation, setCurrentContext } from '../utils/requestContext';
-import { createLogger, info, debug, error } from '../utils/pinoLogger';
+import { createLogger, info, debug, error, warn } from '../utils/pinoLogger';
 import { initializeLegacyLogger } from '../utils/legacyLoggerAdapter';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { ResponseBuilder } from '../utils/responseBuilder';
@@ -481,14 +481,109 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       // Add final timing information to diagnostics
       context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
       
-      // Create a clone for KV caching (important: do this BEFORE any range handling)
-      const responseForCache = response.clone();
-      
-      // Set up final response
+      // Store in KV first, then retrieve and serve from KV to avoid ArrayBuffer conflicts
       let finalResponse = response;
+      let storedInKV = false;
       
-      // Handle range requests for first access AFTER cloning for KV caching
-      if (request.headers.has('Range') && finalResponse.headers.get('Content-Type')?.includes('video/')) {
+      // Check if we should store in KV cache (not in debug mode and KV is enabled)
+      if (env && videoOptions && !skipCache) {
+        const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
+        const cacheConfig = CacheConfigurationManager.getInstance();
+        const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
+        
+        if (kvCacheEnabled) {
+          try {
+            // Prepare KV storage options
+            const sourcePath = url.pathname;
+            const imwidth = url.searchParams.get('imwidth');
+            const imheight = url.searchParams.get('imheight');
+            const hasIMRef = url.searchParams.has('imref');
+            const hasIMQueryParams = !!(imwidth || imheight || hasIMRef);
+            
+            let videoOptionsForKV = videoOptions;
+            if (hasIMQueryParams && videoOptions.derivative) {
+              // Use optimized cache key for IMQuery requests
+              videoOptionsForKV = {
+                derivative: videoOptions.derivative,
+                width: videoOptions.width,
+                height: videoOptions.height,
+                mode: videoOptions.mode
+              };
+            }
+            
+            // Add origin TTL if available
+            const originTtl = response.headers.get('X-Origin-TTL');
+            if (originTtl) {
+              videoOptionsForKV = {
+                ...videoOptionsForKV,
+                customData: {
+                  ...(videoOptionsForKV.customData || {}),
+                  originTtl: parseInt(originTtl, 10)
+                }
+              };
+            }
+            
+            // Store in KV synchronously to ensure it completes before serving
+            debug(context, logger, 'VideoHandlerWithOrigins', 'Storing response in KV before serving', {
+              path: sourcePath,
+              hasIMQuery: hasIMQueryParams,
+              derivative: videoOptions.derivative
+            });
+            
+            storedInKV = await storeInKVCache(env, sourcePath, response, videoOptionsForKV as unknown as TransformOptions);
+            
+            if (storedInKV) {
+              debug(context, logger, 'VideoHandlerWithOrigins', 'Successfully stored in KV, retrieving for serving', {
+                path: sourcePath
+              });
+              
+              // Retrieve from KV to serve
+              const kvResponse = await getFromKVCache(env, sourcePath, videoOptionsForKV as unknown as TransformOptions, request);
+              
+              if (kvResponse) {
+                // Ensure Accept-Ranges header is set for video responses
+                // This tells the browser that we support range requests
+                if (kvResponse.headers.get('Content-Type')?.includes('video/')) {
+                  const headers = new Headers(kvResponse.headers);
+                  if (!headers.has('Accept-Ranges')) {
+                    headers.set('Accept-Ranges', 'bytes');
+                  }
+                  finalResponse = new Response(kvResponse.body, {
+                    status: kvResponse.status,
+                    statusText: kvResponse.statusText,
+                    headers: headers
+                  });
+                } else {
+                  finalResponse = kvResponse;
+                }
+                
+                debug(context, logger, 'VideoHandlerWithOrigins', 'Serving response from KV', {
+                  path: sourcePath,
+                  isRangeRequest: request.headers.has('Range'),
+                  status: finalResponse.status,
+                  acceptRanges: finalResponse.headers.get('Accept-Ranges')
+                });
+              } else {
+                // Shouldn't happen since we just stored it, but handle gracefully
+                warn(context, logger, 'VideoHandlerWithOrigins', 'Could not retrieve from KV after storing', {
+                  path: sourcePath
+                });
+              }
+            } else {
+              debug(context, logger, 'VideoHandlerWithOrigins', 'KV storage failed, serving original response', {
+                path: sourcePath
+              });
+            }
+          } catch (err) {
+            error(context, logger, 'VideoHandlerWithOrigins', 'Error with KV store/retrieve flow', {
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
+      }
+      
+      // If we didn't store in KV or retrieval failed, handle range requests on the original response
+      if (!storedInKV && request.headers.has('Range') && finalResponse.headers.get('Content-Type')?.includes('video/')) {
         // Import the centralized bypass headers utility
         const { hasBypassHeaders } = await import('../utils/bypassHeadersUtils');
         
@@ -620,166 +715,6 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         if (videoOptions.height > 480 && !context.diagnostics.videoInfo.height) {
           context.diagnostics.videoInfo.height = videoOptions.height;
         }
-      }
-      
-      // Store the response in KV cache if it's cacheable and not in debug mode
-      if (response.headers.get('Cache-Control')?.includes('max-age=') && !skipCache) {
-        // Use a non-blocking cache write to avoid delaying the response
-        addBreadcrumb(context, 'Cache', 'Preparing to store in KV cache', {
-          status: response.status,
-          cacheControl: response.headers.get('Cache-Control'),
-          contentType: response.headers.get('Content-Type'),
-          contentLength: response.headers.get('Content-Length') || undefined
-        });
-        
-        // Time the cache storage operation
-        startTimedOperation(context, 'cache-storage', 'Cache');
-        
-        // Also store in KV cache if environment is available and not in debug mode
-        if (env && videoOptions && !skipCache) {
-          // Get KV cache configuration
-          const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
-          const cacheConfig = CacheConfigurationManager.getInstance();
-          const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
-          
-          // Only proceed with KV cache if it's enabled in config
-          if (kvCacheEnabled) {
-            const sourcePath = url.pathname;
-            // Use the clone we made before range handling (important to avoid caching a 206 response)
-            const responseClone = responseForCache;
-            
-            // Use derivative-based caching instead of specific IMQuery dimensions
-            // This ensures better cache reuse when multiple imwidth/imheight values map to the same derivative
-            
-            // Add IMQuery detection to logs but don't use for cache key
-            const imwidth = url.searchParams.get('imwidth');
-            const imheight = url.searchParams.get('imheight');
-            const hasIMRef = url.searchParams.has('imref');
-            const hasIMQueryParams = !!(imwidth || imheight || hasIMRef);
-            
-            // Ensure we're using a derivative-based cache key for IMQuery requests
-            // This provides better cache hit rates by normalizing requests with slight dimension differences
-            let videoOptionsWithIMQuery = videoOptions;
-            if (hasIMQueryParams) {
-              if (videoOptions.derivative) {
-                debug(context, logger, 'VideoHandlerWithOrigins', 'Using derivative-based caching for IMQuery request', {
-                  imwidth,
-                  imheight,
-                  hasIMRef,
-                  derivative: videoOptions.derivative,
-                  cacheType: 'derivative-based'
-                });
-                
-                // For IMQuery requests, include only the derivative, width and height in cache key
-                // This ensures consistent cache keys regardless of custom parameters
-                videoOptionsWithIMQuery = {
-                  derivative: videoOptions.derivative,
-                  width: videoOptions.width,
-                  height: videoOptions.height,
-                  // Keep mode in case this is a video/frame/spritesheet request
-                  mode: videoOptions.mode
-                };
-                
-                addBreadcrumb(context, 'Cache', 'Using optimized IMQuery cache key', {
-                  derivative: videoOptions.derivative,
-                  originalParams: Object.keys(videoOptions).length,
-                  optimizedParams: Object.keys(videoOptionsWithIMQuery).length
-                });
-              } else {
-                debug(context, logger, 'VideoHandlerWithOrigins', 'IMQuery request without mapped derivative', {
-                  imwidth,
-                  imheight,
-                  hasIMRef,
-                  cacheType: 'dimension-based'
-                });
-              }
-            }
-            
-            // Use waitUntil if available to store in KV without blocking response
-            const envWithCtx = env as unknown as EnvWithExecutionContext;
-            
-            // Check if we have origin information to include
-            const originTtl = response.headers.get('X-Origin-TTL');
-            if (originTtl) {
-              // Add the origin TTL to the options for storage
-              videoOptionsWithIMQuery = {
-                ...videoOptionsWithIMQuery,
-                customData: {
-                  ...(videoOptionsWithIMQuery.customData || {}),
-                  originTtl: parseInt(originTtl, 10)
-                }
-              };
-            }
-            
-            if (envWithCtx.executionCtx && typeof envWithCtx.executionCtx.waitUntil === 'function') {
-              envWithCtx.executionCtx.waitUntil(
-                storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
-                  .then(success => {
-                    if (success) {
-                      debug(context, logger, 'VideoHandlerWithOrigins', 'Stored in KV cache', {
-                        path: sourcePath,
-                        hasIMQuery: !!(imwidth || imheight),
-                        derivative: videoOptions.derivative
-                      });
-                    } else {
-                      debug(context, logger, 'VideoHandlerWithOrigins', 'Failed to store in KV cache', {
-                        path: sourcePath
-                      });
-                    }
-                  })
-                  .catch(err => {
-                    error(context, logger, 'VideoHandlerWithOrigins', 'Error storing in KV cache', {
-                      error: err instanceof Error ? err.message : 'Unknown error',
-                      path: sourcePath
-                    });
-                  })
-                  .finally(() => {
-                    endTimedOperation(context, 'cache-storage');
-                  })
-              );
-            } else {
-              // No waitUntil available, try to store directly
-              storeInKVCache(env, sourcePath, responseClone, videoOptionsWithIMQuery as unknown as TransformOptions)
-                .then(success => {
-                  if (success) {
-                    debug(context, logger, 'VideoHandlerWithOrigins', 'Stored in KV cache', {
-                      path: sourcePath,
-                      hasIMQuery: !!(imwidth || imheight),
-                      derivative: videoOptions.derivative
-                    });
-                  } else {
-                    debug(context, logger, 'VideoHandlerWithOrigins', 'Failed to store in KV cache', {
-                      path: sourcePath
-                    });
-                  }
-                })
-                .catch(err => {
-                  error(context, logger, 'VideoHandlerWithOrigins', 'Error storing in KV cache', {
-                    error: err instanceof Error ? err.message : 'Unknown error',
-                    path: sourcePath
-                  });
-                })
-                .finally(() => {
-                  endTimedOperation(context, 'cache-storage');
-                });
-            }
-          } else {
-            // KV cache is disabled in config
-            debug(context, logger, 'VideoHandlerWithOrigins', 'Skipping KV cache storage (disabled by configuration)', {
-              enableKVCache: false
-            });
-            endTimedOperation(context, 'cache-storage');
-          }
-        } else {
-          endTimedOperation(context, 'cache-storage');
-        }
-      } else if (skipCache && response.headers.get('Cache-Control')?.includes('max-age=')) {
-        // Log that we're skipping cache storage due to debug parameter
-        debug(context, logger, 'VideoHandlerWithOrigins', 'Skipping cache storage due to debug parameter', {
-          debugEnabled: context.debugEnabled,
-          hasDebugParam: url.searchParams.has('debug'),
-          debugParamValue: url.searchParams.get('debug')
-        });
       }
 
       // Use ResponseBuilder for consistent response handling including range requests

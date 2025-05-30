@@ -933,7 +933,7 @@ export async function handleTransformationError({
   addBreadcrumb(requestContext, 'Error', 'All fallbacks failed');
   
   // Return the actual error from the transformation proxy
-  const errorResponse = {
+  const finalErrorResponse = {
     error: parsedError.errorType || 'transformation_failed',
     message: parsedError.specificError || errorText || `Media transformation failed with status ${status}`,
     statusCode: status,
@@ -945,7 +945,7 @@ export async function handleTransformationError({
     }
   };
   
-  return new Response(JSON.stringify(errorResponse), {
+  return new Response(JSON.stringify(finalErrorResponse), {
     status: status || 500,
     headers: { 
       'Content-Type': 'application/json',

@@ -33,15 +33,20 @@ function generateCacheTagsImpl(
   const tags: string[] = [];
   
   // Get prefix from the cache configuration
-  // The prefix is configured in worker-config.json directly
-  let prefix = 'video-'; // Default fallback
+  // Use a shorter prefix to save space in metadata
+  let prefix = 'v-'; // Short default fallback
   
   try {
     // Properly use the configured cacheTagPrefix from CacheConfigurationManager
-    prefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
+    const configuredPrefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
+    // If the configured prefix is the default long one, use short version
+    prefix = configuredPrefix === 'video-prod-' ? 'vp-' : 
+             configuredPrefix === 'video-' ? 'v-' : 
+             configuredPrefix.substring(0, 3); // Take first 3 chars of custom prefix
     
     logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
-      prefix,
+      configuredPrefix,
+      shortPrefix: prefix,
       source: 'CacheConfigurationManager'
     });
   } catch (err) {
@@ -67,151 +72,59 @@ function generateCacheTagsImpl(
   // Normalize path to create safe tags
   const normalizedPath = videoPath
     .replace(new RegExp(leadingSlashPattern), '') // Remove leading slashes
-    .replace(new RegExp(invalidCharsPattern, 'g'), replacementChar) // Replace special chars
-    .split('/')
-    .filter(Boolean);
+    .replace(new RegExp(invalidCharsPattern, 'g'), replacementChar); // Replace special chars
   
-  // Add a tag for the full path
-  tags.push(`${prefix}path-${normalizedPath.join('-').replace(/\./g, '-')}`);
-  
-  // Add tags for each path segment
-  normalizedPath.forEach((segment, index) => {
-    // Only add segment tags if there are multiple segments
-    if (normalizedPath.length > 1) {
-      tags.push(`${prefix}segment-${index}-${segment.replace(/\./g, '-')}`);
+  // Add path-based tag for purging all derivatives of a specific video
+  // This uses the full normalized path as the identifier
+  if (normalizedPath) {
+    // Create a shortened path tag to save space
+    // Take the last 2 segments of the path which typically identify the video
+    const pathSegments = normalizedPath.split('/').filter(Boolean);
+    const shortPath = pathSegments.slice(-2).join('-');
+    
+    if (shortPath) {
+      // Add base path tag - for purging all derivatives of this video
+      tags.push(`${prefix}p-${shortPath}`);
+      
+      // Add derivative-specific tag if available - for purging one specific derivative
+      if (options.derivative) {
+        tags.push(`${prefix}p-${shortPath}-${options.derivative}`);
+      }
     }
-  });
+  }
   
-  // Add a tag for the derivative if available
+  // Add derivative tag for purging all videos of a specific derivative type
   if (options.derivative) {
-    tags.push(`${prefix}derivative-${options.derivative}`);
-
-    // Add a combined path+derivative tag for more specific purging
-    tags.push(`${prefix}path-${normalizedPath.join('-').replace(/\./g, '-')}-derivative-${options.derivative}`);
+    tags.push(`${prefix}d-${options.derivative}`);
   }
-
-  // Add a tag for video format if available
+  
+  // Add format tag for format migration scenarios
   if (options.format) {
-    tags.push(`${prefix}format-${options.format}`);
+    tags.push(`${prefix}f-${options.format}`);
   }
 
-  // Add mode-specific tags
-  if (options.mode) {
-    tags.push(`${prefix}mode-${options.mode}`);
-
+  // Add mode-specific tags only for non-video modes (frame, spritesheet)
+  if (options.mode && options.mode !== 'video') {
+    tags.push(`${prefix}m-${options.mode}`);
+    
     // Add frame-specific tags
     if (options.mode === 'frame' && options.time) {
-      tags.push(`${prefix}time-${options.time.replace('s', '')}`);
+      tags.push(`${prefix}t-${options.time.replace('s', '')}`);
     }
 
     // Add spritesheet-specific tags
     if (options.mode === 'spritesheet') {
-      if (options.columns) tags.push(`${prefix}columns-${options.columns}`);
-      if (options.rows) tags.push(`${prefix}rows-${options.rows}`);
-      if (options.interval) tags.push(`${prefix}interval-${options.interval.replace('s', '')}`);
-    }
-  }
-
-  // Add dimension tags based on derivative or direct values
-  if (options.derivative) {
-    // When we have a derivative, use the actual derivative dimensions for width/height tags
-    // instead of the requested dimensions for better cache consistency
-    const derivativeDimensions = getDerivativeDimensions(options.derivative);
-
-    if (derivativeDimensions) {
-      // Add tags for the derivative's actual dimensions
-      if (derivativeDimensions.width) {
-        tags.push(`${prefix}width-${derivativeDimensions.width}`);
-      }
-
-      if (derivativeDimensions.height) {
-        tags.push(`${prefix}height-${derivativeDimensions.height}`);
-      }
-
-      // Add combined dimensions tag for the derivative's actual dimensions
-      if (derivativeDimensions.width && derivativeDimensions.height) {
-        tags.push(`${prefix}dimensions-${derivativeDimensions.width}x${derivativeDimensions.height}`);
-      }
-
-      // Also include the original requested dimensions with a different prefix
-      // This helps with debugging but doesn't affect cache behavior
-      if (options.width) {
-        tags.push(`${prefix}requested-width-${options.width}`);
-      }
-
-      if (options.height) {
-        tags.push(`${prefix}requested-height-${options.height}`);
-      }
-    } else {
-      // Fallback to the requested dimensions if the derivative config is not found
-      if (options.width) {
-        tags.push(`${prefix}width-${options.width}`);
-      }
-
-      if (options.height) {
-        tags.push(`${prefix}height-${options.height}`);
-      }
-
-      if (options.width && options.height) {
-        tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
-      }
-    }
-  } else {
-    // No derivative - use requested dimensions directly
-    if (options.width) {
-      tags.push(`${prefix}width-${options.width}`);
-    }
-
-    if (options.height) {
-      tags.push(`${prefix}height-${options.height}`);
-    }
-
-    // Add combined dimensions tag if both width and height are specified
-    if (options.width && options.height) {
-      tags.push(`${prefix}dimensions-${options.width}x${options.height}`);
+      if (options.columns) tags.push(`${prefix}c-${options.columns}`);
+      if (options.rows) tags.push(`${prefix}r-${options.rows}`);
+      if (options.interval) tags.push(`${prefix}i-${options.interval.replace('s', '')}`);
     }
   }
   
-  // Add IMQuery-specific tags if present
+  // Add IMQuery tag if this transformation came from IMQuery parameters
   if (options.customData && typeof options.customData === 'object') {
     const customData = options.customData as Record<string, unknown>;
-    
-    if (customData.imwidth) {
-      tags.push(`${prefix}imwidth-${customData.imwidth}`);
-    }
-    
-    if (customData.imheight) {
-      tags.push(`${prefix}imheight-${customData.imheight}`);
-    }
-    
-    // Add a tag to identify IMQuery sourced transformations
     if (customData.imwidth || customData.imheight) {
-      tags.push(`${prefix}source-imquery`);
-    }
-  }
-  
-  // Add a tag for quality if available
-  if (options.quality) {
-    tags.push(`${prefix}quality-${options.quality}`);
-  }
-  
-  // Add a tag for compression if available
-  if (options.compression) {
-    tags.push(`${prefix}compression-${options.compression}`);
-  }
-  
-  // Add tags for content type from headers if available
-  if (headers && headers.get('Content-Type')) {
-    const contentType = headers.get('Content-Type') || '';
-    const [mainType, fullSubType] = contentType.split('/');
-    const subType = fullSubType?.split(';')[0]; // Remove parameters
-    
-    if (mainType) {
-      tags.push(`${prefix}type-${mainType}`);
-    }
-    
-    if (subType) {
-      tags.push(`${prefix}subtype-${subType}`);
+      tags.push(`${prefix}imq`);
     }
   }
   

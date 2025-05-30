@@ -40,7 +40,7 @@ The KV Chunking system follows a simple decision flow:
    - Videos 20MB or larger are stored as multiple chunks
 
 2. **Chunking Process**: For large videos, the system:
-   - Splits the video into 5MB chunks
+   - Splits the video into 10MB chunks
    - Creates a manifest file with metadata
    - Stores each chunk with a unique key
    - Applies consistent cache tags to all parts
@@ -191,7 +191,7 @@ The manifest is stored in the value of the base key and contains all necessary m
 // Example of storing a chunked video
 async function storeChunkedVideo(namespace, baseKey, videoBuffer, contentType) {
   // Prepare chunks from video buffer
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+  const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
   const totalSize = videoBuffer.byteLength;
   const chunks = [];
   const chunkSizes = [];
@@ -360,13 +360,14 @@ async function streamChunksForRange(writer, namespace, baseKey, neededChunks, st
 
 ## Chunk Size Rationale
 
-The 5MB (5,242,880 bytes) chunk size was carefully chosen for several reasons:
+The 10MB (10,485,760 bytes) chunk size was carefully chosen for several reasons:
 
 - **Balance**: Provides optimal balance between minimizing chunk count and staying well below KV's 25MB limit
-- **Safety margin**: ~20% of KV's limit allows room for metadata overhead and future adjustments
-- **Performance**: Large enough to reduce KV operation count, small enough for efficient memory usage
-- **Technical efficiency**: As a power-of-2 multiple (5 * 2^20), it aligns well with memory operations
-- **Scalability**: 5MB chunks support videos up to several GB in size without excessive chunk counts
+- **Safety margin**: ~40% of KV's limit allows room for metadata overhead and future adjustments
+- **Performance**: Large enough to significantly reduce KV operation count and metadata overhead
+- **Technical efficiency**: As a power-of-2 multiple (10 * 2^20), it aligns well with memory operations
+- **Scalability**: 10MB chunks support videos up to several GB in size without excessive chunk counts
+- **Metadata optimization**: Reduces the number of chunks, thereby reducing metadata size
 
 ## Storage Architecture
 
@@ -400,19 +401,19 @@ classDiagram
 
     class ChunkKey0 {
         key: "video:path/to/video.mp4:w=1280:h=720_chunk_0"
-        value: Binary Chunk Data (0-5MB)
+        value: Binary Chunk Data (0-10MB)
         metadata: ChunkMetadata
     }
 
     class ChunkKey1 {
         key: "video:path/to/video.mp4:w=1280:h=720_chunk_1"
-        value: Binary Chunk Data (5-10MB)
+        value: Binary Chunk Data (10-20MB)
         metadata: ChunkMetadata
     }
 
     class ChunkKey2 {
         key: "video:path/to/video.mp4:w=1280:h=720_chunk_2"
-        value: Binary Chunk Data (10-15MB)
+        value: Binary Chunk Data (20-30MB)
         metadata: ChunkMetadata
     }
 
@@ -472,9 +473,9 @@ flowchart TD
     E[Chunk 1 Key:<br>video:example.mp4_chunk_1]
     F[Chunk 2 Key:<br>video:example.mp4_chunk_2]
 
-    G[Video Binary<br>0-5MB]
-    H[Video Binary<br>5-10MB]
-    I[Video Binary<br>10-15MB]
+    G[Video Binary<br>0-10MB]
+    H[Video Binary<br>10-20MB]
+    I[Video Binary<br>20-30MB]
 
     A --> B
     A --> D
@@ -960,7 +961,7 @@ The KV Chunking behavior can be configured:
   "kvChunking": {
     "enabled": true,
     "sizeThreshold": 20971520,
-    "chunkSize": 5242880,
+    "chunkSize": 10485760,
     "timeoutMs": 10000,
     "maxChunks": 1000,
     "parallelFetches": 3,
@@ -975,7 +976,7 @@ The KV Chunking behavior can be configured:
 |--------|------|---------|-------------|
 | `enabled` | boolean | true | Enable KV chunking |
 | `sizeThreshold` | number | 20971520 | Size threshold for chunking (20MB) |
-| `chunkSize` | number | 5242880 | Size of each chunk (5MB) |
+| `chunkSize` | number | 10485760 | Size of each chunk (10MB) |
 | `timeoutMs` | number | 10000 | Timeout for chunk operations (10s) |
 | `maxChunks` | number | 1000 | Maximum allowed chunks |
 | `parallelFetches` | number | 3 | Maximum parallel chunk fetches |
@@ -991,9 +992,9 @@ The KV Chunking behavior can be configured:
    - Consider raising for videos rarely accessed with ranges
 
 2. **Optimize Chunk Size for Content**:
-   - The default 5MB is optimal for most use cases
-   - Smaller chunks (1-2MB) may be better for videos with frequent seeking
-   - Larger chunks (8-10MB) may be better for sequential streaming of large files
+   - The default 10MB is optimal for most use cases
+   - Smaller chunks (2-5MB) may be better for videos with frequent seeking
+   - The current 10MB setting provides a good balance for sequential streaming
 
 3. **Monitor and Adjust Cache TTLs**:
    - Longer TTLs reduce origin load
