@@ -236,7 +236,6 @@ async function storeTransformedVideoImpl(
       // Enhanced metadata for individual chunks with the same cache tags as the parent entry
       // This allows purging both the parent and all chunks with a single tag-based operation
       const chunkMetadata = {
-        parentKey: key,
         chunkIndex: chunkIndex,
         size: chunkBuffer.byteLength,
         contentType: 'application/octet-stream', // Use octet-stream for chunks

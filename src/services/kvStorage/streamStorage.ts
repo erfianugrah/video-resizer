@@ -223,7 +223,6 @@ async function processStreamInChunks(
       
       // Enhanced metadata for individual chunks
       const chunkMetadata = {
-        parentKey: key,
         chunkIndex: currentChunkIndex,
         size: chunkSize,
         contentType: 'application/octet-stream', // Use octet-stream for chunks
