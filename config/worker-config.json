@@ -76,7 +76,7 @@
 					"sources": [
 						{
 							"type": "r2",
-							"priority": 1,
+							"priority": 2,
 							"bucketBinding": "VIDEOS_BUCKET",
 							"path": "m/${hash}/original/${filename}",
 							"auth": {
