@@ -7,7 +7,7 @@
 
 import { EnvironmentConfig, EnvVariables } from '../config/environmentConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
-import { TransformOptions, storeInKVCache, getFromKVCache } from '../utils/kvCacheUtils';
+import { TransformOptions } from '../utils/kvCacheUtils';
 import { OriginResolver } from '../services/origins/OriginResolver';
 import { createRequestContext, addBreadcrumb, 
          startTimedOperation, endTimedOperation, setCurrentContext } from '../utils/requestContext';
@@ -17,9 +17,9 @@ import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUt
 import { ResponseBuilder } from '../utils/responseBuilder';
 import { determineVideoOptions } from './videoOptionsService';
 import { isCdnCgiMediaPath } from '../utils/pathUtils';
-import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
+import type { EnvWithExecutionContext } from '../types/cloudflare';
 import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
-import type { Origin, Source, VideoOptions } from '../services/videoStorage/interfaces';
+import type { Origin, VideoOptions } from '../services/videoStorage/interfaces';
 
 // In-flight transformation tracking to prevent duplicate origin fetches
 const inFlightTransformations = new Map<string, Promise<Response>>();
@@ -102,7 +102,7 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       }
       
       // Import the cache services
-      const { getCachedResponse, cacheResponse } = await import('../services/cacheManagementService');
+      const { cacheResponse } = await import('../services/cacheManagementService');
       const { CacheConfigurationManager } = await import('../config');
       const { getFromKVCache, storeInKVCache } = await import('../utils/kvCacheUtils');
 
@@ -152,6 +152,28 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
           origin: originMatch.origin.name,
           compression: initialVideoOptions.compression,
           quality: initialVideoOptions.quality
+        });
+      }
+      
+      // Get the current cache version for KV cache lookup
+      // This ensures we use the correct version when checking cache
+      if (env) {
+        const { getCacheKeyVersion } = await import('../services/cacheVersionService');
+        const { generateKVKey } = await import('../services/kvStorage/keyUtils');
+        
+        // Generate the exact same cache key that KV storage will use
+        // This ensures version tracking matches the actual cache keys
+        const versionCacheKey = generateKVKey(path, initialVideoOptions);
+        
+        // Get the current version (will be 1 if not found)
+        const currentVersion = await getCacheKeyVersion(env, versionCacheKey) || 1;
+        initialVideoOptions.version = currentVersion;
+        
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Retrieved cache version for lookup', {
+          versionCacheKey,
+          version: currentVersion,
+          path,
+          derivative: initialVideoOptions.derivative
         });
       }
       
@@ -275,6 +297,35 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         addBreadcrumb(context, 'KVCache', 'KV cache miss', {
           path: url.pathname
         });
+        
+        // After cache miss, check if version was incremented and update our options
+        if (env.VIDEO_CACHE_KEY_VERSIONS) {
+          const { getCacheKeyVersion } = await import('../services/cacheVersionService');
+          const { generateKVKey } = await import('../services/kvStorage/keyUtils');
+          
+          // Generate the same cache key that was used in the lookup
+          const updatedCacheKey = generateKVKey(path, initialVideoOptions);
+          
+          // Get the potentially updated version after cache miss
+          const updatedVersion = await getCacheKeyVersion(env, updatedCacheKey) || 1;
+          
+          // If version was incremented, update our options
+          if (updatedVersion > (initialVideoOptions.version || 1)) {
+            debug(context, logger, 'VideoHandlerWithOrigins', 'Version was incremented after cache miss', {
+              oldVersion: initialVideoOptions.version || 1,
+              newVersion: updatedVersion,
+              cacheKey: updatedCacheKey
+            });
+            
+            // Update initial video options with new version
+            initialVideoOptions.version = updatedVersion;
+            
+            // Update context diagnostics
+            if (context.diagnostics.transformOptions && typeof context.diagnostics.transformOptions === 'object') {
+              (context.diagnostics.transformOptions as any).version = updatedVersion;
+            }
+          }
+        }
       }
       
       endTimedOperation(context, 'cache-lookup');
@@ -384,6 +435,17 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       if (originMatch.origin.videoCompression && !videoOptions.compression) {
         videoOptions.compression = originMatch.origin.videoCompression;
       }
+      
+      // CRITICAL: Use the updated version from initialVideoOptions which includes any increment from cache miss
+      // This ensures CDN requests use the incremented version (v=2, v=3, etc) for cache busting
+      videoOptions.version = initialVideoOptions.version || 1;
+      
+      debug(context, logger, 'VideoHandlerWithOrigins', 'Using cache version for transformation', {
+        version: videoOptions.version,
+        initialVersion: initialVideoOptions.version,
+        path,
+        hadCacheMiss: !kvResponse
+      });
       
       // Configure debug options
       const debugInfo = {
@@ -507,7 +569,8 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
                 derivative: videoOptions.derivative,
                 width: videoOptions.width,
                 height: videoOptions.height,
-                mode: videoOptions.mode
+                mode: videoOptions.mode,
+                version: videoOptions.version // Preserve version for proper cache tracking
               };
             }
             
@@ -537,8 +600,21 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
                 path: sourcePath
               });
               
-              // Retrieve from KV to serve
-              const kvResponse = await getFromKVCache(env, sourcePath, videoOptionsForKV as unknown as TransformOptions, request);
+              // Retrieve from KV to serve with retry mechanism
+              let kvResponse = await getFromKVCache(env, sourcePath, videoOptionsForKV as unknown as TransformOptions, request);
+              
+              // If retrieval fails, retry once after a short delay
+              if (!kvResponse) {
+                debug(context, logger, 'VideoHandlerWithOrigins', 'First KV retrieval attempt failed, retrying after delay', {
+                  path: sourcePath
+                });
+                
+                // Wait 100ms for KV propagation
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Retry the retrieval
+                kvResponse = await getFromKVCache(env, sourcePath, videoOptionsForKV as unknown as TransformOptions, request);
+              }
               
               if (kvResponse) {
                 // Ensure Accept-Ranges header is set for video responses

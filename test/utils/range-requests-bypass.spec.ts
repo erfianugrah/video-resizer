@@ -102,7 +102,7 @@ describe('Range Request Handling with Cache API Bypass', () => {
     expect(globalThis.caches.open).not.toHaveBeenCalled();
   });
   
-  it('should handle range requests for bypassed large videos', async () => {
+  it('should return original response for bypassed large videos with range requests', async () => {
     // Mock streams for testing
     const mockWriter = {
       write: vi.fn().mockResolvedValue(undefined),
@@ -169,15 +169,14 @@ describe('Range Request Handling with Cache API Bypass', () => {
     // Call the function
     const result = await handleRangeRequestForInitialAccess(largeVideoResponse, request);
     
-    // Verify the response is a 206 Partial Content
-    expect(result.status).toBe(206);
-    expect(result.headers.get('Content-Range')).toBe('bytes 0-1023/268435456');
-    expect(result.headers.get('Content-Length')).toBe('1024');
-    expect(result.headers.get('X-Range-Handled-By')).toBe('Direct-Stream-Range-Handler');
+    // Verify the response is returned unchanged (range handling happens in videoHandlerWithOrigins)
+    expect(result).toBe(largeVideoResponse);
+    expect(result.status).toBe(200);
+    expect(result.headers.get('Content-Length')).toBe('268435456');
     
     // Verify correct bypass headers are maintained
     expect(result.headers.get('X-Video-Exceeds-256MiB')).toBe('true');
-    expect(result.headers.get('X-Range-Handled-By')).toBe('Direct-Stream-Range-Handler');
+    expect(result.headers.get('Accept-Ranges')).toBe('bytes');
     
     // Verify we didn't use the Cache API
     expect(globalThis.caches.open).not.toHaveBeenCalled();

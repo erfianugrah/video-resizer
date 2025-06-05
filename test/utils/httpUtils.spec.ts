@@ -88,40 +88,7 @@ describe('httpUtils', () => {
   });
 
   describe('handleRangeRequestForInitialAccess', () => {
-    let consoleSpy: any;
-    let cachePutSpy: any;
-    let cacheMatchSpy: any;
-    let cacheOpenSpy: any;
-    let mockCache: any;
-    
-    beforeEach(() => {
-      // Reset mocks before each test
-      consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      vi.spyOn(console, 'debug').mockImplementation(() => {});
-      
-      // Create a mock cache
-      mockCache = {
-        put: vi.fn(() => Promise.resolve()),
-        match: vi.fn(() => Promise.resolve(null))
-      };
-      
-      // Mock the global caches object
-      cacheOpenSpy = vi.spyOn(global, 'caches', 'get').mockReturnValue({
-        open: vi.fn(() => Promise.resolve(mockCache))
-      } as any);
-      
-      cachePutSpy = mockCache.put;
-      cacheMatchSpy = mockCache.match;
-      
-      // For simplicity in tests, we'll just spy on console.debug
-      // and not worry about the actual TTL calculation in tests
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
-    it('should store response in cache and return cached response', async () => {
+    it('should return the original response without any Cache API processing', async () => {
       // Create a mock response and request
       const request = new Request('https://example.com/video.mp4');
       const originalResponse = new Response('test content', {
@@ -131,32 +98,13 @@ describe('httpUtils', () => {
         }
       });
       
-      // Mock the cache.match to return a response
-      const cachedResponse = new Response('cached content', {
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Length': '14',
-          'Cache-Status': 'hit'
-        }
-      });
-      mockCache.match.mockResolvedValue(cachedResponse);
-      
       const result = await handleRangeRequestForInitialAccess(originalResponse, request);
       
-      // Should open the cache
-      expect(mockCache.put).toHaveBeenCalled();
-      
-      // Should attempt to match the request
-      expect(mockCache.match).toHaveBeenCalled();
-      
-      // Should return the cached response
-      // Use status and headers to verify it's the right response since we can't read bodies twice
-      expect(result.status).toBe(cachedResponse.status);
-      expect(result.headers.get('Content-Type')).toBe(cachedResponse.headers.get('Content-Type'));
-      expect(result.headers.get('Cache-Status')).toBe('hit');
+      // Should return the original response unchanged
+      expect(result).toBe(originalResponse);
     });
 
-    it('should handle range requests by creating a range request and using cache.match', async () => {
+    it('should return the original response even with range headers', async () => {
       // Create a request with a range header
       const request = new Request('https://example.com/video.mp4', {
         headers: {
@@ -172,94 +120,61 @@ describe('httpUtils', () => {
         }
       });
       
-      // Set up the cache to return range response for the range request
-      const rangeResponse = new Response('full v', {
-        status: 206,
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Range': 'bytes 0-5/18',
-          'Content-Length': '6'
-        }
-      });
-      
-      mockCache.match.mockImplementation((req: Request) => {
-        if (req.headers.get('Range') === 'bytes=0-5') {
-          return Promise.resolve(rangeResponse);
-        }
-        return Promise.resolve(null);
-      });
-      
       const result = await handleRangeRequestForInitialAccess(originalResponse, request);
       
-      // Should put the response in the cache
-      expect(cachePutSpy).toHaveBeenCalled();
-      
-      // Should return the ranged response
-      // Use status and headers to verify it's the correct response
-      expect(result.status).toBe(206);
-      expect(result.headers.get('Content-Type')).toBe('video/mp4');
-      expect(result.headers.get('Content-Range')).toBe('bytes 0-5/18');
+      // Should return the original response unchanged
+      expect(result).toBe(originalResponse);
+      expect(result.status).toBe(200); // Original status, not 206
     });
 
-    it('should fall back to original implementation when Cache API fails', async () => {
-      // Make caches.open throw an error
-      (global.caches as any).open = vi.fn(() => Promise.reject(new Error('Cache API not available')));
+    it('should handle any type of response gracefully', async () => {
+      // Create various types of responses
+      const request = new Request('https://example.com/video.mp4');
       
-      // Create a mock response and request with valid range
-      const request = new Request('https://example.com/video.mp4', {
-        headers: {
-          'Range': 'bytes=0-5' // First 6 bytes
-        }
-      });
+      // Test with 404 response
+      const notFoundResponse = new Response('Not found', { status: 404 });
+      let result = await handleRangeRequestForInitialAccess(notFoundResponse, request);
+      expect(result).toBe(notFoundResponse);
+      
+      // Test with no content response
+      const noContentResponse = new Response(null, { status: 204 });
+      result = await handleRangeRequestForInitialAccess(noContentResponse, request);
+      expect(result).toBe(noContentResponse);
+      
+      // Test with error response
+      const errorResponse = new Response('Server error', { status: 500 });
+      result = await handleRangeRequestForInitialAccess(errorResponse, request);
+      expect(result).toBe(errorResponse);
+    });
+
+    it('should work with any request type', async () => {
       const originalResponse = new Response('test content', {
         headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Length': '12'
+          'Content-Type': 'video/mp4'
         }
       });
-
-      const result = await handleRangeRequestForInitialAccess(originalResponse, request);
       
-      // Should log the error
-      expect(consoleSpy).toHaveBeenCalled();
+      // Test with various request types
+      const simpleRequest = new Request('https://example.com/video.mp4');
+      let result = await handleRangeRequestForInitialAccess(originalResponse, simpleRequest);
+      expect(result).toBe(originalResponse);
       
-      // Should fall back to the manual implementation
-      expect(result.status).toBe(206);
-      expect(result.headers.get('Content-Range')).toBe('bytes 0-5/12');
+      // Test with POST request (though unusual for video)
+      const postRequest = new Request('https://example.com/video.mp4', { method: 'POST' });
+      result = await handleRangeRequestForInitialAccess(originalResponse, postRequest);
+      expect(result).toBe(originalResponse);
       
-      // Check content
-      const content = await result.text();
-      expect(content).toBe('test c');
-    });
-
-    it('should handle failures in both primary and fallback implementations', async () => {
-      // Make caches.open throw an error
-      (global.caches as any).open = vi.fn(() => Promise.reject(new Error('Cache API not available')));
-      
-      // Create a mock response that throws when arrayBuffer() is called
-      const mockResponse = {
-        headers: new Headers({
-          'Content-Type': 'video/mp4',
-          'Content-Length': '12'
-        }),
-        clone: () => mockResponse,
-        arrayBuffer: () => Promise.reject(new Error('Mock error'))
-      };
-      
-      const request = new Request('https://example.com/video.mp4', {
+      // Test with complex headers
+      const complexRequest = new Request('https://example.com/video.mp4', {
         headers: {
-          'Range': 'bytes=0-5'
+          'Range': 'bytes=100-200',
+          'If-Range': '"etag123"',
+          'Accept-Encoding': 'gzip, deflate',
+          'User-Agent': 'Mozilla/5.0'
         }
       });
-
-      // Cast mockResponse to Response to satisfy type checking
-      const result = await handleRangeRequestForInitialAccess(mockResponse as unknown as Response, request);
-      
-      // Should log multiple errors
-      expect(consoleSpy).toHaveBeenCalled();
-      
-      // Should return the original response as fallback
-      expect(result).toBe(mockResponse);
+      result = await handleRangeRequestForInitialAccess(originalResponse, complexRequest);
+      expect(result).toBe(originalResponse);
     });
   });
 });

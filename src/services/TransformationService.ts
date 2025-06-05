@@ -403,6 +403,11 @@ export const prepareVideoTransformation = withErrorHandling<
   // Update diagnostics with strategy-specific information
   strategy.updateDiagnostics(context);
   logDebug('Strategy updated diagnostics');
+  
+  // Store version in diagnostics for proper tracking
+  if (options.version) {
+    diagnosticsInfo.cacheVersion = options.version;
+  }
 
   // Map options to CDN-CGI parameters
   const cdnParams = strategy.prepareTransformParams(context);
@@ -527,11 +532,36 @@ export const prepareVideoTransformation = withErrorHandling<
   // Import path utils module to get buildCdnCgiMediaUrlAsync
   const { buildCdnCgiMediaUrlAsync } = await import('../utils/pathUtils');
   
+  // CRITICAL: Add version to the video URL for CDN cache busting BEFORE building CDN-CGI URL
+  // This ensures that when cache version increments (v=1 to v=2), the CDN sees it as a different URL
+  let versionedVideoUrl = videoUrl;
+  if (options.version) {
+    const { addVersionToUrl } = await import('../utils/urlVersionUtils');
+    versionedVideoUrl = addVersionToUrl(videoUrl, options.version);
+    
+    logDebug('Added version to video URL for CDN cache busting', {
+      originalUrl: videoUrl,
+      versionedUrl: versionedVideoUrl,
+      version: options.version,
+      willBustCdnCache: options.version > 1
+    });
+    
+    // Add breadcrumb for version application
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'Transform', 'Applied version to origin URL', {
+        version: options.version,
+        originalUrl: videoUrl,
+        versionedUrl: versionedVideoUrl,
+        purpose: 'CDN cache busting'
+      });
+    }
+  }
+  
   // Build the CDN-CGI media URL asynchronously
   // If using Origins, pass the Origin and source resolution information
   let cdnCgiUrl = await buildCdnCgiMediaUrlAsync(
     cdnParams,
-    videoUrl, // Pass the *constructed* origin URL
+    versionedVideoUrl, // Pass the versioned origin URL for proper cache busting
     url.toString(),
     env,
     pathPattern // For backward compatibility

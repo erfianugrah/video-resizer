@@ -122,7 +122,7 @@ export async function getFromKVCache(
     const result = await getTransformedVideo(
       kvNamespace,
       normalizedPath, // Use normalized path for consistent cache keys
-      options,
+      { ...options, env }, // Include env in options for version tracking
       request // Pass the request through for range handling
     );
     
@@ -376,7 +376,9 @@ export async function storeInKVCache(
           mode: options.mode || 'video',
           contentLength,
           ttl,
-          startTime: new Date().toISOString()
+          startTime: new Date().toISOString(),
+          version: options.version || 'not set',
+          derivative: options.derivative
         });
         
         // Use waitUntil to make the KV storage non-blocking
@@ -385,7 +387,7 @@ export async function storeInKVCache(
             kvNamespace,
             normalizedPath, // Use normalized path for consistent cache keys
             responseClone,
-            options,
+            { ...options, env }, // Include env in options for version tracking
             ttl,
             false // Don't use streaming mode for this path
           ).then(result => {
@@ -448,7 +450,7 @@ export async function storeInKVCache(
           kvNamespace,
           normalizedPath, // Use normalized path for consistent cache keys
           responseClone,
-          options,
+          { ...options, env }, // Include env in options for version tracking
           ttl,
           false // Don't use streaming mode for this path
         );

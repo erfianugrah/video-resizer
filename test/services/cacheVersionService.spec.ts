@@ -197,16 +197,20 @@ describe('cacheVersionService', () => {
       expect(result).toBe(2);
     });
 
-    it('should always increment when version is already > 1', async () => {
+    it('should NOT increment when version is already > 1 unless there is a cache miss', async () => {
       // Mock the behavior for version 3
       mockEnv.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata.mockResolvedValue({
         value: '',
         metadata: { version: 3 }
       });
       
-      // Without force increment - should still increment to 4
+      // Without force increment - should keep version 3
       const result = await getNextCacheKeyVersion(mockEnv, 'test-key');
-      expect(result).toBe(4);
+      expect(result).toBe(3);
+      
+      // With force increment (cache miss) - should increment to 4
+      const resultWithMiss = await getNextCacheKeyVersion(mockEnv, 'test-key', true);
+      expect(resultWithMiss).toBe(4);
     });
   });
 });

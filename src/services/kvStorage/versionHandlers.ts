@@ -27,7 +27,7 @@ export async function handleVersionIncrement(
         while (attemptCount < maxRetries && !success) {
           try {
             attemptCount++;
-            await storeCacheKeyVersion(env, key, version, ttl);
+            await storeCacheKeyVersion(env, key, version); // No TTL - store indefinitely
             success = true;
             
             // Only log if we needed retries
@@ -72,7 +72,7 @@ export async function handleVersionIncrement(
     while (attemptCount < maxRetries && !success) {
       try {
         attemptCount++;
-        await storeCacheKeyVersion(env, key, version, ttl);
+        await storeCacheKeyVersion(env, key, version); // No TTL - store indefinitely
         success = true;
         
         // Only log if we needed retries
@@ -110,6 +110,7 @@ export async function handleVersionIncrement(
 
 /**
  * Helper function to refresh cache TTL on access
+ * @deprecated TTL refresh is disabled as we're storing items indefinitely
  */
 export function refreshCacheTtl(
   namespace: KVNamespace,
@@ -117,21 +118,7 @@ export function refreshCacheTtl(
   metadata: TransformationMetadata,
   env?: EnvVariables
 ): void {
-  const requestContext = getCurrentContext();
-  if (!requestContext?.executionContext) return;
-  
-  // Use the optimized TTL refresh mechanism which avoids re-storing the entire value
-  checkAndRefreshTtl(
-    namespace,
-    key,
-    metadata,
-    env,
-    requestContext.executionContext
-  ).catch(err => {
-    // Log any errors but don't fail the response
-    logDebug('[GET_VIDEO] Error during TTL refresh', {
-      key,
-      error: err instanceof Error ? err.message : String(err)
-    });
-  });
+  // TTL refresh is disabled - items are stored indefinitely
+  // This function is kept for compatibility but does nothing
+  return;
 }

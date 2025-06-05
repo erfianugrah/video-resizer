@@ -60,7 +60,9 @@ async function storeTransformedVideoImpl(
     width: options.width,
     height: options.height,
     version: options.version || 1,
-    contentType: originalVideoContentType
+    contentType: originalVideoContentType,
+    receivedVersion: options.version,
+    willUseVersion: options.version || 1
   });
   
   // Use version from TransformationService if available, or default to 1

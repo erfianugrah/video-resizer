@@ -186,14 +186,15 @@ export async function processRangeRequest(
                 
                 try {
                   // Check writer status before attempting to write
-                  if (writer.desiredSize === null) {
+                  if (writer.desiredSize === null || writer.desiredSize < 0) {
                     // Writer is already closed or being closed
                     if (logger && requestContext) {
                       debug(requestContext, logger, 'StreamUtils', 'Writer is already closed or being closed', {
                         segment: i,
                         totalSegments,
                         start,
-                        end
+                        end,
+                        desiredSize: writer.desiredSize
                       });
                     }
                     throw new Error('Writer is already closed or being closed');
@@ -201,26 +202,47 @@ export async function processRangeRequest(
                   
                   // Write segment with adaptive timeout based on segment size
                   // Larger segments need more time to write, especially with network latency
-                  const timeoutMs = Math.max(2000, segment.byteLength / 128); // ~128KB/sec minimum
+                  // Increased base timeout and reduced minimum throughput for better reliability
+                  const timeoutMs = Math.max(5000, Math.ceil(segment.byteLength / 64)); // ~64KB/sec minimum
                   
-                  // Use the withTimeout utility to avoid active timeout limits
-                  await withTimeout(
-                    writer.write(segment),
-                    timeoutMs,
-                    'Segment write timed out'
-                  );
+                  try {
+                    // Use the withTimeout utility to avoid active timeout limits
+                    await withTimeout(
+                      writer.write(segment),
+                      timeoutMs,
+                      'Segment write timed out'
+                    );
+                  } catch (writeError) {
+                    // Check if this is a "readable side" error
+                    const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+                    if (errorMessage.includes('readable side') || errorMessage.includes('TransformStream')) {
+                      if (logger && requestContext) {
+                        debug(requestContext, logger, 'StreamUtils', 'Stream was closed by client during write', {
+                          segment: i,
+                          totalSegments,
+                          error: errorMessage
+                        });
+                      }
+                      // Exit gracefully instead of throwing
+                      break;
+                    }
+                    // Re-throw other errors
+                    throw writeError;
+                  }
                   
                   // Check writer status after write (in case it was closed during the write)
-                  if (writer.desiredSize === null) {
+                  if (writer.desiredSize === null || writer.desiredSize < 0) {
                     if (logger && requestContext) {
                       debug(requestContext, logger, 'StreamUtils', 'Writer was closed during write operation', {
                         segment: i,
                         totalSegments,
                         start,
-                        end
+                        end,
+                        desiredSize: writer.desiredSize
                       });
                     }
-                    throw new Error('Writer was closed during write operation');
+                    // Exit gracefully instead of throwing
+                    break;
                   }
                   
                   portionBytesWritten += segmentSize;

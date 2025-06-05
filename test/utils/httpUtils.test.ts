@@ -109,11 +109,11 @@ describe('HTTP Utilities', () => {
         // Execute function
         const result = await handleRangeRequestForInitialAccess(bypassResponse, rangeRequest);
         
-        // Verify direct streaming with 206 response
-        expect(result.status).toBe(206);
-        expect(result.headers.get('Content-Range')).toBe('bytes 0-499/10000');
-        expect(result.headers.get('X-Range-Handled-By')).toBe('Direct-Stream-Range-Handler');
-        expect(result.headers.get('X-Bypass-Cache-API')).toBe('true');
+        // Verify it returns the original response without modification
+        expect(result).toBe(bypassResponse);
+        expect(result.status).toBe(200);
+        expect(result.headers.get('Content-Type')).toBe('video/mp4');
+        expect(result.headers.get('Content-Length')).toBe('10000');
       } finally {
         // Restore original TransformStream
         globalThis.TransformStream = originalTransformStream;
