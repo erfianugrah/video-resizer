@@ -302,34 +302,55 @@ export async function streamChunkedRangeResponse(
           
           // Set an adaptive timeout for the segment write operation
           // Scale timeout based on segment size to handle network latency
-          const writeTimeoutMs = Math.max(2000, segmentSize / 128); // ~128KB/sec minimum rate
+          // Increased base timeout and reduced minimum throughput requirement for better reliability
+          const writeTimeoutMs = Math.max(5000, Math.ceil(segmentSize / 64)); // ~64KB/sec minimum rate
           
           try {
             // Check writer status before attempting to write
-            if (writer.desiredSize === null) {
+            if (writer.desiredSize === null || writer.desiredSize < 0) {
               // Writer is already closed or being closed
               logDebug('[GET_VIDEO] Writer is already closed or being closed', {
                 chunkKey: chunkInfo.key,
                 segment: i,
-                totalSegments
+                totalSegments,
+                desiredSize: writer.desiredSize
               });
               isStreamAborted = true;
               break;
             }
             
-            // Use the centralized withTimeout utility to avoid hitting timeout limits
-            await withTimeout(
-              writer.write(segment), 
-              writeTimeoutMs,
-              'Segment write operation timed out'
-            );
+            // Double-check the stream is still writable before write attempt
+            try {
+              // Use the centralized withTimeout utility to avoid hitting timeout limits
+              await withTimeout(
+                writer.write(segment), 
+                writeTimeoutMs,
+                'Segment write operation timed out'
+              );
+            } catch (writeError) {
+              // Check if this is a "readable side" error
+              const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+              if (errorMessage.includes('readable side') || errorMessage.includes('TransformStream')) {
+                logDebug('[GET_VIDEO] Stream was closed by client during write', {
+                  chunkKey: chunkInfo.key,
+                  segment: i,
+                  totalSegments,
+                  error: errorMessage
+                });
+                isStreamAborted = true;
+                break;
+              }
+              // Re-throw other errors
+              throw writeError;
+            }
             
             // Check writer status after write (in case it was closed during the write)
-            if (writer.desiredSize === null) {
+            if (writer.desiredSize === null || writer.desiredSize < 0) {
               logDebug('[GET_VIDEO] Writer was closed during write operation', {
                 chunkKey: chunkInfo.key,
                 segment: i,
-                totalSegments
+                totalSegments,
+                desiredSize: writer.desiredSize
               });
               isStreamAborted = true;
               break;
@@ -661,26 +682,45 @@ export async function streamFullChunkedResponse(
           
           try {
             // Check writer status before attempting to write
-            if (writer.desiredSize === null) {
+            if (writer.desiredSize === null || writer.desiredSize < 0) {
               // Writer is already closed or being closed
               logDebug('[GET_VIDEO] Writer is already closed or being closed', {
                 chunkKey,
                 segment: i,
-                totalSegments
+                totalSegments,
+                desiredSize: writer.desiredSize
               });
               isStreamAborted = true;
               break;
             }
             
-            // Race the write operation against the timeout
-            await Promise.race([writer.write(segment), writeTimeoutPromise]);
+            try {
+              // Race the write operation against the timeout
+              await Promise.race([writer.write(segment), writeTimeoutPromise]);
+            } catch (writeError) {
+              // Check if this is a "readable side" error
+              const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+              if (errorMessage.includes('readable side') || errorMessage.includes('TransformStream')) {
+                logDebug('[GET_VIDEO] Stream was closed by client during write', {
+                  chunkKey,
+                  segment: i,
+                  totalSegments,
+                  error: errorMessage
+                });
+                isStreamAborted = true;
+                break;
+              }
+              // Re-throw other errors
+              throw writeError;
+            }
             
             // Check writer status after write (in case it was closed during the write)
-            if (writer.desiredSize === null) {
+            if (writer.desiredSize === null || writer.desiredSize < 0) {
               logDebug('[GET_VIDEO] Writer was closed during write operation', {
                 chunkKey,
                 segment: i,
-                totalSegments
+                totalSegments,
+                desiredSize: writer.desiredSize
               });
               isStreamAborted = true;
               break;

@@ -184,13 +184,9 @@ export async function storeWithRetry(
         }
       }
       
-      if (ttl && !useIndefiniteStorage) {
-        // Normal case with TTL (when storeIndefinitely is false)
-        await namespace.put(key, value, { metadata, expirationTtl: ttl });
-      } else {
-        // Store indefinitely without expirationTtl (or when ttl is not provided)
-        await namespace.put(key, value, { metadata });
-      }
+      // Always store indefinitely - never set expirationTtl
+      // This ensures items remain in cache until explicitly purged
+      await namespace.put(key, value, { metadata });
       
       success = true;
       
@@ -260,12 +256,18 @@ export async function handleVersionStorage(
 ): Promise<void> {
   // If env is provided but version isn't in options, ensure the version is stored in KV
   if (!env?.VIDEO_CACHE_KEY_VERSIONS) {
+    logDebug('[STORE_VIDEO] No VIDEO_CACHE_KEY_VERSIONS namespace available, skipping version storage', {
+      key,
+      cacheVersion,
+      hasEnv: !!env,
+      envKeys: env ? Object.keys(env) : []
+    });
     return;
   }
   
   try {
-    // Store the version with double the content TTL for persistence
-    const versionTtl = ttl ? ttl * 2 : undefined;
+    // Store the version indefinitely - no TTL
+    const versionTtl = undefined;
     
     // Use waitUntil if available for non-blocking operation with retry
     if (env && 'executionCtx' in env && (env as any).executionCtx?.waitUntil) {

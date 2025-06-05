@@ -72,21 +72,16 @@ async function getTransformedVideoImpl(
     // Increment version on cache miss if env is provided
     if (options.env?.VIDEO_CACHE_KEY_VERSIONS) {
       try {
-        // Force increment on cache miss
+        // Force increment on cache miss - this is intentional cache invalidation
         const nextVersion = await getNextCacheKeyVersion(options.env, key, true);
         
-        // Calculate a reasonable TTL (will be overwritten when content is stored)
-        const cacheConfig = CacheConfigurationManager.getInstance();
-        const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
-        
         // Store updated version in background if possible
-        await handleVersionIncrement(options.env, key, nextVersion, versionTtl);
+        await handleVersionIncrement(options.env, key, nextVersion);
         
         logDebug('[GET_VIDEO] Incremented version on cache miss', {
           key,
           previousVersion: nextVersion - 1,
-          nextVersion,
-          ttl: versionTtl
+          nextVersion
         });
       } catch (err) {
         // Log error but continue - version incrementation is not critical
@@ -679,153 +674,8 @@ export const getTransformedVideo = withErrorHandling<
         });
       }
       
-      // Increment version on error if env is provided
-      // This ensures cache busting occurs on errors
-      if (options.env?.VIDEO_CACHE_KEY_VERSIONS) {
-        try {
-          const key = generateKVKey(sourcePath, options);
-          
-          // Force increment on error
-          const nextVersion = await getNextCacheKeyVersion(options.env, key, true);
-          
-          // Calculate TTL - use double the default for persistence
-          const cacheConfig = CacheConfigurationManager.getInstance();
-          const versionTtl = (cacheConfig.getConfig().defaultMaxAge || 300) * 2;
-          
-          // Store updated version in background if possible, with retry logic
-          if (options.env && 'executionCtx' in options.env && (options.env as any).executionCtx?.waitUntil) {
-            (options.env as any).executionCtx.waitUntil(
-              (async () => {
-                const maxRetries = 3;
-                let attemptCount = 0;
-                let success = false;
-                let lastError: Error | null = null;
-                
-                while (attemptCount < maxRetries && !success) {
-                  try {
-                    attemptCount++;
-                    await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
-                    success = true;
-                    
-                    // Only log if we needed retries
-                    if (attemptCount > 1) {
-                      logDebug('Successfully incremented version on KV retrieval error after retries (background)', {
-                        key,
-                        previousVersion: nextVersion - 1,
-                        nextVersion,
-                        attempts: attemptCount,
-                        ttl: versionTtl
-                      });
-                    } else {
-                      logDebug('Incremented version on KV retrieval error (background)', {
-                        key,
-                        previousVersion: nextVersion - 1,
-                        nextVersion,
-                        ttl: versionTtl
-                      });
-                    }
-                  } catch (err) {
-                    lastError = err instanceof Error ? err : new Error(String(err));
-                    const isRateLimitError = 
-                      lastError.message.includes('429') || 
-                      lastError.message.includes('409') || 
-                      lastError.message.includes('rate limit') ||
-                      lastError.message.includes('conflict');
-                    
-                    if (!isRateLimitError || attemptCount >= maxRetries) {
-                      logDebug('Error incrementing version on KV retrieval error (background)', {
-                        key,
-                        error: lastError.message,
-                        attempts: attemptCount
-                      });
-                      return; // Exit the async function within waitUntil
-                    }
-                    
-                    // Log the retry attempt
-                    logDebug('KV rate limit hit during error version increment, retrying with backoff (background)', {
-                      key,
-                      attempt: attemptCount,
-                      maxRetries,
-                      error: lastError.message
-                    });
-                    
-                    // Exponential backoff: 200ms, 400ms, 800ms, etc.
-                    const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
-                    await new Promise(resolve => setTimeout(resolve, backoffMs));
-                  }
-                }
-              })()
-            );
-          } else if (options.env) { // Check that env exists before using it
-            // Fall back to direct storage with retry logic
-            const maxRetries = 3;
-            let attemptCount = 0;
-            let success = false;
-            let lastError: Error | null = null;
-            
-            while (attemptCount < maxRetries && !success) {
-              try {
-                attemptCount++;
-                // options.env is guaranteed to be defined here
-                await storeCacheKeyVersion(options.env, key, nextVersion, versionTtl);
-                success = true;
-                
-                // Only log if we needed retries
-                if (attemptCount > 1) {
-                  logDebug('Successfully incremented version on KV retrieval error after retries (direct)', {
-                    key,
-                    previousVersion: nextVersion - 1,
-                    nextVersion,
-                    attempts: attemptCount,
-                    ttl: versionTtl
-                  });
-                } else {
-                  logDebug('Incremented version on KV retrieval error (direct)', {
-                    key,
-                    previousVersion: nextVersion - 1,
-                    nextVersion,
-                    ttl: versionTtl
-                  });
-                }
-              } catch (err) {
-                lastError = err instanceof Error ? err : new Error(String(err));
-                const isRateLimitError = 
-                  lastError.message.includes('429') || 
-                  lastError.message.includes('409') || 
-                  lastError.message.includes('rate limit') ||
-                  lastError.message.includes('conflict');
-                
-                if (!isRateLimitError || attemptCount >= maxRetries) {
-                  logDebug('Error incrementing version on KV retrieval error (direct)', {
-                    key,
-                    error: lastError.message,
-                    attempts: attemptCount
-                  });
-                  break; // Exit the loop but don't throw - version storage is not critical
-                }
-                
-                // Log the retry attempt
-                logDebug('KV rate limit hit during error version increment, retrying with backoff (direct)', {
-                  key,
-                  attempt: attemptCount,
-                  maxRetries,
-                  error: lastError.message
-                });
-                
-                // Exponential backoff: 200ms, 400ms, 800ms, etc.
-                const backoffMs = Math.min(200 * Math.pow(2, attemptCount - 1), 2000);
-                await new Promise(resolve => setTimeout(resolve, backoffMs));
-              }
-            }
-          }
-        } catch (versionErr) {
-          // Log error but continue - version incrementation is not critical
-          logDebug('Error incrementing version on KV retrieval error', {
-            sourcePath,
-            error: versionErr instanceof Error ? versionErr.message : String(versionErr)
-          });
-        }
-      }
+      // Version increment on error is disabled to prevent unnecessary version inflation
+      // The version will only be incremented manually when you delete cache entries
       
       // Log via standardized error handling but return null to allow fallback to origin
       logErrorWithContext(

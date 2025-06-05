@@ -160,7 +160,8 @@ export async function withCaching(
           logDebug('Looking up with IMQuery parameters', {
             imwidth,
             imheight,
-            derivative: options.derivative
+            derivative: options.derivative,
+            version: options.version || 1
           });
         }
         

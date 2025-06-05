@@ -687,6 +687,27 @@ export class TransformVideoCommand {
 
       // Add source URL - use directly without encoding
       cdnCgiUrl += `/${sourceUrl}`;
+      
+      // Add version parameter for cache busting if available
+      if (options.version !== undefined) {
+        const originalCdnCgiUrl = cdnCgiUrl;
+        cdnCgiUrl = addVersionToUrl(cdnCgiUrl, options.version);
+        
+        // Only log if version was actually added (version > 1)
+        if (cdnCgiUrl !== originalCdnCgiUrl) {
+          pinoDebug(
+            this.requestContext,
+            this.logger,
+            'TransformVideoCommand',
+            'Added version parameter to CDN-CGI URL for cache busting',
+            {
+              version: options.version,
+              originalUrl: originalCdnCgiUrl,
+              versionedUrl: cdnCgiUrl
+            }
+          );
+        }
+      }
 
       // Use info level for CDN-CGI operations to ensure visibility
       const { info } = await import('../../utils/loggerUtils');
