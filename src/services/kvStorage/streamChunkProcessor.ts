@@ -42,9 +42,9 @@ export class StreamingChunkProcessor {
     });
   }
 
-  private async processChunk(
+  async processChunk(
     incoming: Uint8Array, 
-    controller: TransformStreamDefaultController<Uint8Array>
+    controller?: TransformStreamDefaultController<Uint8Array>
   ): Promise<void> {
     let incomingOffset = 0;
 
@@ -71,7 +71,7 @@ export class StreamingChunkProcessor {
     }
   }
 
-  private async emitCurrentBuffer(controller: TransformStreamDefaultController<Uint8Array>): Promise<void> {
+  private async emitCurrentBuffer(controller?: TransformStreamDefaultController<Uint8Array>): Promise<void> {
     if (this.bufferOffset === 0) return;
 
     // Create a properly sized chunk (not the full buffer if partially filled)
@@ -88,18 +88,17 @@ export class StreamingChunkProcessor {
     // Pass the chunk to the handler
     await this.onChunkReady(chunk, this.chunkIndex);
 
-    // Also pass it through the transform stream
-    controller.enqueue(chunk);
+    // Don't enqueue data to the controller - we handle chunks directly
+    // This saves memory by avoiding duplicate data in the stream
 
     // Reset for next chunk
     this.chunkIndex++;
     this.bufferOffset = 0;
     
-    // Create new buffer to avoid sharing references
-    this.currentBuffer = new Uint8Array(this.targetChunkSize);
+    // Reuse the buffer - no need to create new ones
   }
 
-  private async flush(controller: TransformStreamDefaultController<Uint8Array>): Promise<void> {
+  async flush(controller?: TransformStreamDefaultController<Uint8Array>): Promise<void> {
     // Emit any remaining data in buffer
     if (this.bufferOffset > 0) {
       await this.emitCurrentBuffer(controller);

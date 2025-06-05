@@ -87,12 +87,11 @@ export async function storeTransformedVideoWithStreaming(
   const contentLengthHeader = responseClone.headers.get('Content-Length');
   const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
   
-  // Use a larger chunk size for extremely large files
-  const useExtremeLargeMode = contentLength > 200 * 1024 * 1024; // 200MB threshold
-  const chunkSize = useExtremeLargeMode ? STANDARD_CHUNK_SIZE * 2 : STANDARD_CHUNK_SIZE;
+  // Keep chunk size consistent to avoid memory spikes
+  const chunkSize = STANDARD_CHUNK_SIZE;
   
-  if (useExtremeLargeMode) {
-    logDebug('[STREAM_STORE] Using extra-large chunk mode for very large file', {
+  if (contentLength > 100 * 1024 * 1024) { // Log for files > 100MB
+    logDebug('[STREAM_STORE] Processing large file', {
       key,
       contentLengthMB: Math.round(contentLength / 1024 / 1024),
       chunkSizeMB: Math.round(chunkSize / 1024 / 1024)
@@ -195,10 +194,11 @@ async function processStreamInChunks(
   
   try {
     // Import the streaming chunk processor
-    const { createStreamingChunkProcessor } = await import('./streamChunkProcessor');
+    const { StreamingChunkProcessor } = await import('./streamChunkProcessor');
     
     // Create concurrency queue for chunk uploads
-    const uploadQueue = new ConcurrencyQueue(5); // Limit to 5 concurrent uploads
+    // Reduce concurrency to prevent memory exhaustion
+    const uploadQueue = new ConcurrencyQueue(2); // Limit to 2 concurrent uploads
     const chunkUploadPromises: Promise<boolean>[] = [];
     
     // Generate cache tags once for all chunks
@@ -209,7 +209,7 @@ async function processStreamInChunks(
     logDebug('[STREAM_STORE] Processing ReadableStream for KV storage', {
       key,
       contentType: options.contentType,
-      concurrencyLimit: 5
+      concurrencyLimit: 2
     });
     
     // Define a helper function to store a chunk
@@ -251,7 +251,8 @@ async function processStreamInChunks(
           });
           
           // Create a copy of the data to ensure it's not modified during async operations
-          const dataToStore = chunkData.slice().buffer;
+          // Use ArrayBuffer.slice() for more efficient memory usage
+          const dataToStore = chunkData.buffer.slice(chunkData.byteOffset, chunkData.byteOffset + chunkData.byteLength);
           
           // Verify the size matches before storing
           if (dataToStore.byteLength !== chunkSize) {
@@ -301,38 +302,45 @@ async function processStreamInChunks(
     // Use custom chunk size if provided, otherwise use standard
     const targetChunkSize = options.chunkSize || STANDARD_CHUNK_SIZE;
     
-    // Create the streaming chunk processor
-    const chunkProcessor = createStreamingChunkProcessor(
+    // Process the stream directly without creating extra streams
+    // This saves memory by avoiding duplicate buffering
+    const reader = stream.getReader();
+    const processor = new StreamingChunkProcessor({
       targetChunkSize,
-      async (chunk: Uint8Array, index: number) => {
-        // Store each chunk as it's ready
+      onChunkReady: async (chunk: Uint8Array, index: number) => {
         await storeChunk(chunk, index);
       },
-      async () => {
-        // Completion handler - nothing special needed here
+      onComplete: async () => {
         logDebug('[STREAM_STORE] Stream processing completed', {
           key,
           totalChunks: chunkKeys.length,
           totalBytes: totalProcessedBytes
         });
       }
-    );
-    
-    // Process the stream through our chunk processor
-    await stream.pipeThrough(chunkProcessor).pipeTo(new WritableStream({
-      write() {
-        // We don't need to do anything here - chunks are handled by the processor
-      },
-      close() {
-        logDebug('[STREAM_STORE] Stream closed successfully', { key });
-      },
-      abort(err) {
-        logDebug('[STREAM_STORE] Stream aborted', { 
-          key, 
-          error: err instanceof Error ? err.message : String(err) 
-        });
+    });
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        // Process chunk directly without transform streams
+        await processor.processChunk(value);
       }
-    }));
+      
+      // Flush any remaining data
+      await processor.flush();
+      
+      logDebug('[STREAM_STORE] Stream closed successfully', { key });
+    } catch (err) {
+      logDebug('[STREAM_STORE] Stream processing error', { 
+        key, 
+        error: err instanceof Error ? err.message : String(err) 
+      });
+      throw err;
+    } finally {
+      reader.releaseLock();
+    }
     
     logDebug('[STREAM_STORE] All chunks queued for upload', {
       key,
