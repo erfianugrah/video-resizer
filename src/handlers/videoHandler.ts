@@ -17,6 +17,7 @@ import { ResponseBuilder } from '../utils/responseBuilder';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { OriginResolver } from '../services/origins/OriginResolver';
 import { Origin } from '../services/videoStorage/interfaces';
+import { getCacheKV } from '../utils/flexibleBindings';
 
 /**
  * Main handler for video requests
@@ -52,10 +53,11 @@ export const handleVideoRequest = withErrorHandling<
     try {
       // Log environment variables received for debugging
       if (env) {
+        const cacheKV = getCacheKV(env);
         debug(context, logger, 'VideoHandler', 'Environment variables received', {
           CACHE_ENABLE_KV: env.CACHE_ENABLE_KV || 'not set',
-          VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
-          VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV,
+          CACHE_KV_AVAILABLE: !!cacheKV,
+          CACHE_KV_NAME: env.CACHE_KV_NAME || 'not set',
           ENVIRONMENT: env.ENVIRONMENT || 'not set'
         });
       }

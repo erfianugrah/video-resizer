@@ -10,6 +10,7 @@ import { addBreadcrumb } from '../../utils/requestContext';
 import { getPresignedUrl, storePresignedUrl, isUrlExpiring, refreshPresignedUrl, UrlGeneratorFunction } from '../presignedUrlCacheService';
 import { applyPathTransformation } from './pathTransform';
 import { logDebug } from './logging';
+import { getPresignedUrlKV, getCacheKV } from '../../utils/flexibleBindings';
 // For TypeScript type checking without importing actual implementations
 // The actual FixedLengthStream is provided by the Cloudflare Workers runtime
 declare class FixedLengthStream {
@@ -29,6 +30,9 @@ async function fetchFromFallbackImpl(
 ): Promise<StorageResult | null> {
   // Get the current request context if available
   const requestContext = getCurrentContext();
+  
+  // Get cache KV namespace using flexible binding
+  const cacheKV = getCacheKV(env);
   
   // Build fetch options from config with proper type safety
   const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
@@ -160,10 +164,11 @@ async function fetchFromFallbackImpl(
       }
     } else if (fallbackAuth.type === 'aws-s3-presigned-url') {
       // Check for cached presigned URL first if we have a KV namespace
-      if (env.PRESIGNED_URLS) {
+      const presignedKV = getPresignedUrlKV(env);
+      if (presignedKV) {
         try {
           const cachedEntry = await getPresignedUrl(
-            env.PRESIGNED_URLS,
+            presignedKV,
             transformedPath,
             {
               storageType: 'fallback',
@@ -196,7 +201,7 @@ async function fetchFromFallbackImpl(
             }
             
             // Check if URL is close to expiration and refresh in background
-            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && env.PRESIGNED_URLS) {
+            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && presignedKV) {
               // Create URL generator function for refreshing
               const generateAwsUrl: UrlGeneratorFunction = async (path: string): Promise<string> => {
                 const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
@@ -231,9 +236,9 @@ async function fetchFromFallbackImpl(
               // Use waitUntil for non-blocking refresh
               env.executionCtx.waitUntil(
                 (async () => {
-                  if (env.PRESIGNED_URLS) {
+                  if (presignedKV) {
                     await refreshPresignedUrl(
-                      env.PRESIGNED_URLS,
+                      presignedKV,
                       cachedEntry,
                       {
                         thresholdSeconds: 600, // 10 minutes threshold
@@ -318,10 +323,10 @@ async function fetchFromFallbackImpl(
             });
             
             // Cache the generated URL if KV binding exists
-            if (env.PRESIGNED_URLS) {
+            if (presignedKV) {
               try {
                 await storePresignedUrl(
-                  env.PRESIGNED_URLS,
+                  presignedKV,
                   transformedPath,
                   finalUrl,
                   originalFinalUrl,
@@ -461,7 +466,7 @@ async function fetchFromFallbackImpl(
   const clonedResponse = response.clone();
   
   // Check if we should store this in KV (in the background)
-  if (response.ok && env.executionCtx?.waitUntil && env.VIDEO_TRANSFORMATIONS_CACHE) {
+  if (response.ok && env.executionCtx?.waitUntil && cacheKV) {
     // Get content length to check file size
     const contentLengthHeader = response.headers.get('Content-Length');
     const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
@@ -511,8 +516,11 @@ export async function streamFallbackToKV(
   fallbackResponse: Response,
   config: VideoResizerConfig
 ): Promise<void> {
+  // Get cache KV namespace using flexible binding
+  const cacheKV = getCacheKV(env);
+  
   // Use the correct KV namespace from env
-  if (!env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
+  if (!cacheKV || !fallbackResponse.body || !fallbackResponse.ok) {
     return;
   }
 
@@ -593,9 +601,9 @@ export async function streamFallbackToKV(
             // If we have enough data for a KV chunk, process it
             if (currentChunkSize >= targetChunkSize) {
               // Process this batch of chunks
-              if (env.VIDEO_TRANSFORMATIONS_CACHE) {
+              if (cacheKV) {
                 await processChunksToKV(
-                  env.VIDEO_TRANSFORMATIONS_CACHE,
+                  cacheKV,
                   transformedPath,
                   chunks,
                   contentType,
@@ -619,9 +627,9 @@ export async function streamFallbackToKV(
           }
           
           // Process any remaining chunks
-          if (chunks.length > 0 && env.VIDEO_TRANSFORMATIONS_CACHE) {
+          if (chunks.length > 0 && cacheKV) {
             await processChunksToKV(
-              env.VIDEO_TRANSFORMATIONS_CACHE,
+              cacheKV,
               transformedPath,
               chunks,
               contentType,
@@ -721,7 +729,7 @@ export async function streamFallbackToKV(
       
       // Store with direct streaming
       await storeTransformedVideoWithStreaming(
-        env.VIDEO_TRANSFORMATIONS_CACHE,
+        cacheKV,
         transformedPath,
         newResponse,
         {
@@ -769,7 +777,7 @@ export async function streamFallbackToKV(
 
     // Store in KV with chunking support using streaming for large files
     await storeTransformedVideo(
-      env.VIDEO_TRANSFORMATIONS_CACHE,
+      cacheKV,
       transformedPath,
       storageResponse,
       {

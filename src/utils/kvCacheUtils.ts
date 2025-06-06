@@ -11,6 +11,7 @@ import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
 import { normalizeUrlForCaching } from './urlVersionUtils';
 import { determineTTL } from './determineTTL';
+import { getCacheKV } from './flexibleBindings';
 
 /**
  * Helper for logging debug messages
@@ -72,8 +73,8 @@ export async function getFromKVCache(
 ): Promise<Response | null> {
   // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
   const config = getCacheConfig(env);
-  // Check for either KV namespace binding
-  const kvNamespace = env.VIDEO_TRANSFORMATIONS_CACHE || env.VIDEO_TRANSFORMS_KV;
+  // Use flexible binding to get the cache KV namespace
+  const kvNamespace = getCacheKV(env);
   
   // Enhanced logging for troubleshooting
   if (!config.enableKVCache) {
@@ -86,8 +87,8 @@ export async function getFromKVCache(
   
   if (!kvNamespace) {
     logDebug('No KV namespace binding found', { 
-      VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
-      VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV
+      CACHE_KV_NAME: env.CACHE_KV_NAME || 'not set',
+      hasFlexibleBinding: !!env.CACHE_KV_NAME
     });
     return null;
   }
@@ -200,8 +201,8 @@ export async function storeInKVCache(
   const normalizedPath = normalizeUrlForCaching(sourcePath);
   // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
   const config = getCacheConfig(env);
-  // Check for either KV namespace binding
-  const kvNamespace = env.VIDEO_TRANSFORMATIONS_CACHE || env.VIDEO_TRANSFORMS_KV;
+  // Use flexible binding to get the cache KV namespace
+  const kvNamespace = getCacheKV(env);
   
   // Enhanced logging for troubleshooting
   if (!config.enableKVCache) {
@@ -214,8 +215,8 @@ export async function storeInKVCache(
   
   if (!kvNamespace) {
     logDebug('No KV namespace binding found for storage', { 
-      VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
-      VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV
+      CACHE_KV_NAME: env.CACHE_KV_NAME || 'not set',
+      hasFlexibleBinding: !!env.CACHE_KV_NAME
     });
     return false;
   }
@@ -357,7 +358,7 @@ export async function storeInKVCache(
       ttl,
       contentType,
       contentLength,
-      namespaceBinding: env.VIDEO_TRANSFORMATIONS_CACHE ? 'VIDEO_TRANSFORMATIONS_CACHE' : 'VIDEO_TRANSFORMS_KV'
+      namespaceBinding: env.CACHE_KV_NAME || 'default'
     });
     
     // Store in KV using a non-blocking operation to avoid worker timeouts

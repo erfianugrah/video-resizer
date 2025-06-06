@@ -20,6 +20,7 @@ import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import type { EnvWithExecutionContext } from '../types/cloudflare';
 import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
 import type { Origin, VideoOptions } from '../services/videoStorage/interfaces';
+import { getCacheKV, getVersionKV } from '../utils/flexibleBindings';
 
 // In-flight transformation tracking to prevent duplicate origin fetches
 const inFlightTransformations = new Map<string, Promise<Response>>();
@@ -59,10 +60,11 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
     try {
       // Log environment variables received for debugging
       if (env) {
+        const cacheKV = getCacheKV(env);
         debug(context, logger, 'VideoHandlerWithOrigins', 'Environment variables received', {
           CACHE_ENABLE_KV: env.CACHE_ENABLE_KV || 'not set',
-          VIDEO_TRANSFORMATIONS_CACHE: !!env.VIDEO_TRANSFORMATIONS_CACHE,
-          VIDEO_TRANSFORMS_KV: !!env.VIDEO_TRANSFORMS_KV,
+          CACHE_KV_AVAILABLE: !!cacheKV,
+          CACHE_KV_NAME: env.CACHE_KV_NAME || 'not set',
           ENVIRONMENT: env.ENVIRONMENT || 'not set'
         });
       }
@@ -299,7 +301,8 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         });
         
         // After cache miss, check if version was incremented and update our options
-        if (env.VIDEO_CACHE_KEY_VERSIONS) {
+        const versionKV = getVersionKV(env);
+        if (versionKV) {
           const { getCacheKeyVersion } = await import('../services/cacheVersionService');
           const { generateKVKey } = await import('../services/kvStorage/keyUtils');
           

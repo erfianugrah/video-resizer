@@ -17,6 +17,7 @@ import {
   verifyPresignedUrl,
   PresignedUrlCacheEntry
 } from '../services/presignedUrlCacheService';
+import { getPresignedUrlKV } from './flexibleBindings';
 
 /**
  * Helper for consistent logging
@@ -457,10 +458,11 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
   });
   
   // Check cache for presigned URL if KV namespace exists
-  if (env.PRESIGNED_URLS) {
+  const presignedKV = getPresignedUrlKV(env);
+  if (presignedKV) {
     try {
       const cachedEntry = await getPresignedUrl(
-        env.PRESIGNED_URLS,
+        presignedKV,
         path,
         {
           storageType: storageTypeForCache, // Use potentially specific type
@@ -496,9 +498,9 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
             logDebug('Cached presigned URL is invalid, regenerating', { path });
             
             // Regenerate URL in the background (using waitUntil if available)
-            if (env.executionCtx?.waitUntil) {
+            if (env.executionCtx?.waitUntil && presignedKV) {
               const refreshOperation = refreshPresignedUrl(
-                env.PRESIGNED_URLS,
+                presignedKV,
                 cachedEntry,
                 {
                   env,
@@ -522,9 +524,9 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
               logDebug('Cached presigned URL is valid but expiring soon, refreshing in background', { path });
               
               // Refresh in the background if execution context is available
-              if (env.executionCtx?.waitUntil) {
+              if (env.executionCtx?.waitUntil && presignedKV) {
                 const refreshOperation = refreshPresignedUrl(
-                  env.PRESIGNED_URLS,
+                  presignedKV,
                   cachedEntry,
                   {
                     env,
@@ -630,10 +632,10 @@ let storageTypeForCache: string = 'remote'; // Default or derive more specifical
       });
       
       // Cache the generated URL if KV binding exists
-      if (env.PRESIGNED_URLS) {
+      if (presignedKV) {
         try {
           await storePresignedUrl(
-            env.PRESIGNED_URLS,
+            presignedKV,
             path,
             presignedUrl,
             url,

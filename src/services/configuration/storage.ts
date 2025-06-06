@@ -29,10 +29,16 @@ export async function storeToKV(
   const requestContext = getCurrentContext();
   const logger = requestContext ? createLogger(requestContext) : null;
   
-  if (!env.VIDEO_CONFIGURATION_STORE) {
+  // Support flexible binding names
+  const kvBindingName = env.CONFIG_KV_NAME || 'VIDEO_CONFIGURATION_STORE';
+  const kvNamespace = env[kvBindingName] as KVNamespace | undefined;
+  
+  if (!kvNamespace) {
     if (logger && requestContext) {
       pinoError(requestContext, logger, 'ConfigurationService', 'KV namespace not available for storing config', {
-        environment: env.ENVIRONMENT || 'unknown'
+        environment: env.ENVIRONMENT || 'unknown',
+        attemptedBinding: kvBindingName,
+        hasConfigKvName: !!env.CONFIG_KV_NAME
       });
     }
     metrics.kvErrorCount = (metrics.kvErrorCount as number) + 1;
@@ -63,7 +69,7 @@ export async function storeToKV(
   
   try {
     // Store configuration in KV without expiration
-    await env.VIDEO_CONFIGURATION_STORE.put(
+    await kvNamespace.put(
       CONFIG_KEY,
       JSON.stringify(updatedConfig)
       // Removed the expirationTtl to prevent configuration expiration

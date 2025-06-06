@@ -1,6 +1,6 @@
 # Video Resizer Configuration
 
-*Last Updated: May 12, 2025*
+*Last Updated: January 6, 2025*
 
 This section provides comprehensive documentation on configuring the Video Resizer, including environment settings, path patterns, and dynamic configuration.
 
@@ -11,6 +11,8 @@ This section provides comprehensive documentation on configuring the Video Resiz
 - [Configuration Management](./config-management.md) - How to check, fix, and upload configurations
 - [Dynamic Configuration](./dynamic-config.md) - KV-based dynamic configuration
 - [Environment Configuration](./environment-config.md) - Environment-specific settings
+- [Flexible Bindings](./flexible-bindings.md) - Custom KV namespace binding names
+- [Origins Configuration](./origins-configuration.md) - Multi-origin setup and authentication
 
 ## Configuration Overview
 

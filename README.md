@@ -18,6 +18,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - Automatic device and bandwidth detection
 - Debug UI for monitoring and troubleshooting
 - High-concurrency chunk size validation and tolerance
+- Flexible KV namespace bindings for multi-tenant deployments
 
 ## Quick Start
 

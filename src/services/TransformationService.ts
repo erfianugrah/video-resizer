@@ -19,6 +19,7 @@ import { cacheResponse } from './cacheManagementService';
 import { OriginResolver, OriginMatchResult, SourceResolutionResult } from '../services/origins/OriginResolver';
 import { VideoConfigurationManager } from '../config';
 import { Origin } from './videoStorage/interfaces';
+import { getCacheKV } from '../utils/flexibleBindings';
 
 /**
  * Helper functions for consistent logging throughout this file
@@ -612,11 +613,12 @@ export const prepareVideoTransformation = withErrorHandling<
       // Check if the content exists in the cache
       let shouldIncrement = false;
       
-      if (env.VIDEO_TRANSFORMATIONS_CACHE) {
+      const cacheKV = getCacheKV(env);
+      if (cacheKV) {
         try {
           // Check if the entry exists by trying to get it
           // We'll use list with a prefix to be more efficient and avoid fetching the actual data
-          const keys = await env.VIDEO_TRANSFORMATIONS_CACHE.list({ prefix: cacheKey, limit: 1 });
+          const keys = await cacheKV.list({ prefix: cacheKey, limit: 1 });
           const exists = keys.keys.length > 0;
           
           // If the entry doesn't exist, we should increment the version

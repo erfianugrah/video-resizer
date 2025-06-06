@@ -17,6 +17,7 @@ import { createRequestContext, updateBreadcrumbConfig } from './utils/requestCon
 import { createLogger, info, error, debug } from './utils/pinoLogger';
 import { initializeLegacyLogger } from './utils/legacyLoggerAdapter';
 import { LoggingConfigurationManager } from './config/LoggingConfigurationManager';
+import { getKVNamespace } from './utils/flexibleBindings';
 
 /**
  * Helper functions for consistent logging in the index module
@@ -92,7 +93,8 @@ export default {
           updateBreadcrumbConfig(breadcrumbConfig);
           
           // Try to load dynamic configuration from KV if available
-          if (env.VIDEO_CONFIGURATION_STORE) {
+          const configKV = getKVNamespace(env, 'CONFIG_KV_NAME', 'VIDEO_CONFIGURATION_STORE');
+          if (configKV) {
             try {
               // Import the ConfigurationService (dynamic import to avoid circular deps)
               const { ConfigurationService } = await import('./services/configurationService');

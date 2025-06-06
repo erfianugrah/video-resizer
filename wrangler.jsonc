@@ -46,7 +46,11 @@
 				}
 			],
 			"vars": {
-				"ENVIRONMENT": "development"
+				"ENVIRONMENT": "development",
+				// Flexible binding mappings (optional - will use defaults if not specified)
+				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
 			}
 		},
 		"staging": {
@@ -80,7 +84,12 @@
 				}
 			],
 			"vars": {
-				"ENVIRONMENT": "staging"
+				"ENVIRONMENT": "staging",
+				// Flexible binding mappings (optional - will use defaults if not specified)
+				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
+				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
 			},
 			"routes": [
 				{
@@ -120,7 +129,12 @@
 				}
 			],
 			"vars": {
-				"ENVIRONMENT": "production"
+				"ENVIRONMENT": "production",
+				// Flexible binding mappings (optional - will use defaults if not specified)
+				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
+				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
 			},
 			"routes": [
 				{

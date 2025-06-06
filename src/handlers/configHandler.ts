@@ -11,12 +11,15 @@ import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createRequestContext } from '../utils/requestContext';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { z } from 'zod';
+import { getKVNamespace } from '../utils/flexibleBindings';
 
 // Environment interface with KV binding and secret
 interface Env {
   VIDEO_CONFIGURATION_STORE?: KVNamespace;
   CONFIG_API_TOKEN?: string;
   ENVIRONMENT?: string;
+  CONFIG_KV_NAME?: string;
+  [key: string]: any;
 }
 
 /**
@@ -71,11 +74,17 @@ export const handleConfigUpload = withErrorHandling<[Request, Env], Response>(
       hasAuthHeader: !!request.headers.get('Authorization')
     });
 
-    // Check if KV namespace exists
-    if (!env.VIDEO_CONFIGURATION_STORE) {
-      logErrorWithContext('No VIDEO_CONFIGURATION_STORE KV namespace binding found', new Error('KV namespace not found'), {}, 'ConfigHandler');
+    // Check if KV namespace exists using flexible binding
+    const configKV = getKVNamespace(env, 'CONFIG_KV_NAME', 'VIDEO_CONFIGURATION_STORE');
+    if (!configKV) {
+      const bindingName = env.CONFIG_KV_NAME || 'VIDEO_CONFIGURATION_STORE';
+      logErrorWithContext(`No ${bindingName} KV namespace binding found`, new Error('KV namespace not found'), {
+        attemptedBinding: bindingName,
+        hasConfigKvName: !!env.CONFIG_KV_NAME
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'KV namespace missing', {
-        error: 'VIDEO_CONFIGURATION_STORE binding not found'
+        error: `${bindingName} binding not found`,
+        attemptedBinding: bindingName
       });
       return new Response('KV namespace not configured', { status: 500 });
     }
@@ -344,11 +353,17 @@ export const handleConfigGet = withErrorHandling<[Request, Env], Response>(
       hasAuthHeader: !!request.headers.get('Authorization')
     });
 
-    // Check if KV namespace exists
-    if (!env.VIDEO_CONFIGURATION_STORE) {
-      logErrorWithContext('No VIDEO_CONFIGURATION_STORE KV namespace binding found', new Error('KV namespace not found'), {}, 'ConfigHandler');
+    // Check if KV namespace exists using flexible binding
+    const configKV = getKVNamespace(env, 'CONFIG_KV_NAME', 'VIDEO_CONFIGURATION_STORE');
+    if (!configKV) {
+      const bindingName = env.CONFIG_KV_NAME || 'VIDEO_CONFIGURATION_STORE';
+      logErrorWithContext(`No ${bindingName} KV namespace binding found`, new Error('KV namespace not found'), {
+        attemptedBinding: bindingName,
+        hasConfigKvName: !!env.CONFIG_KV_NAME
+      }, 'ConfigHandler');
       addBreadcrumb(context, 'ConfigHandler', 'KV namespace missing', {
-        error: 'VIDEO_CONFIGURATION_STORE binding not found'
+        error: `${bindingName} binding not found`,
+        attemptedBinding: bindingName
       });
       return new Response('KV namespace not configured', { status: 500 });
     }

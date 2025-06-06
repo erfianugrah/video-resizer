@@ -199,6 +199,16 @@ export interface EnvVariables {
   VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
   PRESIGNED_URLS?: KVNamespace | undefined;
   
+  // Flexible binding name configuration variables
+  CONFIG_KV_NAME?: string;
+  CACHE_KV_NAME?: string;
+  VERSION_KV_NAME?: string;
+  PRESIGNED_KV_NAME?: string;
+  VIDEO_BUCKET_NAME?: string;
+  
+  // Allow dynamic binding access
+  [key: string]: any;
+  
   // Worker Execution Context
   executionCtx?: {
     waitUntil: (promise: Promise<any>) => void;

@@ -32,4 +32,6 @@ export type WorkerConfiguration = z.infer<typeof WorkerConfigurationSchema>;
 export interface ConfigEnvironment {
   VIDEO_CONFIGURATION_STORE?: KVNamespace;
   ENVIRONMENT?: string;
+  CONFIG_KV_NAME?: string;
+  [key: string]: any;
 }

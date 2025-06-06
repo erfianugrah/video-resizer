@@ -10,6 +10,7 @@ import type { VideoTransformOptions } from '../domain/commands/TransformVideoCom
 import { getFromKVCache, storeInKVCache } from '../utils/kvCacheUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
+import { getCacheKV } from '../utils/flexibleBindings';
 
 /**
  * Wrapper for the video transformation process that integrates with KV cache
@@ -164,8 +165,8 @@ export async function listVideoVariants(
   env: EnvVariables,
   sourcePath: string
 ): Promise<any[]> {
-  // Use the preferred namespace or fall back to the alternative
-  const kvNamespace = env.VIDEO_TRANSFORMATIONS_CACHE || env.VIDEO_TRANSFORMS_KV;
+  // Use the flexible binding to get the cache KV namespace
+  const kvNamespace = getCacheKV(env);
   if (!kvNamespace) {
     return [];
   }
@@ -203,8 +204,8 @@ export async function deleteVideoVariant(
   env: EnvVariables,
   key: string
 ): Promise<boolean> {
-  // Use the preferred namespace or fall back to the alternative
-  const kvNamespace = env.VIDEO_TRANSFORMATIONS_CACHE || env.VIDEO_TRANSFORMS_KV;
+  // Use the flexible binding to get the cache KV namespace
+  const kvNamespace = getCacheKV(env);
   if (!kvNamespace) {
     return false;
   }

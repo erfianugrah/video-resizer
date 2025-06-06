@@ -61,15 +61,22 @@ export const getCacheKeyVersion = withErrorHandling<
       return 1; // Return a constant version (1) when disabled
     }
 
-    if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
-      logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
+    // Support flexible binding names
+    const versionBindingName = env?.VERSION_KV_NAME || 'VIDEO_CACHE_KEY_VERSIONS';
+    const versionKV = env && env[versionBindingName] as KVNamespace | undefined;
+    
+    if (!versionKV) {
+      logDebug('Version KV namespace not available', {
+        attemptedBinding: versionBindingName,
+        hasVersionKvName: !!env?.VERSION_KV_NAME
+      });
       return null;
     }
 
     const versionKey = createVersionKey(cacheKey);
     
     // Get value with metadata
-    const { value, metadata } = await env.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata<VersionMetadata>(versionKey);
+    const { value, metadata } = await versionKV.getWithMetadata<VersionMetadata>(versionKey);
     
     // Version is stored in metadata
     if (!metadata || typeof metadata.version !== 'number') {
@@ -122,8 +129,15 @@ export const storeCacheKeyVersion = withErrorHandling<
       return true; // Return success but don't actually store anything
     }
 
-    if (!env || !env.VIDEO_CACHE_KEY_VERSIONS) {
-      logDebug('VIDEO_CACHE_KEY_VERSIONS binding not available');
+    // Support flexible binding names
+    const versionBindingName = env?.VERSION_KV_NAME || 'VIDEO_CACHE_KEY_VERSIONS';
+    const versionKV = env && env[versionBindingName] as KVNamespace | undefined;
+    
+    if (!versionKV) {
+      logDebug('Version KV namespace not available', {
+        attemptedBinding: versionBindingName,
+        hasVersionKvName: !!env?.VERSION_KV_NAME
+      });
       return false;
     }
 
@@ -146,7 +160,7 @@ export const storeCacheKeyVersion = withErrorHandling<
     };
     
     // Store an empty string as the value, with metadata containing the version
-    await env.VIDEO_CACHE_KEY_VERSIONS.put(versionKey, '', options);
+    await versionKV.put(versionKey, '', options);
     
     logDebug('Stored cache key version in metadata', { 
       cacheKey, 

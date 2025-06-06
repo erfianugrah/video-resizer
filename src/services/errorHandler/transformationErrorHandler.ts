@@ -15,6 +15,7 @@ import type { DiagnosticsInfo } from '../../utils/debugHeadersUtils';
 import { logDebug } from './logging';
 import { EnvVariables } from '../../config/environmentConfig';
 import type { VideoResizerConfig } from '../videoStorage/interfaces';
+import { getCacheKV } from '../../utils/flexibleBindings';
 
 /**
  * Helper function to initiate background caching of fallback responses
@@ -37,7 +38,8 @@ async function initiateBackgroundCaching(
   }
 ): Promise<void> {
   // Only proceed if we have the necessary environment and response
-  if (!env || !env.executionCtx?.waitUntil || !env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
+  const cacheKV = env ? getCacheKV(env) : null;
+  if (!env || !env.executionCtx?.waitUntil || !cacheKV || !fallbackResponse.body || !fallbackResponse.ok) {
     return;
   }
 

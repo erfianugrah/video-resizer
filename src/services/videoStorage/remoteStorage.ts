@@ -10,6 +10,7 @@ import { addBreadcrumb } from '../../utils/requestContext';
 import { getPresignedUrl, storePresignedUrl, isUrlExpiring, refreshPresignedUrl, UrlGeneratorFunction } from '../presignedUrlCacheService';
 import { applyPathTransformation } from './pathTransform';
 import { logDebug } from './logging';
+import { getPresignedUrlKV } from '../../utils/flexibleBindings';
 
 /**
  * Implementation of fetchFromRemote that might throw errors
@@ -162,10 +163,11 @@ async function fetchFromRemoteImpl(
       }
     } else if (remoteAuth.type === 'aws-s3-presigned-url') {
       // Check for cached presigned URL first if we have a KV namespace
-      if (env.PRESIGNED_URLS) {
+      const presignedKV = getPresignedUrlKV(env);
+      if (presignedKV) {
         try {
           const cachedEntry = await getPresignedUrl(
-            env.PRESIGNED_URLS,
+            presignedKV,
             transformedPath,
             {
               storageType: 'remote',
@@ -198,7 +200,7 @@ async function fetchFromRemoteImpl(
             }
             
             // Check if URL is close to expiration and refresh in background
-            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && env.PRESIGNED_URLS) {
+            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && presignedKV) {
               // Create URL generator function for refreshing
               const generateAwsUrl: UrlGeneratorFunction = async (path: string): Promise<string> => {
                 const accessKeyVar = remoteAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
@@ -233,9 +235,9 @@ async function fetchFromRemoteImpl(
               // Use waitUntil for non-blocking refresh
               env.executionCtx.waitUntil(
                 (async () => {
-                  if (env.PRESIGNED_URLS) {
+                  if (presignedKV) {
                     await refreshPresignedUrl(
-                      env.PRESIGNED_URLS,
+                      presignedKV,
                       cachedEntry,
                       {
                         thresholdSeconds: 600, // 10 minutes threshold
@@ -320,10 +322,10 @@ async function fetchFromRemoteImpl(
             });
             
             // Cache the generated URL if KV binding exists
-            if (env.PRESIGNED_URLS) {
+            if (presignedKV) {
               try {
                 await storePresignedUrl(
-                  env.PRESIGNED_URLS,
+                  presignedKV,
                   transformedPath,
                   finalUrl,
                   originalFinalUrl,
