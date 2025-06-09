@@ -2,6 +2,12 @@
 
 This document provides guidance on how to manage, validate, fix, and upload configurations for the Video Resizer service.
 
+## Important Notes
+
+- **KV-Only Configuration**: As of the latest update, configuration is loaded exclusively from KV storage. There is no fallback configuration mechanism.
+- **Required Configuration**: The worker requires a configuration to be present in the `VIDEO_CONFIGURATION_STORE` KV namespace with the key `worker-config`.
+- **No Embedded Defaults**: The worker will fail to start if no configuration is found in KV storage.
+
 ## Configuration Management Commands
 
 The Video Resizer project includes a unified configuration management tool that makes it easy to work with configuration files. The tool supports checking, fixing, validating, and uploading configurations.
@@ -108,3 +114,27 @@ Common fields that need to be arrays include:
 ### Cache Method Field
 
 All configurations need a `cache.method` field with value `"kv"`. The `fix` command will automatically add this if it's missing.
+
+## Initial Configuration Upload
+
+For initial setup or when the configuration API is not available, use the config upload script:
+
+```bash
+# Upload configuration to development environment
+node tools/config-upload.js --env development --token YOUR_TOKEN --config config/worker-config.json
+
+# Upload configuration to production environment
+node tools/config-upload.js --env production --token YOUR_TOKEN --config config/worker-config.json
+
+# Use --initial-upload flag to bypass validation and upload directly to KV
+node tools/config-upload.js --env production --token YOUR_TOKEN --config config/worker-config.json --initial-upload
+
+# Dry run to validate without uploading
+node tools/config-upload.js --env production --token YOUR_TOKEN --config config/worker-config.json --dry-run
+```
+
+The upload script handles:
+- Authentication with the worker
+- Configuration validation
+- Direct KV upload when needed
+- Environment-specific endpoints

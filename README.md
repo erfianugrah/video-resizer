@@ -40,6 +40,12 @@ Comprehensive documentation is available in the [docs directory](./docs/README.m
 - [Performance Tuning Guide](./docs/guides/performance-tuning.md) - Optimization tips
 - [API Reference](./docs/reference/api-reference.md) - Complete API details
 
+### Recent Fixes
+
+- [Worker Timeout and Configuration Fixes](./docs/fixes/worker-timeout-and-configuration-fixes.md) - Fixes for timeout issues and configuration loading
+- [Cache Versioning](./docs/fixes/cache-versioning-and-206-responses.md) - How cache versioning works
+- [Version Management](./docs/fixes/version-increment-explanation.md) - Manual version control for cache invalidation
+
 ## System Architecture
 
 This section provides visual diagrams of the system architecture and key components. For your convenience, diagrams are organized by functional area.

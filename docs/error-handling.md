@@ -2,6 +2,12 @@
 
 This document outlines the error handling approach in the Video Resizer service, particularly for Cloudflare's Media Transformation API.
 
+## Recent Updates
+
+- **Worker Timeout Fix**: Resolved timeout issues by making KV storage asynchronous
+- **Configuration Errors**: Removed fallback configuration that was causing "Invalid URL" errors
+- **KV-Only Configuration**: Configuration now only loads from KV storage with clear error messages
+
 ## Error Categories
 
 The error handling system identifies and handles the following categories of errors:

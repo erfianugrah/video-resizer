@@ -5,7 +5,7 @@ import { ConfigurationError } from '../../errors';
 import { ConfigEnvironment, WorkerConfiguration } from './schemas';
 import { createMetrics, getFormattedMetrics } from './metrics';
 import { ConfigurationCache } from './caching';
-import { loadFromKV, loadBaseConfiguration, getFromKVWithCache } from './loaders';
+import { loadFromKV, getFromKVWithCache } from './loaders';
 import { storeToKV, createUpdatedConfiguration } from './storage';
 import { getVideoConfig, getCacheConfig, getLoggingConfig, getDebugConfig } from './accessors';
 import { convertJsonToConfig, validateConfig } from './validation';
@@ -34,7 +34,6 @@ export class ConfigurationService {
     // Return formatted metrics 
     return getFormattedMetrics({
       ...this.metrics,
-      baseInitComplete: this.baseInitComplete,
       isUpdating: this.isUpdating,
       initTimeSinceMs: Date.now() - this.initTimestamp,
       timeSinceLastFetchMs: this.lastFetchTimestamp > 0 
@@ -54,7 +53,6 @@ export class ConfigurationService {
   private readonly CACHE_TTL_MS = CACHE_TTL_MS;
   private readonly CONFIG_KEY = CONFIG_KEY;
   private memoryCache: ConfigurationCache;
-  private baseInitComplete = false;
   private kvUpdatePromise: Promise<void> | null = null;
   private isUpdating = false;
   private initTimestamp: number = Date.now();
@@ -123,11 +121,8 @@ export class ConfigurationService {
     // Track metrics for initialization
     this.metrics.lastInitTimestamp = Date.now();
     
-    // Apply base configuration synchronously for fast startup
-    this.applyBaseConfiguration(env);
-    
-    // Start KV configuration loading in the background
-    // This ensures we don't block the cold start, improving performance
+    // Start KV configuration loading
+    // Configuration will only come from KV - no fallback
     this.kvUpdatePromise = this.loadAndDistributeKVConfiguration(env)
       .then(() => {
         // Update initialization metrics
@@ -146,61 +141,10 @@ export class ConfigurationService {
             error: error instanceof Error ? error.message : String(error)
           });
         }
+        throw error; // Re-throw to ensure we know configuration failed
       });
   }
   
-  /**
-   * Apply base configuration from the built-in default configuration
-   * This is a synchronous operation to ensure we have a basic configuration
-   * available immediately without waiting for KV
-   */
-  private applyBaseConfiguration(env: ConfigEnvironment): void {
-    const requestContext = getCurrentContext();
-    const logger = requestContext ? createLogger(requestContext) : null;
-    
-    try {
-      // Load base configuration asynchronously but don't block initialization
-      loadBaseConfiguration(env)
-        .then(baseConfig => {
-          if (baseConfig) {
-            if (logger && requestContext) {
-              pinoDebug(requestContext, logger, 'ConfigurationService', 'Loaded base configuration', {
-                version: baseConfig.version
-              });
-            }
-            
-            // If we haven't loaded from KV yet, use this configuration
-            if (!this.config) {
-              this.config = baseConfig;
-              this.baseInitComplete = true;
-              
-              if (logger && requestContext) {
-                pinoDebug(requestContext, logger, 'ConfigurationService', 'Applied base configuration', {
-                  version: baseConfig.version
-                });
-              }
-            }
-          } else {
-            if (logger && requestContext) {
-              pinoError(requestContext, logger, 'ConfigurationService', 'Failed to load base configuration');
-            }
-          }
-        })
-        .catch(error => {
-          if (logger && requestContext) {
-            pinoError(requestContext, logger, 'ConfigurationService', 'Error loading base configuration', {
-              error: error instanceof Error ? error.message : String(error)
-            });
-          }
-        });
-    } catch (error) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Error applying base configuration', {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-    }
-  }
   
   /**
    * Trigger an update from KV storage
@@ -271,9 +215,9 @@ export class ConfigurationService {
       
       if (!kvConfig) {
         if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'No configuration found in KV, using base configuration');
+          pinoError(requestContext, logger, 'ConfigurationService', 'No configuration found in KV');
         }
-        return;
+        throw new ConfigurationError('No configuration available in KV storage');
       }
       
       // Update our configuration

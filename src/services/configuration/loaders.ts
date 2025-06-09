@@ -11,8 +11,6 @@ import { ConfigurationCache } from './caching';
 
 // Constants
 const CONFIG_KEY = 'worker-config';
-const DEFAULT_CONFIG_PATH = 'config/worker-config.json';
-const COMPREHENSIVE_CONFIG_PATH = 'config/worker-config-comprehensive.json';
 
 /**
  * Load configuration from KV storage
@@ -145,60 +143,6 @@ async function getFromKV(
       // If both methods fail, return null
       return null;
     }
-  }
-}
-
-/**
- * Load the base configuration from assets
- * @param env Environment with KV namespace
- * @returns WorkerConfiguration or null if loading fails
- */
-export async function loadBaseConfiguration(
-  env: ConfigEnvironment
-): Promise<WorkerConfiguration | null> {
-  const requestContext = getCurrentContext();
-  const logger = requestContext ? createLogger(requestContext) : null;
-  
-  try {
-    // Try to load the configuration from the asset
-    const configPath = env.ENVIRONMENT === 'development'
-      ? COMPREHENSIVE_CONFIG_PATH
-      : DEFAULT_CONFIG_PATH;
-    
-    // Use fetch API to load from assets
-    const response = await fetch(configPath);
-    
-    if (!response.ok) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Failed to load base configuration', {
-          status: response.status,
-          configPath
-        });
-      }
-      return null;
-    }
-    
-    const configJson = await response.json();
-    
-    // Validate and convert to WorkerConfiguration
-    try {
-      return convertJsonToConfig(configJson);
-    } catch (error) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Invalid base configuration format', {
-          error: error instanceof Error ? error.message : String(error),
-          configPath
-        });
-      }
-      return null;
-    }
-  } catch (error) {
-    if (logger && requestContext) {
-      pinoError(requestContext, logger, 'ConfigurationService', 'Error loading base configuration', {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-    return null;
   }
 }
 
