@@ -169,8 +169,8 @@ describe('TransformVideoCommand', () => {
   });
   
   it('should handle 400 Bad Request from transformation proxy by returning original content', async () => {
-    // Arrange
-    const request = createMockRequest('https://example.com/videos/test-error-400.mp4');
+    // Arrange - Use a path that matches a pattern with originUrl
+    const request = createMockRequest('https://example.com/custom/test-error-400.mp4');
     const pathPatterns = createMockPathPatterns();
     const options = {
       width: 1080,
@@ -178,17 +178,30 @@ describe('TransformVideoCommand', () => {
       mode: 'video',
     };
     
-    // Mock the fetch to return 400 for cdn-cgi URLs
+    // Mock the fetch to return 400 for cdn-cgi URLs, 200 for fallback
     vi.mocked(fetch).mockImplementation((url) => {
-      if (typeof url === 'string' && url.includes('cdn-cgi/media')) {
+      const urlStr = typeof url === 'string' ? url : url instanceof Request ? url.url : String(url);
+      console.log('Mock fetch called with URL:', urlStr);
+      
+      if (urlStr.includes('cdn-cgi/media')) {
         return Promise.resolve(
-          new Response('Input video must be less than 268435456 bytes', {
+          new Response('file size limit exceeded (256MiB)', {
             status: 400,
             headers: { 'Content-Type': 'text/plain' }
           })
         );
+      } else if (urlStr.includes('videos.example.com')) {
+        // Return the fallback video content
+        console.log('Returning fallback video content for URL:', urlStr);
+        return Promise.resolve(
+          new Response('Original video content', {
+            status: 200,
+            headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' }
+          })
+        );
       } else {
         // Default response for other URLs
+        console.log('Returning default response for URL:', urlStr);
         return Promise.resolve(
           new Response('Default response', {
             status: 200,
@@ -197,32 +210,6 @@ describe('TransformVideoCommand', () => {
         );
       }
     });
-    
-    // Mock the videoStorageService
-    vi.mock('../../src/services/videoStorageService', () => ({
-      fetchVideo: vi.fn().mockResolvedValue({
-        response: new Response('Original video content', {
-          status: 200,
-          headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' }
-        }),
-        sourceType: 'remote',
-        contentType: 'video/mp4',
-        size: 1000,
-        originalUrl: 'https://videos.example.com/test-error-400.mp4',
-        path: 'test-error-400.mp4'
-      }),
-      generateCacheTags: vi.fn().mockReturnValue(['video-test', 'video-format-mp4'])
-    }));
-    
-    // Mock the environment config
-    vi.mock('../../src/config/environmentConfig', () => ({
-      getEnvironmentConfig: vi.fn().mockReturnValue({
-        storage: {
-          priority: ['remote', 'fallback'],
-          remoteUrl: 'https://videos.example.com'
-        }
-      })
-    }));
 
     const command = new TransformVideoCommand({
       request,
@@ -234,14 +221,23 @@ describe('TransformVideoCommand', () => {
     // Act
     const response = await command.execute();
 
-    // Assert
+    // Assert - File size errors should trigger fallback
     expect(response.status).toBe(200);
     expect(response.headers.get('X-Fallback-Applied')).toBe('true');
     expect(response.headers.get('X-Video-Too-Large')).toBe('true');
-    expect(response.headers.get('X-Storage-Source')).toBe('remote');
+    expect(response.headers.get('X-File-Size-Error')).toBe('true');
+    expect(response.headers.get('X-Video-Exceeds-256MiB')).toBe('true');
+    
+    // Check that we got a successful response
+    expect(response.body).toBeTruthy();
+    
+    // Read the response text
+    const responseText = await response.text();
+    console.log('Response text:', responseText);
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
     
     // Check original content
-    const responseText = await response.text();
     expect(responseText).toBe('Original video content');
   });
   

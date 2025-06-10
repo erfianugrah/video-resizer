@@ -7,6 +7,7 @@
  */
 import { VideoConfigurationManager } from '../../config';
 import { findMatchingPathPattern, PathPattern } from '../../utils/pathUtils';
+import { EnvVariables } from '../../config/environmentConfig';
 import {
   DebugInfo,
   DiagnosticsInfo,
@@ -788,134 +789,33 @@ export class TransformVideoCommand {
         const r2Object = await r2Bucket.get(sourcePath);
 
         if (!r2Object) {
-          // Object not found in R2 - this should trigger fallback to other origins
-          // Create an error response that will be handled by the error handler
-          // Use status 500 to ensure it's seen as a server error and triggers fallback
-          const notFoundResponse = new Response(
-            `Object not found in R2 bucket: ${sourcePath}`,
+          // Object not found in R2 - use the new retry mechanism
+          pinoDebug(
+            this.requestContext,
+            this.logger,
+            'TransformVideoCommand',
+            'R2 object not found, using retry mechanism',
             {
-              status: 500,
-              headers: {
-                'Content-Type': 'text/plain',
-                'X-Error-Source': 'r2',
-                'X-Error-Path': sourcePath,
-                'X-Error-Type': 'NotFoundInR2'
-              }
+              origin: origin.name,
+              failedSource: sourceResolution.source.type,
+              failedPriority: sourceResolution.source.priority,
+              path: sourcePath
             }
           );
           
-          // Find the next source to try based on priority
-          const nextSource = this.findNextSourceByPriority(origin, sourceResolution.source.priority);
+          // Import and use the new retry function
+          const { retryWithAlternativeOrigins } = await import('../../services/transformation/retryWithAlternativeOrigins');
           
-          if (nextSource) {
-            // Log that we're moving to the next source
-            pinoDebug(
-              this.requestContext,
-              this.logger,
-              'TransformVideoCommand',
-              'Moving to next source by priority',
-              {
-                currentSource: sourceResolution.source.type,
-                currentPriority: sourceResolution.source.priority,
-                nextSource: nextSource.type,
-                nextPriority: nextSource.priority,
-                path: sourcePath
-              }
-            );
-            
-            // Update sourceResolution to use the next source
-            // Construct the full URL including the path for non-R2 sources
-            let fullSourceUrl: string | undefined = nextSource.url;
-            
-            // If this is a remote or fallback source, append the path
-            if ((nextSource.type === 'remote' || nextSource.type === 'fallback') && fullSourceUrl) {
-              // Build the complete URL including path - this is critical for fallback to work
-              // Ensure URL doesn't end with slash and path doesn't start with slash (to avoid double slash)
-              const baseUrl = fullSourceUrl.endsWith('/') ? fullSourceUrl.slice(0, -1) : fullSourceUrl;
-              const pathSegment = sourcePath.startsWith('/') ? sourcePath.substring(1) : sourcePath;
-              
-              // Create the full URL, preserving any version parameter
-              fullSourceUrl = `${baseUrl}/${pathSegment}`;
-              
-              // Check if we should add version parameter
-              if (options.version !== undefined) {
-                // Apply version to the URL - this will ensure the version from the original request is maintained
-                const originalUrl = fullSourceUrl;
-                fullSourceUrl = addVersionToUrl(fullSourceUrl, options.version);
-                
-                pinoDebug(
-                  this.requestContext,
-                  this.logger,
-                  'TransformVideoCommand',
-                  'Applied version parameter to fallback URL',
-                  {
-                    originalUrl,
-                    versionedUrl: fullSourceUrl,
-                    version: options.version
-                  }
-                );
-              }
-              
-              pinoDebug(
-                this.requestContext,
-                this.logger,
-                'TransformVideoCommand',
-                'Created full source URL for fallback',
-                {
-                  baseUrl,
-                  path: pathSegment,
-                  fullUrl: fullSourceUrl,
-                  hasVersion: options.version !== undefined
-                }
-              );
-            }
-            
-            const nextSourceResolution: SourceResolutionResult = {
-              ...sourceResolution,
-              source: nextSource,
-              originType: nextSource.type,
-              sourceUrl: fullSourceUrl
-            };
-            
-            // Change context.sourceResolution to the next source
-            this.context.sourceResolution = nextSourceResolution;
-            
-            // Retry with the new source
-            // Call executeWithOrigins recursively to try the next source
-            return await this.executeWithOrigins();
-          }
-          
-          // If there's no next source or the recursive call fails, fall back to error handler
-          // Handle this error through the transformation error handler
-          // which supports multi-origin fallback
-          // Make sure we're passing a properly versioned fallbackOriginUrl to the error handler
-          let fallbackOriginUrl = this.getNextSourceUrl(origin, sourceResolution.source.priority);
-          
-          // Apply version to fallback URL if needed
-          if (fallbackOriginUrl && options.version !== undefined) {
-            fallbackOriginUrl = addVersionToUrl(fallbackOriginUrl, options.version);
-            pinoDebug(
-              this.requestContext,
-              this.logger,
-              'TransformVideoCommand',
-              'Applied version to fallback URL in error handler',
-              {
-                fallbackOriginUrl,
-                version: options.version
-              }
-            );
-          }
-          
-          return await handleTransformationError({
-            errorResponse: notFoundResponse,
+          return await retryWithAlternativeOrigins({
             originalRequest: request,
+            transformOptions: options as any, // Cast to any to match VideoOptions type
+            failedOrigin: origin,
+            failedSource: sourceResolution.source,
             context: this.context,
+            env: env as EnvVariables, // Cast to ensure type compatibility
             requestContext: this.requestContext,
-            diagnosticsInfo,
-            // Pass properly versioned fallback URL
-            fallbackOriginUrl,
-            cdnCgiUrl,
-            source: sourceResolution.originType,
+            pathPatterns: this.context.pathPatterns,
+            debugInfo: this.context.debugInfo
           });
         }
 
@@ -963,6 +863,34 @@ export class TransformVideoCommand {
             source: sourceResolution.sourceUrl || 'unknown',
             originType: sourceResolution.originType
           };
+          
+          // Use the new retry mechanism for 404 errors
+          pinoDebug(
+            this.requestContext,
+            this.logger,
+            'TransformVideoCommand',
+            'Handling 404 error with retry mechanism',
+            {
+              origin: origin.name,
+              failedSource: sourceResolution.source.type,
+              failedPriority: sourceResolution.source.priority
+            }
+          );
+          
+          // Import and use the new retry function
+          const { retryWithAlternativeOrigins } = await import('../../services/transformation/retryWithAlternativeOrigins');
+          
+          return await retryWithAlternativeOrigins({
+            originalRequest: request,
+            transformOptions: options as any, // Cast to any to match VideoOptions type
+            failedOrigin: origin,
+            failedSource: sourceResolution.source,
+            context: this.context,
+            env: env as EnvVariables, // Cast to ensure type compatibility
+            requestContext: this.requestContext,
+            pathPatterns: this.context.pathPatterns,
+            debugInfo: this.context.debugInfo
+          });
         } else if (response.status === 400) {
           diagnosticsInfo.errors = diagnosticsInfo.errors || [];
           diagnosticsInfo.errors.push('Bad request (400) - Possible parameter issue');

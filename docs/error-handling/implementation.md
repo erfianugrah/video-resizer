@@ -488,73 +488,96 @@ try {
 
 The system implements sophisticated fallback mechanisms for graceful degradation. These mechanisms ensure that video content is always served to users, even when transformation or specific origins fail.
 
-### Multi-Origin Fallback
+### Consolidated Failover Architecture
 
-Our enhanced fallback strategy uses a tiered approach that tries multiple matching origins when one fails:
+The failover mechanism has been consolidated to eliminate duplication and provide a single source of truth:
 
-1. **Find All Matching Patterns**: When transformation fails, the system identifies all matching patterns for the path
-2. **Try Each Pattern in Sequence**: Each pattern with an origin URL and authentication is tried in priority order
-3. **Direct Fetch Fallback**: If all pattern-specific fetches fail, fall back to direct fetch from source URL
-4. **Storage Service Fallback**: As a last resort, attempt to fetch from the storage service
+#### 404 Errors from CDN-CGI/Media
+
+Handled upstream by `TransformVideoCommand` using `retryWithAlternativeOrigins`:
 
 ```typescript
-// In transformationErrorHandler.ts
-// Find all matching patterns for the request path
-const matchedPatterns = [];
-
-// First find the primary matching pattern
-const primaryPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
-if (primaryPattern) {
-  matchedPatterns.push(primaryPattern);
+// In TransformVideoCommand.executeWithOrigins()
+if (response.status === 404) {
+  const { retryWithAlternativeOrigins } = await import(
+    '../../services/transformation/retryWithAlternativeOrigins'
+  );
   
-  // Then find additional patterns that also match but weren't the first match
-  for (const pattern of context.pathPatterns ?? []) {
-    if (pattern.name !== primaryPattern.name) {
-      try {
-        const regex = new RegExp(pattern.matcher);
-        if (regex.test(path)) {
-          matchedPatterns.push(pattern);
-        }
-      } catch (err) {
-        // Skip invalid patterns
-      }
-    }
-  }
+  return await retryWithAlternativeOrigins({
+    originalRequest: request,
+    transformOptions: options,
+    failedOrigin: origin,
+    failedSource: sourceResolution.source,
+    context: this.context,
+    env: env
+  });
 }
+```
 
-// Try each pattern in sequence until one succeeds
-for (let i = 0; i < matchedPatterns.length; i++) {
-  const matchedPattern = matchedPatterns[i];
+#### retryWithAlternativeOrigins Implementation
+
+```typescript
+export async function retryWithAlternativeOrigins(options: RetryOptions): Promise<Response> {
+  // 1. Create exclusion for the failed source
+  const excludeSources = [{
+    originName: failedOrigin.name,
+    sourceType: failedSource.type,
+    sourcePriority: failedSource.priority
+  }];
   
-  if (matchedPattern && matchedPattern.originUrl && matchedPattern.auth?.enabled) {
-    // Attempt to fetch with this pattern's origin and auth
-    try {
-      // [Authentication and fetch logic]
-      
-      // If successful, return the response
-      if (fallbackResponse && fallbackResponse.ok) {
-        return new Response(fallbackResponse.body, {
-          status: fallbackResponse.status,
-          statusText: fallbackResponse.statusText,
-          headers: enhancedHeaders
-        });
-      }
-    } catch (patternFetchError) {
-      // Log error and try next pattern
-      logErrorWithContext('Error during pattern fetch', patternFetchError);
-      fallbackResponse = undefined;
-    }
+  // 2. Try to fetch from alternative sources using Origins system
+  const storageResult = await fetchVideoWithOrigins(
+    path,
+    videoConfig,
+    env,
+    originalRequest,
+    { excludeSources }
+  );
+  
+  // 3. If successful, transform the result
+  if (storageResult.sourceType !== 'error') {
+    const transformResult = await prepareVideoTransformation(
+      originalRequest,
+      transformOptions,
+      pathPatterns,
+      debugInfo,
+      env
+    );
+    
+    return await cacheResponse(originalRequest, async () => 
+      fetch(transformResult.cdnCgiUrl)
+    );
   }
+  
+  // 4. If all sources fail, return 404
+  return new Response('Video not found in any configured origin', {
+    status: 404,
+    headers: {
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'no-store',
+      'X-All-Origins-Failed': 'true'
+    }
+  });
 }
+```
 
-// Fall back to direct fetch if all patterns failed
-if (!fallbackResponse && sourceUrlForDirectFetch) {
-  // [Direct fetch logic]
-}
+#### Other Errors (5xx, 413, etc.)
 
-// Final fallback to storage service
-if (!fallbackResponse) {
-  // [Storage service fallback logic]
+Handled by the simplified `handleTransformationError`:
+
+```typescript
+// For server errors and file size errors
+if (isServerError || isFileSizeError) {
+  // Attempt direct fetch or use storage service
+  // Background caching is initiated for successful fallbacks
+  if (fallbackResponse && fallbackResponse.body) {
+    await initiateBackgroundCaching(
+      context.env,
+      path,
+      fallbackResponse.clone(),
+      requestContext
+    );
+  }
 }
 ```
 
@@ -595,42 +618,38 @@ export class ErrorHandlerService {
     return transformError.toResponse();
   }
 
-  // Fetches original content when transformation fails
-  async fetchOriginalContentFallback(
-    url: string,
+  // Note: Pattern-specific fallback has been removed
+  // 404 errors are now handled by retryWithAlternativeOrigins in TransformVideoCommand
+  // This simplified error handler focuses on creating appropriate error responses
+  
+  // Creates error responses with appropriate headers and diagnostics
+  async createEnhancedErrorResponse(
     error: unknown,
     request: Request,
-    options: VideoFallbackOptions
+    context?: VideoTransformContext
   ): Promise<Response> {
-    // Only fallback for certain error types if configured
     const transformError = normalizeErrorBasic(error);
-    if (
-      options.badRequestOnly &&
-      transformError.status < 400 &&
-      transformError.status >= 500
-    ) {
-      throw transformError;
-    }
     
-    // Try pattern-specific fallback first (now enhanced with multi-origin support)
-    try {
-      const response = await this.patternSpecificFallback(url, options);
-      
-      // Add fallback headers
-      response.headers.set('X-Fallback-Reason', transformError.type);
-      response.headers.set('X-Original-Error', transformError.message);
-      
-      return response;
-    } catch (fallbackError) {
-      // Log fallback failure
-      this.logger.warn(
-        { err: fallbackError, originalError: error },
-        'All pattern-specific fallbacks failed, trying storage service'
-      );
-      
-      // Try storage service as a last resort
-      return this.storageService.fetchOriginalContent(url);
-    }
+    // Build error response with diagnostic information
+    const errorResponse = {
+      error: transformError.type,
+      message: transformError.message,
+      statusCode: transformError.status,
+      details: {
+        requestId: context?.requestContext?.requestId,
+        path: new URL(request.url).pathname,
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    return new Response(JSON.stringify(errorResponse), {
+      status: transformError.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        'X-Error-Type': transformError.type
+      }
+    });
   }
 
   // Handles transformation-specific errors
@@ -667,74 +686,70 @@ export class ErrorHandlerService {
 }
 ```
 
-### Multi-Pattern Fallback Strategy
+### Enhanced Origins System with Multi-Origin Retry
+
+The Origins system now provides consolidated failover logic:
 
 ```typescript
-// src/services/errorHandlerService.ts
-private async patternSpecificFallback(
-  url: string,
-  options: VideoFallbackOptions
-): Promise<Response> {
-  // Get all matched patterns for URL in priority order
-  const matchedPatterns = this.configService.getAllPatternsForPath(url);
-  if (!matchedPatterns || matchedPatterns.length === 0) {
-    throw new NotFoundError(`No pattern found for path: ${url}`);
-  }
+// src/services/videoStorage/fetchVideoWithOrigins.ts
+export interface FetchOptions {
+  excludeSources?: Array<{
+    originName: string;
+    sourceType: string;
+    sourcePriority?: number;
+  }>;
+}
+
+export async function fetchVideoWithOrigins(
+  path: string,
+  config: VideoResizerConfig,
+  env: EnvVariables,
+  request?: Request,
+  options?: FetchOptions
+): Promise<StorageResult> {
+  // Find all matching origins for the path
+  const matchingOrigins = findMatchingOrigins(path, config.origins);
   
-  // Try each pattern in sequence
-  for (const pattern of matchedPatterns) {
-    try {
-      // Use pattern-specific origin
-      const originUrl = pattern.originUrl || this.configService.getDefaultOrigin();
-      if (!originUrl) {
-        this.logger.warn(`Skipping pattern ${pattern.name}: No origin URL configured`);
-        continue;
+  // Try each matching origin
+  for (const { origin, match } of matchingOrigins) {
+    // Get sources and apply exclusions
+    let sources = [...origin.sources].sort((a, b) => a.priority - b.priority);
+    
+    if (options?.excludeSources && options.excludeSources.length > 0) {
+      sources = sources.filter(source => {
+        return !options.excludeSources!.some(excluded => 
+          excluded.originName === origin.name &&
+          excluded.sourceType === source.type
+        );
+      });
+    }
+    
+    // Skip this origin if all sources are excluded
+    if (sources.length === 0) {
+      logDebug('VideoStorageService', 'All sources excluded for origin', {
+        originName: origin.name
+      });
+      continue;
+    }
+    
+    // Try each source in the origin
+    for (const source of sources) {
+      const result = await fetchFromSource(source, path, origin, env);
+      if (result && result.sourceType !== 'error') {
+        return result;
       }
-      
-      // Construct full origin URL
-      const fullUrl = new URL(url.replace(pattern.match, pattern.pathExpression), originUrl);
-      
-      let response: Response;
-      
-      // Handle authentication if required
-      if (pattern.authentication === 'aws-s3-presigned-url') {
-        response = await this.fetchWithPresignedUrl(fullUrl.toString(), pattern);
-      } else if (pattern.authentication === 'aws-s3') {
-        response = await this.fetchWithAwsAuth(fullUrl.toString(), pattern);
-      } else {
-        // Direct fetch for no authentication
-        response = await fetch(fullUrl.toString());
-      }
-      
-      // If this pattern's fetch was successful, return the response
-      if (response.ok) {
-        const headers = new Headers(response.headers);
-        headers.set('X-Pattern-Fallback-Applied', 'true');
-        headers.set('X-Pattern-Name', pattern.name);
-        
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers
-        });
-      }
-      
-      // Log the failure and continue to next pattern
-      this.logger.warn(
-        { pattern: pattern.name, status: response.status },
-        'Pattern-specific fetch failed, trying next pattern'
-      );
-    } catch (error) {
-      // Log error but continue to next pattern
-      this.logger.warn(
-        { err: error, pattern: pattern.name },
-        'Error during pattern fetch, trying next pattern'
-      );
     }
   }
   
-  // If we get here, all patterns failed
-  throw new Error('All pattern-specific fallbacks failed');
+  // If all origins and sources fail, return error
+  return {
+    response: new Response('Video not found in any origin', { status: 404 }),
+    sourceType: 'error',
+    contentType: null,
+    size: null,
+    error: new Error('Video not found in any origin or source'),
+    path: path
+  };
 }
 ```
 

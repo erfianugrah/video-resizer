@@ -85,7 +85,7 @@
 							}
 						},
 						{
-							"type": "remote",
+							"type": "fallback",
 							"priority": 1,
 							"url": "https://ikea.getbynder.com",
 							"path": "m/${hash}/original/${filename}",

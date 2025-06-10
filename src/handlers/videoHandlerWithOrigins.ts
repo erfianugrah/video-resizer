@@ -129,7 +129,7 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       const initialVideoOptions = determineVideoOptions(request, url.searchParams, path);
       
       // Start speculative origin resolution while checking cache
-      let speculativeOriginPromise: Promise<any> | null = null;
+      const speculativeOriginPromise: Promise<any> | null = null;
       let originMatch: any = null;
       let sourceResolution: any = null;
       
