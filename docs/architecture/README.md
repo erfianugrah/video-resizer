@@ -11,7 +11,7 @@ This section provides comprehensive documentation on the Video Resizer architect
 - [Service Separation](./service-separation.md) - Modular service architecture
 - [Origins System](./origins-system.md) - Origins-based configuration architecture
 - [Origins Migration](./origins-migration.md) - Migration from legacy to Origins system
-- [Multi-Origin Fallback](./multi-origin-fallback.md) - Enhanced origin fallback strategy
+- [Multi-Origin Fallback](./multi-origin-fallback.md) - Consolidated failover architecture
 - [Dependency Management](./dependency-management.md) - Dependency injection approach
 - [Architecture Roadmap](./roadmap.md) - Future architecture plans
 
@@ -36,16 +36,16 @@ The architecture uses several design patterns:
 
 ## Recent Architectural Improvements
 
-### Multi-Origin Fallback
+### Consolidated 404 Failover
 
-The system now implements an enhanced fallback strategy when transformation fails:
+The system now implements a consolidated approach for handling 404 errors from the transformation proxy:
 
-- **Multi-Pattern Matching**: Finds all patterns that match the requested path
-- **Sequential Fallback**: Tries each matching origin in sequence until one succeeds
-- **Tiered Approach**: Falls back to direct fetch and then storage service if needed
-- **Error Isolation**: Properly handles errors from one origin without affecting others
+- **Clean Separation**: 404s from cdn-cgi/media are handled by `retryWithAlternativeOrigins`
+- **Source Exclusion**: Failed sources are excluded from retry attempts
+- **Multi-Origin Retry**: The Origins system tries all remaining sources across matching origins
+- **Simplified Error Handler**: `handleTransformationError` now focuses on non-404 errors
 
-This improvement enhances resilience by trying all possible sources before giving up. See [Multi-Origin Fallback](./multi-origin-fallback.md) for details.
+This consolidation eliminates duplicate failover logic and provides a single source of truth for failover behavior. See [Multi-Origin Fallback](./multi-origin-fallback.md) and [404 Retry Mechanism](../features/404-retry-mechanism.md) for details.
 
 ### Service Separation Pattern
 

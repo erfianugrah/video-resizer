@@ -4,7 +4,10 @@
 
 ## Overview
 
-Multi-Origin Fallback enhances the video-resizer's error handling capabilities by adding support for trying multiple matching origins when one returns a 404 or error. This feature improves resilience by providing a more comprehensive fallback strategy when dealing with transformation errors or missing content.
+Multi-Origin Fallback has been consolidated and enhanced in the video-resizer through two key mechanisms:
+
+1. **404 Handling**: When cdn-cgi/media returns 404, the `retryWithAlternativeOrigins` function excludes the failed source and retries with remaining sources across all matching origins
+2. **Origins System Enhancement**: The `fetchVideoWithOrigins` function now supports source exclusions and multi-origin retry, making it the single source of truth for failover logic
 
 ## Key Benefits
 
@@ -15,84 +18,100 @@ Multi-Origin Fallback enhances the video-resizer's error handling capabilities b
 
 ## How It Works
 
-The multi-origin fallback implementation uses a structured approach to try multiple fallback sources when a transformation fails:
+The consolidated multi-origin fallback now works through a cleaner architecture:
 
-1. **Find All Matching Patterns**: When transformation fails, the error handler identifies all matching patterns for the requested path, not just the first one
-2. **Try Each Pattern in Sequence**: For each pattern with an origin URL and authentication, the system:
-   - Attempts to fetch from the origin with appropriate authentication
-   - If successful, returns the content and stores it in KV cache in the background
-   - If unsuccessful (404 or error), tries the next matching pattern
-3. **Direct Fetch Fallback**: If all pattern-specific fetches fail, fall back to direct fetch from the source URL
-4. **Storage Service Fallback**: As a last resort, attempt to fetch from the storage service
+### For 404 Errors from CDN-CGI/Media:
+
+1. **TransformVideoCommand Detection**: When cdn-cgi/media returns 404, it's caught in `executeWithOrigins()`
+2. **retryWithAlternativeOrigins Called**: Instead of error handler, a dedicated retry function is invoked
+3. **Source Exclusion**: The failed source is excluded from further attempts
+4. **Multi-Origin Retry**: `fetchVideoWithOrigins` is called with exclusions, trying:
+   - Remaining sources in the same origin
+   - All sources in other matching origins
+5. **Transformation**: If an alternative source is found, it's transformed and returned
+
+### For Origin Failures:
+
+1. **Built into fetchVideoWithOrigins**: The function now tries all matching origins
+2. **Sequential Source Testing**: Within each origin, sources are tried by priority
+3. **Automatic Failover**: If one source fails, the next is attempted automatically
 
 ### Fallback Priority Order
 
-The fallback mechanism follows this precise priority order:
+The consolidated mechanism follows this simplified priority order:
 
-1. All matching patterns with origins and auth, tried in sequence from best match to least specific match
-2. Direct fetch from fallbackOriginUrl or source
-3. Storage service as a final fallback
+1. **For 404s from transformation**: Use retryWithAlternativeOrigins to try remaining sources
+2. **Within Origins system**: Sources are tried in priority order within each matching origin
+3. **Across Origins**: All matching origins are tried in the order they appear in configuration
+4. **Final Response**: If all sources fail, a 404 error is returned
 
 ## Implementation Details
 
-### Pattern Collection
-
-The implementation first collects all matching patterns:
+### Source Exclusion in fetchVideoWithOrigins
 
 ```typescript
-// First find the primary matching pattern as before
-const primaryPattern = findMatchingPathPattern(path, context.pathPatterns ?? []);
+export interface FetchOptions {
+  excludeSources?: Array<{
+    originName: string;
+    sourceType: string;
+    sourcePriority?: number;
+  }>;
+}
 
-if (primaryPattern) {
-  matchedPatterns.push(primaryPattern);
-  
-  // Then find additional patterns that also match but weren't the first match
-  // This preserves the priority ordering of the original logic
-  for (const pattern of context.pathPatterns ?? []) {
-    if (pattern.name !== primaryPattern.name) {
-      try {
-        const regex = new RegExp(pattern.matcher);
-        if (regex.test(path)) {
-          matchedPatterns.push(pattern);
-        }
-      } catch (err) {
-        // Skip invalid patterns
-      }
-    }
-  }
+// Apply exclusions when processing sources
+if (options?.excludeSources && options.excludeSources.length > 0) {
+  sources = sources.filter(source => {
+    return !options.excludeSources!.some(excluded => 
+      excluded.originName === origin.name &&
+      excluded.sourceType === source.type
+    );
+  });
 }
 ```
 
-### Sequential Pattern Testing
-
-Each pattern is tried in sequence until one succeeds:
+### Retry Function for 404s
 
 ```typescript
-// Try each pattern in sequence until one succeeds
-for (let i = 0; i < matchedPatterns.length; i++) {
-  const matchedPattern = matchedPatterns[i];
+export async function retryWithAlternativeOrigins(options: RetryOptions): Promise<Response> {
+  // 1. Create exclusion for the failed source
+  const excludeSources = [{
+    originName: failedOrigin.name,
+    sourceType: failedSource.type,
+    sourcePriority: failedSource.priority
+  }];
   
-  // Attempt fetch with this pattern...
-  if (fallbackResponse && fallbackResponse.ok) {
-    // Success! Return this response
-    return finalResponse;
-  } else if (fallbackResponse) {
-    // Non-OK response, reset and try next pattern
-    fallbackResponse = undefined;
+  // 2. Try to fetch from alternative sources
+  const storageResult = await fetchVideoWithOrigins(
+    path,
+    videoConfig,
+    env,
+    originalRequest,
+    { excludeSources }
+  );
+  
+  // 3. If successful, transform the result
+  if (storageResult.sourceType !== 'error') {
+    // Transform and return the alternative source
   }
 }
 ```
 
 ### Enhanced Diagnostics
 
-When a fallback succeeds, the system adds detailed diagnostic headers:
+The consolidated system provides clear diagnostics through:
+
+1. **Logging in fetchVideoWithOrigins**: Shows which origins and sources were tried
+2. **Request Context Breadcrumbs**: Tracks the full retry path
+3. **Response Headers**: Indicate when alternative sources were used
 
 ```typescript
-// Add multi-pattern debugging information
-if (matchedPatterns.length > 1) {
-  headers.set('X-Pattern-Fallback-Index', `${i + 1}`);
-  headers.set('X-Pattern-Fallback-Total', `${matchedPatterns.length}`);
-}
+// Logging example from fetchVideoWithOrigins
+logDebug('VideoStorageService', 'Applied source exclusions', {
+  originName: origin.name,
+  originalSourceCount: originalCount,
+  filteredSourceCount: sources.length,
+  excludedSources: options.excludeSources.map(e => `${e.originName}:${e.sourceType}`)
+});
 ```
 
 ## Fallback Scenarios
@@ -107,13 +126,14 @@ When a video is too large for Cloudflare's transformation service:
 - Content is stored in KV cache in the background
 - Headers indicate this was a file size fallback: `X-Video-Exceeds-256MiB: true`
 
-### 2. 404 From Origin
+### 2. 404 From CDN-CGI/Media
 
-When an origin returns a 404 error:
-- The system tries the next matching origin in sequence
-- If all origins return 404, falls back to direct fetch
-- If direct fetch fails, tries the storage service
-- Headers indicate which origin was successfully used
+When the transformation proxy returns a 404 error:
+- `retryWithAlternativeOrigins` is triggered immediately
+- The failed source is excluded from retry attempts
+- All remaining sources across matching origins are tried
+- If an alternative is found, it's transformed and returned
+- If all alternatives fail, a 404 error response is returned
 
 ### 3. Other Origin Errors
 
@@ -201,21 +221,22 @@ The following headers provide insight into the multi-origin fallback process:
 
 ## Error Handling
 
-The implementation includes comprehensive error handling:
+The consolidated implementation provides cleaner error handling:
 
-1. **Pattern-specific errors**: Errors during pattern-specific fetches are logged and the system continues to the next pattern
-2. **Auth failures**: Authentication errors for a specific pattern don't prevent trying other patterns
-3. **Comprehensive logging**: Detailed logs show which patterns were tried and why they failed
-4. **Graceful degradation**: Even if all patterns fail, the system still attempts direct fetch and storage service fallback
+1. **404 Separation**: 404 errors from cdn-cgi/media are handled upstream by `retryWithAlternativeOrigins`
+2. **Other Errors**: 5xx, 413, and other errors are handled by the simplified `handleTransformationError`
+3. **Source-Level Failures**: Individual source failures within an origin don't prevent trying other sources
+4. **Clear Error Responses**: When all attempts fail, appropriate error responses are returned with diagnostic headers
 
 ## Testing and Verification
 
-The multi-origin fallback feature can be tested by:
+The consolidated multi-origin fallback can be tested by:
 
-1. Configuring multiple origin patterns that match the same paths
-2. Intentionally causing a 404 on the primary origin
-3. Verifying that the system correctly fetches from secondary matching origins
-4. Examining response headers to confirm which pattern was used
+1. Configuring multiple origins with overlapping matchers
+2. Testing 404 responses from cdn-cgi/media to verify `retryWithAlternativeOrigins` works
+3. Testing source failures within origins to verify automatic failover
+4. Using the test suite: `npm test -- test/integration/404-failover-simple.spec.ts`
+5. Examining logs to trace the full retry path
 
 ## Related Features
 

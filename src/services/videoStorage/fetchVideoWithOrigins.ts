@@ -13,6 +13,14 @@ import { fetchFromRemote } from './remoteStorage';
 import { fetchFromFallback } from './fallbackStorage';
 import { OriginResolver } from '../origins/OriginResolver';
 
+export interface FetchOptions {
+  excludeSources?: Array<{
+    originName: string;
+    sourceType: string;
+    sourcePriority?: number;
+  }>;
+}
+
 /**
  * Helper function to check if origins is an array or config object, and if it has items
  */
@@ -39,13 +47,15 @@ function getOriginsCount(origins: Origin[] | OriginsConfig | undefined): number 
  * @param config The video resizer configuration
  * @param env The Cloudflare environment
  * @param request Optional request object for conditional requests
+ * @param options Optional fetch options including source exclusions
  * @returns A StorageResult object with the fetched video
  */
 async function fetchVideoWithOriginsImpl(
   path: string,
   config: VideoResizerConfig,
   env: EnvVariables,
-  request?: Request
+  request?: Request,
+  options?: FetchOptions
 ): Promise<StorageResult> {
   // Create a request ID for tracing this fetch operation
   const requestId = Math.random().toString(36).substring(2, 10);
@@ -142,10 +152,61 @@ async function fetchVideoWithOriginsImpl(
     }
   }
   
-  // Find matching origin and get path resolution
-  const originMatch = originResolver.matchOriginWithCaptures(path);
+  // Get all origins from configuration to allow multi-origin retry
+  let allOrigins: Origin[] = [];
+  if (config.origins) {
+    if ('items' in config.origins && Array.isArray(config.origins.items)) {
+      allOrigins = config.origins.items;
+    } else if (Array.isArray(config.origins)) {
+      allOrigins = config.origins;
+    }
+  }
   
-  if (!originMatch) {
+  // Find all matching origins for the path (for multi-origin retry)
+  const matchingOrigins: Array<{ origin: Origin; match: any }> = [];
+  
+  for (const origin of allOrigins) {
+    try {
+      const regex = new RegExp(origin.matcher);
+      const match = path.match(regex);
+      
+      if (match) {
+        const captures: Record<string, string> = {};
+        
+        // Add numbered captures
+        for (let i = 1; i < match.length; i++) {
+          captures[i.toString()] = match[i];
+          
+          // If there are named capture groups defined, use those names too
+          if (origin.captureGroups && i <= origin.captureGroups.length) {
+            const name = origin.captureGroups[i - 1];
+            if (name) {
+              captures[name] = match[i];
+            }
+          }
+        }
+        
+        matchingOrigins.push({
+          origin,
+          match: {
+            origin,
+            matched: true,
+            captures,
+            originalPath: path
+          }
+        });
+      }
+    } catch (err) {
+      logErrorWithContext(
+        `Error matching origin pattern: ${origin.name}`,
+        err,
+        { path, matcher: origin.matcher },
+        'VideoStorageService'
+      );
+    }
+  }
+  
+  if (matchingOrigins.length === 0) {
     logDebug('VideoStorageService', 'No matching origin found for path', { path });
     
     // Return a standardized error result
@@ -159,19 +220,53 @@ async function fetchVideoWithOriginsImpl(
     };
   }
   
-  // Get sources from the matching origin, sorted by priority
-  const origin = originMatch.origin;
-  const sources = [...origin.sources].sort((a, b) => a.priority - b.priority);
-  
-  logDebug('VideoStorageService', 'Found matching origin for path', { 
+  logDebug('VideoStorageService', 'Found matching origins for path', { 
     path,
-    originName: origin.name,
-    sourceCount: sources.length,
-    sourceTypes: sources.map(s => s.type)
+    matchingOriginCount: matchingOrigins.length,
+    originNames: matchingOrigins.map(m => m.origin.name)
   });
   
-  // Try each source in priority order
-  for (const source of sources) {
+  // Try each matching origin in order
+  for (const { origin, match: originMatch } of matchingOrigins) {
+    // Get sources from the matching origin, sorted by priority
+    let sources = [...origin.sources].sort((a, b) => a.priority - b.priority);
+    
+    // Apply source exclusions if provided
+    if (options?.excludeSources && options.excludeSources.length > 0) {
+      const originalCount = sources.length;
+      sources = sources.filter(source => {
+        return !options.excludeSources!.some(excluded => 
+          excluded.originName === origin.name &&
+          excluded.sourceType === source.type &&
+          (excluded.sourcePriority === undefined || excluded.sourcePriority === source.priority)
+        );
+      });
+      
+      logDebug('VideoStorageService', 'Applied source exclusions', {
+        originName: origin.name,
+        originalSourceCount: originalCount,
+        filteredSourceCount: sources.length,
+        excludedSources: options.excludeSources.map(e => `${e.originName}:${e.sourceType}`)
+      });
+    }
+    
+    // Skip this origin if all sources are excluded
+    if (sources.length === 0) {
+      logDebug('VideoStorageService', 'All sources excluded for origin, trying next', { 
+        originName: origin.name
+      });
+      continue;
+    }
+    
+    logDebug('VideoStorageService', 'Trying origin for path', { 
+      path,
+      originName: origin.name,
+      sourceCount: sources.length,
+      sourceTypes: sources.map(s => s.type)
+    });
+    
+    // Try each source in priority order
+    for (const source of sources) {
     let result: StorageResult | null = null;
     
     // Resolve the path for this source
@@ -343,56 +438,63 @@ async function fetchVideoWithOriginsImpl(
       }
     }
     
-    // If we found the video, return it
-    if (result) {
-      const elapsedTime = Date.now() - startTime;
-      logDebug('VideoStorageService', `[${requestId}] Successfully found video with Origins`, { 
-        sourceType: result.sourceType, 
-        contentType: result.contentType, 
-        size: result.size,
-        storage: source.type,
-        elapsedMs: elapsedTime,
-        success: true,
-        timestamp: new Date().toISOString()
-      });
-      return result;
+      // If we found the video, return it
+      if (result) {
+        const elapsedTime = Date.now() - startTime;
+        logDebug('VideoStorageService', `[${requestId}] Successfully found video with Origins`, { 
+          sourceType: result.sourceType, 
+          contentType: result.contentType, 
+          size: result.size,
+          storage: source.type,
+          originName: origin.name,
+          elapsedMs: elapsedTime,
+          success: true,
+          timestamp: new Date().toISOString()
+        });
+        return result;
+      }
     }
+    
+    // Log that this origin didn't have the video
+    logDebug('VideoStorageService', 'Video not found in origin, trying next', { 
+      originName: origin.name,
+      triedSources: sources.map(s => s.type)
+    });
   }
   
-  // If we couldn't find the video anywhere, create an error response
+  // If we couldn't find the video in any origin, create an error response
   const elapsedTime = Date.now() - startTime;
   
   // Log detailed error information
   logErrorWithContext(
-    'Video not found in any source (Origins)',
+    'Video not found in any origin or source',
     new Error('Video not found'),
     { 
       path, 
       requestId,
       elapsedMs: elapsedTime,
-      originName: origin.name,
-      sourceCount: sources.length,
-      sourceTypes: sources.map(s => s.type),
+      matchingOriginCount: matchingOrigins.length,
+      triedOrigins: matchingOrigins.map(m => m.origin.name),
       timestamp: new Date().toISOString()
     },
     'VideoStorageService'
   );
   
   if (requestContext) {
-    addBreadcrumb(requestContext, 'Error', 'Video not found in any source (Origins)', {
+    addBreadcrumb(requestContext, 'Error', 'Video not found in any origin', {
       path,
-      originName: origin.name,
+      triedOrigins: matchingOrigins.map(m => m.origin.name),
       severity: 'high'
     });
   }
   
   // Return a standardized error result
   return {
-    response: new Response('Video not found', { status: 404 }),
+    response: new Response('Video not found in any origin', { status: 404 }),
     sourceType: 'error',
     contentType: null,
     size: null,
-    error: new Error('Video not found in any source'),
+    error: new Error('Video not found in any origin or source'),
     path: path
   };
 }
@@ -408,7 +510,7 @@ async function fetchVideoWithOriginsImpl(
  * @returns A StorageResult object or an error response if not found
  */
 export const fetchVideoWithOrigins = withErrorHandling<
-  [string, VideoResizerConfig, EnvVariables, Request | undefined],
+  [string, VideoResizerConfig, EnvVariables, Request | undefined, FetchOptions | undefined],
   Promise<StorageResult>
 >(
   fetchVideoWithOriginsImpl,

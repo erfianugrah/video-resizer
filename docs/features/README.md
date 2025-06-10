@@ -25,7 +25,8 @@ This section provides comprehensive documentation on the features available in t
 
 - [Service Separation Pattern](../architecture/service-separation.md) - Modular service architecture
 - [Origins System](../architecture/origins-system.md) - Origins-based architecture
-- [Multi-Origin Fallback](../architecture/multi-origin-fallback.md) - Enhanced resilience
+- [Multi-Origin Fallback](../architecture/multi-origin-fallback.md) - Consolidated failover architecture
+- [404 Retry Mechanism](./404-retry-mechanism.md) - Clean 404 handling from transformation proxy
 - [Error Handling](../error-handling/implementation.md) - Robust error handling
 
 ## Developer Experience

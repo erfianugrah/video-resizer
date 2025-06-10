@@ -10,7 +10,8 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 - KV chunking for large videos with concurrency-safe chunk locking
 - Background fallback caching with streaming for large videos
 - Cache versioning for invalidation without purging
-- Multi-origin fallback for improved resilience
+- Consolidated 404 failover using Origins system
+- Multi-origin retry with source exclusion
 - Memory-efficient video streaming with zero-copy buffer handling
 - Optimized timeout management to prevent quota exceeded errors
 - Enhanced range request support for seeking and streaming
@@ -66,7 +67,7 @@ flowchart TB
 
     %% Request handling
     A([HTTP Request]) --> B[Worker Entry Point]
-    B --> C[Video Handler]
+    B --> C[Video Handler with Origins]
     C --> D{Cache Hit?}
 
     %% Response paths
@@ -77,24 +78,26 @@ flowchart TB
     %% Core components
     F -.-> H[Command Pattern]
     H -.-> I[Strategy Pattern]
-    F -.-> J[KV Cache Storage]
+    F -.-> J[Origins System]
+    J -.-> K[KV Cache Storage]
 
     %% Configuration
     subgraph Config [Configuration System]
     direction TB
-    K[Environment Config] --> L[Video Config]
-    K --> M[Cache Config]
-    K --> N[Debug Config]
+    L[Environment Config] --> M[Video Config]
+    L --> N[Cache Config]
+    L --> O[Debug Config]
+    L --> P[Origins Config]
     end
 
     Config -.-> B
 
     %% Apply styles
     class A request
-    class B,C,F,H,I,J process
+    class B,C,F,H,I,J,K process
     class D decision
     class E,G response
-    class K,L,M,N config
+    class L,M,N,O,P config
 ```
 </details>
 
@@ -111,7 +114,7 @@ flowchart TD
     %% Route branching
     Router -->|"/admin/config"| Config[configHandler.ts]
     Router -->|"Non-MP4"| Pass[Direct Passthrough]
-    Router -->|"Video Request"| Video[videoHandler.ts]
+    Router -->|"Video Request"| Video[videoHandlerWithOrigins.ts]
     
     %% Config flow
     Config --> ConfigSvc[configurationService.ts]
@@ -138,8 +141,9 @@ flowchart TD
     IMProc --> Pattern[Path Pattern Matching]
     StdOpt --> Pattern
     
-    %% Command pattern
-    Pattern --> Command[TransformVideoCommand.ts]
+    %% Command pattern with Origins
+    Pattern --> Origins[Origins Configuration]
+    Origins --> Command[TransformVideoCommand.ts]
     Command --> Mode{Transformation Mode}
     
     %% Strategy pattern
@@ -158,25 +162,30 @@ flowchart TD
     Transform --> CDN[Create cdn-cgi URL]
     CDN --> Execute[executeTransformation]
     Execute --> TransformErr{Transform Error?}
-    TransformErr -->|No| FetchVid[fetchVideo.ts]
-    TransformErr -->|Yes| ErrorHdl[transformationErrorHandler.ts]
+    TransformErr -->|No| FetchVid[fetchVideoWithOrigins.ts]
+    TransformErr -->|Yes| ErrType404{404 Error?}
     
-    %% Error fallback flow
-    ErrorHdl --> MatchPatterns[Find All Matching Origins]
-    MatchPatterns --> TryOrigins[Try Each Origin in Sequence]
-    TryOrigins --> OriginSuccess{Success?}
-    OriginSuccess -->|Yes| Return[Return Origin Content]
-    OriginSuccess -->|No| DirectFetch[Try Direct Fetch]
-    DirectFetch --> DirectSuccess{Success?}
-    DirectSuccess -->|Yes| Return
-    DirectSuccess -->|No| StorageFallback[Try Storage Service]
-    StorageFallback --> Return
+    %% 404 handling flow
+    ErrType404 -->|Yes| Retry404[retryWithAlternativeOrigins.ts]
+    Retry404 --> ExcludeSrc[Exclude Failed Source]
+    ExcludeSrc --> FetchAlt[fetchVideoWithOrigins with exclusions]
+    FetchAlt --> AltFound{Alternative Found?}
+    AltFound -->|Yes| TransformAlt[Transform Alternative]
+    AltFound -->|No| Return404[Return 404 Error]
+    TransformAlt --> Return[Return Transformed Response]
     
-    %% Storage backend
-    FetchVid --> Storage{Storage Priority}
-    Storage -->|"R2"| R2Store[r2Storage.ts]
-    Storage -->|"Remote"| RemStore[remoteStorage.ts]
-    Storage -->|"Fallback"| FallStore[fallbackStorage.ts]
+    %% Other error handling
+    ErrType404 -->|No| ErrorHdl[transformationErrorHandler.ts]
+    ErrorHdl --> HandleOther[Handle 5xx/413/etc]
+    HandleOther --> Return
+    
+    %% Origins system
+    FetchVid --> Origins[OriginResolver.ts]
+    Origins --> MatchOrigins{Match Origins}
+    MatchOrigins --> TrySources[Try Sources by Priority]
+    TrySources -->|"R2"| R2Store[r2Storage.ts]
+    TrySources -->|"Remote"| RemStore[remoteStorage.ts]
+    TrySources -->|"Fallback"| FallStore[fallbackStorage.ts]
     
     %% Response processing
     R2Store --> Process[Process Response]
@@ -365,23 +374,31 @@ flowchart TB
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef success fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
+    classDef retry fill:#F3E5F5,stroke:#6A1B9A,color:#000000;
 
-    %% Command flow
-    A[VideoHandler] --> B[TransformVideoCommand]
-    B --> C[Execute Method]
+    %% Command flow with Origins
+    A[VideoHandlerWithOrigins] --> B[TransformVideoCommand]
+    B --> C[Execute with Origins]
     C --> D[Prepare Transform]
     D --> E[Execute Transform]
     E --> F{Success?}
     F -->|Yes| G[Build Response]
-    F -->|No| H[Handle Error]
-    G --> I([Return Response])
-    H --> I
+    F -->|No| H{404 Error?}
+    H -->|Yes| J[retryWithAlternativeOrigins]
+    H -->|No| K[handleTransformationError]
+    J --> L[Try Alternative Sources]
+    L --> M{Found?}
+    M -->|Yes| N[Transform Alternative]
+    M -->|No| O[Return 404]
+    K --> P[Handle Other Errors]
+    G & N & O & P --> I([Return Response])
 
     %% Apply styles
     class A,B,C,D,E process
-    class F decision
-    class G success
-    class H error
+    class F,H,M decision
+    class G,N success
+    class K,O,P error
+    class J,L retry
     class I success
 ```
 </details>
@@ -416,6 +433,58 @@ flowchart TB
     class B,C,D,G concrete
     class E factory
     class F decision
+```
+</details>
+
+<details>
+<summary><strong>Origins System Architecture</strong> - Multi-source video storage with failover</summary>
+
+```mermaid
+flowchart TB
+    %% Define node styles with high contrast colors
+    classDef origin fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef source fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef resolver fill:#FFF8E1,stroke:#F57F17,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
+
+    %% Origins configuration
+    A[Video Request] --> B[OriginResolver]
+    B --> C{Match Origin Pattern}
+    
+    %% Origin matching
+    C -->|Match 1| D[Origin: Premium]
+    C -->|Match 2| E[Origin: Standard]
+    C -->|No Match| F[404 Error]
+    
+    %% Sources within origins
+    D --> G[R2 Bucket<br>Priority: 1]
+    D --> H[Remote CDN<br>Priority: 2]
+    D --> I[Fallback URL<br>Priority: 3]
+    
+    E --> J[R2 Bucket<br>Priority: 1]
+    E --> K[Remote CDN<br>Priority: 2]
+    
+    %% Source resolution
+    G & H & I & J & K --> L{Source Available?}
+    L -->|Yes| M[Return Video]
+    L -->|No| N[Try Next Source]
+    N --> L
+    
+    %% 404 retry mechanism
+    L -->|All Sources Failed| O{From CDN-CGI?}
+    O -->|Yes| P[retryWithAlternativeOrigins]
+    P --> Q[Exclude Failed Sources]
+    Q --> R[Try Other Origins]
+    O -->|No| S[Return 404]
+
+    %% Apply styles
+    class B resolver
+    class C,L,O decision
+    class D,E origin
+    class G,H,I,J,K source
+    class F,S error
+    class M origin
 ```
 </details>
 
@@ -636,6 +705,45 @@ flowchart TB
     class D,E,H process
     class C,G,J,K response
     class E cache
+```
+</details>
+
+<details>
+<summary><strong>Request Coalescing</strong> - Preventing duplicate transformation requests</summary>
+
+```mermaid
+flowchart TB
+    %% Define node styles with high contrast colors
+    classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+    classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
+    classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
+    classDef wait fill:#F3E5F5,stroke:#6A1B9A,color:#000000;
+    classDef cache fill:#ECEFF1,stroke:#455A64,color:#000000;
+    classDef response fill:#E8F5E9,stroke:#2E7D32,color:#000000;
+
+    %% Request flow
+    A([Request 1]) --> B{In-flight Check}
+    C([Request 2]) --> B
+    D([Request 3]) --> B
+    
+    B -->|First Request| E[Add to In-flight Map]
+    E --> F[Execute Transformation]
+    
+    B -->|Duplicate| G[Wait for Original]
+    G --> H[Clone Response]
+    
+    F --> I[Store in Cache]
+    I --> J[Remove from In-flight]
+    J --> K([Return Response])
+    
+    H --> L([Return Cloned Response])
+
+    %% Apply styles
+    class A,C,D request
+    class B decision
+    class E,F,I,J process
+    class G,H wait
+    class K,L response
 ```
 </details>
 

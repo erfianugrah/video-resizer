@@ -453,32 +453,49 @@ The system supports multiple storage backends for video content:
 
 ```mermaid
 flowchart TD
-    A[Content Request] --> B[Storage Service]
+    A[Content Request] --> B[fetchVideoWithOrigins]
     
-    B --> C{Storage Priority}
+    B --> C[OriginResolver]
+    C --> D{Match Origins}
     
-    C -->|1st| D[R2 Storage]
-    C -->|2nd| E[Remote Storage]
-    C -->|3rd| F[Fallback Storage]
+    D -->|Origin 1| E[Sources by Priority]
+    D -->|Origin 2| F[Sources by Priority]
+    D -->|No Match| G[404 Error]
     
-    D -->|Found| G[Return Content]
-    D -->|Not Found| E
+    E --> H{Try Sources}
+    F --> H
     
-    E -->|Found| G
-    E -->|Not Found| F
+    H -->|R2| I[r2Storage.ts]
+    H -->|Remote| J[remoteStorage.ts]
+    H -->|Fallback| K[fallbackStorage.ts]
     
-    F -->|Found| G
-    F -->|Not Found| H[Not Found Error]
+    I & J & K --> L{Found?}
+    L -->|Yes| M[Return Content]
+    L -->|No| N[Try Next Source]
     
-    G & H --> I[Response]
+    N --> H
+    N -->|All Failed| O{From CDN-CGI?}
+    
+    O -->|Yes| P[retryWithAlternativeOrigins]
+    O -->|No| G
+    
+    P --> Q[Exclude Failed Sources]
+    Q --> B
+    
+    M & G --> R[Response]
 ```
 
 ### Storage Options
 
-1. **Cloudflare R2**: Primary storage for video content
-2. **Remote URL**: Secondary HTTP-based storage
-3. **Fallback URL**: Last-resort storage location
-4. **AWS S3**: Compatible with S3-compatible storage via SigV4 signing
+The Origins system provides flexible multi-source storage configuration:
+
+1. **Origins**: Pattern-based routing to different storage configurations
+2. **Sources within Origins**: Prioritized list of storage backends
+   - **R2 Storage**: Direct Cloudflare R2 bucket access
+   - **Remote Storage**: HTTP-based storage with optional authentication
+   - **Fallback Storage**: Alternative URLs for resilience
+3. **404 Retry Mechanism**: Automatic retry with source exclusion for cdn-cgi/media 404s
+4. **Authentication Support**: AWS SigV4, presigned URLs, and custom headers
 
 ## Development Patterns
 
