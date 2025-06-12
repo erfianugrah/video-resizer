@@ -292,6 +292,14 @@ async function fetchVideoWithOriginsImpl(
         continue;
       }
       
+      // Log the R2 URL being tried
+      const r2Url = `r2://videos-bucket/${resolvedPath}`;
+      logDebug('VideoStorageService', 'Attempting R2 fetch', {
+        r2Url,
+        bucket: 'videos-bucket',
+        key: resolvedPath
+      });
+      
       result = await fetchFromR2(resolvedPath, bucket, request, config);
       
       if (result) {
@@ -312,6 +320,17 @@ async function fetchVideoWithOriginsImpl(
     
     // Try remote URL
     else if (source.type === 'remote' && source.url) {
+      // Construct the full remote URL
+      const remoteUrl = source.url.endsWith('/') 
+        ? `${source.url}${resolvedPath}` 
+        : `${source.url}/${resolvedPath}`;
+      
+      logDebug('VideoStorageService', 'Attempting remote fetch', {
+        remoteUrl,
+        baseUrl: source.url,
+        path: resolvedPath
+      });
+      
       // Check if source has authentication configuration
       // We need to ensure the source.auth configuration is correctly passed to fetchFromRemote
       if (source.auth?.enabled) {
@@ -377,6 +396,17 @@ async function fetchVideoWithOriginsImpl(
     
     // Try fallback URL
     else if (source.type === 'fallback' && source.url) {
+      // Construct the full fallback URL
+      const fallbackUrl = source.url.endsWith('/') 
+        ? `${source.url}${resolvedPath}` 
+        : `${source.url}/${resolvedPath}`;
+      
+      logDebug('VideoStorageService', 'Attempting fallback fetch', {
+        fallbackUrl,
+        baseUrl: source.url,
+        path: resolvedPath
+      });
+      
       // Check if source has authentication configuration (similar to remote source)
       if (source.auth?.enabled) {
         logDebug('VideoStorageService', 'Fallback source requires authentication', {
@@ -441,16 +471,29 @@ async function fetchVideoWithOriginsImpl(
       // If we found the video, return it
       if (result) {
         const elapsedTime = Date.now() - startTime;
+        
+        // Construct the source URL that was successful
+        let successUrl = '';
+        if (source.type === 'r2') {
+          successUrl = `r2://videos-bucket/${resolvedPath}`;
+        } else if (source.type === 'remote' || source.type === 'fallback') {
+          successUrl = source.url?.endsWith('/') 
+            ? `${source.url}${resolvedPath}` 
+            : `${source.url}/${resolvedPath}`;
+        }
+        
         logDebug('VideoStorageService', `[${requestId}] Successfully found video with Origins`, { 
           sourceType: result.sourceType, 
           contentType: result.contentType, 
           size: result.size,
           storage: source.type,
           originName: origin.name,
+          successUrl,
           elapsedMs: elapsedTime,
           success: true,
           timestamp: new Date().toISOString()
         });
+        
         return result;
       }
     }

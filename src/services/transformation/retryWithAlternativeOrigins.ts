@@ -15,7 +15,8 @@ import { logDebug } from '../errorHandler/logging';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { fetchVideoWithOrigins, FetchOptions } from '../videoStorage/fetchVideoWithOrigins';
 import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
-import { prepareVideoTransformation } from '../TransformationService';
+import { buildCdnCgiMediaUrl } from '../../utils/pathUtils';
+import { TransformParams } from '../../domain/strategies/TransformationStrategy';
 import { cacheResponse } from '../cacheManagementService';
 
 export interface RetryOptions {
@@ -141,18 +142,47 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
     });
     
     // Now we need to transform the video through CDN-CGI
-    // First, we need to prepare the transformation with the new source URL
+    // We need to construct the proper origin URL based on the successful source
     
-    // Extract the source URL from the response if available
-    let sourceUrl: string | undefined;
-    if (storageResult.response.headers.get('X-Source-URL')) {
-      sourceUrl = storageResult.response.headers.get('X-Source-URL') || undefined;
+    // Get all matching origins for this path to find which one succeeded
+    const originsArray = Array.isArray(videoConfig.origins) 
+      ? videoConfig.origins 
+      : (videoConfig.origins?.items || []);
+    
+    const matchingOrigins = originsArray.filter((origin: Origin) => {
+      try {
+        const regex = new RegExp(origin.matcher);
+        return regex.test(path);
+      } catch {
+        return false;
+      }
+    });
+    
+    // Find which origin/source combination succeeded
+    let successfulOrigin: Origin | undefined;
+    let successfulSource: Source | undefined;
+    
+    for (const origin of matchingOrigins) {
+      for (const source of origin.sources) {
+        // Check if this source was excluded
+        const isExcluded = excludeSources.some(exc => 
+          exc.originName === origin.name && 
+          exc.sourceType === source.type &&
+          (exc.sourcePriority === undefined || exc.sourcePriority === source.priority)
+        );
+        
+        // If not excluded and matches the successful source type, this is likely our source
+        if (!isExcluded && source.type === storageResult.sourceType) {
+          successfulOrigin = origin;
+          successfulSource = source;
+          break;
+        }
+      }
+      if (successfulSource) break;
     }
     
-    // If we don't have a source URL, we'll need to use the response directly
-    // This is a limitation we'll need to handle
-    if (!sourceUrl) {
-      logDebug('retryWithAlternativeOrigins', 'No source URL available, returning direct response', {
+    if (!successfulOrigin || !successfulSource) {
+      logDebug('retryWithAlternativeOrigins', 'Could not determine successful origin/source, returning direct response', {
         path,
         sourceType: storageResult.sourceType
       });
@@ -172,25 +202,63 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       });
     }
     
-    // Prepare transformation with the new source URL
-    logDebug('retryWithAlternativeOrigins', 'Preparing transformation with alternative source', {
+    // Construct the origin URL based on the source type
+    let originUrl: string;
+    
+    if (successfulSource.type === 'r2') {
+      // For R2, use the r2: protocol
+      originUrl = `r2:${path}`;
+    } else if ((successfulSource.type === 'remote' || successfulSource.type === 'fallback') && successfulSource.url) {
+      // For remote/fallback, construct the full URL
+      const baseUrl = successfulSource.url;
+      // Apply path template if available
+      const pathTemplate = (successfulSource as any).pathTemplate || '{path}';
+      const resolvedPath = pathTemplate.replace('{path}', path);
+      
+      // Construct the full URL
+      if (baseUrl.endsWith('/')) {
+        originUrl = baseUrl + (resolvedPath.startsWith('/') ? resolvedPath.slice(1) : resolvedPath);
+      } else {
+        originUrl = baseUrl + (resolvedPath.startsWith('/') ? resolvedPath : '/' + resolvedPath);
+      }
+    } else {
+      throw new Error(`Cannot construct origin URL for source type: ${successfulSource.type}`);
+    }
+    
+    logDebug('retryWithAlternativeOrigins', 'Preparing transformation with alternative origin', {
       path,
-      sourceUrl: sourceUrl.substring(0, 50) + '...'
+      originUrl,
+      sourceType: successfulSource.type,
+      originName: successfulOrigin.name
     });
     
     try {
-      const transformResult = await prepareVideoTransformation(
-        originalRequest,
-        transformOptions,
-        pathPatterns,
-        debugInfo,
-        env
+      // Build the CDN-CGI URL with the new origin
+      // Convert VideoOptions to TransformParams
+      const transformParams: TransformParams = {};
+      
+      // Copy only defined values with proper type handling
+      if (transformOptions.width !== undefined) transformParams.width = transformOptions.width;
+      if (transformOptions.height !== undefined) transformParams.height = transformOptions.height;
+      if (transformOptions.quality !== undefined) transformParams.quality = transformOptions.quality;
+      if (transformOptions.fit !== undefined) transformParams.fit = transformOptions.fit as string;
+      if (transformOptions.gravity !== undefined) transformParams.gravity = transformOptions.gravity as string;
+      if (transformOptions.format !== undefined) transformParams.format = transformOptions.format;
+      if (transformOptions.acodec !== undefined) transformParams.acodec = transformOptions.acodec as string;
+      if (transformOptions.vcodec !== undefined) transformParams.vcodec = transformOptions.vcodec as string;
+      if (transformOptions.duration !== undefined) transformParams.duration = transformOptions.duration as string;
+      if (transformOptions['start-time'] !== undefined) transformParams['start-time'] = transformOptions['start-time'] as string;
+      
+      const cdnCgiUrl = buildCdnCgiMediaUrl(
+        transformParams,
+        originUrl,
+        originalRequest.url
       );
       
-      const cdnCgiUrl = transformResult.cdnCgiUrl;
-      
-      logDebug('retryWithAlternativeOrigins', 'Attempting transformation with alternative source', {
-        cdnCgiUrl: cdnCgiUrl.substring(0, 100) + '...'
+      logDebug('retryWithAlternativeOrigins', 'Attempting transformation with alternative origin', {
+        cdnCgiUrl,
+        originUrl,
+        transformOptions
       });
       
       // Transform through CDN-CGI
@@ -202,7 +270,9 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       if (transformedResponse.ok) {
         logDebug('retryWithAlternativeOrigins', 'Transformation successful with alternative source', {
           status: transformedResponse.status,
-          contentType: transformedResponse.headers.get('Content-Type')
+          contentType: transformedResponse.headers.get('Content-Type'),
+          originUrl,
+          cdnCgiUrl
         });
         
         // Add retry success headers
@@ -222,7 +292,8 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
         // Transformation failed with alternative source
         logDebug('retryWithAlternativeOrigins', 'Transformation failed with alternative source', {
           status: transformedResponse.status,
-          statusText: transformedResponse.statusText
+          statusText: transformedResponse.statusText,
+          originUrl
         });
         
         // Return the transformation error
@@ -232,7 +303,7 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       logErrorWithContext(
         'Error transforming with alternative source',
         transformError,
-        { path, sourceUrl },
+        { path, originUrl },
         'retryWithAlternativeOrigins'
       );
       

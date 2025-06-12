@@ -33,16 +33,16 @@ function generateCacheTagsImpl(
   const tags: string[] = [];
   
   // Get prefix from the cache configuration
-  // Use a shorter prefix to save space in metadata
-  let prefix = 'v-'; // Short default fallback
+  // Use a meaningful prefix
+  let prefix = 'video:'; // Clear, meaningful prefix
   
   try {
-    // Properly use the configured cacheTagPrefix from CacheConfigurationManager
+    // Use the configured cacheTagPrefix from CacheConfigurationManager
     const configuredPrefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
-    // If the configured prefix is the default long one, use short version
-    prefix = configuredPrefix === 'video-prod-' ? 'vp-' : 
-             configuredPrefix === 'video-' ? 'v-' : 
-             configuredPrefix.substring(0, 3); // Take first 3 chars of custom prefix
+    // Use a clear prefix format
+    prefix = configuredPrefix === 'video-prod-' ? 'video:' : 
+             configuredPrefix === 'video-' ? 'video:' : 
+             configuredPrefix.endsWith('-') ? configuredPrefix.slice(0, -1) + ':' : configuredPrefix + ':';
     
     logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
       configuredPrefix,
@@ -77,46 +77,39 @@ function generateCacheTagsImpl(
   // Add path-based tag for purging all derivatives of a specific video
   // This uses the full normalized path as the identifier
   if (normalizedPath) {
-    // Create a shortened path tag to save space
-    // Take the last 2 segments of the path which typically identify the video
-    const pathSegments = normalizedPath.split('/').filter(Boolean);
-    const shortPath = pathSegments.slice(-2).join('-');
+    // Use the full normalized path for cache tags
+    tags.push(`${prefix}${normalizedPath}`);
     
-    if (shortPath) {
-      // Add base path tag - for purging all derivatives of this video
-      tags.push(`${prefix}p-${shortPath}`);
-      
-      // Add derivative-specific tag if available - for purging one specific derivative
-      if (options.derivative) {
-        tags.push(`${prefix}p-${shortPath}-${options.derivative}`);
-      }
+    // Add derivative-specific tag if available - for purging one specific derivative
+    if (options.derivative) {
+      tags.push(`${prefix}${normalizedPath}-${options.derivative}`);
     }
   }
   
   // Add derivative tag for purging all videos of a specific derivative type
   if (options.derivative) {
-    tags.push(`${prefix}d-${options.derivative}`);
+    tags.push(`${prefix}derivative-${options.derivative}`);
   }
   
   // Add format tag for format migration scenarios
   if (options.format) {
-    tags.push(`${prefix}f-${options.format}`);
+    tags.push(`${prefix}format:${options.format}`);
   }
 
   // Add mode-specific tags only for non-video modes (frame, spritesheet)
   if (options.mode && options.mode !== 'video') {
-    tags.push(`${prefix}m-${options.mode}`);
+    tags.push(`${prefix}mode:${options.mode}`);
     
     // Add frame-specific tags
     if (options.mode === 'frame' && options.time) {
-      tags.push(`${prefix}t-${options.time.replace('s', '')}`);
+      tags.push(`${prefix}time:${options.time.replace('s', '')}`);
     }
 
     // Add spritesheet-specific tags
     if (options.mode === 'spritesheet') {
-      if (options.columns) tags.push(`${prefix}c-${options.columns}`);
-      if (options.rows) tags.push(`${prefix}r-${options.rows}`);
-      if (options.interval) tags.push(`${prefix}i-${options.interval.replace('s', '')}`);
+      if (options.columns) tags.push(`${prefix}cols:${options.columns}`);
+      if (options.rows) tags.push(`${prefix}rows:${options.rows}`);
+      if (options.interval) tags.push(`${prefix}interval:${options.interval.replace('s', '')}`);
     }
   }
   
@@ -124,7 +117,7 @@ function generateCacheTagsImpl(
   if (options.customData && typeof options.customData === 'object') {
     const customData = options.customData as Record<string, unknown>;
     if (customData.imwidth || customData.imheight) {
-      tags.push(`${prefix}imq`);
+      tags.push(`${prefix}imquery`);
     }
   }
   

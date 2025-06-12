@@ -302,9 +302,8 @@ export class ResponseBuilder {
       this.headers.set('X-Source-Type', sourceInfo.type);
       this.headers.set('X-Source-Path', sourceInfo.resolvedPath);
       
-      if (sourceInfo.url) {
-        this.headers.set('X-Source-URL', sourceInfo.url);
-      }
+      // Don't expose source URL in headers for security
+      // It's logged but not sent to clients
       
       // Update diagnostics
       this.context.diagnostics.sourceResolution = sourceInfo;
