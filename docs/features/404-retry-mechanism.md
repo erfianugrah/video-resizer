@@ -25,6 +25,7 @@ Located in `src/services/transformation/retryWithAlternativeOrigins.ts`, this fu
 
 ## How It Works
 
+### Text Flow
 ```
 CDN-CGI/Media returns 404
          ↓
@@ -42,6 +43,35 @@ Attempts fetch from alternative source
          ↓
 If successful: Cache and return response
 If failed: Return error with retry headers
+```
+
+### Visual Flow Diagram
+
+```mermaid
+flowchart TD
+    A[Client Request] --> B[CDN-CGI Transformation]
+    B --> C{Response Status}
+    C -->|200 OK| D[Return Transformed Video]
+    C -->|404 Not Found| E[retryWithAlternativeOrigins]
+    
+    E --> F[Find Next Source by Priority]
+    F --> G{Alternative Available?}
+    
+    G -->|No| H[Return 404: No Alternative Sources]
+    G -->|Yes| I[Build Alternative Origin URL]
+    
+    I --> J[Create New CDN-CGI Request]
+    J --> K[Fetch from Alternative]
+    
+    K --> L{Response OK?}
+    L -->|Yes| M[Store in KV Cache]
+    L -->|No| N[Return Error Response]
+    
+    M --> O[Return Success Response]
+    
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style G fill:#f9f,stroke:#333,stroke-width:2px
+    style L fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ## Implementation Example

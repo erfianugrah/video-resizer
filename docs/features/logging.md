@@ -33,32 +33,42 @@ The logging system helps developers and operators:
 
 ## Logging Architecture
 
-The logging system follows a layered architecture:
+The logging system follows a centralized Pino-based architecture:
 
 ```mermaid
 flowchart TD
-    A[Log Function Call] --> B[LoggingManager]
-    B --> C{Log Level Check}
-    C -->|Enabled| D{Component Filter}
-    C -->|Disabled| X[Discard Log]
-    D -->|Enabled| E{Sampling Check}
-    D -->|Disabled| X
-    E -->|Selected| F[Format Log]
-    E -->|Not Selected| X
-    F --> G[Add Metadata]
-    G --> H[Add Timestamp]
-    H --> I[Add Request Context]
-    I --> J{Log Format}
-    J -->|Text| K[Format as Text]
-    J -->|JSON| L[Format as JSON]
-    K & L --> M[Output Log]
+    A[Application Code] --> B{Logger Type}
+    B -->|Direct| C[Pino Logger]
+    B -->|Category| D[Category Logger]
+    B -->|Legacy| E[Legacy Adapter]
+    
+    D --> F[Centralized Logger]
+    E --> F
+    F --> C
+    
+    C --> G{Context Available?}
+    G -->|Yes| H[Request Context]
+    G -->|No| I[Console Fallback]
+    
+    H --> J{Component Filter}
+    J -->|Enabled| K[Format with Pino]
+    J -->|Disabled| X[Discard Log]
+    
+    K --> L[Add Breadcrumbs]
+    L --> M[Add Performance Data]
+    M --> N[JSON Output]
+    
+    style F fill:#f9f,stroke:#333,stroke-width:2px
+    style C fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
-1. **Logger Interface**: Simple, consistently named logging functions
-2. **LoggingManager**: Central configuration and log processing
-3. **Formatters**: Convert log data to text or JSON
-4. **Context Enrichment**: Add metadata like timestamps and request IDs
-5. **Output**: Send formatted logs to Cloudflare's standard output
+### Key Components
+
+1. **Centralized Logger** (`logger.ts`): Main entry point with category-based logging
+2. **Pino Logger** (`pinoLogger.ts`): High-performance JSON logger
+3. **Legacy Adapter** (`legacyLoggerAdapter.ts`): Backward compatibility layer
+4. **Request Context** (`requestContext.ts`): Request-scoped context and breadcrumbs
+5. **Configuration** (`LoggingConfigurationManager`): Runtime configuration
 
 ## Log Levels
 

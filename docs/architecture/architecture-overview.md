@@ -46,10 +46,14 @@ flowchart TB
         E --> |video| V[VideoStrategy]
         E --> |frame| F[FrameStrategy]
         E --> |spritesheet| S[SpritesheetStrategy]
-        V & F & S --> P[Transform Response]
-        P --> |Cache Check| Q{Cached?}
+        V & F & S --> P[CDN-CGI Transform]
+        P --> |Check Status| STATUS{404?}
+        STATUS --> |No| Q{Cache?}
+        STATUS --> |Yes| RETRY[retryWithAlternativeOrigins]
+        RETRY --> ALT[Alternative Transform]
+        ALT --> Q
         Q --> |Yes| R[Cache Hit Response]
-        Q --> |No| T[Transform & Cache]
+        Q --> |No| T[Store in KV Cache]
         T --> R
         R --> Z[Client Response]
     end

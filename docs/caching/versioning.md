@@ -4,6 +4,33 @@
 
 The video-resizer uses a versioning system to manage cache invalidation and ensure fresh content delivery. Each cached video can have a version number that's included in cache keys and CDN requests.
 
+## System Flow
+
+```mermaid
+flowchart TD
+    A[Video Request] --> B[Generate Cache Key]
+    B --> C[Check Version in KV]
+    C --> D{Version Found?}
+    
+    D -->|Yes| E[Use Current Version]
+    D -->|No| F[Default to Version 1]
+    
+    E --> G[Include Version in Options]
+    F --> G
+    
+    G --> H[Check KV Cache]
+    H --> I{Cache Hit?}
+    
+    I -->|Yes| J[Return Cached Video]
+    I -->|No| K[Transform Video]
+    
+    K --> L[CDN Request with v=N]
+    L --> M[Store with Versioned Key]
+    
+    style D fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#f9f,stroke:#333,stroke-width:2px
+```
+
 ## How It Works
 
 ### Version Storage

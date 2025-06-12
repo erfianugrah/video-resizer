@@ -41,11 +41,12 @@ Comprehensive documentation is available in the [docs directory](./docs/README.m
 - [Performance Tuning Guide](./docs/guides/performance-tuning.md) - Optimization tips
 - [API Reference](./docs/reference/api-reference.md) - Complete API details
 
-### Recent Fixes
+### Key Features Documentation
 
-- [Worker Timeout and Configuration Fixes](./docs/fixes/worker-timeout-and-configuration-fixes.md) - Fixes for timeout issues and configuration loading
-- [Cache Versioning](./docs/fixes/cache-versioning-and-206-responses.md) - How cache versioning works
-- [Version Management](./docs/fixes/version-increment-explanation.md) - Manual version control for cache invalidation
+- [Cache Versioning](./docs/caching/versioning.md) - Cache key versioning system
+- [404 Retry Mechanism](./docs/features/404-retry-mechanism.md) - Automatic failover to alternative sources
+- [Request Coalescing](./docs/features/request-coalescing.md) - Prevents duplicate origin fetches
+- [Range Request Support](./docs/features/range-request-support.md) - Efficient video streaming
 
 ## System Architecture
 
@@ -167,12 +168,14 @@ flowchart TD
     
     %% 404 handling flow
     ErrType404 -->|Yes| Retry404[retryWithAlternativeOrigins.ts]
-    Retry404 --> ExcludeSrc[Exclude Failed Source]
-    ExcludeSrc --> FetchAlt[fetchVideoWithOrigins with exclusions]
-    FetchAlt --> AltFound{Alternative Found?}
-    AltFound -->|Yes| TransformAlt[Transform Alternative]
-    AltFound -->|No| Return404[Return 404 Error]
-    TransformAlt --> Return[Return Transformed Response]
+    Retry404 --> NextSrc[Find Next Source by Priority]
+    NextSrc --> BuildURL[Build Alternative Origin URL]
+    BuildURL --> NewCDN[Create New CDN-CGI Request]
+    NewCDN --> AltFetch[Fetch from Alternative]
+    AltFetch --> AltSuccess{Success?}
+    AltSuccess -->|Yes| StoreKV[Store in KV Cache]
+    AltSuccess -->|No| Return404[Return Error with Headers]
+    StoreKV --> Return[Return Transformed Response]
     
     %% Other error handling
     ErrType404 -->|No| ErrorHdl[transformationErrorHandler.ts]
@@ -386,12 +389,16 @@ flowchart TB
     F -->|No| H{404 Error?}
     H -->|Yes| J[retryWithAlternativeOrigins]
     H -->|No| K[handleTransformationError]
-    J --> L[Try Alternative Sources]
-    L --> M{Found?}
-    M -->|Yes| N[Transform Alternative]
+    J --> L[Find Next Source by Priority]
+    L --> M{Alternative Available?}
+    M -->|Yes| N[Build New CDN-CGI URL]
     M -->|No| O[Return 404]
+    N --> Q[Fetch & Transform]
+    Q --> R{Success?}
+    R -->|Yes| S[Cache in KV]
+    R -->|No| T[Return Error]
     K --> P[Handle Other Errors]
-    G & N & O & P --> I([Return Response])
+    G & S & O & T & P --> I([Return Response])
 
     %% Apply styles
     class A,B,C,D,E process
@@ -474,8 +481,9 @@ flowchart TB
     %% 404 retry mechanism
     L -->|All Sources Failed| O{From CDN-CGI?}
     O -->|Yes| P[retryWithAlternativeOrigins]
-    P --> Q[Exclude Failed Sources]
-    Q --> R[Try Other Origins]
+    P --> Q[Find Next Source]
+    Q --> R[Build Alternative URL]
+    R --> T[Retry Transform]
     O -->|No| S[Return 404]
 
     %% Apply styles

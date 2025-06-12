@@ -6,6 +6,35 @@ Request coalescing prevents duplicate origin fetches when multiple concurrent re
 
 ## How It Works
 
+### Visual Flow
+
+```mermaid
+flowchart TD
+    A1[Request 1] --> B[Check In-Flight Map]
+    A2[Request 2] --> B
+    A3[Request 3] --> B
+    
+    B --> C{Transform Key Exists?}
+    
+    C -->|No| D[Create Transform Promise]
+    C -->|Yes| E[Get Existing Promise]
+    
+    D --> F[Store in Map]
+    F --> G[Start Transformation]
+    
+    E --> H[Await Existing Promise]
+    
+    G --> I[Transformation Complete]
+    I --> J[Remove from Map]
+    J --> K[Return Response]
+    
+    H --> L[Clone Response]
+    L --> M[Return Cloned Response]
+    
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#9f9,stroke:#333,stroke-width:2px
+```
+
 ### In-Flight Tracking
 
 The system maintains a map of ongoing transformations:
