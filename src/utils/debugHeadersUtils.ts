@@ -6,8 +6,8 @@
  * debugService.ts, and responseBuilder.ts.
  */
 import { getCurrentContext } from './legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, error as pinoError } from './pinoLogger';
 import { addBreadcrumb, getPerformanceMetrics } from './requestContext';
+import { createCategoryLogger } from './logger';
 
 // Import the shared DiagnosticsInfo from the types directory
 import { DiagnosticsInfo as SharedDiagnosticsInfo } from '../types/diagnostics';
@@ -27,53 +27,9 @@ export interface DebugInfo {
   includePerformance?: boolean;
 }
 
-/**
- * Helper functions for consistent logging throughout this file
- * These helpers handle context availability and fallback gracefully
- */
-
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'DebugHeadersUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`DebugHeadersUtils: ${message}`, data || {});
-  }
-}
-
-// Warning logging temporarily commented out as it's not currently used
-// /**
-//  * Log a warning message with proper context handling
-//  */
-// function logWarn(message: string, data?: Record<string, unknown>): void {
-//   const requestContext = getCurrentContext();
-//   if (requestContext) {
-//     const logger = createLogger(requestContext);
-//     pinoWarn(requestContext, logger, 'DebugHeadersUtils', message, data);
-//   } else {
-//     // Fall back to console as a last resort
-//     console.warn(`DebugHeadersUtils: ${message}`, data || {});
-//   }
-// }
-
-/**
- * Log an error message with proper context handling
- */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'DebugHeadersUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.error(`DebugHeadersUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for DebugHeadersUtils
+const logger = createCategoryLogger('DebugHeadersUtils');
+const { debug: logDebug, error: logError } = logger;
 
 /**
  * Add debug headers to a Response

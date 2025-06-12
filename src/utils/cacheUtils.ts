@@ -2,29 +2,21 @@
  * Utilities for managing cache configuration for videos
  */
 import { CacheConfigurationManager, cacheConfig } from '../config/CacheConfigurationManager';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
+import { createCategoryLogger } from './logger';
 
-/**
- * Implementation of logDebug that might throw errors
- */
-function logDebugImpl(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'CacheUtils', message, data);
-  } else {
-    console.debug(`CacheUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for CacheUtils
+const logger = createCategoryLogger('CacheUtils');
 
 /**
  * Helper for logging debug messages
  * Using tryOrDefault for safe logging with error handling
  */
 const logDebug = tryOrDefault<[string, Record<string, unknown>?], void>(
-  logDebugImpl,
+  (message: string, data?: Record<string, unknown>) => {
+    logger.debug(message, data);
+  },
   {
     functionName: 'logDebug',
     component: 'CacheUtils',

@@ -5,9 +5,8 @@
  * and reduce the number of AWS SDK calls for repeated requests.
  */
 
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { EnvVariables } from '../config/environmentConfig';
 import { 
   logErrorWithContext, 
@@ -21,18 +20,10 @@ import {
   storeCacheKeyVersion 
 } from './cacheVersionService';
 
-/**
- * Helper functions for consistent logging throughout this file
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'PresignedUrlCacheService', message, data);
-  } else {
-    console.debug(`PresignedUrlCacheService: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for PresignedUrlCacheService
+import { createCategoryLogger } from '../utils/logger';
+const logger = createCategoryLogger('PresignedUrlCacheService');
+const { debug: logDebug } = logger;
 
 /**
  * Interface for presigned URL cache entry

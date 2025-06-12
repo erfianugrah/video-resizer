@@ -15,12 +15,60 @@ vi.mock('../../src/services/errorHandler/logging', () => ({
   logDebug: vi.fn()
 }));
 
+vi.mock('../../src/utils/logger', () => ({
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn()
+}));
+
 vi.mock('../../src/utils/errorHandlingUtils', () => ({
   logErrorWithContext: vi.fn()
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
-  addBreadcrumb: vi.fn()
+  addBreadcrumb: vi.fn(),
+  getCurrentContext: vi.fn().mockReturnValue(null)
+}));
+
+// Mock the new dependencies we added for KV storage
+vi.mock('../../src/utils/kvCacheUtils', () => ({
+  storeInKVCache: vi.fn().mockResolvedValue(true),
+  TransformOptions: {}
+}));
+
+vi.mock('../../src/utils/flexibleBindings', () => ({
+  getCacheKV: vi.fn().mockReturnValue(null) // No KV in test
+}));
+
+vi.mock('../../src/config/CacheConfigurationManager', () => ({
+  CacheConfigurationManager: {
+    getInstance: () => ({
+      isKVCacheEnabled: () => false // Disabled in test
+    })
+  }
+}));
+
+vi.mock('../../src/utils/pathUtils', () => ({
+  buildCdnCgiMediaUrl: vi.fn().mockReturnValue('https://example.com/cdn-cgi/media/width=1920/https://backup.example.com/videos/test.mp4')
+}));
+
+// Mock VideoConfigurationManager with proper structure
+vi.mock('../../src/config/VideoConfigurationManager', () => ({
+  VideoConfigurationManager: {
+    getInstance: () => ({
+      getConfig: () => ({
+        origins: [{
+          name: 'videos',
+          matcher: '^/videos/(.+)$',
+          sources: [
+            { type: 'r2', priority: 1, bucketBinding: 'VIDEO_ASSETS', pathTemplate: '{1}', path: '{1}' },
+            { type: 'remote', priority: 2, url: 'https://backup.example.com', pathTemplate: 'videos/{1}', path: 'videos/{1}' }
+          ]
+        }]
+      })
+    })
+  }
 }));
 
 describe('404 Failover - Simple Test', () => {
@@ -44,25 +92,8 @@ describe('404 Failover - Simple Test', () => {
       })
     }));
 
-    // Mock VideoConfigurationManager
-    vi.mock('../../src/config/VideoConfigurationManager', () => ({
-      VideoConfigurationManager: {
-        getInstance: () => ({
-          getConfig: () => ({
-            origins: {
-              items: [{
-                name: 'videos',
-                matcher: '^/videos/(.+)$',
-                sources: [
-                  { type: 'r2', priority: 1 },
-                  { type: 'remote', priority: 2 }
-                ]
-              }]
-            }
-          })
-        })
-      }
-    }));
+    // Note: VideoConfigurationManager mock is defined at the top of the file, 
+    // but we'll update it dynamically in the test
 
     // Mock prepareVideoTransformation
     vi.mock('../../src/services/TransformationService', () => ({
@@ -92,6 +123,11 @@ describe('404 Failover - Simple Test', () => {
         { type: 'r2', priority: 1, bucketBinding: 'VIDEO_ASSETS', pathTemplate: '{1}', path: '{1}' },
         { type: 'remote', priority: 2, url: 'https://backup.example.com', pathTemplate: 'videos/{1}', path: 'videos/{1}' }
       ]
+    };
+    
+    // Also need to update the mock getConfig response to match
+    const mockConfig = {
+      origins: [mockOrigin] // Use array format that the code expects
     };
     
     const mockFailedSource = mockOrigin.sources[0]; // R2 source failed
@@ -129,6 +165,17 @@ describe('404 Failover - Simple Test', () => {
       pathPatterns: [],
       debugInfo: {}
     });
+
+    // Debug: Check response details
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Response error:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+    }
 
     // Verify the response
     expect(response).toBeDefined();

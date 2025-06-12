@@ -5,24 +5,15 @@
  * without re-storing the entire video content.
  */
 
-import { getCurrentContext } from './legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from './pinoLogger';
 import { addBreadcrumb } from './requestContext';
+import { getCurrentContext } from './legacyLoggerAdapter';
 import { CacheConfigurationManager } from '../config/CacheConfigurationManager';
 import { EnvVariables } from '../config/environmentConfig';
+import { createCategoryLogger } from './logger';
 
-/**
- * Helper function for consistent logging throughout this file
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'KVTtlRefreshUtils', message, data);
-  } else {
-    console.debug(`KVTtlRefreshUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for KVTtlRefreshUtils
+const logger = createCategoryLogger('KVTtlRefreshUtils');
+const { debug: logDebug } = logger;
 
 /**
  * Parameters for TTL refresh operation

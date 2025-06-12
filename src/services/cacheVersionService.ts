@@ -3,25 +3,16 @@
  * Enables cache busting for the media proxy
  */
 
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { EnvVariables } from '../config/environmentConfig';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { cacheConfig } from '../config/CacheConfigurationManager';
+import { createCategoryLogger } from '../utils/logger';
 
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'CacheVersionService', message, data);
-  } else {
-    console.debug(`CacheVersionService: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for CacheVersionService
+const logger = createCategoryLogger('CacheVersionService');
+const { debug: logDebug } = logger;
 
 /**
  * Generate a consistent version key from a cache key
