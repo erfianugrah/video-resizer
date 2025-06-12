@@ -1,10 +1,8 @@
 # 404 Retry Mechanism
 
-*Last Updated: June 10, 2025*
-
 ## Overview
 
-The 404 retry mechanism provides a clean, consolidated approach for handling "not found" errors from Cloudflare's cdn-cgi/media transformation proxy. When the transformation service returns a 404, the system automatically attempts to find the video from alternative sources using the Origins system.
+The 404 retry mechanism handles "not found" errors from Cloudflare's cdn-cgi/media transformation proxy. When the transformation service returns a 404, the system automatically attempts to find the video from alternative sources.
 
 ## Key Components
 
@@ -12,39 +10,38 @@ The 404 retry mechanism provides a clean, consolidated approach for handling "no
 
 Located in `src/services/transformation/retryWithAlternativeOrigins.ts`, this function:
 
-1. **Accepts retry context**: Including the failed origin and source information
-2. **Creates source exclusions**: Prevents retrying the source that already returned 404
-3. **Uses fetchVideoWithOrigins**: Leverages the enhanced Origins system with exclusions
-4. **Transforms alternative sources**: If found, transforms the content using the original parameters
-5. **Returns appropriate response**: Either the transformed content or an error
+1. **Finds next available source**: Filters out the failed source and selects the next by priority
+2. **Builds alternative origin URL**: Constructs the URL for the alternative source
+3. **Creates new CDN-CGI request**: Preserves all original transformation parameters
+4. **Attempts single retry**: Makes one attempt with the alternative source
+5. **Stores successful responses**: Saves to KV cache if the retry succeeds
 
-### Enhanced fetchVideoWithOrigins
+### Key Features
 
-The `fetchVideoWithOrigins` function now supports:
-
-- **Source exclusions**: Can exclude specific sources that have already failed
-- **Multi-origin retry**: Tries all matching origins, not just the first one
-- **Detailed logging**: Tracks which sources were excluded and which were tried
+- **Comprehensive logging**: Debug logs and breadcrumbs track each retry step
+- **Error handling**: Detailed error responses indicate what failed
+- **Header information**: Response headers indicate retry status and sources used
+- **KV cache integration**: Successful retries are cached for future requests
 
 ## How It Works
 
 ```
 CDN-CGI/Media returns 404
          ↓
-TransformVideoCommand.executeWithOrigins()
-         ↓
-Detects 404 status
+TransformVideoCommand detects 404 status
          ↓
 Calls retryWithAlternativeOrigins()
          ↓
-Creates exclusion list for failed source
+Finds next source by priority
          ↓
-Calls fetchVideoWithOrigins with exclusions
+Builds alternative origin URL
          ↓
-Tries remaining sources across all matching origins
+Creates new CDN-CGI request with all parameters
          ↓
-If found: Transform and return
-If not found: Return 404 error
+Attempts fetch from alternative source
+         ↓
+If successful: Cache and return response
+If failed: Return error with retry headers
 ```
 
 ## Implementation Example
