@@ -449,31 +449,6 @@ export default {
         status: 500,
         headers: { 'Content-Type': 'text/plain' },
       });
-    } finally {
-      // Clean up the request context to prevent memory leaks
-      if (context) {
-        try {
-          const { clearCurrentContext } = await import('./utils/requestContext');
-          clearCurrentContext();
-        } catch (cleanupErr) {
-          // Don't throw during cleanup, just log if we can
-          if (workerLogger) {
-            workerLogger.error('Failed to clear request context', { 
-              error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) 
-            });
-          } else {
-            console.error('Failed to clear request context:', cleanupErr);
-          }
-        }
-      }
-      
-      // Also clear the legacy logger
-      try {
-        const { clearLegacyLogger } = await import('./utils/legacyLoggerAdapter');
-        clearLegacyLogger();
-      } catch (cleanupErr) {
-        // Silent fail - this is cleanup code
-      }
     }
   },
 } satisfies ExportedHandler<EnvVariables>;
