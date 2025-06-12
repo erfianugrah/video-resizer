@@ -6,40 +6,12 @@
  */
 import { PathPattern } from '../utils/pathUtils';
 
-// Import from our own logger module
-import { info as pinoInfo, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger } from '../utils/pinoLogger';
+// Use centralized logger
+import { createCategoryLogger } from '../utils/logger';
 
-/**
- * Log an error message - helper for config module
- * Falls back to console.error during initialization before logging system is available
- */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'EnvironmentConfig', message, data);
-  } else {
-    // Direct console.error is appropriate only during initialization
-    console.error(`EnvironmentConfig: ${message}`, data || {});
-  }
-}
-
-/**
- * Debug log message - helper for config module debugging
- * Falls back to console.log during initialization before logging system is available
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'EnvironmentConfig', message, data);
-  } else {
-    // Direct console.log is appropriate only during initialization
-    console.log(`EnvironmentConfig DEBUG: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for EnvironmentConfig
+const logger = createCategoryLogger('EnvironmentConfig');
+const { debug: logDebug, error: logError } = logger;
 
 /**
  * Application environment configuration

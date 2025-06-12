@@ -7,21 +7,11 @@ import { addBreadcrumb } from './requestContext';
 import { determineCacheControl } from './cacheControlUtils';
 import { generateCacheTags } from '../services/videoStorageService';
 import { withErrorHandling } from './errorHandlingUtils';
-import { createLogger, debug as pinoDebug } from './pinoLogger';
+import { createCategoryLogger } from './logger';
 
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'CacheHeaderUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`CacheHeaderUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for CacheHeaderUtils
+const logger = createCategoryLogger('CacheHeaderUtils');
+const { debug: logDebug } = logger;
 
 /**
  * Apply cache headers to a response based on configuration and use Cache API if available

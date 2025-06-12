@@ -6,35 +6,11 @@ import { getCurrentContext } from './legacyLoggerAdapter';
 import { addBreadcrumb } from './requestContext';
 import { logErrorWithContext, withErrorHandling } from './errorHandlingUtils';
 import { parseRangeHeader, createUnsatisfiableRangeResponse } from './httpUtils';
-import { createLogger, debug as pinoDebug, warn as pinoWarn } from './pinoLogger';
+import { createCategoryLogger } from './logger';
 
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'CacheRetrievalUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`CacheRetrievalUtils: ${message}`, data || {});
-  }
-}
-
-/**
- * Log a warning message with proper context handling
- */
-function logWarn(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoWarn(requestContext, logger, 'CacheRetrievalUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.warn(`CacheRetrievalUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for CacheRetrievalUtils
+const logger = createCategoryLogger('CacheRetrievalUtils');
+const { debug: logDebug, warn: logWarn } = logger;
 
 /**
  * This is a simplified version that no longer uses Cloudflare Cache API.

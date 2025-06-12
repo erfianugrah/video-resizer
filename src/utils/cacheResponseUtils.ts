@@ -8,36 +8,12 @@ import { getCurrentContext } from './legacyLoggerAdapter';
 import { addBreadcrumb } from './requestContext';
 import { logErrorWithContext, withErrorHandling } from './errorHandlingUtils';
 import { parseRangeHeader, createUnsatisfiableRangeResponse } from './httpUtils';
-import { createLogger, debug as pinoDebug, warn as pinoWarn } from './pinoLogger';
 import { prepareResponseForCaching, isCacheableContentType } from './cacheStorageUtils';
+import { createCategoryLogger } from './logger';
 
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'CacheResponseUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`CacheResponseUtils: ${message}`, data || {});
-  }
-}
-
-/**
- * Log a warning message with proper context handling
- */
-function logWarn(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoWarn(requestContext, logger, 'CacheResponseUtils', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.warn(`CacheResponseUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for CacheResponseUtils
+const logger = createCategoryLogger('CacheResponseUtils');
+const { debug: logDebug, warn: logWarn } = logger;
 
 /**
  * This function is now simpler, focusing only on preparing responses and handling range requests.

@@ -42,8 +42,25 @@ export function determineVideoOptions(
   // Get the request context for breadcrumbs
   const requestContext = getCurrentContext();
   
+  // Force log to check if function is called
+  console.log('[VideoOptionsService] determineVideoOptions called', {
+    url: request.url,
+    hasContext: !!requestContext,
+    hasImwidth: params.has('imwidth')
+  });
+  
   // Check for IMQuery parameters
   const usingIMQuery = hasIMQueryParams(params);
+  
+  // Log IMQuery detection
+  if (usingIMQuery) {
+    info('VideoOptionsService', 'IMQuery parameters detected', {
+      url: request.url,
+      imwidth: params.get('imwidth'),
+      imheight: params.get('imheight'),
+      imref: params.get('imref')
+    });
+  }
   
   // Store original parameters for diagnostics if IMQuery is present
   if (usingIMQuery && requestContext) {
@@ -81,6 +98,21 @@ export function determineVideoOptions(
       // The method is determined inside findClosestDerivative
       // If only width is provided, it will try breakpoint-based matching first
       const matchedDerivative = findClosestDerivative(imwidth, imheight);
+      
+      info('VideoOptionsService', 'Derivative matching attempted', {
+        imwidth,
+        imheight,
+        matchedDerivative,
+        isValid: matchedDerivative ? isValidDerivative(matchedDerivative) : false
+      });
+      
+      console.log('[VideoOptionsService] Derivative matching result', {
+        imwidth,
+        imheight,
+        matchedDerivative,
+        isValid: matchedDerivative ? isValidDerivative(matchedDerivative) : false,
+        derivatives: Object.keys(configManager.getConfig().derivatives)
+      });
       
       if (matchedDerivative && isValidDerivative(matchedDerivative)) {
         // Get the configuration manager instance

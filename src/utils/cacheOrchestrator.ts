@@ -15,6 +15,10 @@ import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
 import { BoundedLRUMap } from './BoundedLRUMap';
+import { createCategoryLogger } from './logger';
+
+// Create a category-specific logger for CacheOrchestrator
+const logger = createCategoryLogger('CacheOrchestrator');
 
 /**
  * Interface for in-flight request tracking with metadata
@@ -41,7 +45,7 @@ const inFlightOriginFetches = new BoundedLRUMap<string, InFlightRequest>({
   ttlMs: 300000, // 5 minute TTL for in-flight requests
   onEvict: (key, value) => {
     // Log when entries are evicted
-    console.warn(`[CacheOrchestrator] Evicting in-flight request for key: ${key}`, {
+    logger.warn(`Evicting in-flight request for key: ${key}`, {
       requesterId: value.requesterId,
       startTime: value.startTime,
       age: Date.now() - value.startTime
@@ -91,15 +95,10 @@ export async function withCaching(
   let cacheKey = ''; // Will be set later but defined here for scope
 
   const requestContext = getCurrentContext();
-  const logger = requestContext ? createLogger(requestContext) : undefined;
 
-  // Helper for logging
+  // Helper for logging - use the category logger
   const logDebug = (message: string, data?: Record<string, unknown>) => {
-    if (requestContext && logger) {
-      pinoDebug(requestContext, logger, 'CacheOrchestrator', message, data);
-    } else {
-      console.debug(`CacheOrchestrator: ${message}`, data || {});
-    }
+    logger.debug(message, data);
   };
 
   // Skip cache for non-GET requests or based on cache configuration

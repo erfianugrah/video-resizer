@@ -1,19 +1,15 @@
-import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
+import { logDebug as centralizedLogDebug, logErrorWithContext as centralizedLogErrorWithContext } from '../../utils/logger';
 import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../../utils/requestContext';
-import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 
 /**
  * Helper functions for consistent logging throughout this file
+ * 
+ * This module now redirects to the centralized logger for consistency.
+ * @deprecated Use the centralized logger from '@/utils/logger' instead
  */
 export function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'KVStorageService', message, data);
-  } else {
-    console.debug(`KVStorageService: ${message}`, data || {});
-  }
+  centralizedLogDebug('KVStorageService', message, data);
 }
 
 /**
@@ -42,11 +38,11 @@ export function logIntegrityCheck(operation: 'store' | 'retrieve', key: string, 
   // Log critical error if integrity check failed
   if (!success) {
     const errorMsg = `Size mismatch for ${key}. Expected: ${expected}, Actual: ${actual}`;
-    logErrorWithContext(
+    centralizedLogErrorWithContext(
+      'KVStorageService',
       `${prefix} ${errorMsg}`, 
       new Error('Data integrity violation'),
-      { key, expected, actual },
-      'KVStorageService'
+      { key, expected, actual }
     );
   }
 }

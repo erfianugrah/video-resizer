@@ -239,6 +239,9 @@ export class DebugConfigurationManager {
    */
   public updateConfig(newConfig: Partial<DebugConfiguration>): DebugConfiguration {
     try {
+      // Store the previous configuration for logging
+      const previousConfig = { ...this.config };
+      
       // Merge the new config with the existing one
       const mergedConfig = {
         ...this.config,
@@ -247,26 +250,75 @@ export class DebugConfigurationManager {
       
       // Validate the merged configuration
       this.config = DebugConfigSchema.parse(mergedConfig);
-      return this.config;
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const issues = error.errors.map(issue => 
-          `${issue.path.join('.')}: ${issue.message}`
-        ).join(', ');
-        
-        throw ConfigurationError.invalidValue(
-          'debugConfig',
-          newConfig,
-          'Valid debug configuration',
-          { additionalInfo: `Validation errors: ${issues}` }
-        );
+      
+      // Log configuration changes
+      const changes: Record<string, { old: any, new: any }> = {};
+      let hasChanges = false;
+      
+      // Check for changes in key properties
+      if (previousConfig.enabled !== this.config.enabled) {
+        changes.enabled = { old: previousConfig.enabled, new: this.config.enabled };
+        hasChanges = true;
+      }
+      if (previousConfig.verbose !== this.config.verbose) {
+        changes.verbose = { old: previousConfig.verbose, new: this.config.verbose };
+        hasChanges = true;
+      }
+      if (previousConfig.includeHeaders !== this.config.includeHeaders) {
+        changes.includeHeaders = { old: previousConfig.includeHeaders, new: this.config.includeHeaders };
+        hasChanges = true;
+      }
+      if (previousConfig.includePerformance !== this.config.includePerformance) {
+        changes.includePerformance = { old: previousConfig.includePerformance, new: this.config.includePerformance };
+        hasChanges = true;
       }
       
-      throw ConfigurationError.invalidValue(
-        'debugConfig',
-        newConfig,
-        'Valid debug configuration'
-      );
+      // Log changes if any occurred
+      if (hasChanges) {
+        // Use console.info to avoid circular dependency with logger
+        console.info('Debug configuration updated', {
+          source: 'DebugConfigurationManager',
+          changes,
+          timestamp: new Date().toISOString()
+        });
+      }
+      return this.config;
+    } catch (error) {
+      // Store validation errors for logging
+      let validationErrors: string[] = [];
+      
+      if (error instanceof z.ZodError) {
+        validationErrors = error.errors.map(issue => 
+          `${issue.path.join('.')}: ${issue.message}`
+        );
+        
+        // Log validation failure
+        console.error('Debug configuration validation failed', {
+          source: 'DebugConfigurationManager',
+          errors: validationErrors,
+          invalidConfig: newConfig,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Attempt graceful fallback - revert to previous config
+        console.warn('Reverting to previous debug configuration', {
+          source: 'DebugConfigurationManager',
+          previousEnabled: this.config.enabled,
+          attemptedConfig: newConfig
+        });
+        
+        // Don't throw - just return current config
+        return this.config;
+      }
+      
+      // For unknown errors, log and return current config
+      console.error('Unknown error updating debug configuration', {
+        source: 'DebugConfigurationManager',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
+      });
+      
+      return this.config;
     }
   }
 

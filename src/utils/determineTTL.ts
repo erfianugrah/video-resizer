@@ -4,21 +4,12 @@
  */
 
 import { getCurrentContext } from './legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from './pinoLogger';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
+import { createCategoryLogger } from './logger';
 
-/**
- * Helper for logging debug messages
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'TTLDetermination', message, data);
-  } else {
-    console.debug(`TTLDetermination: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for TTLDetermination
+const logger = createCategoryLogger('TTLDetermination');
+const { debug: logDebug } = logger;
 
 /**
  * Determine the TTL for a cached response using a simplified approach

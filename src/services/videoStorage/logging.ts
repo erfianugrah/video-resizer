@@ -1,20 +1,16 @@
 /**
  * Logging utilities for the Video Storage Service
+ * 
+ * This module now redirects to the centralized logger for consistency.
+ * @deprecated Use the centralized logger from '@/utils/logger' instead
  */
 
-import { createLogger, debug as pinoDebug } from '../../utils/pinoLogger';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
+import { logDebug as centralizedLogDebug } from '../../utils/logger';
 
 /**
  * Log a debug message with proper context handling
+ * @deprecated Use logDebug from '@/utils/logger' directly
  */
 export function logDebug(category: string, message: string, data?: Record<string, unknown>) {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, category, message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`[${category}] ${message}`, data || {});
-  }
+  centralizedLogDebug(category, message, data);
 }

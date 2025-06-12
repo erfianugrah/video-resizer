@@ -2,7 +2,7 @@
  * Centralized streaming utilities for video handling
  * Used across the system for both KV and direct streaming needs
  */
-import { logDebug } from '../services/kvStorage/logging';
+import { logDebug } from './logger';
 import { logErrorWithContext } from './errorHandlingUtils';
 import { getCurrentContext } from './legacyLoggerAdapter';
 import { createLogger, debug, error } from './pinoLogger';

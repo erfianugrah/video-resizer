@@ -14,23 +14,28 @@ import { getEnvironmentConfig, EnvironmentConfig, EnvVariables } from './config/
 import { initializeConfiguration } from './config';
 import { initializeLogging } from './utils/loggingManager';
 import { createRequestContext, updateBreadcrumbConfig } from './utils/requestContext';
-import { createLogger, info, error, debug } from './utils/pinoLogger';
+import { createLogger } from './utils/pinoLogger';
 import { initializeLegacyLogger } from './utils/legacyLoggerAdapter';
 import { LoggingConfigurationManager } from './config/LoggingConfigurationManager';
 import { getKVNamespace } from './utils/flexibleBindings';
+import { createCategoryLogger } from './utils/logger';
+
+// Create a category-specific logger for Worker
+const workerLogger = createCategoryLogger('Worker');
 
 /**
  * Helper functions for consistent logging in the index module
+ * These need special handling because they're used before request context is available
  */
 
 /**
  * Log an info message with proper context handling
  */
 function logInfo(context: any, message: string, data?: Record<string, unknown>): void {
-  try {
-    const logger = createLogger(context);
-    info(context, logger, 'Worker', message, data);
-  } catch (err) {
+  if (context?.requestId) {
+    // If we have a proper context, use the centralized logger
+    workerLogger.info(message, { ...data, hasContext: true });
+  } else {
     // Fallback to console if the logger isn't ready yet
     console.info(`Worker: ${message}`, data || {});
   }
@@ -40,10 +45,10 @@ function logInfo(context: any, message: string, data?: Record<string, unknown>):
  * Log an error message with proper context handling
  */
 function logError(context: any, message: string, data?: Record<string, unknown>): void {
-  try {
-    const logger = createLogger(context);
-    error(context, logger, 'Worker', message, data);
-  } catch (err) {
+  if (context?.requestId) {
+    // If we have a proper context, use the centralized logger
+    workerLogger.error(message, { ...data, hasContext: true });
+  } else {
     // Fallback to console if the logger isn't ready yet
     console.error(`Worker: ${message}`, data || {});
   }
@@ -53,10 +58,10 @@ function logError(context: any, message: string, data?: Record<string, unknown>)
  * Log a debug message with proper context handling
  */
 function logDebug(context: any, message: string, data?: Record<string, unknown>): void {
-  try {
-    const logger = createLogger(context);
-    debug(context, logger, 'Worker', message, data);
-  } catch (err) {
+  if (context?.requestId) {
+    // If we have a proper context, use the centralized logger
+    workerLogger.debug(message, { ...data, hasContext: true });
+  } else {
     // Fallback to console if the logger isn't ready yet
     console.debug(`Worker: ${message}`, data || {});
   }

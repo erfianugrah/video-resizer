@@ -816,6 +816,52 @@ flowchart TB
 ```
 </details>
 
+## Logging
+
+The video-resizer uses a centralized, high-performance logging system built on [Pino](https://github.com/pinojs/pino). 
+
+### Key Features
+
+- 🚀 **High Performance** - Minimal overhead with Pino's efficient serialization
+- 🎯 **Component Filtering** - Control which components log using wildcard patterns
+- 📊 **Performance Monitoring** - Automatic tracking of slow operations
+- 🔍 **Log Enrichment** - Add memory, timing, and request context to logs
+- 📈 **Production Ready** - Sampling, batching, and graceful configuration updates
+
+### Quick Example
+
+```typescript
+import { createCategoryLogger } from '@/utils/logger';
+
+const logger = createCategoryLogger('MyService');
+
+// Use throughout your component
+logger.debug('Processing request', { id: '123' });
+logger.info('Request completed', { duration: 150 });
+logger.warn('Using fallback origin');
+logger.error('Request failed', { error: 'timeout' });
+
+// Track performance
+const stop = startPerformanceMeasurement('fetchVideo', 'MyService');
+// ... do work ...
+stop(); // Logs if operation exceeds threshold
+```
+
+### Configuration
+
+```json
+{
+  "logging": {
+    "level": "info",
+    "enabledComponents": ["Video*", "Cache*"],
+    "disabledComponents": ["*Test"],
+    "performanceThresholdMs": 1000
+  }
+}
+```
+
+For complete logging documentation, see the [Logging Guide](./docs/logging-guide.md).
+
 ## License
 
 This project is licensed under the terms in the [LICENSE](./LICENSE) file.

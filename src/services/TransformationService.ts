@@ -5,9 +5,8 @@
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
 import { PathPattern, findMatchingPathPattern, matchPathWithCaptures, buildCdnCgiMediaUrl, extractVideoId } from '../utils/pathUtils';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug, info } from '../utils/pinoLogger';
 import { addBreadcrumb, RequestContext } from '../utils/requestContext';
+import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';
@@ -22,37 +21,13 @@ import { Origin } from './videoStorage/interfaces';
 import { getCacheKV } from '../utils/flexibleBindings';
 
 /**
- * Helper functions for consistent logging throughout this file
- * These helpers handle context availability and fallback gracefully
+ * Use centralized logger for all logging operations
  */
+import { createCategoryLogger } from '../utils/logger';
 
-/**
- * Log a debug message with proper context handling
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'TransformationService', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.debug(`TransformationService: ${message}`, data || {});
-  }
-}
-
-/**
- * Log an info message with proper context handling
- */
-function logInfo(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    info(requestContext, logger, 'TransformationService', message, data);
-  } else {
-    // Fall back to console as a last resort
-    console.info(`TransformationService: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for TransformationService
+const logger = createCategoryLogger('TransformationService');
+const { debug: logDebug, info: logInfo } = logger;
 import { TransformationContext } from '../domain/strategies/TransformationStrategy';
 import { createTransformationStrategy } from '../domain/strategies/StrategyFactory';
 import { videoConfig } from '../config/videoConfig';

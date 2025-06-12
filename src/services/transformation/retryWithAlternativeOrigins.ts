@@ -11,13 +11,16 @@ import { EnvVariables } from '../../config/environmentConfig';
 import { VideoOptions } from '../videoStorage/interfaces';
 import { RequestContext, addBreadcrumb } from '../../utils/requestContext';
 import { createLogger } from '../../utils/pinoLogger';
-import { logDebug } from '../errorHandler/logging';
+import { logDebug } from '../../utils/logger';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { fetchVideoWithOrigins, FetchOptions } from '../videoStorage/fetchVideoWithOrigins';
 import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
 import { buildCdnCgiMediaUrl } from '../../utils/pathUtils';
-import { TransformParams } from '../../domain/strategies/TransformationStrategy';
+import { TransformParams, TransformParamValue } from '../../domain/strategies/TransformationStrategy';
 import { cacheResponse } from '../cacheManagementService';
+import { storeInKVCache, TransformOptions } from '../../utils/kvCacheUtils';
+import { getCacheKV } from '../../utils/flexibleBindings';
+import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
 
 export interface RetryOptions {
   originalRequest: Request;
@@ -44,297 +47,248 @@ export interface RetryOptions {
  * @returns Response with the transformed video or an error
  */
 export async function retryWithAlternativeOrigins(options: RetryOptions): Promise<Response> {
-  const { 
-    originalRequest, 
-    transformOptions, 
-    failedOrigin, 
-    failedSource, 
-    context, 
-    env,
-    requestContext,
-    pathPatterns = [],
-    debugInfo = {}
-  } = options;
+  const { originalRequest, transformOptions, failedOrigin, failedSource, env, requestContext } = options;
   
-  const logger = createLogger(requestContext);
   const url = new URL(originalRequest.url);
   const path = url.pathname;
   
-  // Log the retry attempt
   logDebug('retryWithAlternativeOrigins', 'Starting retry after 404 error', {
     path,
     failedOrigin: failedOrigin.name,
     failedSource: failedSource.type,
     failedPriority: failedSource.priority,
+    derivative: transformOptions.derivative,
     totalSources: failedOrigin.sources.length
   });
   
+  // Add breadcrumb for retry attempt
   addBreadcrumb(requestContext, 'Retry', 'Attempting alternative origins after 404', {
     failedOrigin: failedOrigin.name,
-    failedSource: failedSource.type
-  });
-  
-  // Get video configuration
-  const videoConfigManager = VideoConfigurationManager.getInstance();
-  const videoConfig = videoConfigManager.getConfig();
-  
-  // Create exclusion for the failed source
-  const excludeSources = [{
-    originName: failedOrigin.name,
-    sourceType: failedSource.type,
-    sourcePriority: failedSource.priority
-  }];
-  
-  logDebug('retryWithAlternativeOrigins', 'Fetching video with exclusions', {
+    failedSource: failedSource.type,
+    failedPriority: failedSource.priority,
     path,
-    excludedSource: `${failedOrigin.name}:${failedSource.type}`
+    derivative: transformOptions.derivative
   });
   
+  // Find the next available source
+  const availableSources = failedOrigin.sources
+    .filter(s => s.type !== failedSource.type || s.priority !== failedSource.priority)
+    .sort((a, b) => a.priority - b.priority);
+  
+  logDebug('retryWithAlternativeOrigins', 'Available alternative sources', {
+    count: availableSources.length,
+    sources: availableSources.map(s => ({ type: s.type, priority: s.priority }))
+  });
+  
+  const nextSource = availableSources[0];
+  
+  if (!nextSource) {
+    addBreadcrumb(requestContext, 'Retry', 'No alternative sources available', {
+      failedOrigin: failedOrigin.name,
+      exhaustedSources: failedOrigin.sources.map(s => s.type)
+    });
+    
+    return new Response('No alternative sources available', {
+      status: 404,
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-All-Origins-Failed': 'true',
+        'X-Failed-Origin': failedOrigin.name,
+        'X-Exhausted-Sources': failedOrigin.sources.map(s => s.type).join(',')
+      }
+    });
+  }
+  
+  // Build the new origin URL
+  let newOriginUrl: string;
   try {
-    // Try to fetch from alternative sources using the Origins system
-    // This will automatically try remaining sources in the same origin,
-    // and if all fail, try other matching origins
-    const fetchOptions: FetchOptions = { excludeSources };
-    const storageResult = await fetchVideoWithOrigins(
-      path,
-      videoConfig,
-      env,
-      originalRequest,
-      fetchOptions
-    );
-    
-    if (storageResult.sourceType === 'error' || !storageResult.response) {
-      // All origins failed
-      logDebug('retryWithAlternativeOrigins', 'All alternative origins failed', {
+    if (nextSource.type === 'r2') {
+      newOriginUrl = `r2:${path}`;
+      logDebug('retryWithAlternativeOrigins', 'Using R2 storage as alternative', {
         path,
-        error: storageResult.error?.message
+        sourceType: 'r2'
       });
+    } else if (nextSource.url) {
+      const pathTemplate = (nextSource as any).pathTemplate || '{path}';
+      const resolvedPath = pathTemplate.replace('{path}', path).replace('{1}', path.split('/').pop() || '');
+      newOriginUrl = new URL(resolvedPath, nextSource.url).toString();
       
-      addBreadcrumb(requestContext, 'Retry', 'All alternative origins exhausted', {
-        error: storageResult.error?.message
+      logDebug('retryWithAlternativeOrigins', 'Using remote URL as alternative', {
+        sourceType: nextSource.type,
+        baseUrl: nextSource.url,
+        resolvedPath,
+        newOriginUrl
       });
-      
-      // Return a 404 error indicating all origins were tried
-      return new Response('Video not found in any configured origin', {
-        status: 404,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Cache-Control': 'no-store',
-          'X-All-Origins-Failed': 'true',
-          'X-Failed-Origin': failedOrigin.name,
-          'X-Failed-Source': failedSource.type,
-          'X-Retry-Attempted': 'true'
-        }
-      });
-    }
-    
-    // Success! We found the video in an alternative source
-    logDebug('retryWithAlternativeOrigins', 'Found video in alternative source', {
-      path,
-      newSourceType: storageResult.sourceType,
-      contentType: storageResult.contentType,
-      size: storageResult.size
-    });
-    
-    addBreadcrumb(requestContext, 'Retry', 'Alternative source successful', {
-      sourceType: storageResult.sourceType,
-      size: storageResult.size
-    });
-    
-    // Now we need to transform the video through CDN-CGI
-    // We need to construct the proper origin URL based on the successful source
-    
-    // Get all matching origins for this path to find which one succeeded
-    const originsArray = Array.isArray(videoConfig.origins) 
-      ? videoConfig.origins 
-      : (videoConfig.origins?.items || []);
-    
-    const matchingOrigins = originsArray.filter((origin: Origin) => {
-      try {
-        const regex = new RegExp(origin.matcher);
-        return regex.test(path);
-      } catch {
-        return false;
-      }
-    });
-    
-    // Find which origin/source combination succeeded
-    let successfulOrigin: Origin | undefined;
-    let successfulSource: Source | undefined;
-    
-    for (const origin of matchingOrigins) {
-      for (const source of origin.sources) {
-        // Check if this source was excluded
-        const isExcluded = excludeSources.some(exc => 
-          exc.originName === origin.name && 
-          exc.sourceType === source.type &&
-          (exc.sourcePriority === undefined || exc.sourcePriority === source.priority)
-        );
-        
-        // If not excluded and matches the successful source type, this is likely our source
-        if (!isExcluded && source.type === storageResult.sourceType) {
-          successfulOrigin = origin;
-          successfulSource = source;
-          break;
-        }
-      }
-      if (successfulSource) break;
-    }
-    
-    if (!successfulOrigin || !successfulSource) {
-      logDebug('retryWithAlternativeOrigins', 'Could not determine successful origin/source, returning direct response', {
-        path,
-        sourceType: storageResult.sourceType
-      });
-      
-      // Add retry headers to the response
-      const headers = new Headers(storageResult.response.headers);
-      headers.set('X-Retry-Applied', 'true');
-      headers.set('X-Failed-Origin', failedOrigin.name);
-      headers.set('X-Failed-Source', failedSource.type);
-      headers.set('X-Alternative-Source', storageResult.sourceType);
-      headers.set('X-No-Transform', 'true');
-      
-      return new Response(storageResult.response.body, {
-        status: storageResult.response.status,
-        statusText: storageResult.response.statusText,
-        headers
-      });
-    }
-    
-    // Construct the origin URL based on the source type
-    let originUrl: string;
-    
-    if (successfulSource.type === 'r2') {
-      // For R2, use the r2: protocol
-      originUrl = `r2:${path}`;
-    } else if ((successfulSource.type === 'remote' || successfulSource.type === 'fallback') && successfulSource.url) {
-      // For remote/fallback, construct the full URL
-      const baseUrl = successfulSource.url;
-      // Apply path template if available
-      const pathTemplate = (successfulSource as any).pathTemplate || '{path}';
-      const resolvedPath = pathTemplate.replace('{path}', path);
-      
-      // Construct the full URL
-      if (baseUrl.endsWith('/')) {
-        originUrl = baseUrl + (resolvedPath.startsWith('/') ? resolvedPath.slice(1) : resolvedPath);
-      } else {
-        originUrl = baseUrl + (resolvedPath.startsWith('/') ? resolvedPath : '/' + resolvedPath);
-      }
     } else {
-      throw new Error(`Cannot construct origin URL for source type: ${successfulSource.type}`);
-    }
-    
-    logDebug('retryWithAlternativeOrigins', 'Preparing transformation with alternative origin', {
-      path,
-      originUrl,
-      sourceType: successfulSource.type,
-      originName: successfulOrigin.name
-    });
-    
-    try {
-      // Build the CDN-CGI URL with the new origin
-      // Convert VideoOptions to TransformParams
-      const transformParams: TransformParams = {};
-      
-      // Copy only defined values with proper type handling
-      if (transformOptions.width !== undefined) transformParams.width = transformOptions.width;
-      if (transformOptions.height !== undefined) transformParams.height = transformOptions.height;
-      if (transformOptions.quality !== undefined) transformParams.quality = transformOptions.quality;
-      if (transformOptions.fit !== undefined) transformParams.fit = transformOptions.fit as string;
-      if (transformOptions.gravity !== undefined) transformParams.gravity = transformOptions.gravity as string;
-      if (transformOptions.format !== undefined) transformParams.format = transformOptions.format;
-      if (transformOptions.acodec !== undefined) transformParams.acodec = transformOptions.acodec as string;
-      if (transformOptions.vcodec !== undefined) transformParams.vcodec = transformOptions.vcodec as string;
-      if (transformOptions.duration !== undefined) transformParams.duration = transformOptions.duration as string;
-      if (transformOptions['start-time'] !== undefined) transformParams['start-time'] = transformOptions['start-time'] as string;
-      
-      const cdnCgiUrl = buildCdnCgiMediaUrl(
-        transformParams,
-        originUrl,
-        originalRequest.url
-      );
-      
-      logDebug('retryWithAlternativeOrigins', 'Attempting transformation with alternative origin', {
-        cdnCgiUrl,
-        originUrl,
-        transformOptions
+      addBreadcrumb(requestContext, 'Retry', 'Failed to build alternative origin URL', {
+        sourceType: nextSource.type,
+        hasUrl: !!nextSource.url,
+        source: JSON.stringify(nextSource)
       });
       
-      // Transform through CDN-CGI
-      const transformedResponse = await cacheResponse(
-        originalRequest,
-        async () => fetch(cdnCgiUrl)
-      );
-      
-      if (transformedResponse.ok) {
-        logDebug('retryWithAlternativeOrigins', 'Transformation successful with alternative source', {
-          status: transformedResponse.status,
-          contentType: transformedResponse.headers.get('Content-Type'),
-          originUrl,
-          cdnCgiUrl
-        });
-        
-        // Add retry success headers
-        const headers = new Headers(transformedResponse.headers);
-        headers.set('X-Retry-Applied', 'true');
-        headers.set('X-Retry-Success', 'true');
-        headers.set('X-Failed-Origin', failedOrigin.name);
-        headers.set('X-Failed-Source', failedSource.type);
-        headers.set('X-Alternative-Source', storageResult.sourceType);
-        
-        return new Response(transformedResponse.body, {
-          status: transformedResponse.status,
-          statusText: transformedResponse.statusText,
-          headers
-        });
-      } else {
-        // Transformation failed with alternative source
-        logDebug('retryWithAlternativeOrigins', 'Transformation failed with alternative source', {
-          status: transformedResponse.status,
-          statusText: transformedResponse.statusText,
-          originUrl
-        });
-        
-        // Return the transformation error
-        return transformedResponse;
-      }
-    } catch (transformError) {
-      logErrorWithContext(
-        'Error transforming with alternative source',
-        transformError,
-        { path, originUrl },
-        'retryWithAlternativeOrigins'
-      );
-      
-      // Return error response
-      return new Response('Failed to transform video from alternative source', {
+      return new Response('Cannot determine alternative origin URL', { 
         status: 500,
         headers: {
-          'Content-Type': 'text/plain',
           'Cache-Control': 'no-store',
-          'X-Transform-Error': 'true',
-          'X-Error-Message': transformError instanceof Error ? transformError.message : 'Unknown error'
+          'X-Error': 'InvalidAlternativeSource',
+          'X-Source-Type': nextSource.type
         }
       });
     }
   } catch (error) {
-    logErrorWithContext(
-      'Error in retry with alternative origins',
-      error,
-      { path, failedOrigin: failedOrigin.name },
-      'retryWithAlternativeOrigins'
-    );
+    logDebug('retryWithAlternativeOrigins', 'Error building alternative origin URL', {
+      error: error instanceof Error ? error.message : String(error),
+      sourceType: nextSource.type,
+      sourceUrl: nextSource.url
+    });
     
-    // Return error response
-    return new Response('Internal error during origin retry', {
+    addBreadcrumb(requestContext, 'Retry', 'Exception building alternative origin URL', {
+      error: error instanceof Error ? error.message : String(error),
+      sourceType: nextSource.type
+    });
+    
+    return new Response('Failed to construct alternative origin URL', { 
       status: 500,
       headers: {
-        'Content-Type': 'text/plain',
         'Cache-Control': 'no-store',
-        'X-Retry-Error': 'true',
-        'X-Error-Message': error instanceof Error ? error.message : 'Unknown error'
+        'X-Error': 'URLConstructionFailed',
+        'X-Error-Message': error instanceof Error ? error.message : String(error)
       }
     });
   }
+  
+  // Build new CDN-CGI URL with ALL the original transform parameters
+  const transformParams: TransformParams = {};
+  Object.entries(transformOptions).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && key !== 'customData') {
+      transformParams[key] = value as TransformParamValue;
+    }
+  });
+  
+  const cdnCgiUrl = buildCdnCgiMediaUrl(transformParams, newOriginUrl, originalRequest.url);
+  
+  logDebug('retryWithAlternativeOrigins', 'Retrying with alternative origin', {
+    cdnCgiUrl,
+    newOriginUrl,
+    sourceType: nextSource.type,
+    transformParams,
+    derivative: transformParams.derivative
+  });
+  
+  addBreadcrumb(requestContext, 'Retry', 'Attempting transformation with alternative source', {
+    sourceType: nextSource.type,
+    derivative: transformOptions.derivative,
+    hasTransformParams: Object.keys(transformParams).length > 0
+  });
+  
+  // Retry the transformation
+  let response: Response;
+  try {
+    response = await fetch(cdnCgiUrl);
+  } catch (fetchError) {
+    logDebug('retryWithAlternativeOrigins', 'Fetch error during retry', {
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      cdnCgiUrl,
+      sourceType: nextSource.type
+    });
+    
+    addBreadcrumb(requestContext, 'Retry', 'Fetch failed for alternative source', {
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      sourceType: nextSource.type
+    });
+    
+    return new Response('Failed to fetch from alternative source', {
+      status: 502,
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-Error': 'AlternativeFetchFailed',
+        'X-Alternative-Source': nextSource.type,
+        'X-Error-Message': fetchError instanceof Error ? fetchError.message : String(fetchError)
+      }
+    });
+  }
+  
+  logDebug('retryWithAlternativeOrigins', 'Alternative source response received', {
+    status: response.status,
+    ok: response.ok,
+    sourceType: nextSource.type,
+    contentType: response.headers.get('Content-Type'),
+    contentLength: response.headers.get('Content-Length')
+  });
+  
+  if (response.ok) {
+    // Clone the response to avoid body consumption issues
+    const responseClone = response.clone();
+    
+    addBreadcrumb(requestContext, 'Retry', 'Alternative source succeeded', {
+      sourceType: nextSource.type,
+      status: response.status,
+      contentType: response.headers.get('Content-Type'),
+      contentLength: response.headers.get('Content-Length'),
+      derivative: transformOptions.derivative
+    });
+    
+    // Add headers to indicate retry was successful
+    const headers = new Headers(response.headers);
+    headers.set('X-Retry-Applied', 'true');
+    headers.set('X-Alternative-Source', nextSource.type);
+    headers.set('X-Failed-Source', failedSource.type);
+    headers.set('X-Failed-Origin', failedOrigin.name);
+    
+    const finalResponse = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+    
+    // Store in KV if enabled
+    const cacheConfig = CacheConfigurationManager.getInstance();
+    if (cacheConfig.isKVCacheEnabled() && (env as any).executionCtx?.waitUntil) {
+      logDebug('retryWithAlternativeOrigins', 'Storing successful retry in KV cache', {
+        path,
+        derivative: transformOptions.derivative,
+        sourceType: nextSource.type
+      });
+      
+      (env as any).executionCtx.waitUntil(
+        storeInKVCache(env, path, responseClone, transformOptions as TransformOptions)
+          .then(stored => {
+            if (stored) {
+              logDebug('retryWithAlternativeOrigins', 'Successfully stored retry response in KV', {
+                path,
+                derivative: transformOptions.derivative
+              });
+            }
+          })
+          .catch(err => {
+            logDebug('retryWithAlternativeOrigins', 'Failed to store retry response in KV', {
+              error: err instanceof Error ? err.message : String(err),
+              path
+            });
+          })
+      );
+    }
+    
+    return finalResponse;
+  }
+  
+  // Alternative source also returned an error
+  addBreadcrumb(requestContext, 'Retry', 'Alternative source failed', {
+    sourceType: nextSource.type,
+    status: response.status,
+    statusText: response.statusText
+  });
+  
+  // Add headers to indicate what was attempted
+  const enhancedHeaders = new Headers(response.headers);
+  enhancedHeaders.set('X-Retry-Attempted', 'true');
+  enhancedHeaders.set('X-Alternative-Source', nextSource.type);
+  enhancedHeaders.set('X-Failed-Source', failedSource.type);
+  enhancedHeaders.set('X-Failed-Origin', failedOrigin.name);
+  
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: enhancedHeaders
+  });
 }

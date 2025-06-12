@@ -161,13 +161,39 @@ export class LoggingConfigurationManager {
    * Check if a component should be logged
    */
   public shouldLogComponent(componentName: string): boolean {
-    // If specific components are enabled, only log those
+    // If specific components are enabled, check if this component matches
     if (this.config.enabledComponents.length > 0) {
-      return this.config.enabledComponents.includes(componentName);
+      return this.matchesComponentPatterns(componentName, this.config.enabledComponents);
     }
     
-    // Otherwise, log all components that aren't specifically disabled
-    return !this.config.disabledComponents.includes(componentName);
+    // Otherwise, log all components that don't match disabled patterns
+    return !this.matchesComponentPatterns(componentName, this.config.disabledComponents);
+  }
+  
+  /**
+   * Check if a component name matches any of the patterns
+   * Supports exact match and wildcard patterns (e.g., "Cache*", "*Utils", "Cache*Storage*", etc.)
+   */
+  private matchesComponentPatterns(componentName: string, patterns: string[]): boolean {
+    for (const pattern of patterns) {
+      // Exact match
+      if (pattern === componentName) {
+        return true;
+      }
+      
+      // Convert wildcard pattern to regex
+      // Replace * with .* and escape other regex special characters
+      const regexPattern = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special chars except *
+        .replace(/\*/g, '.*'); // Replace * with .*
+      
+      const regex = new RegExp(`^${regexPattern}$`);
+      if (regex.test(componentName)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**
@@ -223,10 +249,35 @@ export class LoggingConfigurationManager {
   }
 
   /**
+   * Validate a configuration object
+   * @param config Configuration to validate
+   * @returns Validation result with errors if any
+   */
+  public validateConfig(config: unknown): { valid: boolean; errors?: string[] } {
+    try {
+      LoggingConfigSchema.parse(config);
+      return { valid: true };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors = error.errors.map(issue => {
+          const path = issue.path.join('.');
+          const message = issue.message;
+          return `${path}: ${message}`;
+        });
+        return { valid: false, errors };
+      }
+      return { valid: false, errors: ['Unknown validation error'] };
+    }
+  }
+
+  /**
    * Update the configuration
    */
   public updateConfig(newConfig: Partial<LoggingConfiguration>): LoggingConfiguration {
     try {
+      // Store the previous configuration for logging
+      const previousConfig = { ...this.config };
+      
       // Merge the new config with the existing one
       const mergedConfig = {
         ...this.config,
@@ -235,26 +286,76 @@ export class LoggingConfigurationManager {
       
       // Validate the merged configuration
       this.config = LoggingConfigSchema.parse(mergedConfig);
-      return this.config;
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const issues = error.errors.map(issue => 
-          `${issue.path.join('.')}: ${issue.message}`
-        ).join(', ');
-        
-        throw ConfigurationError.invalidValue(
-          'loggingConfig',
-          newConfig,
-          'Valid logging configuration',
-          { additionalInfo: `Validation errors: ${issues}` }
-        );
+      
+      // Log configuration changes
+      const changes: Record<string, { old: any, new: any }> = {};
+      let hasChanges = false;
+      
+      // Check for changes in key properties
+      if (previousConfig.level !== this.config.level) {
+        changes.level = { old: previousConfig.level, new: this.config.level };
+        hasChanges = true;
+      }
+      if (previousConfig.format !== this.config.format) {
+        changes.format = { old: previousConfig.format, new: this.config.format };
+        hasChanges = true;
+      }
+      if (previousConfig.sampleRate !== this.config.sampleRate) {
+        changes.sampleRate = { old: previousConfig.sampleRate, new: this.config.sampleRate };
+        hasChanges = true;
+      }
+      if (previousConfig.breadcrumbs.enabled !== this.config.breadcrumbs.enabled) {
+        changes.breadcrumbsEnabled = { old: previousConfig.breadcrumbs.enabled, new: this.config.breadcrumbs.enabled };
+        hasChanges = true;
       }
       
-      throw ConfigurationError.invalidValue(
-        'loggingConfig',
-        newConfig,
-        'Valid logging configuration'
-      );
+      // Log changes if any occurred
+      if (hasChanges) {
+        // Use console.info to avoid circular dependency with logger
+        console.info('Logging configuration updated', {
+          source: 'LoggingConfigurationManager',
+          changes,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      return this.config;
+    } catch (error) {
+      // Store validation errors for logging
+      let validationErrors: string[] = [];
+      
+      if (error instanceof z.ZodError) {
+        validationErrors = error.errors.map(issue => 
+          `${issue.path.join('.')}: ${issue.message}`
+        );
+        
+        // Log validation failure
+        console.error('Logging configuration validation failed', {
+          source: 'LoggingConfigurationManager',
+          errors: validationErrors,
+          invalidConfig: newConfig,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Attempt graceful fallback - revert to previous config
+        console.warn('Reverting to previous logging configuration', {
+          source: 'LoggingConfigurationManager',
+          previousLevel: this.config.level,
+          attemptedConfig: newConfig
+        });
+        
+        // Don't throw - just return current config
+        return this.config;
+      }
+      
+      // For unknown errors, log and return current config
+      console.error('Unknown error updating logging configuration', {
+        source: 'LoggingConfigurationManager',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
+      });
+      
+      return this.config;
     }
   }
 }

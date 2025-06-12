@@ -7,7 +7,6 @@
 import { EnvVariables } from '../config/environmentConfig';
 import { tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { addBreadcrumb } from '../utils/requestContext';
 import {
   getPresignedUrl,
@@ -18,19 +17,11 @@ import {
   PresignedUrlCacheEntry
 } from '../services/presignedUrlCacheService';
 import { getPresignedUrlKV } from './flexibleBindings';
+import { createCategoryLogger } from './logger';
 
-/**
- * Helper for consistent logging
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'PresignedUrlUtils', message, data);
-  } else {
-    console.debug(`[PresignedUrlUtils] ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for PresignedUrlUtils
+const logger = createCategoryLogger('PresignedUrlUtils');
+const { debug: logDebug } = logger;
 
 /**
  * Interface for AWS authentication configuration

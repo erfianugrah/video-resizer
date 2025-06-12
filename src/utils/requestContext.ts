@@ -450,6 +450,48 @@ export function getCurrentContext(): RequestContext | undefined {
 }
 
 /**
+ * Clear the current request context
+ * This should be called at the end of request processing to prevent memory leaks
+ * Cleans up activeStreams and removes the context reference
+ */
+export function clearCurrentContext(): void {
+  if (currentRequestContext) {
+    // Clean up any active streams
+    if (currentRequestContext.activeStreams && currentRequestContext.activeStreams.size > 0) {
+      logDebug('Cleaning up active streams', { 
+        count: currentRequestContext.activeStreams.size,
+        requestId: currentRequestContext.requestId 
+      });
+      
+      // Abort all active streams
+      for (const [key, controller] of currentRequestContext.activeStreams) {
+        try {
+          controller.abort();
+        } catch (err) {
+          // Log but don't throw - we're in cleanup
+          logWarn('Error aborting stream during cleanup', { 
+            key, 
+            error: err instanceof Error ? err.message : String(err) 
+          });
+        }
+      }
+      
+      // Clear the map
+      currentRequestContext.activeStreams.clear();
+    }
+    
+    logDebug('Cleared request context', { 
+      requestId: currentRequestContext.requestId,
+      url: currentRequestContext.url,
+      elapsedMs: performance.now() - currentRequestContext.startTime
+    });
+    
+    // Clear the context reference
+    currentRequestContext = undefined;
+  }
+}
+
+/**
  * Interface for client diagnostics information
  */
 export interface ClientDiagnosticsInfo {

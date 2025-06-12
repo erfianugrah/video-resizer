@@ -6,25 +6,16 @@ import { getCacheConfig } from '../config';
 import { cacheConfig } from '../config/CacheConfigurationManager';
 import { EnvVariables } from '../config/environmentConfig';
 import { getTransformedVideo, storeTransformedVideo, generateKVKey } from '../services/kvStorageService';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { addBreadcrumb } from '../utils/requestContext';
 import { normalizeUrlForCaching } from './urlVersionUtils';
 import { determineTTL } from './determineTTL';
 import { getCacheKV } from './flexibleBindings';
+import { createCategoryLogger } from './logger';
 
-/**
- * Helper for logging debug messages
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'KVCacheUtils', message, data);
-  } else {
-    console.debug(`KVCacheUtils: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for KVCacheUtils
+const logger = createCategoryLogger('KVCacheUtils');
+const { debug: logDebug } = logger;
 
 /**
  * Interface for transformation options

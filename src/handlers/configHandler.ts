@@ -6,12 +6,16 @@
 
 import { ConfigurationService, WorkerConfiguration } from '../services/configurationService';
 import { ConfigurationError } from '../errors';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../utils/pinoLogger';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
 import { createRequestContext } from '../utils/requestContext';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { z } from 'zod';
 import { getKVNamespace } from '../utils/flexibleBindings';
+import { createCategoryLogger } from '../utils/logger';
+
+// Create a category-specific logger for ConfigHandler
+const logger = createCategoryLogger('ConfigHandler');
+const { debug: logDebug } = logger;
 
 // Environment interface with KV binding and secret
 interface Env {
@@ -20,19 +24,6 @@ interface Env {
   ENVIRONMENT?: string;
   CONFIG_KV_NAME?: string;
   [key: string]: any;
-}
-
-/**
- * Helper for logging debug messages
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'ConfigHandler', message, data);
-  } else {
-    console.debug(`ConfigHandler: ${message}`, data || {});
-  }
 }
 
 // logError function has been replaced with direct use of logErrorWithContext

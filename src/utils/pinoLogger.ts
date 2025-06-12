@@ -182,13 +182,12 @@ export function debug(
   // Always add breadcrumb for tracking, regardless of log level or debug settings
   const breadcrumb = addBreadcrumb(context, category, message, data);
   
-  // Skip debug logs if:
-  // 1. The logger's level is higher than debug OR
-  // 2. Debug is not enabled in the request context
+  // Skip debug logs based ONLY on logger level
+  // This unifies debug control to use only the log level configuration
   const loggerLevel = logger.level as string;
   const isDebugAllowedByLevel = loggerLevel === 'debug' || loggerLevel === 'trace';
   
-  if (!isDebugAllowedByLevel || !context.debugEnabled) {
+  if (!isDebugAllowedByLevel) {
     return breadcrumb;
   }
   

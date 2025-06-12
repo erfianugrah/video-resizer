@@ -10,70 +10,12 @@ import { DebugConfigurationManager } from './DebugConfigurationManager';
 import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
 
-// Import from our own logger module
-import { error as pinoError, debug as pinoDebug, info as pinoInfo, warn as pinoWarn } from '../utils/pinoLogger';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger } from '../utils/pinoLogger';
+// Use centralized logger
+import { createCategoryLogger } from '../utils/logger';
 
-/**
- * Log an error message - helper for config module
- * Falls back to console.error during initialization before logging system is available
- */
-function logError(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, 'Config', message, data);
-  } else {
-    // Direct console.error is appropriate only during initialization
-    console.error(`Config: ${message}`, data || {});
-  }
-}
-
-/**
- * Log a debug message - helper for config module
- * Falls back to console.log during initialization before logging system is available
- */
-function logDebug(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoDebug(requestContext, logger, 'Config', message, data);
-  } else {
-    // Direct console.log is appropriate only during initialization
-    console.log(`Config DEBUG: ${message}`, data || {});
-  }
-}
-
-/**
- * Log an info message - helper for config module
- * Falls back to console.info during initialization before logging system is available
- */
-function logInfo(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoInfo(requestContext, logger, 'Config', message, data);
-  } else {
-    // Direct console.info is appropriate only during initialization
-    console.info(`Config INFO: ${message}`, data || {});
-  }
-}
-
-/**
- * Log a warning message - helper for config module
- * Falls back to console.warn during initialization before logging system is available
- */
-function logWarn(message: string, data?: Record<string, unknown>): void {
-  const requestContext = getCurrentContext();
-  if (requestContext) {
-    const logger = createLogger(requestContext);
-    pinoWarn(requestContext, logger, 'Config', message, data);
-  } else {
-    // Direct console.warn is appropriate only during initialization
-    console.warn(`Config WARN: ${message}`, data || {});
-  }
-}
+// Create a category-specific logger for Config
+const logger = createCategoryLogger('Config');
+const { debug: logDebug, info: logInfo, warn: logWarn, error: logError } = logger;
 
 /**
  * Interface for the configuration system

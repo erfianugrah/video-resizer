@@ -9,8 +9,12 @@ import { DebugInfo } from '../utils/debugHeadersUtils';
 import type { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { getFromKVCache, storeInKVCache } from '../utils/kvCacheUtils';
 import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { createLogger, debug as pinoDebug } from '../utils/pinoLogger';
 import { getCacheKV } from '../utils/flexibleBindings';
+import { createCategoryLogger } from '../utils/logger';
+
+// Create a category-specific logger for VideoKVCache
+const kvCacheLogger = createCategoryLogger('VideoKVCache');
+const { debug: logDebug } = kvCacheLogger;
 
 /**
  * Wrapper for the video transformation process that integrates with KV cache
@@ -29,18 +33,6 @@ export async function transformVideoWithKVCache(
   debugInfo?: DebugInfo,
   env?: EnvVariables
 ): Promise<Response> {
-  // Get the current request context
-  const requestContext = getCurrentContext();
-  const logger = requestContext ? createLogger(requestContext) : undefined;
-  
-  // Helper for logging
-  function logDebug(message: string, data?: Record<string, unknown>): void {
-    if (requestContext && logger) {
-      pinoDebug(requestContext, logger, 'VideoKVCache', message, data);
-    } else {
-      console.debug(`VideoKVCache: ${message}`, data || {});
-    }
-  }
   
   // Only try to use KV cache if env is provided
   if (!env) {
@@ -176,19 +168,10 @@ export async function listVideoVariants(
     const { listVariants } = await import('./kvStorageService');
     return await listVariants(kvNamespace, sourcePath);
   } catch (err) {
-    const context = getCurrentContext();
-    if (context) {
-      const logger = createLogger(context);
-      logger.error('Error listing video variants', {
-        sourcePath,
-        error: err instanceof Error ? err.message : String(err)
-      });
-    } else {
-      console.error('Error listing video variants', {
-        sourcePath,
-        error: err instanceof Error ? err.message : String(err)
-      });
-    }
+    kvCacheLogger.error('Error listing video variants', {
+      sourcePath,
+      error: err instanceof Error ? err.message : String(err)
+    });
     return [];
   }
 }
@@ -214,19 +197,10 @@ export async function deleteVideoVariant(
     await kvNamespace.delete(key);
     return true;
   } catch (err) {
-    const context = getCurrentContext();
-    if (context) {
-      const logger = createLogger(context);
-      logger.error('Error deleting video variant', {
-        key,
-        error: err instanceof Error ? err.message : String(err)
-      });
-    } else {
-      console.error('Error deleting video variant', {
-        key,
-        error: err instanceof Error ? err.message : String(err)
-      });
-    }
+    kvCacheLogger.error('Error deleting video variant', {
+      key,
+      error: err instanceof Error ? err.message : String(err)
+    });
     return false;
   }
 }

@@ -1,85 +1,94 @@
-# Request Coalescing Implementation
+# Request Coalescing
 
 ## Overview
 
-Request coalescing (also known as the "single-flight" pattern) has been implemented in the video-resizer to handle multiple simultaneous requests efficiently and reliably. This implementation addresses two critical issues:
+Request coalescing prevents duplicate origin fetches when multiple concurrent requests arrive for the same video transformation. Instead of making multiple identical requests to the origin, subsequent requests wait for and share the response from the first request.
 
-1. **Partial Content Storage Bug**: Previously, when a range request (HTTP 206) arrived first, only partial content was stored in KV, causing corruption for subsequent requests.
-2. **Race Conditions**: Under high load, multiple simultaneous requests could compete to fetch and store the same resource, causing KV write conflicts.
+## How It Works
 
-## Implementation Details
+### In-Flight Tracking
 
-### Core Components
-
-1. **In-Flight Request Tracking**:
-   - A static `Map<string, InFlightRequest>` stores all in-progress origin fetches
-   - Enhanced with metadata for better observability (request count, timestamps, etc.)
-   - Unique request IDs for tracking and diagnostics
-
-2. **Cache Key Generation**:
-   - Canonical cache key format ensures consistent access patterns
-   - Handles video derivatives and IMQuery parameters
-   - Matched to KV storage key format to prevent duplicates
-
-3. **Response Handling**:
-   - Full origin response is cloned immediately before any processing
-   - Ensures the complete 200 OK response is stored in KV
-   - Range requests (206 Partial Content) are processed correctly for clients
-
-4. **Error Handling**:
-   - Comprehensive try/catch blocks throughout the flow
-   - Fallback strategies for each failure point
-   - Recovery logic for unsatisfiable range requests
-   - Enhanced logging for diagnostics
-
-### Key Features
-
-- **Request Coalescing**: Multiple simultaneous requests for the same resource share a single origin fetch
-- **Reference Counting**: Tracks how many requests are using each in-flight request
-- **Automatic Cleanup**: In-flight requests are removed from the map after completion
-- **Retry Logic**: KV storage operations can retry with exponential backoff for transient errors
-- **Diagnostics**: Enhanced logging and tracing headers for better observability
-
-## Flow Diagram
-
-```
-Request ──┬─► KV Cache Hit ──► Return Cached Response
-          │
-          └─► KV Cache Miss ──┬─► Existing In-Flight Request ──► Wait & Return Response
-                             └─► No In-Flight Request ──► Execute Handler ──► Store in KV ──► Return Response
+The system maintains a map of ongoing transformations:
+```typescript
+const inFlightTransformations = new Map<string, Promise<Response>>();
 ```
 
-## Error Handling
+### Transform Key Generation
 
-1. **Range Request Errors**:
-   - Invalid ranges are detected and adjusted
-   - Unsatisfiable ranges fall back to full responses
-   - Diagnostic headers track recovery strategies
+Each unique transformation is identified by a key containing:
+- Origin name
+- Source path
+- Transformation parameters (width, height, quality, format, etc.)
 
-2. **KV Storage Errors**:
-   - Retries with exponential backoff for rate limits and conflicts
-   - Fallback strategies when retries fail
-   - Background execution via waitUntil to prevent blocking
+```typescript
+const transformKey = `${origin}:${path}:${JSON.stringify(transformParams)}`;
+```
 
-3. **Origin Fetch Errors**:
-   - Propagated to all waiting requests
-   - Detailed logging with request IDs for tracing
-   - In-flight map cleanup even on errors
+### Request Flow
 
-## Testing
+1. **First Request**: Creates a new transformation promise and stores it in the map
+2. **Concurrent Requests**: Check for existing transformation and await the same promise
+3. **Completion**: The transformation is removed from the map when complete
+4. **Response Sharing**: All waiting requests receive cloned responses
 
-The request coalescing implementation has been tested for:
+## Implementation
 
-1. Basic coalescing functionality (single handler execution)
-2. Error propagation to all waiting requests
-3. Range request handling during coalescing
-4. Key separation for different resource paths
-5. Performance under simultaneous request load
+### Detection and Joining
+```typescript
+const existingTransform = inFlightTransformations.get(transformKey);
+
+if (existingTransform) {
+  // Join existing transformation
+  response = await existingTransform;
+} else {
+  // Create new transformation
+  const transformPromise = transformVideo(...);
+  inFlightTransformations.set(transformKey, transformPromise);
+  
+  try {
+    response = await transformPromise;
+  } finally {
+    inFlightTransformations.delete(transformKey);
+  }
+}
+```
+
+### Response Cloning
+
+To prevent stream lock errors, coalesced requests receive cloned responses:
+```typescript
+if (existingTransform) {
+  finalResponse = response.clone();
+}
+```
 
 ## Benefits
 
-- **Reduced Origin Load**: Multiple clients share a single fetch
-- **Prevented Race Conditions**: Single-writer pattern avoids KV conflicts
-- **Improved Cache Integrity**: Only full responses are stored
-- **Better Error Recovery**: Graceful fallbacks for edge cases
-- **Enhanced Observability**: Detailed logging and diagnostics
+1. **Reduced Origin Load**: Prevents duplicate requests to origin servers
+2. **Improved Performance**: Subsequent requests complete faster
+3. **Resource Efficiency**: Saves bandwidth and processing power
+4. **Automatic Deduplication**: No configuration required
+
+## Monitoring
+
+The system logs coalescing activity:
+- When requests join existing transformations
+- The number of in-flight transformations
+- When transformations complete and are cleaned up
+
+## Edge Cases
+
+### Request Cancellation
+If the first request is cancelled, waiting requests will receive an error. The system handles this gracefully without affecting other transformations.
+
+### Memory Management
+The in-flight map automatically cleans up completed transformations to prevent memory leaks.
+
+### Error Propagation
+If the original transformation fails, all waiting requests receive the same error response.
+
+## Performance Considerations
+
+- **Memory Usage**: Each in-flight transformation holds a promise, not the full response
+- **Scalability**: The map size is limited by the number of unique concurrent transformations
+- **Timeout Handling**: Transformations that exceed timeouts are automatically cleaned up
