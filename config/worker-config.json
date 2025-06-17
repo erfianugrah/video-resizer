@@ -114,7 +114,7 @@
 						}
 					],
 					"ttl": {
-						"ok": 3600,
+						"ok": 2629800,
 						"redirects": 300,
 						"clientError": 60,
 						"serverError": 10
