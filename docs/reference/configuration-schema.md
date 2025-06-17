@@ -207,7 +207,7 @@ The cache configuration controls global caching settings.
 ```typescript
 interface CacheConfig {
   enableKVCache: boolean;     // Enable KV cache storage
-  storeIndefinitely: boolean; // Store KV items indefinitely without TTL expiration
+  storeIndefinitely: boolean; // Store KV items indefinitely without TTL expiration (TTL resolved dynamically from origin config)
   debug: boolean;             // Enable cache debug logging
   defaultMaxAge: number;      // Default Cache-Control max-age
   respectOriginHeaders: boolean; // Respect origin Cache-Control

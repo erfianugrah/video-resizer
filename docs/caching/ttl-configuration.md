@@ -113,3 +113,58 @@ To verify that the correct TTLs are being applied:
    - Related content should have similar TTLs
 
 By following these guidelines and implementing one of the provided solutions, you'll have a more intuitive and consistent TTL configuration system that's easier to maintain and reason about.
+
+## Indefinite Storage and Dynamic TTL Resolution
+
+When using `storeIndefinitely: true` in your cache configuration, the system implements a dynamic TTL resolution mechanism:
+
+### How It Works
+
+1. **KV Storage**: Items are stored permanently in Cloudflare KV without expiration
+2. **TTL Resolution**: When serving cached content, the TTL for Cache-Control headers is resolved dynamically:
+   - The system matches the content path to its origin configuration
+   - Uses the origin-specific TTL values (e.g., `ttl.ok` for successful responses)
+   - Falls back to global cache TTL if no origin matches
+
+### Benefits
+
+- **Configurable TTLs**: Change TTL values in configuration without re-caching content
+- **Origin-Specific**: Each origin can have its own TTL settings
+- **No Re-caching**: Update browser cache durations without touching KV storage
+
+### Example
+
+```json
+{
+  "cache": {
+    "storeIndefinitely": true,
+    "ttl": {
+      "ok": 86400,  // Global fallback: 24 hours
+      "redirects": 300,
+      "clientError": 60,
+      "serverError": 10
+    }
+  },
+  "video": {
+    "origins": {
+      "items": [
+        {
+          "name": "bynder",
+          "matcher": "^/m/([^/]+)/original/(.+\\.mp4)$",
+          "ttl": {
+            "ok": 3600,  // Origin-specific: 1 hour
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+In this example:
+- Content matching the "bynder" origin will have `Cache-Control: public, max-age=3600`
+- Content not matching any origin will use the global TTL: `Cache-Control: public, max-age=86400`
+- The KV items themselves never expire, but browser caching is still controlled

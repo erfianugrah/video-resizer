@@ -147,6 +147,16 @@ When `storeIndefinitely` is set to `true`:
 4. With `refreshIndefiniteStorage: false` (recommended), no KV write operations are performed for indefinite storage items, eliminating potential race conditions and rate limiting issues
 5. With `refreshIndefiniteStorage: true`, metadata is still refreshed even for indefinite storage items (not recommended for production)
 
+### Dynamic TTL Resolution
+
+When serving cached content with indefinite storage, the system now dynamically resolves the TTL value for Cache-Control headers:
+
+1. **Origin-Based TTL**: The system matches the cached content path to its origin configuration and uses the origin-specific TTL
+2. **Global Fallback**: If no origin matches, it falls back to the global cache TTL configuration
+3. **Configurable**: TTL values can be changed in configuration without re-caching content
+
+For example, if a video matches the "bynder" origin with `ttl.ok: 3600`, the response will have `Cache-Control: public, max-age=3600` even though the KV item never expires.
+
 ### Use Cases
 
 This setting is ideal for:

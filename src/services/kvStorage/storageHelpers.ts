@@ -454,7 +454,40 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
   
   // Check for origin TTL in customData
   const hasOriginTtl = !!metadata.customData?.originTtl;
-  const originTtl = hasOriginTtl ? (metadata.customData?.originTtl as number) : null;
+  let originTtl = hasOriginTtl ? (metadata.customData?.originTtl as number) : null;
+  
+  // For indefinite storage without originTtl, dynamically resolve from origin config
+  if (isIndefiniteStorage && !originTtl) {
+    try {
+      // Extract path from key - key format varies but path is between "video:" and optional ":"
+      const keyParts = key.split(':');
+      const path = keyParts[1]; // The path is typically the second part
+      
+      if (path) {
+        const { VideoConfigurationManager } = require('../../config');
+        const { OriginResolver } = require('../origins/OriginResolver');
+        
+        const videoConfig = VideoConfigurationManager.getInstance();
+        const config = videoConfig.getConfig();
+        const resolver = new OriginResolver(config);
+        
+        // Add leading slash if not present
+        const fullPath = path.startsWith('/') ? path : `/${path}`;
+        const matchedOrigin = resolver.findMatchingOrigin(fullPath);
+        
+        if (matchedOrigin?.ttl?.ok) {
+          originTtl = matchedOrigin.ttl.ok;
+          headers.set('X-Origin-Match', matchedOrigin.name);
+        } else if (config.cache?.ttl?.ok) {
+          originTtl = config.cache.ttl.ok;
+          headers.set('X-TTL-Fallback', 'global-cache');
+        }
+      }
+    } catch (error) {
+      // Silent fallback - no hardcoded values
+      console.error('[storageHelpers] Failed to resolve origin TTL:', error);
+    }
+  }
   
   // With our fix, expiresAt should always be set for TTL countdown
   // But if it's missing, we have fallbacks
@@ -463,9 +496,9 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
     const remainingTtl = Math.max(0, Math.floor((metadata.expiresAt - now) / 1000));
     
     // Add diagnostic headers
-    if (hasOriginTtl) {
-      headers.set('X-Origin-TTL', originTtl!.toString());
-      headers.set('X-Original-TTL', originTtl!.toString());
+    if (originTtl) {
+      headers.set('X-Origin-TTL', originTtl.toString());
+      headers.set('X-Original-TTL', originTtl.toString());
     }
     
     headers.set('X-TTL-Source', isIndefiniteStorage ? 'origin-indefinite-countdown' : 'expires-at');
@@ -473,8 +506,13 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
       headers.set('X-Storage-Type', 'indefinite');
     }
     
-    // Always use the remaining TTL for Cache-Control to enable countdown
-    headers.set('Cache-Control', `public, max-age=${remainingTtl}`);
+    // For indefinite storage with resolved originTtl, use it instead of countdown
+    if (isIndefiniteStorage && originTtl) {
+      headers.set('Cache-Control', `public, max-age=${originTtl}`);
+    } else {
+      // Use countdown TTL otherwise
+      headers.set('Cache-Control', `public, max-age=${remainingTtl}`);
+    }
     
     // Log the TTL calculation for debugging
     try {
@@ -493,10 +531,10 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
     }
   }
   // Fallback to origin TTL if available but no expiresAt (shouldn't happen with our changes)
-  else if (hasOriginTtl) {
+  else if (originTtl) {
     headers.set('Cache-Control', `public, max-age=${originTtl}`);
     headers.set('X-TTL-Source', 'origin-config-fixed');
-    headers.set('X-Origin-TTL', originTtl!.toString());
+    headers.set('X-Origin-TTL', originTtl.toString());
     
     // Mark indefinite storage in headers
     if (isIndefiniteStorage) {
