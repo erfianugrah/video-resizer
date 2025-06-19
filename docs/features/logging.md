@@ -522,13 +522,40 @@ grep -E '"level":|"pino":' config/worker-config.json
 npm run deploy:config
 ```
 
+## Log Level Guidelines
+
+### What to Log at Each Level
+
+#### INFO Level:
+- Request start/complete
+- Cache misses (important for monitoring)
+- Transform completion with timing
+- Performance warnings (>1000ms threshold)
+- Origin fallback attempts
+- Configuration changes
+- CDN-CGI URL creation
+
+#### DEBUG Level:
+- IMQuery detection and derivative matching
+- Cache hits (high volume)
+- Configuration loading details
+- Environment detection
+- Request routing decisions
+- Transform parameter calculations
+
+#### TRACE Level (future):
+- Breadcrumbs (currently at debug)
+- All intermediate processing steps
+- Request header details
+- Detailed timing breakdowns
+
 ## Best Practices
 
 1. **Use Appropriate Log Levels**:
-   - `debug`: Detailed information for developers
-   - `info`: General operational information
-   - `warn`: Warning conditions that don't cause errors
-   - `error`: Error conditions that affect functionality
+   - `error`: Only for actual failures that prevent operation
+   - `warn`: For degraded performance or fallback behavior
+   - `info`: For key business operations and state changes
+   - `debug`: For detailed diagnostic information
 
 2. **Structure Data Appropriately**:
    - Use the message for concise, human-readable information
@@ -551,6 +578,26 @@ npm run deploy:config
    - Use debug level for high-volume diagnostics
    - Consider sampling for high-traffic production environments
    - Avoid logging large objects or binary data
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Log level changes not taking effect**:
+   - Ensure BOTH `logging.level` AND `logging.pino.level` are set to the same value
+   - The pino level overrides the main level if they differ
+
+2. **Missing component logs (e.g., CDN-CGI)**:
+   - Check if `enabledComponents` array is populated - it acts as an allowlist
+   - Empty the array to log all components: `"enabledComponents": []`
+
+3. **Too many breadcrumb logs**:
+   - Set `breadcrumbs.logAdditions: false` to collect but not log breadcrumbs
+   - This alone can reduce logs by ~37%
+
+4. **Can't see debug logs in production**:
+   - Add `?debug=true` to request URL
+   - Or add header `X-Debug-Logging: true`
 
 ## Examples
 
