@@ -168,7 +168,8 @@ describe('Logging System Integration', () => {
       loggingConfig.updateConfig({
         breadcrumbs: {
           enabled: false,
-          maxItems: 50
+          maxItems: 50,
+          logAdditions: false
         }
       });
       
@@ -261,7 +262,8 @@ describe('Logging System Integration', () => {
         disabledComponents: ['Debug*', '*Test'],
         breadcrumbs: {
           enabled: true,
-          maxItems: 50
+          maxItems: 50,
+          logAdditions: false
         }
       });
       
@@ -285,7 +287,8 @@ describe('Logging System Integration', () => {
         enabledComponents: [], // Log everything
         breadcrumbs: {
           enabled: true,
-          maxItems: 200
+          maxItems: 200,
+          logAdditions: false
         }
       });
       

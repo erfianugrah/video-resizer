@@ -1,6 +1,6 @@
 # Logging System
 
-*Last Updated: May 10, 2025*
+*Last Updated: June 19, 2025*
 
 ## Table of Contents
 
@@ -74,14 +74,20 @@ flowchart TD
 
 The logging system supports four standard log levels:
 
-| Level | Priority | Function | Description |
-|-------|----------|----------|-------------|
-| `debug` | 1 | `debug(context, logger, component, message, data?)` | Detailed debugging information |
-| `info` | 2 | `info(context, logger, component, message, data?)` | General informational messages |
-| `warn` | 3 | `warn(context, logger, component, message, data?)` | Warning conditions |
-| `error` | 4 | `error(context, logger, component, message, error?, data?)` | Error conditions |
+| Level | Priority | Function | Description | Log Volume (per 100 requests) |
+|-------|----------|----------|-------------|-------------------------------|
+| `error` | 4 | `error(context, logger, component, message, error?, data?)` | Error conditions | ~500 lines |
+| `warn` | 3 | `warn(context, logger, component, message, data?)` | Warning conditions | ~1,000 lines |
+| `info` | 2 | `info(context, logger, component, message, data?)` | General informational messages | ~4,000 lines |
+| `debug` | 1 | `debug(context, logger, component, message, data?)` | Detailed debugging information | ~20,000 lines |
 
 The configured log level acts as a threshold—messages with a level below the threshold are not logged. For example, with `level: 'info'`, debug messages are suppressed while info, warn, and error messages are logged.
+
+**Important**: There are TWO log level settings that must match:
+1. `logging.level` - The main log level
+2. `logging.pino.level` - The Pino logger level (overrides the main level)
+
+Both must be set to the same value for the configuration to work correctly.
 
 ## Log Formats
 
@@ -226,7 +232,7 @@ function shouldSampleLog(requestId: string, sampleRate: number): boolean {
 
 ## Configuration Options
 
-Logging behavior is highly configurable:
+Logging behavior is highly configurable through `config/worker-config.json`:
 
 ```json
 {
@@ -241,12 +247,21 @@ Logging behavior is highly configurable:
     "sampleRate": 1,
     "enablePerformanceLogging": true,
     "performanceThresholdMs": 1000,
-    "maxBreadcrumbs": 20,
-    "includeBreadcrumbs": true,
-    "redactSensitiveData": true,
-    "sensitiveFields": ["token", "key", "password", "secret"],
-    "logClientInfo": true,
-    "prettyPrint": false
+    "breadcrumbs": {
+      "enabled": true,
+      "maxItems": 25,
+      "logAdditions": false
+    },
+    "pino": {
+      "level": "info",
+      "browser": {
+        "asObject": true
+      },
+      "base": {
+        "service": "video-resizer",
+        "env": "production"
+      }
+    }
   }
 }
 ```
@@ -254,7 +269,7 @@ Logging behavior is highly configurable:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `level` | string | 'info' | Log level: 'debug', 'info', 'warn', 'error' |
-| `format` | string | 'text' | Log format: 'json' or 'text' |
+| `format` | string | 'json' | Log format: 'json' or 'text' |
 | `includeTimestamps` | boolean | true | Include timestamps in logs |
 | `includeComponentName` | boolean | true | Include component names in logs |
 | `colorize` | boolean | true | Use colors in console output |
@@ -263,12 +278,12 @@ Logging behavior is highly configurable:
 | `sampleRate` | number | 1 | Sampling rate for logs (0-1) |
 | `enablePerformanceLogging` | boolean | false | Enable performance metrics |
 | `performanceThresholdMs` | number | 1000 | Threshold for performance warnings |
-| `maxBreadcrumbs` | number | 20 | Maximum breadcrumbs to track |
-| `includeBreadcrumbs` | boolean | true | Include breadcrumbs in logs |
-| `redactSensitiveData` | boolean | true | Redact sensitive fields |
-| `sensitiveFields` | string[] | [...] | Fields to redact |
-| `logClientInfo` | boolean | true | Include client information |
-| `prettyPrint` | boolean | false | Pretty-print JSON logs |
+| `breadcrumbs.enabled` | boolean | true | Enable breadcrumb collection |
+| `breadcrumbs.maxItems` | number | 25 | Maximum breadcrumbs to track |
+| `breadcrumbs.logAdditions` | boolean | false | Log each breadcrumb addition (verbose!) |
+| `pino.level` | string | 'info' | Pino logger level (MUST match main level) |
+| `pino.browser` | object | {...} | Browser-specific Pino configuration |
+| `pino.base` | object | {...} | Base fields for all logs |
 
 ## Error Logging
 
@@ -315,6 +330,27 @@ Debug logs are only emitted when:
 1. The log level is set to 'debug' in the configuration, OR
 2. Debug mode is enabled for the request (via debug parameter)
 
+### Runtime Debug Mode
+
+You can enable debug logging for specific requests without changing the global configuration:
+
+1. **URL Parameter**: Add `?debug=true` to any request
+   ```
+   https://example.com/videos/abc123?width=720&debug=true
+   ```
+
+2. **HTTP Header**: Add `X-Debug-Logging: true`
+   ```bash
+   curl -H "X-Debug-Logging: true" https://example.com/videos/abc123
+   ```
+
+3. **Debug View**: Use `?debug=view` for an HTML debug report
+   ```
+   https://example.com/videos/abc123?width=720&debug=view
+   ```
+
+This allows you to get detailed logs for specific requests while keeping production logs minimal.
+
 ## Log Breadcrumbs
 
 The logging system maintains a "breadcrumb trail" of previous log events in a request:
@@ -349,6 +385,24 @@ function getBreadcrumbs(context: RequestContext): LogBreadcrumb[] {
 ```
 
 Breadcrumbs provide crucial context for error diagnosis, showing the sequence of events leading up to an error.
+
+### Breadcrumb Configuration
+
+The breadcrumb system has been optimized to reduce log volume while maintaining error context:
+
+```json
+{
+  "breadcrumbs": {
+    "enabled": true,      // Always collect breadcrumbs
+    "maxItems": 25,       // Max breadcrumbs per request
+    "logAdditions": false // Don't log each addition (saves ~37% log volume)
+  }
+}
+```
+
+- **enabled**: Should always be `true` to collect breadcrumbs for error context
+- **maxItems**: Limits memory usage and log size (25-100 typical)
+- **logAdditions**: When `false`, breadcrumbs are collected silently without logging each addition
 
 ## Request Context Tracking
 
@@ -387,6 +441,85 @@ const context: RequestContext = {
 info(context, logger, 'VideoHandler', 'Processing request', {
   url: context.url
 });
+```
+
+## Common Configurations
+
+### Production (Minimal Logging)
+```json
+{
+  "logging": {
+    "level": "info",
+    "breadcrumbs": {
+      "enabled": true,
+      "maxItems": 25,
+      "logAdditions": false
+    },
+    "pino": {
+      "level": "info"
+    }
+  }
+}
+```
+Expected: ~4,000 lines per 100 requests
+
+### Development (Full Visibility)
+```json
+{
+  "logging": {
+    "level": "debug",
+    "breadcrumbs": {
+      "enabled": true,
+      "maxItems": 100,
+      "logAdditions": true
+    },
+    "pino": {
+      "level": "debug"
+    }
+  }
+}
+```
+Expected: ~20,000 lines per 100 requests
+
+### Performance Monitoring
+```json
+{
+  "logging": {
+    "level": "info",
+    "enablePerformanceLogging": true,
+    "performanceThresholdMs": 500,
+    "sampleRate": 0.1,
+    "pino": {
+      "level": "info"
+    }
+  }
+}
+```
+
+## Quick Commands
+
+### Enable Debug Logging
+```bash
+# Update both log levels and enable breadcrumb logging
+sed -i 's/"level": "info"/"level": "debug"/g' config/worker-config.json
+sed -i 's/"logAdditions": false/"logAdditions": true/g' config/worker-config.json
+```
+
+### Disable Debug Logging
+```bash
+# Revert to info level and disable breadcrumb logging
+sed -i 's/"level": "debug"/"level": "info"/g' config/worker-config.json
+sed -i 's/"logAdditions": true/"logAdditions": false/g' config/worker-config.json
+```
+
+### Check Current Log Level
+```bash
+grep -E '"level":|"pino":' config/worker-config.json
+```
+
+### Deploy Configuration
+```bash
+npm run deploy:config
 ```
 
 ## Best Practices
