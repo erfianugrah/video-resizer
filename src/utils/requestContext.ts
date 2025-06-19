@@ -188,6 +188,7 @@ export function createRequestContext(request: Request, ctx?: ExecutionContext): 
 interface BreadcrumbConfig {
   enabled: boolean;
   maxItems: number;
+  logAdditions: boolean;
 }
 
 // Default breadcrumb configuration with initialization tracking
@@ -198,15 +199,17 @@ interface BreadcrumbConfigWithInit extends BreadcrumbConfig {
 let breadcrumbConfig: BreadcrumbConfigWithInit = {
   enabled: true,
   maxItems: 100,
+  logAdditions: false,
   initialized: false
 };
 
 // Helper function to update breadcrumb config
-export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: number }) {
+export function updateBreadcrumbConfig(config: { enabled: boolean, maxItems: number, logAdditions?: boolean }) {
   if (config && typeof config.enabled === 'boolean' && typeof config.maxItems === 'number') {
     breadcrumbConfig = {
       enabled: config.enabled,
       maxItems: config.maxItems,
+      logAdditions: config.logAdditions ?? false,
       initialized: true
     };
     
@@ -239,6 +242,7 @@ async function initializeBreadcrumbConfig() {
       breadcrumbConfig = {
         enabled: typeof globalConfig.enabled === 'boolean' ? globalConfig.enabled : true,
         maxItems: typeof globalConfig.maxItems === 'number' ? globalConfig.maxItems : 100,
+        logAdditions: typeof globalConfig.logAdditions === 'boolean' ? globalConfig.logAdditions : false,
         initialized: true
       };
       logDebug('Loaded breadcrumb config from global', { enabled: breadcrumbConfig.enabled, maxItems: breadcrumbConfig.maxItems });
@@ -299,13 +303,15 @@ export function addBreadcrumb(
       breadcrumb.durationMs = Math.max(0, timestamp - lastBreadcrumb.timestamp);
     }
 
-    // Log breadcrumb for debugging with timing information
-    logDebug('Adding breadcrumb', {
-      category,
-      message,
-      elapsedMs: elapsedMs.toFixed(2),
-      durationMs: breadcrumb.durationMs !== undefined ? breadcrumb.durationMs.toFixed(2) : undefined
-    });
+    // Log breadcrumb for debugging with timing information - only if explicitly enabled
+    if (breadcrumbConfig.logAdditions === true) {
+      logDebug('Adding breadcrumb', {
+        category,
+        message,
+        elapsedMs: elapsedMs.toFixed(2),
+        durationMs: breadcrumb.durationMs !== undefined ? breadcrumb.durationMs.toFixed(2) : undefined
+      });
+    }
 
     // Add to breadcrumbs array, respecting maxItems
     context.breadcrumbs.push(breadcrumb);

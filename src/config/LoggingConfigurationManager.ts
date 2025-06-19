@@ -33,10 +33,12 @@ export const LoggingConfigSchema = z.object({
   // Breadcrumb configuration
   breadcrumbs: z.object({
     enabled: z.boolean().default(true),
-    maxItems: z.number().min(0).default(100)
+    maxItems: z.number().min(0).default(100),
+    logAdditions: z.boolean().default(false)
   }).default({
     enabled: true,
-    maxItems: 100
+    maxItems: 100,
+    logAdditions: false
   }),
   
   // Pino specific configuration
@@ -74,7 +76,8 @@ const defaultLoggingConfig: LoggingConfiguration = {
   performanceThresholdMs: 1000,
   breadcrumbs: {
     enabled: true,
-    maxItems: 100
+    maxItems: 100,
+    logAdditions: false
   },
   pino: {
     level: 'debug',
@@ -230,7 +233,7 @@ export class LoggingConfigurationManager {
   /**
    * Get breadcrumb configuration
    */
-  public getBreadcrumbConfig(): { enabled: boolean, maxItems: number } {
+  public getBreadcrumbConfig(): { enabled: boolean, maxItems: number, logAdditions: boolean } {
     return this.config.breadcrumbs;
   }
 

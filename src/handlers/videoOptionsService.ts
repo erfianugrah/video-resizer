@@ -42,19 +42,13 @@ export function determineVideoOptions(
   // Get the request context for breadcrumbs
   const requestContext = getCurrentContext();
   
-  // Force log to check if function is called
-  console.log('[VideoOptionsService] determineVideoOptions called', {
-    url: request.url,
-    hasContext: !!requestContext,
-    hasImwidth: params.has('imwidth')
-  });
   
   // Check for IMQuery parameters
   const usingIMQuery = hasIMQueryParams(params);
   
   // Log IMQuery detection
   if (usingIMQuery) {
-    info('VideoOptionsService', 'IMQuery parameters detected', {
+    debug('VideoOptionsService', 'IMQuery parameters detected', {
       url: request.url,
       imwidth: params.get('imwidth'),
       imheight: params.get('imheight'),
@@ -99,19 +93,11 @@ export function determineVideoOptions(
       // If only width is provided, it will try breakpoint-based matching first
       const matchedDerivative = findClosestDerivative(imwidth, imheight);
       
-      info('VideoOptionsService', 'Derivative matching attempted', {
+      debug('VideoOptionsService', 'Derivative matching attempted', {
         imwidth,
         imheight,
         matchedDerivative,
         isValid: matchedDerivative ? isValidDerivative(matchedDerivative) : false
-      });
-      
-      console.log('[VideoOptionsService] Derivative matching result', {
-        imwidth,
-        imheight,
-        matchedDerivative,
-        isValid: matchedDerivative ? isValidDerivative(matchedDerivative) : false,
-        derivatives: Object.keys(configManager.getConfig().derivatives)
       });
       
       if (matchedDerivative && isValidDerivative(matchedDerivative)) {
@@ -193,7 +179,7 @@ export function determineVideoOptions(
           source: 'imquery-derivative'
         });
         
-        info('IMQuery', 'Applied derivative based on IMQuery dimensions', {
+        debug('IMQuery', 'Applied derivative based on IMQuery dimensions', {
           requestedWidth,
           requestedHeight,
           derivative: matchedDerivative,
@@ -256,7 +242,7 @@ export function determineVideoOptions(
       // Use the enhanced request for further processing
       request = enhancedRequest;
       
-      info('IMQuery', 'Enhanced request with IMQuery client hints', { 
+      debug('IMQuery', 'Enhanced request with IMQuery client hints', { 
         addedHeaders: clientHints 
       });
       

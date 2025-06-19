@@ -373,6 +373,7 @@ interface LoggingConfig {
   breadcrumbs: {                 // Breadcrumb settings
     enabled: boolean;
     maxItems: number;
+    logAdditions: boolean;       // Log each breadcrumb addition
   };
   pino: {                        // Pino logger settings
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -642,7 +643,8 @@ Here's a streamlined configuration example without cache profiles:
     "performanceThresholdMs": 1000,
     "breadcrumbs": {
       "enabled": true,
-      "maxItems": 25
+      "maxItems": 25,
+      "logAdditions": false
     },
     "pino": {
       "level": "debug",

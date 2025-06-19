@@ -818,13 +818,7 @@
 		"includeTimestamps": true,
 		"includeComponentName": true,
 		"colorize": true,
-		"enabledComponents": [
-			"auth",
-			"cache",
-			"storage",
-			"transform",
-			"origins"
-		],
+		"enabledComponents": [],
 		"disabledComponents": [
 			"healthcheck"
 		],
@@ -833,7 +827,8 @@
 		"performanceThresholdMs": 1000,
 		"breadcrumbs": {
 			"enabled": true,
-			"maxItems": 25
+			"maxItems": 25,
+			"logAdditions": false
 		},
 		"pino": {
 			"level": "info",
