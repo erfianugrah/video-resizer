@@ -218,10 +218,8 @@ export function getVideoPathPatterns() {
   return VideoConfigurationManager.getInstance().getPathPatterns();
 }
 
-// Initialize default configuration system with environment variables
-// This will be populated from the Worker environment at runtime
-// Use initializeConfiguration to create the initial configuration
-const config = initializeConfiguration();
+// Configuration will be initialized with proper environment variables at runtime
+// Do not initialize at module load time as environment variables are not available yet
 
 /**
  * Update all configuration managers from KV configuration
@@ -363,7 +361,7 @@ export function updateAllConfigFromKV(kvConfig: any) {
   });
 }
 
-export default config;
+// Default export removed - use initializeConfiguration(env) or ConfigProvider.getInstance(env) instead
 
 /**
  * Get KV cache configuration from environment
@@ -430,6 +428,14 @@ export class ConfigProvider {
 export function getCacheConfig(envVars?: EnvVariables) {
   // Get environment config
   const envConfig = getEnvironmentConfig(envVars);
+  
+  // Log when getCacheConfig is called to debug environment issues
+  logDebug('getCacheConfig called', {
+    hasEnvVars: !!envVars,
+    envVarsENVIRONMENT: envVars?.ENVIRONMENT || 'not provided',
+    determinedMode: envConfig.mode,
+    isProduction: envConfig.isProduction
+  });
   
   // Get the actual cache configuration from CacheConfigurationManager
   const cacheManager = CacheConfigurationManager.getInstance();

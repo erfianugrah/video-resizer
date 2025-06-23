@@ -62,10 +62,10 @@ export async function getFromKVCache(
   options: TransformOptions,
   request?: Request // Add optional request parameter for range support
 ): Promise<Response | null> {
-  // Check if KV caching is enabled - first from CacheConfigurationManager (which includes KV config),
-  // then fallback to environment config
+  // Check if KV caching is enabled from CacheConfigurationManager (which includes KV config)
+  // The CacheConfigurationManager has enableKVCache default to true, and gets updated from config.json
   const cacheConfigManager = cacheConfig.getConfig();
-  const enableKVCache = cacheConfigManager.enableKVCache ?? getCacheConfig(env).enableKVCache;
+  const enableKVCache = cacheConfigManager.enableKVCache;
   
   // Use flexible binding to get the cache KV namespace
   const kvNamespace = getCacheKV(env);
@@ -75,7 +75,7 @@ export async function getFromKVCache(
     logDebug('KV cache disabled by configuration', { 
       enableKVCache: enableKVCache,
       cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set',
-      configSource: cacheConfigManager.enableKVCache !== undefined ? 'config.json' : 'environment'
+      configSource: 'CacheConfigurationManager'
     });
     return null;
   }
@@ -194,10 +194,10 @@ export async function storeInKVCache(
 ): Promise<boolean> {
   // Normalize the source path for caching (remove v parameter)
   const normalizedPath = normalizeUrlForCaching(sourcePath);
-  // Check if KV caching is enabled - first from CacheConfigurationManager (which includes KV config),
-  // then fallback to environment config
+  // Check if KV caching is enabled from CacheConfigurationManager (which includes KV config)
+  // The CacheConfigurationManager has enableKVCache default to true, and gets updated from config.json
   const cacheConfigManager = cacheConfig.getConfig();
-  const enableKVCache = cacheConfigManager.enableKVCache ?? getCacheConfig(env).enableKVCache;
+  const enableKVCache = cacheConfigManager.enableKVCache;
   
   // Use flexible binding to get the cache KV namespace
   const kvNamespace = getCacheKV(env);
@@ -207,7 +207,7 @@ export async function storeInKVCache(
     logDebug('KV cache storage disabled by configuration', { 
       enableKVCache: enableKVCache,
       cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set',
-      configSource: cacheConfigManager.enableKVCache !== undefined ? 'config.json' : 'environment'
+      configSource: 'CacheConfigurationManager'
     });
     return false;
   }

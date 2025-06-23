@@ -110,8 +110,8 @@
 					"id": "ddaf6d5142af4f79b39defe745dac556"
 				},
 				{
-					"binding": "VIDEO_TRANSFORMATIONS_CACHE_TEST",
-					"id": "b05e8c3165594ef2ade6fa939b7e4f3a"
+					"binding": "VIDEO_TRANSFORMATIONS_CACHE",
+					"id": "8e790768576242cc98fa3e4aa327f815"
 				},
 				{
 					"binding": "VIDEO_CACHE_KEY_VERSIONS",
@@ -132,7 +132,7 @@
 				"ENVIRONMENT": "production",
 				// Flexible binding mappings (optional - will use defaults if not specified)
 				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
-				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE_TEST",
+				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
 				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
 				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
 			},
