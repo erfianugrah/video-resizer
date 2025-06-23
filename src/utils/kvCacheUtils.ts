@@ -62,16 +62,20 @@ export async function getFromKVCache(
   options: TransformOptions,
   request?: Request // Add optional request parameter for range support
 ): Promise<Response | null> {
-  // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
-  const config = getCacheConfig(env);
+  // Check if KV caching is enabled - first from CacheConfigurationManager (which includes KV config),
+  // then fallback to environment config
+  const cacheConfigManager = cacheConfig.getConfig();
+  const enableKVCache = cacheConfigManager.enableKVCache ?? getCacheConfig(env).enableKVCache;
+  
   // Use flexible binding to get the cache KV namespace
   const kvNamespace = getCacheKV(env);
   
   // Enhanced logging for troubleshooting
-  if (!config.enableKVCache) {
+  if (!enableKVCache) {
     logDebug('KV cache disabled by configuration', { 
-      enableKVCache: config.enableKVCache,
-      cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set' 
+      enableKVCache: enableKVCache,
+      cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set',
+      configSource: cacheConfigManager.enableKVCache !== undefined ? 'config.json' : 'environment'
     });
     return null;
   }
@@ -190,16 +194,20 @@ export async function storeInKVCache(
 ): Promise<boolean> {
   // Normalize the source path for caching (remove v parameter)
   const normalizedPath = normalizeUrlForCaching(sourcePath);
-  // Check if KV caching is enabled - pass environment variables to ensure we get fresh config
-  const config = getCacheConfig(env);
+  // Check if KV caching is enabled - first from CacheConfigurationManager (which includes KV config),
+  // then fallback to environment config
+  const cacheConfigManager = cacheConfig.getConfig();
+  const enableKVCache = cacheConfigManager.enableKVCache ?? getCacheConfig(env).enableKVCache;
+  
   // Use flexible binding to get the cache KV namespace
   const kvNamespace = getCacheKV(env);
   
   // Enhanced logging for troubleshooting
-  if (!config.enableKVCache) {
+  if (!enableKVCache) {
     logDebug('KV cache storage disabled by configuration', { 
-      enableKVCache: config.enableKVCache,
-      cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set' 
+      enableKVCache: enableKVCache,
+      cache_enable_kv_env: env.CACHE_ENABLE_KV || 'not set',
+      configSource: cacheConfigManager.enableKVCache !== undefined ? 'config.json' : 'environment'
     });
     return false;
   }
@@ -288,7 +296,7 @@ export async function storeInKVCache(
     }
     
     // Determine TTL based on the content type and cache configuration
-    const ttl = determineTTL(responseClone, config);
+    const ttl = determineTTL(responseClone, getCacheConfig(env));
     
     // Log TTL determination
     logDebug('Determined TTL for caching based on content type', {
@@ -296,7 +304,7 @@ export async function storeInKVCache(
       ttl,
       responseStatus: responseClone.status,
       statusCategory: Math.floor(responseClone.status / 100),
-      configuredTTLOk: config.ttl?.ok,
+      configuredTTLOk: getCacheConfig(env).ttl?.ok,
       mode: options.mode || 'video',
       isVideo: isVideoResponse,
       isImage: isImageResponse
