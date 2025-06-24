@@ -71,8 +71,10 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
   });
   
   // Find the next available source
+  // CRITICAL: Filter out r2 sources as they cannot be used with CDN-CGI transformations
   const availableSources = failedOrigin.sources
     .filter(s => s.type !== failedSource.type || s.priority !== failedSource.priority)
+    .filter(s => s.type !== 'r2') // R2 uses special syntax that CDN-CGI cannot understand
     .sort((a, b) => a.priority - b.priority);
   
   logDebug('retryWithAlternativeOrigins', 'Available alternative sources', {
@@ -102,13 +104,8 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
   // Build the new origin URL
   let newOriginUrl: string;
   try {
-    if (nextSource.type === 'r2') {
-      newOriginUrl = `r2:${path}`;
-      logDebug('retryWithAlternativeOrigins', 'Using R2 storage as alternative', {
-        path,
-        sourceType: 'r2'
-      });
-    } else if (nextSource.url) {
+    // Since we filtered out r2 sources above, we should only have remote sources with URLs
+    if (nextSource.url) {
       const pathTemplate = (nextSource as any).pathTemplate || '{path}';
       const resolvedPath = pathTemplate.replace('{path}', path).replace('{1}', path.split('/').pop() || '');
       newOriginUrl = new URL(resolvedPath, nextSource.url).toString();

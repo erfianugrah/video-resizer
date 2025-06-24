@@ -33,12 +33,39 @@ async function initiateBackgroundCaching(
   requestContext: RequestContext,
   tagInfo?: {
     pattern?: string,
-    isLargeVideo?: boolean
+    isLargeVideo?: boolean,
+    isFileSizeError?: boolean
   }
 ): Promise<void> {
   // Only proceed if we have the necessary environment and response
   const cacheKV = env ? getCacheKV(env) : null;
   if (!env || !env.executionCtx?.waitUntil || !cacheKV || !fallbackResponse.body || !fallbackResponse.ok) {
+    return;
+  }
+  
+  // CRITICAL: Skip KV caching for file size error fallbacks
+  // These are videos that exceed the 256MB transformation limit
+  if (tagInfo?.isFileSizeError) {
+    logDebug('handleTransformationError', 'Skipping KV storage for file size error fallback', {
+      path,
+      reason: 'File exceeds transformation size limit'
+    });
+    addBreadcrumb(requestContext, 'KVCache', 'Skipped - file size error fallback');
+    return;
+  }
+  
+  // CRITICAL: Skip KV caching for partial/range responses
+  // These are incomplete video segments that should never be cached
+  const statusCode = fallbackResponse.status;
+  const contentRange = fallbackResponse.headers.get('Content-Range');
+  if (statusCode === 206 || contentRange) {
+    logDebug('handleTransformationError', 'Skipping KV storage for partial content response', {
+      path,
+      status: statusCode,
+      contentRange,
+      reason: 'Partial/range response should not be cached'
+    });
+    addBreadcrumb(requestContext, 'KVCache', 'Skipped - partial content response');
     return;
   }
 
@@ -276,7 +303,7 @@ export async function handleTransformationError({
     // If it's specifically a 256MiB size error, log it differently
     if (is256MiBSizeError) {
       logDebug('handleTransformationError', 'Video exceeds 256MiB limit, attempting direct source fetch with range support', { 
-        sourceUrl: sourceUrlForDirectFetch.substring(0,50)
+        sourceUrl: sourceUrlForDirectFetch
       });
       addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch for large video', { 
         reason: 'Video exceeds 256MiB size limit'
@@ -284,7 +311,7 @@ export async function handleTransformationError({
     } else {
       const reason = isServerError ? 'Server Error' : 'File Size Error';
       logDebug('handleTransformationError', 'Attempting direct source fetch', { 
-        sourceUrl: sourceUrlForDirectFetch.substring(0,50), 
+        sourceUrl: sourceUrlForDirectFetch, 
         reason 
       });
       addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch', { 
@@ -328,20 +355,8 @@ export async function handleTransformationError({
             hasRangeSupport: hasRangeSupport
           });
           
-          // Store large video in KV cache in the background using chunking
-          // Use waitUntil to process in the background without blocking the response
-          if (fallbackResponse.body) {
-            // Get the path from the original request
-            const path = new URL(originalRequest.url).pathname;
-            
-            // Clone the response before initiating background caching to preserve the body
-            const responseForCaching = fallbackResponse.clone();
-            
-            // Use our centralized helper function for background caching
-            await initiateBackgroundCaching(context.env, path, responseForCaching, requestContext, {
-              isLargeVideo: true
-            });
-          }
+          // NOTE: We don't cache large videos that exceed the 256MiB limit
+          // They are served directly without KV storage
         }
       } else {
         // Normal fetch for other cases
@@ -357,7 +372,8 @@ export async function handleTransformationError({
           
           // Also store regular fallback videos in KV cache in the background
           // This handles the non-large video case but with the same chunking support
-          if (fallbackResponse.body) {
+          // CRITICAL: Only clone and cache if it's NOT a file size error
+          if (fallbackResponse.body && !(isFileSizeError || is256MiBSizeError)) {
             // Get the path from the original request
             const path = new URL(originalRequest.url).pathname;
             
@@ -365,7 +381,9 @@ export async function handleTransformationError({
             const responseForCaching = fallbackResponse.clone();
             
             // Use our centralized helper function for background caching
-            await initiateBackgroundCaching(context.env, path, responseForCaching, requestContext);
+            await initiateBackgroundCaching(context.env, path, responseForCaching, requestContext, {
+              isFileSizeError: false
+            });
           }
         }
       }
