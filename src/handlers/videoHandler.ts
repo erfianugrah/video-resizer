@@ -402,7 +402,9 @@ export const handleVideoRequest = withErrorHandling<
           
           // For fallbacks, we still need to handle range requests, but directly without Cache API
           const rangeHeader = request.headers.get('Range');
-          if (rangeHeader && finalResponse.headers.get('Accept-Ranges') === 'bytes') {
+          // IMPORTANT: Only process range requests if the response is NOT already a 206 Partial Content
+          // If the origin already handled the range request, we should pass it through as-is
+          if (rangeHeader && finalResponse.headers.get('Accept-Ranges') === 'bytes' && finalResponse.status !== 206) {
             try {
               // Use the centralized range request handler
               const { handleRangeRequest } = await import('../utils/streamUtils');
@@ -449,6 +451,21 @@ export const handleVideoRequest = withErrorHandling<
               // Keep the original response if range handling fails
               // This is better than returning a broken response
             }
+          } else if (rangeHeader && finalResponse.status === 206) {
+            // The origin already handled the range request and returned a 206 response
+            // We should pass it through as-is without additional processing
+            debug(context, logger, 'VideoHandler', 'Origin already returned 206 Partial Content, passing through as-is', {
+              rangeHeader,
+              contentRange: finalResponse.headers.get('Content-Range'),
+              contentLength: finalResponse.headers.get('Content-Length'),
+              bypassReason
+            });
+            
+            addBreadcrumb(context, 'RangeRequest', 'Origin handled range request directly', {
+              status: 206,
+              contentRange: finalResponse.headers.get('Content-Range'),
+              rangeHeader
+            });
           }
         } else {
           // This is a regular (not fallback/large) video - use Cache API for range handling
