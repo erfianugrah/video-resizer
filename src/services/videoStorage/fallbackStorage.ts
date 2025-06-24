@@ -523,6 +523,18 @@ export async function streamFallbackToKV(
   if (!cacheKV || !fallbackResponse.body || !fallbackResponse.ok) {
     return;
   }
+  
+  // CRITICAL: Double-check - never cache partial/range responses
+  // This is a safeguard in case the caller didn't check
+  if (fallbackResponse.status === 206 || fallbackResponse.headers.get('Content-Range')) {
+    logDebug('VideoStorageService', 'Refusing to cache partial content response', {
+      path: sourcePath,
+      status: fallbackResponse.status,
+      contentRange: fallbackResponse.headers.get('Content-Range'),
+      reason: 'Partial responses should never be cached'
+    });
+    return;
+  }
 
   try {
     const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');

@@ -67,7 +67,7 @@
 				},
 				{
 					"name": "bynder",
-					"matcher": "^/m/([^/]+)/original/(.+\\.mp4)$",
+					"matcher": "^/m/([^/]+)/original/(.+\\.(mp4|mov))$",
 					"captureGroups": [
 						"hash",
 						"filename"
@@ -85,8 +85,8 @@
 							}
 						},
 						{
-							"type": "fallback",
-							"priority": 1,
+							"type": "remote",
+							"priority": 0,
 							"url": "https://ikea.getbynder.com",
 							"path": "m/${hash}/original/${filename}",
 							"auth": {
@@ -99,8 +99,8 @@
 							}
 						},
 						{
-							"type": "remote",
-							"priority": 0,
+							"type": "fallback",
+							"priority": 1,
 							"url": "https://r2.www.ikea.com",
 							"path": "m/${hash}/original/${filename}",
 							"auth": {

@@ -224,6 +224,28 @@ export async function storeInKVCache(
     // Clone the response to avoid consuming it
     const responseClone = response.clone();
     
+    // CRITICAL: Check bypass headers first - do not cache if bypass is set
+    const bypassHeaders = [
+      'X-Bypass-Cache-API',
+      'X-Video-Exceeds-256MiB',
+      'X-Direct-Stream',
+      'X-File-Size-Error',
+      'X-Video-Too-Large'
+    ];
+    
+    const hasBypassHeader = bypassHeaders.some(header => 
+      responseClone.headers.get(header) === 'true'
+    );
+    
+    if (hasBypassHeader) {
+      logDebug('Skipping KV storage due to bypass headers', {
+        sourcePath,
+        bypassHeaders: bypassHeaders.filter(h => responseClone.headers.get(h) === 'true'),
+        mode: options.mode || 'video'
+      });
+      return false;
+    }
+    
     // Check if response is an error (4xx, 5xx)
     const statusCode = responseClone.status;
     const isError = statusCode >= 400;
@@ -290,6 +312,17 @@ export async function storeInKVCache(
         isVideoResponse,
         isImageResponse,
         isCachableResponse,
+        mode: options.mode || 'video'
+      });
+      return false;
+    }
+    
+    // CRITICAL: Never cache partial/range responses
+    if (statusCode === 206 || responseClone.headers.get('Content-Range')) {
+      logDebug('Skipping KV storage for partial content response', {
+        statusCode,
+        contentRange: responseClone.headers.get('Content-Range'),
+        reason: 'Partial responses should never be cached',
         mode: options.mode || 'video'
       });
       return false;

@@ -462,6 +462,19 @@ export const storeTransformedVideo = withErrorHandling<
     useStreaming?
   ): Promise<boolean> {
     try {
+      // CRITICAL: Never cache partial/range responses
+      if (response.status === 206 || response.headers.get('Content-Range')) {
+        const { logDebug } = await import('./logging');
+        logDebug('Refusing to cache partial content response', {
+          path: sourcePath,
+          component: 'KVStorageService',
+          status: response.status,
+          contentRange: response.headers.get('Content-Range'),
+          reason: 'Partial responses should never be cached'
+        });
+        return false;
+      }
+      
       // Check content length
       const contentLengthHeader = response.headers.get('Content-Length');
       const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
