@@ -9,20 +9,42 @@ export const videoConfig = {
   derivatives: {
     // Default derivatives with minimal settings
     // These are placeholders that will be overridden by configuration
+    high: {
+      width: 1920,
+      height: 1080,
+      quality: 'high',
+    },
+    medium: {
+      width: 1280,
+      height: 720,
+      quality: 'medium',
+    },
+    low: {
+      width: 854,
+      height: 480,
+      quality: 'low',
+    },
+    mobile: {
+      width: 640,
+      height: 360,
+      quality: 'low',
+    },
+    thumbnail: {
+      width: 320,
+      height: 180,
+      mode: 'frame',
+      format: 'jpg',
+    },
+    // Keep legacy names for backward compatibility
     desktop: {
       width: 1920,
       height: 1080,
       quality: 'high',
     },
     tablet: {
-      width: 1280, 
+      width: 1280,
       height: 720,
       quality: 'medium',
-    },
-    mobile: {
-      width: 854,
-      height: 640,
-      quality: 'low',
     },
   },
 

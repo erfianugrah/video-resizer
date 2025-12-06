@@ -9,13 +9,13 @@ const streamFallbackToKV = vi.fn(async (env, sourcePath, response, config) => {
   try {
     const contentType = response.headers.get('Content-Type') || 'video/mp4';
     const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
-    
+
     // Log start
-    const { logDebug } = require('../../../src/services/videoStorage/logging');
-    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
+    const { logDebug } = await import('../../../src/services/videoStorage/logging');
+    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', {
       path: sourcePath,
       contentType,
-      contentLength 
+      contentLength
     });
     
     // Use our global helper instead of dynamic import
@@ -36,14 +36,14 @@ const streamFallbackToKV = vi.fn(async (env, sourcePath, response, config) => {
       },
       config?.cache?.ttl?.ok ?? 3600
     );
-    
+
     // Log success
     logDebug('VideoStorageService', 'Successfully stored fallback content in KV', {
       path: sourcePath,
       kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE'
     });
   } catch (err) {
-    const { logErrorWithContext } = require('../../../src/utils/errorHandlingUtils');
+    const { logErrorWithContext } = await import('../../../src/utils/errorHandlingUtils');
     logErrorWithContext(
       'Error streaming fallback content to KV',
       err,
@@ -226,11 +226,11 @@ describe('Large File Background Caching Integration', () => {
     _initiateBackgroundCaching.mockImplementation(async (env, path, response, reqContext, tagInfo) => {
       // Simulate the actual behavior by calling streamFallbackToKV directly
       if (env?.executionCtx?.waitUntil && response.ok && response.body) {
-        const { VideoConfigurationManager } = require('../../../src/config');
+        const { VideoConfigurationManager } = await import('../../../src/config');
         const videoConfig = VideoConfigurationManager.getInstance().getConfig();
-        
+
         // Log as the real function would
-        const { logDebug } = require('../../../src/services/errorHandler/logging');
+        const { logDebug } = await import('../../../src/services/errorHandler/logging');
         if (contentLength > 100 * 1024 * 1024) {
           logDebug('handleTransformationError', `Processing large ${tagInfo?.isLargeVideo ? 'large video' : 'fallback'} (${Math.round(contentLength/1024/1024)}MB) with streams API`, {
             path,
@@ -265,7 +265,7 @@ describe('Large File Background Caching Integration', () => {
     expect(mockEnv.executionCtx.waitUntil).toHaveBeenCalled();
     
     // Check logging to verify large file processing was detected
-    const { logDebug } = require('../../../src/services/errorHandler/logging');
+    const { logDebug } = await import('../../../src/services/errorHandler/logging');
     expect(logDebug).toHaveBeenCalledWith(
       'handleTransformationError',
       expect.stringContaining('Processing large large video'),
@@ -296,9 +296,9 @@ describe('Large File Background Caching Integration', () => {
 
     // Since we're mocking the dynamic import, we can't directly verify the storeTransformedVideo calls
     // Instead, verify waitUntil was called and the logs indicate successful KV storage
-    
+
     // Verify proper logging for large file
-    const { logDebug: storageLogDebug } = require('../../../src/services/videoStorage/logging');
+    const { logDebug: storageLogDebug } = await import('../../../src/services/videoStorage/logging');
     expect(storageLogDebug).toHaveBeenCalledWith(
       'VideoStorageService',
       'Starting background streaming of fallback to KV',
@@ -384,7 +384,7 @@ describe('Large File Background Caching Integration', () => {
       });
       
       // Log as the real handler would
-      const { logDebug } = require('../../../src/services/errorHandler/logging');
+      const { logDebug } = await import('../../../src/services/errorHandler/logging');
       logDebug('handleTransformationError', 'Using streaming for large video with streams API', { contentLength: 260 * 1024 * 1024 });
       
       // Simulate calling initiateBackgroundCaching
@@ -426,9 +426,9 @@ describe('Large File Background Caching Integration', () => {
     expect(result.headers.get('X-File-Size-Error')).toBe('true');
     expect(result.headers.get('X-Video-Too-Large')).toBe('true');
     expect(result.headers.get('X-Video-Exceeds-256MiB')).toBe('true');
-    
+
     // Verify logging to confirm large file streaming
-    const { logDebug } = require('../../../src/services/errorHandler/logging');
+    const { logDebug } = await import('../../../src/services/errorHandler/logging');
     expect(logDebug).toHaveBeenCalledWith(
       'handleTransformationError',
       expect.stringMatching(/Using streaming for large .* with streams API/),
@@ -450,10 +450,10 @@ describe('Large File Background Caching Integration', () => {
       errorResponse,
       mockConfig as any
     );
-    
+
     // When streamFallbackToKV has an error, it should be caught and logged
-    const { logErrorWithContext } = require('../../../src/utils/errorHandlingUtils');
-    
+    const { logErrorWithContext } = await import('../../../src/utils/errorHandlingUtils');
+
     // Check if the error was properly logged
     expect(logErrorWithContext).toHaveBeenCalledWith(
       expect.stringContaining('Error'),
@@ -476,13 +476,13 @@ describe('Large File Background Caching Integration', () => {
       noBodyResponse,
       mockConfig as any
     );
-    
+
     // Verify storeTransformedVideo was NOT called
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).not.toHaveBeenCalled();
-    
+
     // Verify no error was logged
-    const { logErrorWithContext } = require('../../../src/utils/errorHandlingUtils');
+    const { logErrorWithContext } = await import('../../../src/utils/errorHandlingUtils');
     expect(logErrorWithContext).not.toHaveBeenCalled();
   });
 });

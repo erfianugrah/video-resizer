@@ -108,6 +108,10 @@ export async function withCaching(
   // Import at the function level to avoid circular dependencies
   const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
   const cacheConfig = CacheConfigurationManager.getInstance();
+  if (!cacheConfig) {
+    logger.warn('CacheConfigurationManager instance unavailable - bypassing cache orchestration');
+    return handler();
+  }
   
   // Use the centralized shouldBypassCache method to determine if cache should be skipped
   // This only checks for specific bypass parameters, not all query parameters

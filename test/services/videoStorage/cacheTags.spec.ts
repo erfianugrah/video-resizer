@@ -11,7 +11,7 @@ describe('Cache Tags Generation', () => {
         getInstance: vi.fn().mockReturnValue({
           getConfig: vi.fn().mockReturnValue({
             enableCacheTags: true,
-            cacheTagPrefix: 'video-prod-'
+            cacheTagPrefix: 'vp-'
           })
         })
       }

@@ -18,6 +18,7 @@ import {
 } from '../services/presignedUrlCacheService';
 import { getPresignedUrlKV } from './flexibleBindings';
 import { createCategoryLogger } from './logger';
+import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 
 // Create a category-specific logger for PresignedUrlUtils
 const logger = createCategoryLogger('PresignedUrlUtils');
@@ -96,9 +97,7 @@ export function needsPresigning(
     // Use our logDebug function which is defined at the top of this file
     logDebug('Checking path patterns for presigned URL detection (fallback)', { url });
     
-    // Try to dynamically get VideoConfigurationManager
-    // This is not a circular dependency because it's used conditionally
-    const { VideoConfigurationManager } = require('../config/VideoConfigurationManager');
+    // Use configuration manager directly (ESM safe)
     const configManager = VideoConfigurationManager.getInstance();
     const pathPatterns = configManager.getConfig().pathPatterns || [];
 

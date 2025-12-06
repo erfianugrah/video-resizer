@@ -171,13 +171,13 @@ describe('VideoHandler Range Request Handling', () => {
   // Store original implementations
   let originalTransformStream: typeof TransformStream;
   
-  beforeEach(() => {
+  beforeEach(async () => {
     originalTransformStream = globalThis.TransformStream;
     // @ts-ignore - Type mismatch is expected in tests
     globalThis.TransformStream = MockTransformStream;
-    
+
     // Mock the videoTransformationService for testing
-    const { transformVideo } = require('../../src/services/videoTransformationService');
+    const { transformVideo } = await import('../../src/services/videoTransformationService');
     transformVideo.mockImplementation(async () => {
       return new Response('video content', {
         status: 200,
@@ -235,9 +235,9 @@ describe('VideoHandler Range Request Handling', () => {
     expect(response.status).toBe(206);
     expect(response.headers.get('Content-Range')).toBe('bytes 0-999/10000');
     expect(response.headers.get('X-Range-Handled-By')).toBe('CacheAPI-Test');
-    
+
     // Verify httpUtils was used
-    const { handleRangeRequestForInitialAccess } = require('../../src/utils/httpUtils');
+    const { handleRangeRequestForInitialAccess } = await import('../../src/utils/httpUtils');
     expect(handleRangeRequestForInitialAccess).toHaveBeenCalled();
   });
   
@@ -261,9 +261,9 @@ describe('VideoHandler Range Request Handling', () => {
         handleRangeRequestForInitialAccess: vi.fn(),
       };
     });
-    
+
     // Mock transformVideo to return a fallback response
-    const { transformVideo } = require('../../src/services/videoTransformationService');
+    const { transformVideo } = await import('../../src/services/videoTransformationService');
     transformVideo.mockImplementation(async () => {
       return new Response('fallback video content', {
         status: 200,
@@ -318,11 +318,11 @@ describe('VideoHandler Range Request Handling', () => {
     expect(response.headers.get('X-Bypass-Cache-API')).toBe('true');
     expect(response.headers.get('X-Direct-Stream-Only')).toBe('true');
     expect(response.headers.get('X-Fallback-Applied')).toBe('true');
-    
+
     // Verify httpUtils.handleRangeRequestForInitialAccess was NOT used (direct streaming)
-    const { handleRangeRequestForInitialAccess } = require('../../src/utils/httpUtils');
+    const { handleRangeRequestForInitialAccess } = await import('../../src/utils/httpUtils');
     expect(handleRangeRequestForInitialAccess).not.toHaveBeenCalled();
-    
+
     // Verify streaming was set up correctly
     expect(mockGetReader).toHaveBeenCalled();
   });

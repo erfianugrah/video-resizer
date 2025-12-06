@@ -290,7 +290,9 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         
         // Return the KV cached response with debug headers
         const responseBuilder = new ResponseBuilder(mutableResponse, context);
-        return await responseBuilder.withDebugInfo().build();
+        const builtResponse = await responseBuilder.withDebugInfo().build();
+        endTimedOperation(context, 'total-request-processing');
+        return builtResponse;
       }
       
       // If no cache hit, proceed with transformation using Origins

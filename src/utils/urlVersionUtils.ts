@@ -11,10 +11,20 @@ import { cacheConfig } from '../config/CacheConfigurationManager';
  */
 export function normalizeUrlForCaching(url: string): string {
   try {
-    const parsedUrl = new URL(url);
-    // Remove version parameter to ensure consistent cache keys
-    parsedUrl.searchParams.delete('v');
-    return parsedUrl.toString();
+    // Absolute URLs keep their origin
+    if (/^https?:\/\//i.test(url)) {
+      const parsedUrl = new URL(url);
+      parsedUrl.searchParams.delete('v');
+      return parsedUrl.toString();
+    }
+    // Pathnames need a base for URL parsing; strip back to path afterwards
+    if (url.startsWith('/')) {
+      const parsedUrl = new URL(url, 'http://dummy');
+      parsedUrl.searchParams.delete('v');
+      return `${parsedUrl.pathname}${parsedUrl.search}`;
+    }
+    // For everything else, leave untouched to avoid mangling
+    return url;
   } catch (err) {
     // If parsing fails, just return the original
     return url;

@@ -7,6 +7,10 @@ import { addBreadcrumb } from '../../utils/requestContext';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { EnvVariables } from '../../config/environmentConfig';
 import { storeCacheKeyVersion } from '../cacheVersionService';
+import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
+import { OriginResolver } from '../origins/OriginResolver';
+import { logDebug as pinoLogDebug } from '../../utils/pinoLogger';
+import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
 
 /**
  * Helper function to create base metadata for KV storage
@@ -464,9 +468,6 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
       const path = keyParts[1]; // The path is typically the second part
       
       if (path) {
-        const { VideoConfigurationManager } = require('../../config');
-        const { OriginResolver } = require('../origins/OriginResolver');
-        
         const videoConfig = VideoConfigurationManager.getInstance();
         const config = videoConfig.getConfig();
         const resolver = new OriginResolver(config);
@@ -516,8 +517,7 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
     
     // Log the TTL calculation for debugging
     try {
-      const { logDebug } = require('../../utils/pinoLogger');
-      logDebug('KV cache TTL countdown', {
+      pinoLogDebug('KV cache TTL countdown', {
         expiresAt: new Date(metadata.expiresAt).toISOString(),
         createdAt: new Date(metadata.createdAt).toISOString(),
         now: new Date(now).toISOString(),
@@ -544,7 +544,6 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
   // Final fallback to default TTL from cache configuration
   else {
     // Get the cache configuration manager
-    const { CacheConfigurationManager } = require('../../config');
     const cacheConfig = CacheConfigurationManager.getInstance();
     const ttl = cacheConfig.getConfig().defaultMaxAge;
     headers.set('Cache-Control', `public, max-age=${ttl}`);

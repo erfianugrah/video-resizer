@@ -1,13 +1,11 @@
 import { tryOrDefault } from '../../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../../utils/imqueryUtils';
+import { MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY, STANDARD_CHUNK_SIZE } from './constants';
 
 /**
  * Helper function to determine if chunking should be used based on content size
  */
 export function shouldUseChunking(contentSize: number): boolean {
-  // Import constants from local constants file
-  const { MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY } = require('./constants');
-  
   // Use chunking if the content size exceeds the maximum size for a single KV entry
   return contentSize > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY;
 }
@@ -16,9 +14,6 @@ export function shouldUseChunking(contentSize: number): boolean {
  * Helper function to calculate the estimated number of chunks needed
  */
 export function calculateChunkCount(totalSize: number): number {
-  // Import constants from local constants file
-  const { MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY, STANDARD_CHUNK_SIZE } = require('./constants');
-  
   if (totalSize <= MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY) {
     return 1; // Single entry, no chunking needed
   }

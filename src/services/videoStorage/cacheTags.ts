@@ -31,19 +31,18 @@ function generateCacheTagsImpl(
   
   const startTime = Date.now();
   const tags: string[] = [];
-  
+
   // Get prefix from the cache configuration
-  // Use a meaningful prefix
-  let prefix = 'video:'; // Clear, meaningful prefix
-  
+  // Use standardized short prefix format: vp- (video-processing)
+  let prefix = 'vp-';
+
   try {
     // Use the configured cacheTagPrefix from CacheConfigurationManager
-    const configuredPrefix = cacheConfig.getConfig().cacheTagPrefix || 'video-';
-    // Use a clear prefix format
-    prefix = configuredPrefix === 'video-prod-' ? 'video:' : 
-             configuredPrefix === 'video-' ? 'video:' : 
-             configuredPrefix.endsWith('-') ? configuredPrefix.slice(0, -1) + ':' : configuredPrefix + ':';
-    
+    const configuredPrefix = cacheConfig.getConfig().cacheTagPrefix;
+    if (configuredPrefix) {
+      prefix = configuredPrefix.endsWith('-') ? configuredPrefix : configuredPrefix + '-';
+    }
+
     logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
       configuredPrefix,
       shortPrefix: prefix,
@@ -56,60 +55,69 @@ function generateCacheTagsImpl(
       defaultPrefix: prefix
     });
   }
-  
-  // Add base tag for the video path (normalized to avoid special chars)
-  const leadingSlashPattern = '^\/+';
-  const invalidCharsPattern = '[^a-zA-Z0-9-_/.]';
-  const replacementChar = '-';
-  
+
   logDebug('VideoStorageService', 'Generating cache tags', {
     videoPath,
     hasOptions: !!options,
     hasHeaders: !!headers,
     prefix
   });
-  
-  // Normalize path to create safe tags
-  const normalizedPath = videoPath
-    .replace(new RegExp(leadingSlashPattern), '') // Remove leading slashes
-    .replace(new RegExp(invalidCharsPattern, 'g'), replacementChar); // Replace special chars
-  
+
+  // Extract the last 2 segments of the path for the tag
+  // e.g., /category/videos/test.mp4 -> videos-test.mp4
+  const pathSegments = videoPath.split('/').filter(s => s.length > 0);
+  const last2Segments = pathSegments.slice(-2).join('-');
+
+  // Normalize to create safe tags (replace special chars)
+  const normalizedPathTag = last2Segments.replace(/[^a-zA-Z0-9-_.]/g, '-');
+
   // Add path-based tag for purging all derivatives of a specific video
-  // This uses the full normalized path as the identifier
-  if (normalizedPath) {
-    // Use the full normalized path for cache tags
-    tags.push(`${prefix}${normalizedPath}`);
-    
+  // Format: vp-p-{last-2-segments}
+  if (normalizedPathTag) {
+    tags.push(`${prefix}p-${normalizedPathTag}`);
+
     // Add derivative-specific tag if available - for purging one specific derivative
+    // Format: vp-p-{last-2-segments}-{derivative}
     if (options.derivative) {
-      tags.push(`${prefix}${normalizedPath}-${options.derivative}`);
+      tags.push(`${prefix}p-${normalizedPathTag}-${options.derivative}`);
     }
   }
-  
+
   // Add derivative tag for purging all videos of a specific derivative type
+  // Format: vp-d-{derivative}
   if (options.derivative) {
-    tags.push(`${prefix}derivative-${options.derivative}`);
+    tags.push(`${prefix}d-${options.derivative}`);
   }
-  
+
   // Add format tag for format migration scenarios
+  // Format: vp-f-{format}
   if (options.format) {
-    tags.push(`${prefix}format:${options.format}`);
+    tags.push(`${prefix}f-${options.format}`);
   }
 
   // Add mode-specific tags only for non-video modes (frame, spritesheet)
+  // Format: vp-m-{mode}
   if (options.mode && options.mode !== 'video') {
-    tags.push(`${prefix}mode:${options.mode}`);
-    
+    tags.push(`${prefix}m-${options.mode}`);
+
     // Add frame-specific tags
+    // Format: vp-t-{time-value}
     if (options.mode === 'frame' && options.time) {
-      tags.push(`${prefix}time:${options.time.replace('s', '')}`);
+      const timeValue = String(options.time).replace('s', '');
+      tags.push(`${prefix}t-${timeValue}`);
     }
 
     // Add spritesheet-specific tags
     if (options.mode === 'spritesheet') {
-      if (options.columns) tags.push(`${prefix}cols:${options.columns}`);
-      if (options.rows) tags.push(`${prefix}rows:${options.rows}`);
-      if (options.interval) tags.push(`${prefix}interval:${options.interval.replace('s', '')}`);
+      // Format: vp-c-{columns}
+      if (options.columns) tags.push(`${prefix}c-${options.columns}`);
+      // Format: vp-r-{rows}
+      if (options.rows) tags.push(`${prefix}r-${options.rows}`);
+      // Format: vp-i-{interval-value}
+      if (options.interval) {
+        const intervalValue = String(options.interval).replace('s', '');
+        tags.push(`${prefix}i-${intervalValue}`);
+      }
     }
   }
   

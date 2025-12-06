@@ -471,6 +471,9 @@ export class TransformVideoCommand {
       // Get the request origin for CDN-CGI endpoint
       const requestUrl = new URL(request.url);
       const requestOrigin = requestUrl.origin;
+      // Preserve query string and hash from original request to append to source URL
+      const requestQuery = requestUrl.search; // includes the '?' if present
+      const requestHash = requestUrl.hash;   // includes the '#' if present
 
       // Build the CDN-CGI media transformation URL
       const sourcePath = sourceResolution.resolvedPath;
@@ -507,8 +510,9 @@ export class TransformVideoCommand {
               `No source URL available for ${sourceResolution.originType} source`,
             );
           }
-          sourceUrl = sourceResolution.sourceUrl;
-          
+          // Preserve query string and hash from original request
+          sourceUrl = sourceResolution.sourceUrl + requestQuery + requestHash;
+
           // Check if authentication is needed for this source
           if (sourceResolution.source.auth?.enabled) {
             const auth = sourceResolution.source.auth;

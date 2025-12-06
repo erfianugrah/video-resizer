@@ -200,10 +200,10 @@ export function debug(
   const logData = {
     ...data,
     requestId: context.requestId,
-    elapsedMs: breadcrumb.elapsedMs,
+    elapsedMs: breadcrumb?.elapsedMs ?? 0,
     category, // Include category directly for pino-pretty format
     breadcrumb, // Include breadcrumb for visibility
-    ...(breadcrumb.durationMs ? { durationMs: breadcrumb.durationMs } : {}),
+    ...(breadcrumb?.durationMs ? { durationMs: breadcrumb.durationMs } : {}),
     // Include breadcrumbs array size for diagnostics
     breadcrumbsCount: context.breadcrumbs.length,
     // For cleaner output
@@ -252,7 +252,7 @@ export function info(
   const logData = {
     ...data,
     requestId: context.requestId,
-    elapsedMs: breadcrumb.elapsedMs,
+    elapsedMs: breadcrumb?.elapsedMs ?? 0,
     category, // Include category directly for pino-pretty format
     breadcrumb, // Include breadcrumb for visibility
     ...(breadcrumb.durationMs ? { durationMs: breadcrumb.durationMs } : {}),
@@ -299,7 +299,7 @@ export function warn(
   const logData = {
     ...data,
     requestId: context.requestId,
-    elapsedMs: breadcrumb.elapsedMs,
+    elapsedMs: breadcrumb?.elapsedMs ?? 0,
     category, // Include category directly for pino-pretty format
     breadcrumb, // Include breadcrumb for visibility
     ...(breadcrumb.durationMs ? { durationMs: breadcrumb.durationMs } : {}),
@@ -347,7 +347,7 @@ export function error(
   const logData = {
     ...data,
     requestId: context.requestId,
-    elapsedMs: breadcrumb.elapsedMs,
+    elapsedMs: breadcrumb?.elapsedMs ?? 0,
     category, // Include category directly for pino-pretty format
     breadcrumb, // Include breadcrumb for visibility
     ...(breadcrumb.durationMs ? { durationMs: breadcrumb.durationMs } : {}),

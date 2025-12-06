@@ -77,7 +77,11 @@ const constructVideoUrlFromOrigin = tryOrNull<
       return `r2:${sourceResolution.resolvedPath}`;
     }
 
-    return sourceResolution.sourceUrl;
+    // Preserve query string and hash from original request
+    const requestQuery = url.search; // includes the '?' if present
+    const requestHash = url.hash;   // includes the '#' if present
+
+    return sourceResolution.sourceUrl + requestQuery + requestHash;
   }
 
   // For R2 sources without a source URL, construct r2: URL
@@ -982,8 +986,8 @@ const constructVideoUrl = tryOrNull<
   [string, URL, PathPattern, VideoTransformOptions],
   string
 >(function constructVideoUrlImpl(
-    path: string, 
-    url: URL, 
+    path: string,
+    url: URL,
     pattern: PathPattern,
     options: VideoTransformOptions
   ): string {
@@ -999,15 +1003,19 @@ const constructVideoUrl = tryOrNull<
   if (!pattern.originUrl) {
     throw new Error('Origin URL is required for path transformation');
   }
-  
+
   // Use enhanced path matching with captures
   const pathMatch = matchPathWithCaptures(path, [pattern]);
   if (!pathMatch) {
     throw new Error('Failed to match path with pattern');
   }
-  
+
   // Create a new URL with the pattern's origin
   const videoUrl = new URL(pattern.originUrl);
+
+  // Preserve query string and hash from original request
+  const requestQuery = url.search; // includes the '?' if present
+  const requestHash = url.hash;   // includes the '#' if present
   
   // Preserve the original path from the origin URL
   const originalPathname = videoUrl.pathname;

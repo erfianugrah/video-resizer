@@ -59,11 +59,12 @@ describe('Fallback Storage - streamFallbackToKV', () => {
   };
 
   // Reset mocks before each test
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     // Reset mocks for the dynamically imported storeTransformedVideo
-    vi.mocked(require('../../../src/services/kvStorage/storeVideo').storeTransformedVideo).mockReset();
-    vi.mocked(require('../../../src/services/kvStorage/storeVideo').storeTransformedVideo).mockResolvedValue(true);
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
+    vi.mocked(storeTransformedVideo).mockReset();
+    vi.mocked(storeTransformedVideo).mockResolvedValue(true);
   });
 
   it('should stream small fallback content to KV', async () => {
@@ -84,9 +85,9 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify storeTransformedVideo was called with correct parameters
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).toHaveBeenCalledTimes(1);
-    
+
     // Verify first parameter is the KV namespace
     expect(storeTransformedVideo.mock.calls[0][0]).toBe(mockEnv.VIDEO_TRANSFORMATIONS_CACHE);
     
@@ -95,9 +96,10 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     
     // Verify TTL was passed correctly
     expect(storeTransformedVideo.mock.calls[0][4]).toBe(3600);
-    
+
+
     // Verify logging
-    const { logDebug } = require('../../../src/services/videoStorage/logging');
+    const { logDebug } = await import('../../../src/services/videoStorage/logging');
     expect(logDebug).toHaveBeenCalledWith(
       'VideoStorageService', 
       'Starting background streaming of fallback to KV', 
@@ -136,7 +138,8 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     });
 
     // Mock storeTransformedVideo implementation
-    vi.mocked(require('../../../src/services/kvStorage/storeVideo').storeTransformedVideo).mockImplementation(
+    const { storeTransformedVideo: storeTransformedVideoMock } = await import('../../../src/services/kvStorage/storeVideo');
+    vi.mocked(storeTransformedVideoMock).mockImplementation(
       async (namespace, path, response, options, ttl) => {
         // Simulate successful storage
         return true;
@@ -151,9 +154,9 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify storeTransformedVideo was called with correct parameters
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).toHaveBeenCalledTimes(1);
-    
+
     // Verify response passed to storeTransformedVideo has proper headers
     expect(storeTransformedVideo).toHaveBeenCalledWith(
       expect.anything(),
@@ -164,10 +167,11 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       }),
       expect.any(Number)
     );
-    
+
+
     // Verify logging for large file
-    const { logDebug } = require('../../../src/services/videoStorage/logging');
-    
+    const { logDebug } = await import('../../../src/services/videoStorage/logging');
+
     // Check if log message about large content was recorded
     expect(logDebug).toHaveBeenCalledWith(
       'VideoStorageService', 
@@ -201,7 +205,8 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     });
 
     // Mock storeTransformedVideo to throw an error
-    vi.mocked(require('../../../src/services/kvStorage/storeVideo').storeTransformedVideo).mockRejectedValue(
+    const { storeTransformedVideo: storeTransformedVideoMock } = await import('../../../src/services/kvStorage/storeVideo');
+    vi.mocked(storeTransformedVideoMock).mockRejectedValue(
       new Error('KV storage error')
     );
 
@@ -213,7 +218,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify error handling
-    const { logErrorWithContext } = require('../../../src/utils/errorHandlingUtils');
+    const { logErrorWithContext } = await import('../../../src/utils/errorHandlingUtils');
     expect(logErrorWithContext).toHaveBeenCalledWith(
       'Error streaming fallback content to KV',
       expect.any(Error),
@@ -235,7 +240,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify storeTransformedVideo was not called
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).not.toHaveBeenCalled();
 
     // Test with missing response body
@@ -270,7 +275,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify storeTransformedVideo was not called for non-ok responses
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).not.toHaveBeenCalled();
   });
 
@@ -285,7 +290,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     });
 
     // Mock the path transformation to return a specific path
-    const { applyPathTransformation } = require('../../../src/services/videoStorage/pathTransform');
+    const { applyPathTransformation } = await import('../../../src/services/videoStorage/pathTransform');
     vi.mocked(applyPathTransformation).mockReturnValue('transformed/test.mp4');
 
     await streamFallbackToKV(
@@ -303,7 +308,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify storeTransformedVideo was called with transformed path
-    const { storeTransformedVideo } = require('../../../src/services/kvStorage/storeVideo');
+    const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo.mock.calls[0][1]).toBe('transformed/test.mp4');
   });
 
@@ -326,8 +331,9 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     // Setup a mock to inspect how storeTransformedVideo is called
     let capturedResponse: Response | null = null;
     let capturedOptions: any = null;
-    
-    vi.mocked(require('../../../src/services/kvStorage/storeVideo').storeTransformedVideo).mockImplementation(
+
+    const { storeTransformedVideo: storeTransformedVideoMock } = await import('../../../src/services/kvStorage/storeVideo');
+    vi.mocked(storeTransformedVideoMock).mockImplementation(
       async (namespace, path, response, options, ttl) => {
         capturedResponse = response;
         capturedOptions = options;
@@ -363,10 +369,10 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     }));
 
     // Verify the log message about large file processing
-    const { logDebug } = require('../../../src/services/videoStorage/logging');
+    const { logDebug } = await import('../../../src/services/videoStorage/logging');
     expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService', 
-      expect.stringContaining('Starting background streaming of fallback to KV'), 
+      'VideoStorageService',
+      expect.stringContaining('Starting background streaming of fallback to KV'),
       expect.objectContaining({
         contentLength: largeContentLength
       })

@@ -13,10 +13,20 @@ describe('Chunk Size Integrity Tests', () => {
     mockNamespace = {
       put: vi.fn(async (key: string, value: any, options: any) => {
         // Simulate KV storage behavior
-        const actualValue = value instanceof ArrayBuffer ? value : new TextEncoder().encode(value);
-        storedData.set(key, { 
-          value: actualValue, 
-          metadata: options?.metadata 
+        let actualValue: ArrayBuffer;
+        if (value instanceof ArrayBuffer) {
+          actualValue = value;
+        } else if (typeof value === 'string') {
+          // Handle string values (like manifest JSON)
+          actualValue = new TextEncoder().encode(value).buffer;
+        } else if (value instanceof Uint8Array) {
+          actualValue = value.buffer;
+        } else {
+          actualValue = new TextEncoder().encode(String(value)).buffer;
+        }
+        storedData.set(key, {
+          value: actualValue,
+          metadata: options?.metadata
         });
       }),
       get: vi.fn(async (key: string, options: any) => {
@@ -74,9 +84,13 @@ describe('Chunk Size Integrity Tests', () => {
     );
 
     expect(result).toBe(true);
-    
-    // Verify manifest was stored
-    const manifestKey = 'video/test/video.mp4/w=1920,h=1080,f=mp4';
+
+    // Log all stored keys for debugging
+    console.log('Stored keys:', Array.from(storedData.keys()));
+
+    // Verify manifest was stored - use the correct key format from generateKVKey
+    // Format is: video:test/video.mp4:w=1920:h=1080:f=mp4
+    const manifestKey = 'video:test/video.mp4:w=1920:h=1080:f=mp4';
     const manifestData = storedData.get(manifestKey);
     expect(manifestData).toBeDefined();
     
@@ -131,7 +145,7 @@ describe('Chunk Size Integrity Tests', () => {
     );
     
     // Now retrieve it
-    const retrieveResponse = await getTransformedVideo(
+    const retrieveResult = await getTransformedVideo(
       mockNamespace,
       '/test/video2.mp4',
       {
@@ -139,12 +153,13 @@ describe('Chunk Size Integrity Tests', () => {
         format: 'mp4'
       }
     );
-    
-    expect(retrieveResponse).not.toBeNull();
-    expect(retrieveResponse!.headers.get('Content-Length')).toBe(testVideoSize.toString());
-    
+
+    expect(retrieveResult).not.toBeNull();
+    const retrieveResponse = retrieveResult!.response;
+    expect(retrieveResponse.headers.get('Content-Length')).toBe(testVideoSize.toString());
+
     // Read the response to ensure no chunk size errors occur
-    const retrievedData = await retrieveResponse!.arrayBuffer();
+    const retrievedData = await retrieveResponse.arrayBuffer();
     expect(retrievedData.byteLength).toBe(testVideoSize);
     
     // Verify the data matches
@@ -185,10 +200,11 @@ describe('Chunk Size Integrity Tests', () => {
     );
 
     expect(result).toBe(true);
-    
-    // Verify manifest
-    const manifestKey = 'video/test/video3.mp4/w=3840,h=2160,f=mp4';
+
+    // Verify manifest - use correct key format
+    const manifestKey = 'video:test/video3.mp4:w=3840:h=2160:f=mp4';
     const manifestData = storedData.get(manifestKey);
+    expect(manifestData).toBeDefined();
     const manifest = JSON.parse(new TextDecoder().decode(manifestData!.value));
     
     // Check all chunks have correct sizes

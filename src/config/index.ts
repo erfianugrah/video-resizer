@@ -9,6 +9,7 @@ import { CacheConfigurationManager } from './CacheConfigurationManager';
 import { DebugConfigurationManager } from './DebugConfigurationManager';
 import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
+import workerConfig from '../../config/worker-config.json' assert { type: 'json' };
 
 // Use centralized logger
 import { createCategoryLogger } from '../utils/logger';
@@ -39,8 +40,6 @@ export function initializeConfiguration(env?: EnvVariables): ConfigurationSystem
   // Import and set worker config globally to ensure Origins configuration is available
   // This is critical for the OriginConfigurationManager to access the origins configuration
   try {
-    // Dynamic import to avoid webpack/bundler issues
-    const workerConfig = require('../../config/worker-config.json');
     if (workerConfig && typeof workerConfig === 'object') {
       // Set the worker config globally so it can be accessed by OriginConfigurationManager
       if (typeof globalThis !== 'undefined') {
