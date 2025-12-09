@@ -1,6 +1,6 @@
 /**
  * Video handler for processing video transformation requests
- * 
+ *
  * Main entry point for video transformation service
  */
 import { determineVideoOptions } from './videoOptionsService';
@@ -18,6 +18,7 @@ import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUt
 import { OriginResolver } from '../services/origins/OriginResolver';
 import { Origin } from '../services/videoStorage/interfaces';
 import { getCacheKV } from '../utils/flexibleBindings';
+import * as Sentry from '@sentry/cloudflare';
 
 /**
  * Main handler for video requests
@@ -189,12 +190,17 @@ export const handleVideoRequest = withErrorHandling<
           contentLength: contentLength,
           fromKvCache: true
         });
-        
+
         addBreadcrumb(context, 'Cache', 'KV cache hit', {
           path: url.pathname,
           cacheAge: cacheAge,
           contentType: contentType,
           size: contentLength
+        });
+
+        // Track cache hit
+        Sentry.metrics.count('video_handler.cache.hits', 1, {
+          attributes: { cache_type: 'kv' }
         });
         
         // End overall cache lookup timing
@@ -251,8 +257,13 @@ export const handleVideoRequest = withErrorHandling<
         addBreadcrumb(context, 'KVCache', 'KV cache miss', {
           path: url.pathname
         });
+
+        // Track cache miss
+        Sentry.metrics.count('video_handler.cache.misses', 1, {
+          attributes: { cache_type: 'kv' }
+        });
       }
-      
+
       endTimedOperation(context, 'cache-lookup');
 
       // Initialize Origin resolver and get path patterns
@@ -763,10 +774,21 @@ export const handleVideoRequest = withErrorHandling<
         .withDebugInfo()
         .build();
       endTimedOperation(context, 'response-building');
-      
+
       // End the total request timing
-      endTimedOperation(context, 'total-request-processing');
-      
+      const totalDuration = endTimedOperation(context, 'total-request-processing');
+
+      // Track response time
+      if (totalDuration !== undefined) {
+        Sentry.metrics.distribution('video_handler.response_time_ms', totalDuration, {
+          unit: 'millisecond',
+          attributes: {
+            cache_status: kvResponse ? 'hit' : 'miss',
+            has_origins: shouldUseOrigins ? 'yes' : 'no'
+          }
+        });
+      }
+
       return result;
     } catch (err: unknown) {
       // Record error timing
@@ -784,7 +806,14 @@ export const handleVideoRequest = withErrorHandling<
         context.diagnostics.errors = [];
       }
       context.diagnostics.errors.push(err instanceof Error ? err.message : 'Unknown error');
-      
+
+      // Track handler errors
+      Sentry.metrics.count('video_handler.errors.total', 1, {
+        attributes: {
+          error_type: err instanceof Error ? err.name : 'unknown'
+        }
+      });
+
       // Add storage diagnostics for better debugging
       try {
         const { VideoConfigurationManager } = await import('../config/VideoConfigurationManager');

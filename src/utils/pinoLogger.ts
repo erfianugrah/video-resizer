@@ -16,12 +16,45 @@ function logError(message: string, data?: Record<string, unknown>): void {
 
 // Pretty formatting is configured in the transport options
 
+// Detect environment
+// Cloudflare Workers: has caches API but no window or process
+const isCloudflareWorkers = typeof globalThis !== 'undefined' &&
+  typeof (globalThis as any).caches !== 'undefined' &&
+  typeof (globalThis as any).window === 'undefined' &&
+  typeof process === 'undefined';
+
+// Node.js: has process and no window
+const isNodeJS = typeof process !== 'undefined' &&
+  typeof (globalThis as any).window === 'undefined';
+
+// Browser: has window
+const isBrowser = typeof (globalThis as any).window !== 'undefined';
+
 // Default configuration for Pino
 let pinoConfig: pino.LoggerOptions = {
   level: 'debug',
-  // Use pretty formatting in development, standard JSON in production
-  ...(typeof globalThis !== 'undefined' && typeof (globalThis as any).window === 'undefined' ? {
-    // Node.js environment settings
+  // Base object with metadata that appears in every log
+  base: {
+    service: 'video-resizer',
+    logger: 'pino'
+  },
+  // Environment-specific configuration
+  ...(isCloudflareWorkers ? {
+    // Cloudflare Workers: Use browser mode with console output for Sentry integration
+    browser: {
+      asObject: false, // Don't serialize as object
+      write: {
+        // Write to console.* methods so Sentry can capture them
+        trace: (o: any) => console.debug(JSON.stringify(o)),
+        debug: (o: any) => console.debug(JSON.stringify(o)),
+        info: (o: any) => console.info(JSON.stringify(o)),
+        warn: (o: any) => console.warn(JSON.stringify(o)),
+        error: (o: any) => console.error(JSON.stringify(o)),
+        fatal: (o: any) => console.error(JSON.stringify(o)),
+      }
+    }
+  } : isNodeJS ? {
+    // Node.js environment: Use pino-pretty for development
     transport: {
       target: 'pino-pretty',
       options: {
@@ -29,12 +62,10 @@ let pinoConfig: pino.LoggerOptions = {
         translateTime: 'HH:MM:ss.l',
         ignore: 'pid,hostname,requestId,elapsedMs,durationMs,breadcrumbsCount,breadcrumb',
         messageFormat: '{levelLabel} \x1b[36m[{category}]\x1b[0m {msg} \x1b[90m(req:{requestId})\x1b[0m',
-        // Include all data including breadcrumbs to improve debug visibility
         singleLine: true,
         levelFirst: true,
         minimumLevel: 'debug',
         messageKey: 'msg',
-        // Custom formatter to clean up output
         customPrettifiers: {
           time: (timestamp: string) => `\x1b[90m${timestamp}\x1b[0m`,
           level: (level: string) => {
@@ -52,20 +83,22 @@ let pinoConfig: pino.LoggerOptions = {
       }
     }
   } : {
-    // Browser environment settings
+    // Browser environment
     browser: {
       asObject: true,
       transmit: {
         send: () => {}, // Noop function for browser compatibility
       }
     }
-  }),
-  // Base object with metadata that appears in every log
-  base: { 
-    service: 'video-resizer',
-    logger: 'pino' 
-  }
+  })
 };
+
+// Log environment detection for debugging
+console.debug(`[PinoLogger] Environment detected: ${
+  isCloudflareWorkers ? 'Cloudflare Workers' :
+  isNodeJS ? 'Node.js' :
+  isBrowser ? 'Browser' : 'Unknown'
+}`);
 
 // Sampling configuration - default to logging everything
 let samplingConfig = {
