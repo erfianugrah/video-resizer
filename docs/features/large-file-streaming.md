@@ -1,203 +1,57 @@
 # Large File Streaming Implementation
 
+*Last Updated: December 9, 2025*
+
 ## Overview
 
-This document describes the implementation of efficient large file streaming in our video resizer service. This solution addresses memory issues that previously occurred when processing large video files (>100MB) in Cloudflare Workers.
+Large video responses are handled with a mix of single-entry KV storage, chunked storage, and streamed fallback storage to avoid memory pressure in Workers.
 
-## Problem Statement
+## Size thresholds
 
-When processing large video files (particularly those exceeding 100MB), the video resizer service would encounter memory errors:
+- **≤20 MiB**: stored as a single KV entry.
+- **>20 MiB**: chunked at **5 MiB** per chunk with a manifest.
+- **>128 MiB (fallback fetches only)**: skipped for KV storage entirely to avoid memory pressure.
 
-```
-ReadableStream.tee() buffer limit exceeded
-```
+## Storage paths
 
-This error occurs in Cloudflare Workers when cloning a response with a large body. The issue was particularly prevalent in background caching operations using `waitUntil()`, where the response body was being cloned multiple times.
-
-Additionally, the original implementation would buffer the entire video content into memory before storing it to KV, which could cause another memory error with very large files:
+### Main transform path (`storeVideo.ts`)
+- The response body is buffered once to determine size and to build chunk manifests when needed.
+- Chunk writes are locked per chunk key and tagged for purging.
+- Background storage is triggered from `cacheOrchestrator` using `waitUntil` with retries.
 
 ```typescript
-// Buffer the entire video for exact size measurement and chunking decision
-let videoArrayBuffer: ArrayBuffer;
-try {
-  videoArrayBuffer = await responseClone.arrayBuffer();
-} catch (error) {
-  // Error handling
+// storeVideo.ts (size decision)
+const totalBytes = videoArrayBuffer.byteLength;
+if (totalBytes <= MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY) {
+  await namespace.put(key, videoArrayBuffer, { metadata });
+} else {
+  await writeChunks(namespace, key, videoArrayBuffer, metadata); // 5 MiB chunks
 }
 ```
 
-## Solution: Smart Size Detection with 128MB Limit
-
-After extensive testing, we've implemented a pragmatic approach to handling large files based on file size:
-
-1. **Hard 128MB Limit**: Files larger than 128MB are not stored in KV at all
-2. **Optimized Streaming**: Files between 40-128MB use streaming techniques to minimize memory usage
-3. **Efficient Standard Processing**: Files under 40MB use the regular approach for better performance
-
-This approach provides the following benefits:
-- Prevents "ReadableStream.tee() buffer limit exceeded" errors completely
-- Avoids memory pressure in Cloudflare Workers (which have a 128MB limit)
-- Focuses KV resources on files that can be reliably stored and retrieved
-- Maintains compatibility with Cloudflare's architecture limitations
-- Improves overall system stability and resource utilization
-
-## Implementation Details
-
-The solution consists of three major components:
-
-### 1. Size-Based Storage Decision in KV Storage Service
-
-We enhanced `storeTransformedVideo` to make intelligent decisions based on file size:
+### Fallback storage (`fallbackStorage.ts`)
+- Streams responses into 10 MB chunks directly to KV when a fallback source succeeds.
+- Skips KV storage when the content length exceeds 128 MB.
+- Uses streaming to avoid cloning large bodies multiple times.
 
 ```typescript
-export const storeTransformedVideo = withErrorHandling<
-  [/* parameters */],
-  Promise<boolean>
->(
-  async function storeTransformedVideoWrapper(
-    namespace,
-    sourcePath,
-    response,
-    options,
-    ttl?,
-    useStreaming?
-  ): Promise<boolean> {
-    try {
-      // Check content length
-      const contentLengthHeader = response.headers.get('Content-Length');
-      const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
-      
-      // Safety check: Skip storing files larger than 128MB to avoid memory issues
-      if (contentLength > 128 * 1024 * 1024) {
-        // Log the skipped storage
-        logDebug('Skipping KV storage for large file', {
-          path: sourcePath,
-          component: 'KVStorageService',
-          size: Math.round(contentLength / 1024 / 1024) + 'MB',
-          reason: 'Exceeds 128MB safety limit'
-        });
-        return false;
-      }
-      
-      // Check if we should use streaming mode (either explicitly requested or large file)
-      const shouldUseStreaming = useStreaming === true || 
-                              (contentLength > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY * 2);
-      
-      if (shouldUseStreaming) {
-        logDebug('Using streaming mode for large file', { 
-          sourcePath, 
-          contentLength,
-          explicitStreaming: useStreaming === true
-        });
-        
-        // Dynamically import the streaming implementation to avoid circular dependencies
-        const { storeTransformedVideoWithStreaming } = await import('./streamStorage');
-        return await storeTransformedVideoWithStreaming(namespace, sourcePath, response, options, ttl);
-      } else {
-        // Use the standard implementation for normal files
-        return await storeTransformedVideoImpl(namespace, sourcePath, response, options, ttl);
-      }
-    } catch (err) {
-      // Error handling
-    }
-  },
-  /* error handling configs */
-);
+// fallbackStorage.ts (skip >128 MB)
+const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+if (contentLength > 128 * 1024 * 1024) return response;
+env.executionCtx.waitUntil(streamFallbackToKV(env, transformedPath, response.clone(), config));
 ```
 
-### 2. Fallback Storage with Size Limits
+## Range-friendly retrieval
 
-Updated `fetchFromFallback` to skip KV storage for extremely large files:
+- `getVideo.ts` and `streamingHelpers.ts` read only the required chunks for a Range request.
+- Segmenting (512 KB–1 MB slices) keeps per-request memory small even when chunks are large.
+- If a Range is unsatisfiable, the full response is returned instead of 416 to keep playback stable.
 
-```typescript
-// In fetchFromFallbackImpl
-// Check if we should store this in KV (in the background)
-if (response.ok && env.executionCtx?.waitUntil && env.VIDEO_TRANSFORMATIONS_CACHE) {
-  // Get content length to check file size
-  const contentLengthHeader = response.headers.get('Content-Length');
-  const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
-  
-  // Skip KV storage completely for files larger than 128MB
-  if (contentLength > 128 * 1024 * 1024) { // 128MB threshold
-    logDebug('VideoStorageService', `Skipping KV storage for large fallback content (${Math.round(contentLength/1024/1024)}MB) - exceeds 128MB limit`, {
-      path: transformedPath,
-      size: contentLength
-    });
-  } else {
-    // For smaller files, proceed with KV storage
-    
-    // We need to clone the response before passing it to waitUntil and returning it
-    const responseClone = response.clone();
-    
-    // Use waitUntil to process in the background without blocking the response
-    env.executionCtx.waitUntil(
-      streamFallbackToKV(env, transformedPath, responseClone, config)
-    );
-    
-    logDebug('VideoStorageService', 'Initiating background storage of fallback content', {
-      path: transformedPath,
-      size: contentLength || 'unknown'
-    });
-  }
-}
-```
+## Operational notes
 
-### 3. Streaming Implementation For Medium-Sized Files
-
-For files that fall within our storage limits but are still large (40-128MB), we use an optimized streaming approach:
-
-```typescript
-export async function streamFallbackToKV(
-  env: EnvVariables,
-  sourcePath: string,
-  fallbackResponse: Response,
-  config: VideoResizerConfig
-): Promise<void> {
-  // Use the correct KV namespace from env
-  if (!env.VIDEO_TRANSFORMATIONS_CACHE || !fallbackResponse.body || !fallbackResponse.ok) {
-    return;
-  }
-
-  try {
-    const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');
-    const contentType = fallbackResponse.headers.get('Content-Type') || 'video/mp4';
-    const contentLength = parseInt(fallbackResponse.headers.get('Content-Length') || '0', 10);
-    
-    // Safety check: Skip storing files larger than 128MB to avoid memory issues
-    if (contentLength > 128 * 1024 * 1024) {
-      logDebug('VideoStorageService', 'Skipping KV storage for large file in streamFallbackToKV', {
-        path: transformedPath,
-        size: Math.round(contentLength / 1024 / 1024) + 'MB',
-        reason: 'Exceeds 128MB safety limit'
-      });
-      return;
-    }
-    
-    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
-      path: transformedPath,
-      contentType,
-      contentLength 
-    });
-
-    // For files close to our limit, use optimized streaming approach
-    if (contentLength > 40 * 1024 * 1024) {
-      logDebug('KVCache', 'Using optimized streaming for large file', {
-        path: transformedPath,
-        sizeMB: Math.round(contentLength / 1024 / 1024)
-      });
-      
-      // Use the streaming implementation for these medium-sized files
-      // Rest of optimized implementation...
-    }
-    
-    // For smaller files, use standard approach...
-  } catch (err) {
-    // Error handling
-  }
-}
-```
-
-## How It Works
+- Prefer supplying `Content-Length` headers from origins; it enables early decisions on chunking/skipping.
+- Monitor debug breadcrumbs for `chunkCount`, `chunkSizeMismatch`, and fallback skip decisions.
+- KV storage for fallbacks is best-effort; skipping >128 MB content is expected behaviour, not an error.
 
 1. **Size Detection**: The system automatically detects file size and makes processing decisions accordingly:
    - Files > 128MB: Skip KV storage completely (streamed directly from origin)

@@ -198,7 +198,8 @@ interface BreadcrumbConfigWithInit extends BreadcrumbConfig {
 
 let breadcrumbConfig: BreadcrumbConfigWithInit = {
   enabled: true,
-  maxItems: 100,
+  // Keep fallback limit small to avoid oversized debug headers when config isn't loaded yet
+  maxItems: 25,
   logAdditions: false,
   initialized: false
 };

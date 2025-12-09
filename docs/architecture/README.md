@@ -1,23 +1,21 @@
 # Video Resizer Architecture
 
-*Last Updated: May 15, 2025*
+*Last Updated: December 9, 2025*
 
-This section provides comprehensive documentation on the Video Resizer architecture, including system design, components, patterns, and evolution.
+This section documents the architecture that is currently implemented in the codebase.
 
 ## Core Architecture Documents
 
-- [Architecture Overview](./architecture-overview.md) - Comprehensive system design overview
-- [Design Patterns](./design-patterns.md) - Strategy, Command, and other patterns used
-- [Service Separation](./service-separation.md) - Modular service architecture
-- [Origins System](./origins-system.md) - Origins-based configuration architecture
-- [Origins Migration](./origins-migration.md) - Migration from legacy to Origins system
-- [Multi-Origin Fallback](./multi-origin-fallback.md) - Consolidated failover architecture
-- [Dependency Management](./dependency-management.md) - Dependency injection approach
-- [Architecture Roadmap](./roadmap.md) - Future architecture plans
+- [Architecture Overview](./architecture-overview.md) - System design and request flow
+- [Design Patterns](./design-patterns.md) - Strategy, Command, and related patterns
+- [Service Separation](./service-separation.md) - How responsibilities are split across services
+- [Origins System](./origins-system.md) - Origins-based configuration and resolution
+- [Multi-Origin Fallback](./multi-origin-fallback.md) - Failover and retry behaviour
+- [Logging Architecture](./logging/README.md) - Centralised logging, breadcrumbs, and adapters
 
 ## System Architecture
 
-The Video Resizer follows a modern, service-oriented architecture with clearly defined layers and responsibilities:
+The Video Resizer follows a service-oriented architecture with clearly defined layers and responsibilities:
 
 1. **Configuration Layer**: Manages settings with type safety and validation
 2. **Domain Layer**: Implements core business logic through commands and strategies
@@ -36,38 +34,20 @@ The architecture uses several design patterns:
 
 ## Recent Architectural Improvements
 
-### Consolidated 404 Failover
+### Consolidated failover
 
-The system now implements a consolidated approach for handling 404 errors from the transformation proxy:
+- 404s from the transformation proxy are handled by `retryWithAlternativeOrigins`.
+- Failed sources are excluded from further attempts during a request.
+- Multi-origin retries are coordinated through the Origins system rather than bespoke handlers.
 
-- **Clean Separation**: 404s from cdn-cgi/media are handled by `retryWithAlternativeOrigins`
-- **Source Exclusion**: Failed sources are excluded from retry attempts
-- **Multi-Origin Retry**: The Origins system tries all remaining sources across matching origins
-- **Simplified Error Handler**: `handleTransformationError` now focuses on non-404 errors
+### Service separation
 
-This consolidation eliminates duplicate failover logic and provides a single source of truth for failover behavior. See [Multi-Origin Fallback](./multi-origin-fallback.md) and [404 Retry Mechanism](../features/404-retry-mechanism.md) for details.
+- KV Storage, Video Storage, Error Handling, and Configuration each live in dedicated modules under `src/services` and `src/config`.
+- Shared utilities (e.g., `cacheOrchestrator`, `streamUtils`) keep handlers thin.
 
-### Service Separation Pattern
+### Non-blocking operations
 
-The codebase has been refactored to improve maintainability by breaking down large monolithic files into smaller, focused modules:
+- Cache version writes and TTL refreshes run via `waitUntil` when available.
+- Background KV storage retries are bounded (3 attempts) and logged with breadcrumbs.
 
-- **KV Storage Service**: Separated into 9 specialized modules
-- **Video Storage Service**: Separated into 9 focused components
-- **Error Handler Service**: Split into 6 responsibility-specific files
-- **Configuration Service**: Divided into 8 logical modules
-- **Transformation Utils**: Organized into 5 focused utility files
-
-This pattern maintains backward compatibility while improving code organization and testability. See [Service Separation](./service-separation.md) for details.
-
-### Non-Blocking Operations
-
-The architecture now emphasizes non-blocking operations for improved performance:
-
-- Cache version metadata updates performed in the background
-- TTL refresh operations executed non-blocking
-- Streaming responses for large content
-- Parallel operations where beneficial
-
-These improvements ensure responsive user experience even during resource-intensive operations.
-
-See the [Architecture Overview](./architecture-overview.md) for a detailed explanation of the system's architecture.
+See the [Architecture Overview](./architecture-overview.md) for the end-to-end flow and component boundaries.

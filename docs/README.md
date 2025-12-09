@@ -1,24 +1,24 @@
 # Video Resizer Documentation
 
-*Last Updated: January 21, 2025*
+*Last Updated: December 9, 2025*
 
 Welcome to the Video Resizer documentation. This comprehensive guide provides detailed information about the video-resizer project, its architecture, configuration, features, and usage.
 
 ## Documentation Structure
 
-Our documentation is organized into two main sections:
+The docs are organized into two main sections:
 
 ### User Documentation
 
 Documentation for users of the video-resizer system:
 
-- [**Guides**](./guides/README.md) - Step-by-step tutorials and practical guides
-  - [Quickstart Guide](./guides/quickstart.md)
-  - [Configuration Guide](./guides/configuration.md)
-  - [Troubleshooting Guide](./guides/troubleshooting.md)
-  - [Performance Tuning Guide](./guides/performance-tuning.md)
+- [**Guides**](./guides/README.md)
+  - [Quickstart](./guides/quickstart.md)
+  - [Configuration](./guides/configuration.md)
+  - [Troubleshooting](./guides/troubleshooting.md)
+  - [Performance Tuning](./guides/performance-tuning.md)
 
-- [**Features**](./features/README.md) - Detailed feature documentation
+- [**Features**](./features/README.md)
   - [Video Mode](./features/video-mode.md)
   - [Frame Mode](./features/frame-mode.md)
   - [Spritesheet Mode](./features/spritesheet-mode.md)
@@ -29,33 +29,32 @@ Documentation for users of the video-resizer system:
   - [Debug UI](./features/debug-ui.md)
   - [IMQuery Support](./features/imquery.md)
 
-- [**Reference**](./reference/README.md) - Reference documentation
+- [**Reference**](./reference/README.md)
   - [API Reference](./reference/api-reference.md)
   - [Configuration Schema](./reference/configuration-schema.md)
   - [Glossary](./reference/glossary.md)
 
 ### Technical Documentation
 
-Documentation for developers working on the video-resizer codebase:
+Documentation for developers working on the codebase:
 
-- [**Architecture**](./architecture/README.md) - System design and components
+- [**Architecture**](./architecture/README.md)
   - [Architecture Overview](./architecture/architecture-overview.md)
   - [Design Patterns](./architecture/design-patterns.md)
   - [Service Separation](./architecture/service-separation.md)
   - [Origins System](./architecture/origins-system.md)
-  - [Origins Migration](./architecture/origins-migration.md)
   - [Multi-Origin Fallback](./architecture/multi-origin-fallback.md)
+  - [Logging Architecture](./architecture/logging/README.md)
 
-- [**Caching System**](./caching/README.md) - Caching implementation details
+- [**Caching System**](./caching/README.md)
   - [Caching Architecture](./caching/caching-architecture.md)
   - [KV Implementation](./caching/kv-implementation.md)
-  - [KV Chunking Implementation](./caching/kv-chunking-implementation.md)
   - [TTL Configuration](./caching/ttl-configuration.md)
   - [TTL Refresh](./caching/ttl-refresh.md)
   - [Cache Versioning](./caching/versioning.md)
   - [Performance Optimizations](./caching/performance-optimizations.md)
 
-- [**Advanced Features**](./features/README.md) - Technical implementation details
+- [**Advanced Features**](./features/README.md)
   - [Background Fallback Caching](./features/background-fallback-caching.md)
   - [Large Fallback Chunking](./features/large-fallback-chunking.md)
   - [Large File Streaming](./features/large-file-streaming.md)
@@ -63,31 +62,29 @@ Documentation for developers working on the video-resizer codebase:
   - [KV Chunking](./features/kv-chunking.md)
   - [Logging System](./features/logging.md)
 
-- [**Error Handling**](./error-handling/README.md) - Error handling patterns
+- [**Error Handling**](./error-handling/README.md)
   - [Error Types](./error-handling/error-types.md)
   - [Implementation](./error-handling/implementation.md)
   - [Transformation Error Handling](./error-handling/transformation-error-handling.md)
 
-- [**Configuration**](./configuration/README.md) - Configuration system details
+- [**Configuration**](./configuration/README.md)
   - [Config Management](./configuration/config-management.md)
   - [Path Patterns](./configuration/path-patterns.md)
   - [Origins Configuration](./configuration/origins-configuration.md)
 
-- [**Deployment**](./deployment/README.md) - Deployment instructions
+- [**Deployment**](./deployment/README.md)
 
 ## Overview
 
 The Video Resizer is a Cloudflare Worker for transforming and resizing video content on the edge. It provides:
 
-- Video transformation and optimization
-- Multiple transformation strategies (video, frame, spritesheet)
-- Advanced caching with KV store integration and chunking for large videos
-- Enhanced range request support for seeking and streaming
-- Client-aware responsive transformations
-- Multi-origin fallback for better resilience
-- Automatic device and bandwidth detection
-- Debug UI for monitoring and troubleshooting
-- Modular architecture with separated service components
+- Video, frame, and spritesheet transformations via Cloudflare Media endpoints
+- KV-backed caching with chunking for large objects (5 MiB chunks; 20 MiB single-entry threshold)
+- Range request handling that reconstructs responses from KV chunks
+- Origins-based storage resolution with multi-origin fallback and optional legacy path patterns
+- Request coalescing to collapse duplicate fetches
+- Debug UI and rich diagnostics breadcrumbs
+- Modular services for storage, transformation, configuration, and logging
 
 ## Getting Started
 
@@ -102,12 +99,6 @@ New to the Video Resizer? Start here:
 
 | Date | Update |
 |------|--------|
-| January 21, 2025 | Fixed chunk size mismatch errors with concurrency-safe chunk locking |
-| January 21, 2025 | Added chunk size tolerance for high-concurrency scenarios |
-| May 15, 2025 | Added Multi-Origin Fallback for improved resilience |
-| May 15, 2025 | Reorganized documentation structure for better usability |
-| May 10, 2025 | Added KV Chunking implementation for large videos |
-| May 10, 2025 | Added Service Separation Pattern documentation |
-| May 10, 2025 | Added Non-blocking cache version writes |
-| May 10, 2025 | Added Performance Optimizations documentation |
-| May 1, 2025 | Completed reference documentation (API reference, configuration schema) |
+| December 9, 2025 | Cleaned and aligned docs with current code (KV-only caching, origin system) |
+| May 15, 2025 | Multi-origin fallback enabled by default in `worker-config.json` |
+| January 21, 2025 | Chunk locking added to prevent KV chunk size mismatches |

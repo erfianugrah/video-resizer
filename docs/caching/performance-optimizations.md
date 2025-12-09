@@ -1,280 +1,58 @@
 # Caching Performance Optimizations
 
-*Last Updated: May 10, 2025*
+*Last Updated: December 9, 2025*
 
-## Table of Contents
+This page lists the optimizations that are **implemented** in the current codebase. Older working notes were removed to avoid drift.
 
-- [Overview](#overview)
-- [Non-Blocking Cache Version Writes](#non-blocking-cache-version-writes)
-- [KV Edge Cache](#kv-edge-cache)
-- [Automatic TTL Refresh](#automatic-ttl-refresh)
-- [Range Request Optimizations](#range-request-optimizations)
-- [Cache Key Structure](#cache-key-structure)
-- [Smart Purging](#smart-purging)
-- [Memory Optimization](#memory-optimization)
-- [Implementation Best Practices](#implementation-best-practices)
-
-## Overview
-
-The Video Resizer includes several performance optimizations in its caching system to ensure efficient operation and minimize latency. These optimizations are designed to provide the best possible user experience while maintaining system reliability and minimizing costs.
-
-## Non-Blocking Cache Version Writes
-
-One key optimization is the use of non-blocking writes for cache version metadata. This prevents the initial user request from being delayed by KV write operations.
-
-### Implementation Details
-
-The system uses Cloudflare's `waitUntil` API to perform cache version updates in the background:
+## Non-blocking KV writes
+- Cache version writes and transformed-video storage run via `waitUntil` when available (`cacheOrchestrator`).
+- Storage retries up to 3 times with fresh clones to avoid body reuse errors.
+- Falls back to synchronous writes when no execution context is present (tests).
 
 ```typescript
-// Store updated version in background if possible
-const requestContextForWaitUntil = getCurrentContext(); // Get the current request context
-const executionCtxForWaitUntil = requestContextForWaitUntil?.executionContext;
-
-if (executionCtxForWaitUntil?.waitUntil) { // Use the context obtained from getCurrentContext()
-  executionCtxForWaitUntil.waitUntil(
-    storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl)
-  );
-} else {
-  // Fall back to direct storage
-  logDebug('Falling back to await for storeCacheKeyVersion, waitUntil not available via requestContext', { cacheKey });
-  await storeCacheKeyVersion(env, cacheKey, nextVersion, versionTtl);
-}
-```
-
-### Reliable Context Retrieval
-
-The system uses a reliable method to get the current execution context:
-
-1. Uses `getCurrentContext()` to retrieve the current request context
-2. Accesses the `executionContext` property from the `RequestContext`
-3. Uses `executionContext.waitUntil()` for non-blocking operations
-4. Falls back to synchronous operations if needed
-
-### Benefits
-
-- Initial response is sent to the client without waiting for KV writes
-- Improves perceived performance for users
-- Reduces the risk of request timeouts for large videos
-- Provides better logging when falling back to a blocking operation
-- Maintains cache version consistency even in edge cases
-
-## KV Edge Cache
-
-The Video Resizer leverages Cloudflare's edge cache for KV reads to reduce latency and KV operation costs.
-
-### Implementation Details
-
-KV reads are configured with a cacheTtl parameter:
-
-```typescript
-const DEFAULT_KV_READ_CACHE_TTL = 3600; // 1 hour
-
-// Used in KV read operations
-const kvReadOptions = { cacheTtl: DEFAULT_KV_READ_CACHE_TTL };
-const cachedValue = await namespace.get(key, 'arrayBuffer', kvReadOptions);
-```
-
-### Benefits
-
-- Reduces KV read operations for frequently accessed content
-- Lowers latency by serving KV data from the edge
-- Decreases costs associated with KV operations
-- Provides multiple layers of caching (edge cache + KV)
-
-## Automatic TTL Refresh
-
-The caching system implements automatic TTL refresh for frequently accessed content.
-
-### Implementation Details
-
-When a video is accessed near its expiration time, the TTL is automatically extended:
-
-```typescript
-// Check if this is a good candidate for TTL refresh
-const shouldRefreshTtl = isFrequentlyAccessed && 
-  remainingTtlPercentage < TTL_REFRESH_THRESHOLD;
-
-if (shouldRefreshTtl) {
-  // Refresh TTL in the background
-  const refreshContext = getCurrentContext();
-  if (refreshContext?.executionContext?.waitUntil) {
-    refreshContext.executionContext.waitUntil(
-      refreshCacheTtl(key, videoContentType, metadata, originalTtl)
-    );
+// cacheOrchestrator.ts (waitUntil retry)
+ctx.waitUntil((async () => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const clone = attempt === 1 ? responseForKV : responseForClient.clone();
+    const ok = await storeInKVCache(env, sourcePath, clone, optionsWithIMQuery);
+    if (ok) break;
   }
-}
+})());
 ```
 
-### Benefits
+## KV read caching
+- KV reads use `cacheTtl: 3600` seconds (`DEFAULT_KV_READ_CACHE_TTL`) to let Cloudflare edge-cache KV responses and reduce namespace traffic.
 
-- Keeps frequently accessed content in cache longer
-- Reduces origin load for popular content
-- Operates in the background without adding latency
-- Configurable thresholds for different content types
+## TTL refresh
+- `kvTtlRefreshUtils` refreshes TTLs in the background when entries are near expiry, triggered for hot objects during reads.
 
-## Range Request Optimizations
-
-The system includes several optimizations specifically for range requests.
-
-### Implementation Details
-
-For chunked videos, the system calculates which chunks contain the requested range:
+## Range-aware chunk retrieval
+- `streamingHelpers` pre-computes the minimal set of chunks for a requested range and streams only the required byte slices.
+- Unsatisfiable ranges fall back to returning the full response to keep players working instead of emitting 416.
+- Segmented writes (512 KB–1 MB slices) limit memory pressure during streaming.
 
 ```typescript
-// Calculate needed chunks for range request
-const neededChunks = [];
-let currentPos = 0;
-
-for (let i = 0; i < manifest.chunkCount; i++) {
-  const chunkSize = manifest.actualChunkSizes[i];
-  const chunkStart = currentPos;
-  const chunkEnd = chunkStart + chunkSize - 1;
-  
-  // Check if this chunk overlaps with requested range
-  if (rangeEnd >= chunkStart && rangeStart <= chunkEnd) {
-    neededChunks.push({
-      index: i,
-      size: chunkSize,
-      start: chunkStart,
-      end: chunkEnd
-    });
-  }
-  
-  currentPos += chunkSize;
-}
-
-// Only fetch needed chunks
-for (const chunk of neededChunks) {
-  // Fetch and process chunk
+// streamingHelpers.ts (segment writes)
+const SEGMENT_SIZE = 512 * 1024;
+for (let i = 0; i < Math.ceil(slice.byteLength / SEGMENT_SIZE); i++) {
+  const segment = slice.subarray(i * SEGMENT_SIZE, (i + 1) * SEGMENT_SIZE);
+  await writer.write(segment);
 }
 ```
 
-### Benefits
+## Cache key design
+- Keys are derivative-first (`{mode}:{path}:derivative=mobile`), falling back to parameterized keys when no derivative is present.
+- Paths are sanitized (leading slashes removed, invalid characters replaced with `-`) to keep KV keys valid.
 
-- Reduces data transfer for range requests
-- Improves seeking performance in video players
-- Minimizes memory usage for large videos
-- Speeds up initial playback start time
+## Cache tags & purging
+- Short tags (`vp-*`) are generated once per store and applied to all chunks and manifests, enabling tag-based purges that remove every piece of a variant.
 
-## Cache Key Structure
+## Memory safeguards
+- Single-entry limit: 20 MiB; above that, data is chunked at 5 MiB.
+- Fallback storage skips KV entirely above 128 MB to avoid Worker memory exhaustion.
+- Chunk locks prevent concurrent writers from producing mismatched sizes.
 
-The caching system uses an optimized cache key structure.
-
-### Implementation Details
-
-Key structure is designed for efficient lookups and consistent hashing:
-
-```typescript
-// Generating a cache key
-function generateKVKey(
-  sourcePath: string, 
-  options: TransformOptions
-): string {
-  const sortedOptions = sortObjectKeys(filterOptions(options));
-  const optionsHash = hashObject(sortedOptions);
-  
-  return `video:${sourcePath}:${optionsHash}`;
-}
-```
-
-### Benefits
-
-- Consistent cache keys across requests
-- Efficient storage and lookup
-- Avoids key collisions while minimizing key length
-- Supports versioning and invalidation
-
-## Smart Purging
-
-The caching system uses smart purging with cache tags to efficiently invalidate related content.
-
-### Implementation Details
-
-Content is tagged with multiple cache tags based on different characteristics:
-
-```typescript
-// Generate cache tags for a video
-function generateCacheTags(sourcePath: string, options: TransformOptions): string[] {
-  return [
-    `source:${sourcePath}`,
-    `width:${options.width || 'default'}`,
-    `height:${options.height || 'default'}`,
-    `format:${options.format || 'default'}`,
-    `mode:${options.mode || 'video'}`
-  ];
-}
-
-// These tags are used during purging
-async function purgeByTag(tag: string): Promise<void> {
-  // Find all keys with this tag and purge them
-}
-```
-
-### Benefits
-
-- Granular cache invalidation
-- Efficient purging of related content
-- Prevents orphaned content in the cache
-- Supports targeted invalidation strategies
-
-## Memory Optimization
-
-The system implements several memory optimizations to ensure efficient operation, especially for concurrent video streaming.
-
-### Implementation Details
-
-The system uses segmented streaming with zero-copy buffer handling:
-
-```typescript
-// CRITICAL OPTIMIZATION: Process in smaller segments to avoid memory pressure
-const SEGMENT_SIZE = 256 * 1024; // 256KB segments for stream processing
-const totalSegments = Math.ceil(relevantPortion.byteLength / SEGMENT_SIZE);
-
-// Process each segment individually with a view (not a copy)
-for (let i = 0; i < totalSegments; i++) {
-  // Calculate segment boundaries
-  const start = i * SEGMENT_SIZE;
-  const end = Math.min((i + 1) * SEGMENT_SIZE, relevantPortion.byteLength);
-  
-  // Use subarray() which creates a view without copying data
-  const segment = relevantPortion.subarray(start, end);
-  
-  // Adaptive timeout based on segment size
-  const timeoutMs = Math.max(2000, segment.byteLength / 128);
-  
-  // Process with timeout to prevent stalled clients
-  await Promise.race([
-    writer.write(segment),
-    new Promise<void>((_, reject) => 
-      setTimeout(() => reject(new Error('Segment write timed out')), timeoutMs)
-    )
-  ]);
-}
-```
-
-### Benefits
-
-- Dramatically reduces memory usage (up to 80%) for concurrent video streaming
-- Prevents "detached ArrayBuffer" errors and memory limit exceeded crashes
-- Enables handling of more concurrent video streams
-- Efficient garbage collection between segments
-- Graceful handling of client disconnections with adaptive timeouts
-- Memory consumption proportional to actual streaming activity, not file size
-
-For more details on memory optimization for video streaming, see [Memory-Efficient Streaming](/docs/performance-optimizations/memory-efficient-streaming.md).
-
-## Implementation Best Practices
-
-When implementing or modifying the caching system, follow these best practices:
-
-1. **Always Use Non-Blocking Operations**: Use `waitUntil` for background operations
-2. **Leverage Edge Cache**: Configure appropriate edge cache TTLs
-3. **Implement Fallbacks**: Always have a synchronous fallback if the non-blocking approach fails
-4. **Add Detailed Logging**: Log performance metrics and operation durations
-5. **Use Streaming for Large Content**: Stream responses to minimize memory usage
-6. **Calculate Chunk Needs Upfront**: For range requests, determine needed chunks before fetching
-7. **Monitor Performance**: Track cache hit rates and operation durations
-8. **Optimize Cache Keys**: Use efficient, consistent key generation
-9. **Implement TTL Refresh**: Automatically refresh TTL for popular content
-10. **Use Smart Purging**: Implement granular cache invalidation with tags
+## Usage tips
+- Prefer derivatives to maximize cache hits.
+- Keep `storeIndefinitely` disabled unless you have automated purge tooling.
+- In debug mode, inspect `X-Breadcrumbs-*` headers to confirm cache decisions, chunk counts, and TTL refresh actions.

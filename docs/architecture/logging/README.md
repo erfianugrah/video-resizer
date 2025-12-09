@@ -209,10 +209,10 @@ logError('VideoProcessor', 'Failed', { error: error.message });
 
 ## Future Improvements
 
-1. **Log Aggregation**: Integration with external logging services
-2. **Metrics Export**: Export performance metrics to monitoring systems
-3. **Dynamic Configuration**: Runtime log level changes
-4. **Log Sampling**: Intelligent sampling for high-volume scenarios
+1. **Log Aggregation**: Ship logs to an external sink (not yet wired).
+2. **Metrics Export**: Emit structured metrics alongside logs for dashboards.
+3. **Dynamic Configuration**: Runtime log-level changes via KV without redeploy.
+4. **Sampling Controls**: Per-category sampling to cap volume under burst.
 
 ## Implementation Status
 
@@ -226,11 +226,11 @@ logError('VideoProcessor', 'Failed', { error: error.message });
 - ✅ Request context integration
 
 ### In Progress
-- 🔄 Complete migration from legacy logging
-- 🔄 External service integration
-- 🔄 Advanced filtering options
+- 🔄 Legacy log call reduction (phasing out `loggerUtils` usages)
 
 ### Planned
-- 📋 Log aggregation service
-- 📋 Metrics dashboard
-- 📋 AI-powered log analysis
+- 📋 External log sink integration
+- 📋 Runtime log-level toggles via KV
+
+### Defaults and limits
+- Breadcrumbs default to `maxItems=25` when config is not yet loaded; the configured limit is pulled from `LoggingConfigurationManager` (`logging.breadcrumbs.maxItems`).

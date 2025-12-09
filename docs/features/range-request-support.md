@@ -71,64 +71,25 @@ For uncached videos, range requests are:
 3. Forwarded to the origin with the same range
 4. Processed and returned with proper `206 Partial Content` status
 
-### 2. Cache API Integration
+### 2. KV Range Support
 
-For cached videos, the system leverages Cloudflare's Cache API which has built-in range request handling:
+Cache API storage is disabled; cached ranges are served directly from KV:
+1. Determine if the KV entry is chunked or single-entry.
+2. Use `streamingHelpers` to pre-compute the minimal set of chunks covering the requested bytes.
+3. Stream only the needed slices; if the range is unsatisfiable, fall back to the full response instead of 416.
 
-```typescript
-// Store a full response in cache with Accept-Ranges header
-const fullResponse = await videoTransform(request);
-const headersWithRange = new Headers(fullResponse.headers);
-headersWithRange.set('Accept-Ranges', 'bytes');
-headersWithRange.set('Content-Length', body.byteLength.toString());
-
-const cacheableResponse = new Response(body, {
-  status: fullResponse.status,
-  headers: headersWithRange
-});
-
-// Store in cache with a simplified key (no Range header)
-const cacheKey = new Request(url, { method: 'GET' });
-await cache.put(cacheKey, cacheableResponse);
-
-// Later, a range request can be served from this cached resource
-// The Cache API automatically handles the range extraction
-```
-
-### 3. KV Range Support
-
-For KV-cached videos, the system:
-1. Retrieves the entire resource from KV
-2. Extracts the requested range
-3. Constructs a proper `206 Partial Content` response
+Key behaviours:
+- `Accept-Ranges: bytes` is added by `cacheResponseUtils` when needed.
+- Segmented streaming (512 KB–1 MB slices) keeps memory low when serving chunked content.
+- Valid ranges return `206 Partial Content`; invalid ranges return a full 200 response to keep playback stable.
 
 ```typescript
-// Handle ranges for KV cache
-if (rangeHeader && kvCachedResponse) {
-  const contentLength = parseInt(kvCachedResponse.headers.get('Content-Length') || '0');
-  
-  // Parse the range header
-  const range = parseRangeHeader(rangeHeader, contentLength);
-  
-  if (range) {
-    // Get the full body
-    const fullBody = await kvCachedResponse.arrayBuffer();
-    
-    // Extract the requested range
-    const rangeBody = fullBody.slice(range.start, range.end + 1);
-    
-    // Create a new response with the partial content
-    const partialResponse = new Response(rangeBody, {
-      status: 206,
-      headers: new Headers(kvCachedResponse.headers)
-    });
-    
-    // Set appropriate headers
-    partialResponse.headers.set('Content-Range', `bytes ${range.start}-${range.end}/${contentLength}`);
-    partialResponse.headers.set('Content-Length', rangeBody.byteLength.toString());
-    
-    return partialResponse;
-  }
+// streamingHelpers.ts (serve range from chunks)
+const slicePlans = planChunksForRange(manifest, range);
+for (const plan of slicePlans) {
+  const chunkArrayBuffer = await namespace.get(plan.key, 'arrayBuffer', { cacheTtl: DEFAULT_KV_READ_CACHE_TTL });
+  const segment = new Uint8Array(chunkArrayBuffer).subarray(plan.start, plan.end + 1);
+  await writer.write(segment);
 }
 ```
 

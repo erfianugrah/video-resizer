@@ -1,6 +1,6 @@
 # Video Resizer Performance Tuning Guide
 
-*Last Updated: May 10, 2025*
+*Last Updated: December 9, 2025*
 
 This guide provides practical advice for optimizing the performance of your Video Resizer implementation. It covers caching strategies, configuration optimizations, network performance, and client-side enhancements.
 
@@ -74,54 +74,26 @@ Before optimizing, establish baseline performance metrics:
 
 ## Caching Optimization
 
-### Multi-Layer Caching Strategy
+### KV-First Caching Strategy
 
-The Video Resizer uses a dual-layer caching system:
-
-1. **Cloudflare Cache API** (Edge Cache): Fast, location-specific cache
-2. **KV Storage Cache** (Global Persistent Cache): Global, longer-term storage
-
-Optimize this architecture:
-
-```json
-{
-  "cache": {
-    "method": "cf",
-    "defaultTtl": 86400,
-    "kvTtl": 604800,
-    "useBackground": true,
-    "cacheEverything": true
-  }
-}
-```
+Cache API storage is disabled; all caching uses KV (with chunking for large objects).
 
 **Best Practices**:
 
-- Enable `useBackground: true` to store to KV without blocking
-- Set appropriate TTLs for each layer
-- For streaming video, maintain a higher `cacheEverything` ratio
+- Keep KV enabled in `cache` config and versioning on for safe purges.
+- Use derivatives wherever possible to maximize hit rates and reduce key cardinality.
+- Leave `storeIndefinitely` off unless you have tag-based purge automation.
+- Strip cache-busting params upstream if you need consistent keys (`nocache`, `bypass`, `debug` are already bypassed by the worker).
 
 ### Cache Key Optimization
 
-Optimize cache keys to increase hit rates:
-
-```json
-{
-  "cache": {
-    "keyNormalization": true,
-    "includeDeviceType": false,
-    "includeQueryParams": ["width", "height", "quality"],
-    "excludeQueryParams": ["t", "token", "debug"]
-  }
-}
-```
+Keys are derivative-first and sanitized automatically.
 
 **Best Practices**:
 
-- Enable `keyNormalization` to group similar dimensions
-- Include only transformation-affecting parameters in cache keys
-- Exclude tracking or debugging parameters
-- For maximum hit rates, use derivative-based caching instead of exact dimensions
+- Use configured derivatives + responsive breakpoints instead of arbitrary widths to keep key cardinality low.
+- Avoid adding query params that don’t affect the output; they reduce hit rates.
+- `debug`, `bypass`, and `nocache` already bypass caching—don’t rely on them for content variation.
 
 ### Cache TTL Tuning
 

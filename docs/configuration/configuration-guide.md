@@ -251,10 +251,7 @@ The `CacheConfigurationManager` handles caching behavior and cache profiles.
 
 ### Cache Method
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `cf` | Use Cloudflare's built-in caching with CF object | ✓ |
-| `cacheApi` | Use the Cache API directly | |
+Cache storage is fixed to KV. Cache API storage is currently disabled; `method`/`cacheApi` flags are ignored by the worker.
 
 ### TTL Settings
 

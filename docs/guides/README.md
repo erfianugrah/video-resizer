@@ -1,6 +1,6 @@
 # Video Resizer Guides
 
-*Last Updated: May 10, 2025* (Updated with all practical guides completed)
+*Last Updated: December 9, 2025*
 
 This section provides practical guides for working with the Video Resizer.
 
