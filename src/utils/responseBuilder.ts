@@ -755,6 +755,17 @@ export class ResponseBuilder {
   }
 
   /**
+   * Apply Content-Disposition filename when provided
+   */
+  withFilename(filename?: string | null): ResponseBuilder {
+    if (filename) {
+      // Use inline to allow in-browser playback while still providing a save-as name
+      this.headers.set('Content-Disposition', `inline; filename="${filename}"`);
+    }
+    return this;
+  }
+
+  /**
    * Helper method to add breadcrumb information as headers
    */
   private addBreadcrumbHeaders(): void {

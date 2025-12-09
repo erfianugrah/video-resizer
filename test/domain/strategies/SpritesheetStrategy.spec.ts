@@ -42,7 +42,7 @@ vi.mock('../../../src/utils/transformationUtils', () => {
       if (!time.endsWith('s')) return false;
       
       const seconds = parseInt(time);
-      return !isNaN(seconds) && seconds >= 0 && seconds <= 60;
+      return !isNaN(seconds) && seconds >= 0 && seconds <= 600;
     }),
     isValidDuration: vi.fn().mockImplementation(duration => {
       // Basic validation - accept anything with s suffix in positive range
@@ -50,7 +50,7 @@ vi.mock('../../../src/utils/transformationUtils', () => {
       if (!duration.endsWith('s')) return false;
       
       const seconds = parseInt(duration);
-      return !isNaN(seconds) && seconds > 0;
+      return !isNaN(seconds) && seconds >= 1 && seconds <= 60;
     }),
     parseTimeString: vi.fn().mockImplementation(timeStr => {
       if (typeof timeStr !== 'string') return null;
@@ -163,8 +163,7 @@ describe('SpritesheetStrategy', () => {
         width: 800,
         height: 600,
         fit: 'contain',
-        time: '0s',
-        duration: '10s'
+        time: '0s'
       });
     });
 
@@ -172,7 +171,7 @@ describe('SpritesheetStrategy', () => {
       const params = strategy.prepareTransformParams(context);
       
       expect(params.time).toBe('0s');
-      expect(params.duration).toBe('10s');
+      expect(params.duration).toBeUndefined();
     });
 
     it('should use provided time and duration if specified', () => {
@@ -322,7 +321,7 @@ describe('SpritesheetStrategy', () => {
       
       expect(context.diagnosticsInfo.transformationType).toBe('spritesheet');
       expect(context.diagnosticsInfo.startTime).toBe('0s');
-      expect(context.diagnosticsInfo.duration).toBe('10s');
+      expect(context.diagnosticsInfo.duration).toBe('60s');
       expect(context.diagnosticsInfo.outputFormat).toBe('jpg');
       expect(context.diagnosticsInfo.spritesheet).toBeDefined();
     });

@@ -127,6 +127,7 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
       // Prepare video options early for both cache check and speculative fetch
       const sourcePath = url.pathname;
       const initialVideoOptions = determineVideoOptions(request, url.searchParams, path);
+      const cachedFilename = initialVideoOptions.filename || null;
       
       // Start speculative origin resolution while checking cache
       const speculativeOriginPromise: Promise<any> | null = null;
@@ -289,8 +290,23 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         });
         
         // Return the KV cached response with debug headers
-        const responseBuilder = new ResponseBuilder(mutableResponse, context);
-        const builtResponse = await responseBuilder.withDebugInfo().build();
+        // Force audio content type for audio mode to avoid browsers treating it as video
+        let adjustedResponse: Response = mutableResponse;
+        if (cachedFilename && cachedFilename.endsWith('.m4a')) {
+          const h = new Headers(mutableResponse.headers);
+          h.set('Content-Type', 'audio/mp4');
+          adjustedResponse = new Response(mutableResponse.body, {
+            status: mutableResponse.status,
+            statusText: mutableResponse.statusText,
+            headers: h
+          });
+        }
+
+        const responseBuilder = new ResponseBuilder(adjustedResponse, context);
+        const builtResponse = await responseBuilder
+          .withFilename(cachedFilename)
+          .withDebugInfo()
+          .build();
         endTimedOperation(context, 'total-request-processing');
         return builtResponse;
       }
@@ -1026,8 +1042,23 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         }
       }
       
+      // Ensure audio responses present correct content type for inline playback
+      let adjustedFinal = finalResponse;
+      if ((videoOptions.mode === 'audio') || (videoOptions.format && (videoOptions.format as string).toLowerCase() === 'm4a')) {
+        const h = new Headers(finalResponse.headers);
+        h.set('Content-Type', 'audio/mp4');
+        adjustedFinal = new Response(finalResponse.body, {
+          status: finalResponse.status,
+          statusText: finalResponse.statusText,
+          headers: h
+        });
+      }
+      
       // Add debug info and build the response with a single ResponseBuilder instance
-      const result = await responseBuilder.withDebugInfo().build();
+      const result = await responseBuilder
+        .withFilename(videoOptions.filename)
+        .withDebugInfo()
+        .build();
       endTimedOperation(context, 'response-building');
       
       // End the total request timing

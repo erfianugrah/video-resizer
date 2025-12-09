@@ -81,8 +81,8 @@ function isValidTimeImpl(timeStr: string | null): boolean {
   const seconds = parseTimeString(timeStr);
   if (seconds === null) return false;
   
-  // Cloudflare Media Transformation limits time to 0-30s
-  return seconds >= 0 && seconds <= 30;
+  // Time accepted between 0s and 10m (600s)
+  return seconds >= 0 && seconds <= 600;
 }
 
 /**
@@ -90,7 +90,7 @@ function isValidTimeImpl(timeStr: string | null): boolean {
  * Using tryOrDefault for safe execution with proper error handling
  * 
  * @param timeStr Time string
- * @returns If the time is valid according to Cloudflare limits (0-30s)
+ * @returns If the time is valid according to limits (0-600s)
  */
 export const isValidTime = tryOrDefault<[string | null], boolean>(
   isValidTimeImpl,
@@ -111,8 +111,8 @@ function isValidDurationImpl(durationStr: string | null): boolean {
   const seconds = parseTimeString(durationStr);
   if (seconds === null) return false;
   
-  // Only validate that it's a non-negative value (0 is allowed)
-  return seconds >= 0;
+  // Duration must be between 1s and 300s (5m)
+  return seconds >= 1 && seconds <= 300;
 }
 
 /**
@@ -224,231 +224,24 @@ export const isDurationWithinLimits = tryOrDefault<[string | null], boolean>(
 function adjustDurationImpl(durationStr: string | null, useSafeMax: boolean = false): string | null {
   if (!durationStr) return durationStr;
   
-  // Dynamically import logger to avoid circular dependencies
-  import('../legacyLoggerAdapter').then(({ info, warn }) => {
-    info('TransformationUtils', 'Adjusting duration', {
-      durationStr,
-      haveLimits: haveDurationLimits(),
-      currentLimits: transformationLimits.duration,
-      configLoaded: true, // Flag to track if config is loaded properly
-      requestedDuration: durationStr
-    });
-  }).catch((err) => {
-    // Log error with standardized error handling
-    logErrorWithContext(
-      'Failed to import logger for duration adjustment',
-      err,
-      { durationStr, haveLimits: haveDurationLimits() },
-      'TransformationUtils'
-    );
-    // Fallback to console for logging
-    console.info(`[TransformationUtils] Adjusting duration: ${durationStr}`);
-  });
-  
   const seconds = parseTimeString(durationStr);
   if (seconds === null) {
-    // Log invalid duration format
-    import('../legacyLoggerAdapter').then(({ warn }) => {
-      warn('TransformationUtils', 'Invalid duration format', {
-        durationStr,
-        reason: 'Failed to parse time string'
-      });
-    }).catch((err) => {
-      // Log error with standardized error handling
-      logErrorWithContext(
-        'Failed to import logger for invalid duration warning',
-        err,
-        { durationStr },
-        'TransformationUtils'
-      );
-      console.warn(`[TransformationUtils] Invalid duration format: ${durationStr}`);
-    });
     return durationStr;
   }
   
-  // If we don't have learned limits yet, try to get them from configuration first
-  if (!haveDurationLimits()) {
-    // Try to load from VideoConfigurationManager first before falling back to 30s
-    try {
-      // Import dynamically to avoid circular dependencies
-      import('../../config/VideoConfigurationManager').then(({ VideoConfigurationManager }) => {
-        const configManager = VideoConfigurationManager.getInstance();
-        const configDuration = configManager.getDefaultOption('duration');
+  const minDuration = getTransformationLimit('duration', 'min') ?? 1;
+  const configuredMax = getTransformationLimit('duration', 'max') ?? 60;
+  const maxDuration = useSafeMax ? Math.floor(configuredMax) : configuredMax;
+  const maxClampValue = Number.isInteger(maxDuration) ? maxDuration : Math.floor(maxDuration);
 
-        if (configDuration) {
-          // Parse the duration from config
-          const configSeconds = parseTimeString(configDuration);
-          if (configSeconds !== null && configSeconds > 0) {
-            import('../legacyLoggerAdapter').then(({ info }) => {
-              info('TransformationUtils', 'Setting duration limits from configuration', {
-                configDuration,
-                configSeconds,
-                min: 0,
-                max: configSeconds,
-                originalDuration: durationStr,
-                parsedSeconds: seconds
-              });
-            }).catch(() => {
-              console.info(`[TransformationUtils] Setting duration limits from configuration: max=${configSeconds}s`);
-            });
-
-            // Set limits from configuration
-            storeTransformationLimit('duration', 'min', 0);
-            storeTransformationLimit('duration', 'max', configSeconds);
-            return; // Exit early - we've set the limits
-          }
-        }
-
-        // If we reach here, config didn't have usable duration, use 300s (5m) as fallback
-        import('../legacyLoggerAdapter').then(({ warn }) => {
-          warn('TransformationUtils', 'No valid duration found in configuration, using 5m fallback', {
-            defaultsApplied: true,
-            settingMin: 0,
-            settingMax: 300, // 5 minutes
-            reason: 'Configuration duration not available or invalid',
-            requestedDuration: durationStr,
-            parsedSeconds: seconds,
-            configDuration: configDuration || 'not set'
-          });
-        }).catch((err) => {
-          console.warn('[TransformationUtils] Using 5m fallback duration - config value not available');
-        });
-
-        storeTransformationLimit('duration', 'min', 0);
-        storeTransformationLimit('duration', 'max', 300); // 5 minutes default
-      }).catch((configErr) => {
-        // Config manager couldn't be loaded, fall back to 300s (5m)
-        import('../legacyLoggerAdapter').then(({ warn }) => {
-          warn('TransformationUtils', 'Failed to load VideoConfigurationManager, using 5m fallback', {
-            defaultsApplied: true,
-            settingMin: 0,
-            settingMax: 300, // 5 minutes
-            error: configErr instanceof Error ? configErr.message : String(configErr),
-            requestedDuration: durationStr
-          });
-        }).catch((err) => {
-          console.warn('[TransformationUtils] Failed to load configuration, using 5m fallback duration');
-        });
-
-        storeTransformationLimit('duration', 'min', 0);
-        storeTransformationLimit('duration', 'max', 300); // 5 minutes default
-      });
-    } catch (outerErr) {
-      // Catch any synchronous errors from the try block
-      console.warn('[TransformationUtils] Error checking configuration, using 5m fallback duration');
-      storeTransformationLimit('duration', 'min', 0);
-      storeTransformationLimit('duration', 'max', 300); // 5 minutes default
-    }
-  }
-  
-  const minDuration = transformationLimits.duration.min;
-  const maxDuration = transformationLimits.duration.max;
-  
-  import('../legacyLoggerAdapter').then(({ info, debug }) => {
-    info('TransformationUtils', 'Checking duration against limits', {
-      requestedDuration: durationStr,
-      requestedSeconds: seconds,
-      minDuration,
-      maxDuration,
-      shouldAdjustMin: seconds < minDuration,
-      shouldAdjustMax: seconds > maxDuration,
-      transformationLimits: JSON.stringify(transformationLimits)
-    });
-  }).catch((err) => {
-    // Log error with standardized error handling
-    logErrorWithContext(
-      'Failed to import logger for duration limit check',
-      err,
-      { 
-        durationStr, 
-        seconds, 
-        minDuration, 
-        maxDuration 
-      },
-      'TransformationUtils'
-    );
-    console.info(`[TransformationUtils] Checking duration ${durationStr} (${seconds}s) against limits min=${minDuration}, max=${maxDuration}`);
-  });
-  
-  // Adjust duration if outside limits
   if (seconds < minDuration) {
-    const adjusted = formatTimeString(minDuration);
-    import('../legacyLoggerAdapter').then(({ info, warn }) => {
-      warn('TransformationUtils', 'Duration below minimum limit', {
-        original: durationStr,
-        originalSeconds: seconds,
-        adjusted,
-        adjustedSeconds: minDuration,
-        minDuration,
-        maxDuration
-      });
-    }).catch((err) => {
-      // Log error with standardized error handling
-      logErrorWithContext(
-        'Failed to import logger for minimum duration adjustment',
-        err,
-        { 
-          original: durationStr,
-          originalSeconds: seconds,
-          adjusted,
-          adjustedSeconds: minDuration,
-          minDuration,
-          maxDuration
-        },
-        'TransformationUtils'
-      );
-      console.warn(`[TransformationUtils] Duration ${durationStr} below minimum limit of ${minDuration}s, adjusting to ${adjusted}`);
-    });
-    return adjusted;
-  } else if (seconds > maxDuration) {
-    // Use the integer value (floor) of the maximum value from the API response
-    // This gives us a clean, stable value that's safely below the limit
-    const safeMax = Math.floor(maxDuration);
-    const adjusted = formatTimeString(safeMax);
-    import('../legacyLoggerAdapter').then(({ info, warn }) => {
-      warn('TransformationUtils', 'Duration exceeds maximum limit', {
-        original: durationStr,
-        originalSeconds: seconds,
-        adjusted,
-        adjustedSeconds: safeMax,
-        maxDuration,
-        isDefault: maxDuration === 30, // Check if using default or learned limit
-        usedSafeMax: true
-      });
-    }).catch((err) => {
-      // Log error with standardized error handling
-      logErrorWithContext(
-        'Failed to import logger for maximum duration adjustment',
-        err,
-        { 
-          original: durationStr,
-          originalSeconds: seconds,
-          adjusted,
-          adjustedSeconds: safeMax,
-          maxDuration,
-          isDefault: maxDuration === 30
-        },
-        'TransformationUtils'
-      );
-      console.warn(`[TransformationUtils] Duration ${durationStr} exceeds maximum limit of ${maxDuration}s, adjusting to ${adjusted}`);
-    });
-    return adjusted;
+    return formatTimeString(minDuration);
   }
-  
-  // Log no adjustment needed
-  import('../legacyLoggerAdapter').then(({ debug }) => {
-    debug('TransformationUtils', 'No duration adjustment needed', {
-      duration: durationStr,
-      seconds,
-      minDuration,
-      maxDuration,
-      isDefault: maxDuration === 30 // Check if using default or learned limit
-    });
-  }).catch((err) => {
-    // For debug level, we can skip the standardized logging to avoid noise
-    console.debug(`[TransformationUtils] No duration adjustment needed for ${durationStr}`);
-  });
-  
+
+  if (seconds > maxDuration) {
+    return formatTimeString(maxClampValue);
+  }
+
   return durationStr;
 }
 
@@ -511,7 +304,8 @@ export const isDurationLimitError = tryOrDefault<[string], boolean>(
 // In-memory cache for transformation limits discovered from API errors
 // Initially empty - will be populated from API responses
 export const transformationLimits: Record<string, Record<string, number>> = {
-  duration: {}, // Will be populated with min and max from API errors
+  // Defaults aligned to 5 minute support for this deployment
+  duration: { min: 1, max: 300 },
   fileSize: {}  // Will be populated with max from API errors
 };
 

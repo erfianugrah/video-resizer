@@ -82,7 +82,7 @@ export const PathPatternSchema = z.object({
 const DerivativeSchema = z.record(z.object({
   width: z.number().nullable().optional(),
   height: z.number().nullable().optional(),
-  mode: z.enum(['video', 'frame', 'spritesheet']).optional(),
+  mode: z.enum(['video', 'frame', 'spritesheet', 'audio']).optional(),
   fit: z.enum(['contain', 'scale-down', 'cover']).optional(),
   audio: z.boolean().optional(),
   format: z.string().nullable().optional(),
@@ -124,7 +124,7 @@ export const VideoConfigSchema = z.object({
   defaults: z.object({
     width: z.number().nullable(),
     height: z.number().nullable(),
-    mode: z.enum(['video', 'frame', 'spritesheet']),
+    mode: z.enum(['video', 'frame', 'spritesheet', 'audio']),
     fit: z.enum(['contain', 'scale-down', 'cover']).nullable(),
     audio: z.boolean(),
     format: z.string().nullable(),
@@ -136,6 +136,7 @@ export const VideoConfigSchema = z.object({
     preload: z.enum(['none', 'metadata', 'auto']).nullable(),
     autoplay: z.boolean().nullable(),
     muted: z.boolean().nullable(),
+    filename: z.string().nullable().optional(),
   }),
   validOptions: z.object({
     mode: z.array(z.string()),
@@ -234,6 +235,20 @@ export class VideoConfigurationManager {
       
       // Validate and parse the configuration
       this.config = VideoConfigSchema.parse(configWithOrigins);
+
+      // Normalize valid options to ensure new modes/formats from defaults are present
+      const mergeUnique = (a: string[], b: string[]) =>
+        Array.from(new Set([...(a || []), ...(b || [])]));
+
+      this.config.validOptions.mode = mergeUnique(
+        defaultConfig.validOptions.mode,
+        this.config.validOptions.mode
+      );
+
+      this.config.validOptions.format = mergeUnique(
+        defaultConfig.validOptions.format,
+        this.config.validOptions.format
+      );
     } catch (error) {
       if (error instanceof z.ZodError) {
         const issues = error.errors.map(issue => 

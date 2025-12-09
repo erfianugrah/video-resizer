@@ -64,13 +64,14 @@ export const videoConfig = {
     preload: null,
     autoplay: null,
     muted: null,
+    filename: null,
   },
 
   // Default valid options
   validOptions: {
-    mode: ['video', 'frame', 'spritesheet'],
+    mode: ['video', 'frame', 'spritesheet', 'audio'],
     fit: ['contain', 'scale-down', 'cover'],
-    format: ['jpg', 'png'],
+    format: ['jpg', 'png', 'm4a'],
     audio: [true, false],
     quality: ['low', 'medium', 'high', 'auto'],
     compression: ['low', 'medium', 'high', 'auto'],

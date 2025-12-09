@@ -7,6 +7,7 @@ import { TransformationStrategy } from './TransformationStrategy';
 import { VideoStrategy } from './VideoStrategy';
 import { FrameStrategy } from './FrameStrategy';
 import { SpritesheetStrategy } from './SpritesheetStrategy';
+import { AudioStrategy } from './AudioStrategy';
 import { debug } from '../../utils/loggerUtils';
 
 /**
@@ -23,6 +24,8 @@ export function createTransformationStrategy(options: VideoTransformOptions): Tr
       return new FrameStrategy();
     case 'spritesheet':
       return new SpritesheetStrategy();
+    case 'audio':
+      return new AudioStrategy();
     case 'video':
     default:
       return new VideoStrategy();

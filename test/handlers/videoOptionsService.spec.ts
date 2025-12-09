@@ -79,7 +79,8 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
   const mockConfig = {
     defaults: {
       mode: 'video',
-      fit: 'contain'
+      fit: 'contain',
+      filename: null
     },
     derivatives: {
       mobile: { width: 480, height: 270, quality: 'low' },
@@ -87,12 +88,12 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
       high: { width: 1280, height: 720, quality: 'high' }
     },
     validOptions: {
-      mode: ['video', 'frame', 'spritesheet'],
+      mode: ['video', 'frame', 'spritesheet', 'audio'],
       fit: ['contain', 'cover', 'scale-down'],
       quality: ['low', 'medium', 'high', 'auto'],
       compression: ['low', 'medium', 'high', 'auto'],
       preload: ['none', 'metadata', 'auto'],
-      format: ['jpg', 'png', 'avif', 'webp']
+      format: ['jpg', 'png', 'm4a']
     }
   };
   
@@ -195,6 +196,28 @@ describe('VideoOptionsService', () => {
     expect(options.crop).toBe('100,100,500,500');
     // Explicit parameters should use 'params' as source
     expect(options.source).toBe('params');
+  });
+
+  it('should normalize and apply filename parameter when valid', () => {
+    const request = new Request('https://example.com/videos/test.mp4?filename=Shortened-Clip_5S.MP4');
+    const params = new URLSearchParams('filename=Shortened-Clip_5S.MP4');
+
+    const options = determineVideoOptions(request, params, '/videos/test.mp4');
+
+    expect(options.filename).toBe('shortened-clip_5s.mp4');
+  });
+
+  it('should switch to audio mode when m4a format is requested without explicit mode', () => {
+    const request = new Request('https://example.com/videos/test.mp4?format=m4a');
+    const params = new URLSearchParams('format=m4a');
+
+    const options = determineVideoOptions(request, params, '/videos/test.mp4');
+
+    expect(options.mode).toBe('audio');
+    expect(options.audio).toBe(true);
+    expect(options.width).toBeNull();
+    expect(options.height).toBeNull();
+    expect(options.fit).toBeNull();
   });
   
   it('should match IMQuery dimensions to derivative', () => {

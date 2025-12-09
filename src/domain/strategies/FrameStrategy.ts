@@ -108,6 +108,15 @@ export class FrameStrategy implements TransformationStrategy {
         options.format = formatLower;
       }
       
+      // Frame mode supports only jpg and png outputs
+      if (!['jpg', 'png'].includes(options.format)) {
+        throw ValidationError.invalidFormat(
+          options.format,
+          ['jpg', 'png'],
+          context
+        );
+      }
+      
       // Validate format
       if (!configManager.isValidOption('format', options.format)) {
         throw ValidationError.invalidFormat(

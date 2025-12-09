@@ -38,12 +38,12 @@ In video mode, you can:
 | `width` | number | null | Width in pixels (10-2000) | `width=720` |
 | `height` | number | null | Height in pixels (10-2000) | `height=480` |
 | `fit` | string | 'contain' | Resize behavior | `fit=cover` |
-| `format` | string | 'mp4' | Output format | `format=webm` |
+| `format` | string | 'mp4' | Output format (video only; use `mode=audio`/`format=m4a` for audio) | `format=webm` |
 | `quality` | string | null | Quality level | `quality=high` |
 | `compression` | string | null | Compression level | `compression=low` |
 | `bitrate` | number | null | Target bitrate (bps) | `bitrate=3000000` |
 | `time` | string | null | Time position for frame extraction | `time=10s` |
-| `duration` | string | null | Duration of video segment | `duration=30s` |
+| `duration` | string | null | Duration of video segment (1–300s; if omitted, full length) | `duration=30s` |
 
 ### Fit Modes
 
@@ -71,7 +71,7 @@ Video mode supports several parameters that control video playback behavior:
 
 > Note: These parameters only apply to video mode and will cause validation errors if used with frame or spritesheet modes.
 
-> **Important**: When using `autoplay=true` with audio, you must also set `muted=true` for browser compatibility. Most browsers will block autoplay with audio unless the video is muted.
+> **Important**: When using `autoplay=true` with audio, you must also set `muted=true` for browser compatibility. If you only need audio, use `mode=audio` (or `format=m4a`, which auto-switches to audio mode).
 
 ### Preload Options
 

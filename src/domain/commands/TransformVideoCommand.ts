@@ -58,6 +58,7 @@ export interface VideoTransformOptions {
   muted?: boolean | null;
   source?: string;
   derivative?: string | null;
+  filename?: string | null;
 
   // Additional video parameters
   fps?: number | null;

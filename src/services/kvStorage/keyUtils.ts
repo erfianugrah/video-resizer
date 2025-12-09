@@ -75,6 +75,10 @@ function generateKVKeyImpl(
       if (options.columns) key += `:cols=${options.columns}`;
       if (options.rows) key += `:rows=${options.rows}`;
       if (options.interval) key += `:interval=${options.interval}`;
+    } else if (mode === 'audio') {
+      if (options.time) key += `:t=${options.time}`;
+      if (options.duration) key += `:duration=${options.duration}`;
+      if (options.format) key += `:f=${options.format}`;
     } else {
       // Video-specific parameters
       if (options.format) key += `:f=${options.format}`;

@@ -9,6 +9,7 @@ This section provides comprehensive documentation on the features available in t
 - [Video Mode](./video-mode.md) - Complete video transformation
 - [Frame Mode](./frame-mode.md) - Single frame extraction
 - [Spritesheet Mode](./spritesheet-mode.md) - Thumbnail grid generation
+- [Audio Mode](./audio-mode.md) - AAC/M4A audio extraction
 
 ## Integration Features
 

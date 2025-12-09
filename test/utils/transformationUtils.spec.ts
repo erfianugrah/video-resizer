@@ -98,31 +98,33 @@ describe('Transformation Utils', () => {
     });
 
     it('should validate time ranges', () => {
-      // Valid time values (0-30s)
+      // Valid time values (0-10m)
       expect(isValidTime('0s')).toBe(true);
       expect(isValidTime('15s')).toBe(true);
       expect(isValidTime('30s')).toBe(true);
-      expect(isValidTime('0.5s')).toBe(true);
+      expect(isValidTime('5m')).toBe(true);
+      expect(isValidTime('10m')).toBe(true);
       expect(isValidTime(null)).toBe(true); // Null is valid (default value)
       
       // Invalid time values
-      expect(isValidTime('31s')).toBe(false);
-      expect(isValidTime('1m')).toBe(false); // 60s is > 30s
+      expect(isValidTime('11m')).toBe(false);
       expect(isValidTime('invalid')).toBe(false);
     });
 
     it('should validate duration values', () => {
-      // Valid duration values (positive times)
+      // Valid duration values (1s - 300s)
       expect(isValidDuration('1s')).toBe(true);
       expect(isValidDuration('10s')).toBe(true);
       expect(isValidDuration('1m')).toBe(true);
-      expect(isValidDuration('0.5s')).toBe(true);
+      expect(isValidDuration('5m')).toBe(true);
       expect(isValidDuration(null)).toBe(true); // Null is valid (default value)
       
       // Invalid duration values
+      expect(isValidDuration('0.5s')).toBe(false); // Below 1s
+      expect(isValidDuration('0s')).toBe(false); // Below minimum
       expect(isValidDuration('-5s')).toBe(false); // Negative durations are invalid
+      expect(isValidDuration('301s')).toBe(false); // Above maximum
       expect(isValidDuration('invalid')).toBe(false); // Invalid format
-      // Note: 0s is now considered valid - requirements changed to allow 0
     });
   });
 
@@ -141,12 +143,24 @@ describe('Transformation Utils', () => {
       };
       expect(isValidFormatForMode(validOptions2)).toBe(true);
       
+      const validAudioFormat: VideoTransformOptions = {
+        mode: 'audio',
+        format: 'm4a'
+      };
+      expect(isValidFormatForMode(validAudioFormat)).toBe(true);
+      
       // Invalid combinations
       const invalidOptions: VideoTransformOptions = {
         mode: 'video',
         format: 'jpg'
       };
       expect(isValidFormatForMode(invalidOptions)).toBe(false);
+      
+      const invalidAudioFormat: VideoTransformOptions = {
+        mode: 'audio',
+        format: 'jpg'
+      };
+      expect(isValidFormatForMode(invalidAudioFormat)).toBe(false);
     });
   });
   

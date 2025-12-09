@@ -92,9 +92,9 @@ export class ValidationError extends VideoTransformError {
   ): ValidationError {
     let message = `Invalid ${paramName} parameter: ${value}`;
     if (paramName === 'time') {
-      message += '. Must be between 0s and 30s (e.g., "5s", "0.5s")';
+      message += '. Must be between 0s and 10m (e.g., "5s", "2m")';
     } else if (paramName === 'duration') {
-      message += '. Must be a positive time value (e.g., "5s", "1m")';
+      message += '. Must be between 1s and 300s (5m) (e.g., "5s", "1m", "5m")';
     }
     
     return new ValidationError(

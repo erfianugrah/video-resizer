@@ -365,6 +365,15 @@ export function determineVideoOptions(
         }
         break;
         
+      case 'filename':
+        {
+          const normalized = normalizeFilename(value);
+          if (normalized) {
+            options.filename = normalized;
+          }
+        }
+        break;
+        
       case 'time':
         options.time = value;
         break;
@@ -512,6 +521,19 @@ export function determineVideoOptions(
     }
   }
 
+  // Auto-switch to audio mode when m4a format is requested and mode isn't explicitly non-audio
+  if (
+    options.format &&
+    options.format.toLowerCase() === 'm4a' &&
+    (!options.mode || options.mode === 'video')
+  ) {
+    options.mode = 'audio';
+    options.audio = true;
+    options.width = null;
+    options.height = null;
+    options.fit = null;
+  }
+  
   return options;
 }
 
@@ -525,6 +547,28 @@ function parseIntOrNull(value: string | null): number | null {
 
   const parsed = parseInt(value, 10);
   return isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Normalize and validate a filename parameter
+ * @param value Raw filename value
+ * @returns Normalized filename or null if invalid
+ */
+function normalizeFilename(value: string | null): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.length > 120) return null;
+
+  // Only lowercase letters, digits, hyphens, underscores and optional single extension
+  const normalized = trimmed.toLowerCase();
+  const filenamePattern = /^[a-z0-9-_]+(\.[a-z0-9-_]+)?$/;
+
+  if (!filenamePattern.test(normalized)) return null;
+
+  return normalized;
 }
 
 /**

@@ -37,7 +37,7 @@ In frame mode, you can:
 | Parameter | Type | Required | Default | Description | Example |
 |-----------|------|----------|---------|-------------|---------|
 | `mode` | string | Yes | - | Must be set to "frame" | `mode=frame` |
-| `time` | string | Yes | - | Timestamp for frame extraction | `time=30s` |
+| `time` | string | Yes | `0s` | Timestamp for frame extraction (0–10m) | `time=30s` |
 
 ### Time Parameter Format
 

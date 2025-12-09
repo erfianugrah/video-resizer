@@ -534,41 +534,39 @@
 				"mov"
 			]
 		},
-		"defaults": {
-			"width": null,
-			"height": null,
-			"mode": "video",
-			"fit": null,
-			"audio": true,
-			"format": null,
-			"time": null,
-			"duration": "5m",
-			"quality": null,
-			"compression": null,
-			"loop": null,
-			"preload": null,
-			"autoplay": null,
-			"muted": null
-		},
-		"validOptions": {
-			"mode": [
-				"video",
-				"frame",
-				"spritesheet"
-			],
-			"fit": [
-				"contain",
-				"scale-down",
-				"cover"
-			],
-			"format": [
-				"mp4",
-				"webm",
-				"gif",
-				"jpg",
-				"webp",
-				"png"
-			],
+			"defaults": {
+				"width": null,
+				"height": null,
+				"mode": "video",
+				"fit": null,
+				"audio": true,
+				"format": null,
+				"time": null,
+				"duration": null,
+				"quality": null,
+				"compression": null,
+				"loop": null,
+				"preload": null,
+				"autoplay": null,
+				"muted": null
+			},
+			"validOptions": {
+				"mode": [
+					"video",
+					"frame",
+					"spritesheet",
+					"audio"
+				],
+				"fit": [
+					"contain",
+					"scale-down",
+					"cover"
+				],
+				"format": [
+					"jpg",
+					"png",
+					"m4a"
+				],
 			"audio": [
 				true,
 				false

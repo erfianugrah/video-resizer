@@ -49,42 +49,6 @@ export class VideoStrategy implements TransformationStrategy {
     // Create a copy of options that we can modify if needed
     const adjustedOptions = { ...options };
     
-    // Apply default duration from config if not specified in options
-    if (adjustedOptions.duration === null || adjustedOptions.duration === undefined) {
-      const configDuration = configManager.getDefaultOption('duration');
-      if (configDuration) {
-        // Apply it synchronously first
-        adjustedOptions.duration = configDuration;
-        
-        // Log it asynchronously using tryOrNull for safety
-        tryOrNull<[], void>(
-          function logDefaultDurationApplication() {
-            import('../../utils/legacyLoggerAdapter').then(({ info }) => {
-              info('VideoStrategy', 'Applied default duration from config', {
-                defaultDuration: configDuration,
-                hadExistingDuration: !!options.duration
-              });
-            }).catch((err) => {
-              // Use standardized error handling
-              logErrorWithContext('Error importing legacyLoggerAdapter for duration logging', err, {
-                fallback: 'using debug from loggerUtils',
-                defaultDuration: configDuration
-              }, 'VideoStrategy');
-              
-              // Use debug from loggerUtils as a fallback
-              debug('VideoStrategy', 'Applied default duration from config', {
-                defaultDuration: configDuration
-              });
-            });
-          },
-          {
-            functionName: 'logDefaultDurationApplication',
-            component: 'VideoStrategy'
-          }
-        )();
-      }
-    }
-    
     // Check if we have duration limits, if not, extract from configuration
     if (!haveDurationLimits()) {
       // Get the default duration from configuration
@@ -248,6 +212,11 @@ export class VideoStrategy implements TransformationStrategy {
       }
     }
     
+    // Default time to 0s if not provided
+    if (!adjustedOptions.time) {
+      adjustedOptions.time = '0s';
+    }
+
     // Log the parameter mapping
     import('../../utils/legacyLoggerAdapter').then(({ debug: logDebug }) => {
       logDebug('VideoStrategy', 'Parameter mapping', {
@@ -372,8 +341,22 @@ export class VideoStrategy implements TransformationStrategy {
         throw ValidationError.invalidTimeValue('duration', options.duration, contextObj);
       }
       
+      // Enforce product limits (1s - 60s)
+      if (!isValidDuration(options.duration)) {
+        throw ValidationError.invalidTimeValue('duration', options.duration, contextObj);
+      }
+      
       // Allow any valid duration format - we'll let the API limit it
       // We will adjust it automatically when we hit the API limit error
+    }
+    
+    // Format parameter is not supported for video output
+    if (options.format) {
+      throw ValidationError.invalidOptionCombination(
+        'Format parameter is not applicable for mode=video',
+        { format: options.format },
+        contextObj
+      );
     }
     
     // Validate quality

@@ -39,10 +39,7 @@ export class SpritesheetStrategy implements TransformationStrategy {
       params['time'] = '0s';
     }
     
-    if (!params['duration'] && !options.duration) {
-      // Default to 10s duration for spritesheets if not specified
-      params['duration'] = '10s';
-    }
+    // Keep duration unset unless caller specified; API will default/limit
     
     // Log the params for debugging
     debug('SpritesheetStrategy', 'Prepared spritesheet transformation params', params);
@@ -141,9 +138,9 @@ export class SpritesheetStrategy implements TransformationStrategy {
       }
     }
     
-    // Validate duration parameter format and warn for long durations
+    // Validate duration parameter format and range
     if (options.duration !== null && options.duration !== undefined) {
-      const { parseTimeString } = await import('../../utils/transformationUtils');
+      const { parseTimeString, isValidDuration } = await import('../../utils/transformationUtils');
       
       // Check if the format is valid
       const seconds = parseTimeString(options.duration);
@@ -152,11 +149,8 @@ export class SpritesheetStrategy implements TransformationStrategy {
         throw ValidationError.invalidTimeValue('duration', options.duration, context);
       }
       
-      // Warn for very long durations (which could produce large spritesheets)
-      if (seconds > 60) {
-        // Add to custom property instead of warnings array
-        context.diagnosticsInfo['durationWarning'] = 
-          `Duration of ${options.duration} may result in a very large spritesheet with reduced thumbnail quality`;
+      if (!isValidDuration(options.duration)) {
+        throw ValidationError.invalidTimeValue('duration', options.duration, context);
       }
     }
     
@@ -195,7 +189,7 @@ export class SpritesheetStrategy implements TransformationStrategy {
     
     // Add time range information as custom properties
     const startTime = options.time || '0s'; // Default start time
-    const duration = options.duration || '10s'; // Default duration
+    const duration = options.duration || '60s'; // Default duration for diagnostics only
     
     // Add additional spritesheet-specific information
     diagnosticsInfo['outputFormat'] = 'jpg'; // Spritesheets are always JPEG

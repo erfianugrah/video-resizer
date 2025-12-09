@@ -117,10 +117,14 @@ export const handleVideoRequest = withErrorHandling<
       // Start timing operations
       startTimedOperation(context, 'kv-cache-lookup', 'KVCache');
       
+      // Track requested filename for cache hits
+      let cachedFilename: string | null = null;
+
       // Prepare KV cache check if env is available and not skipped
       if (env && !skipCache) {
         const sourcePath = url.pathname;
         const videoOptions = determineVideoOptions(request, url.searchParams, path);
+        cachedFilename = videoOptions.filename || null;
         
         // Get KV cache configuration
         const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
@@ -220,8 +224,23 @@ export const handleVideoRequest = withErrorHandling<
         });
         
         // Return the KV cached response with debug headers
-        const responseBuilder = new ResponseBuilder(mutableResponse, context);
-        const builtResponse = await responseBuilder.withDebugInfo().build();
+        // Force audio content type for audio mode to avoid browsers treating it as video
+        let adjustedResponse: Response = mutableResponse;
+        if (cachedFilename && cachedFilename.endsWith('.m4a')) {
+          const h = new Headers(mutableResponse.headers);
+          h.set('Content-Type', 'audio/mp4');
+          adjustedResponse = new Response(mutableResponse.body, {
+            status: mutableResponse.status,
+            statusText: mutableResponse.statusText,
+            headers: h
+          });
+        }
+
+        const responseBuilder = new ResponseBuilder(adjustedResponse, context);
+        const builtResponse = await responseBuilder
+          .withFilename(cachedFilename)
+          .withDebugInfo()
+          .build();
         endTimedOperation(context, 'total-request-processing');
         return builtResponse;
       }
@@ -725,9 +744,24 @@ export const handleVideoRequest = withErrorHandling<
           });
         }
       }
+
+      // Ensure audio responses present correct content type for inline playback
+      let adjustedFinal = finalResponse;
+      if ((videoOptions.mode === 'audio') || (videoOptions.format && videoOptions.format.toLowerCase() === 'm4a')) {
+        const h = new Headers(finalResponse.headers);
+        h.set('Content-Type', 'audio/mp4');
+        adjustedFinal = new Response(finalResponse.body, {
+          status: finalResponse.status,
+          statusText: finalResponse.statusText,
+          headers: h
+        });
+      }
       
-      const responseBuilder = new ResponseBuilder(finalResponse, context);
-      const result = await responseBuilder.withDebugInfo().build();
+      const responseBuilder = new ResponseBuilder(adjustedFinal, context);
+      const result = await responseBuilder
+        .withFilename(videoOptions.filename)
+        .withDebugInfo()
+        .build();
       endTimedOperation(context, 'response-building');
       
       // End the total request timing

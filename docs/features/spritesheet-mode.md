@@ -38,7 +38,7 @@ Spritesheets provide several advantages:
 | `width` | number | Yes | - | Width of the entire spritesheet in pixels | `width=800` |
 | `height` | number | Yes | - | Height of the entire spritesheet in pixels | `height=600` |
 | `time` | string | No | "0s" | Starting time for the spritesheet range | `time=30s` |
-| `duration` | string | No | "10s" | Duration of video to include in spritesheet | `duration=60s` |
+| `duration` | string | No | full (if omitted) | Time window for sprites (1-300s) | `duration=60s` |
 | `fit` | string | No | "contain" | How to fit thumbnails within the grid | `fit=cover` |
 
 ### Required vs. Optional Parameters

@@ -8,12 +8,18 @@ import { tryOrDefault } from '../errorHandlingUtils';
  * Implementation of isValidFormatForMode that might throw errors
  */
 function isValidFormatForModeImpl(options: VideoTransformOptions): boolean {
-  // Format is only used with frame mode
-  if (options.format && options.mode !== 'frame') {
-    // We only support format parameter in frame mode
-    return false;
+  if (!options.format) return true;
+
+  if (options.mode === 'frame') {
+    return ['jpg', 'jpeg', 'png'].includes(options.format.toLowerCase());
   }
-  return true;
+
+  if (options.mode === 'audio') {
+    return options.format.toLowerCase() === 'm4a';
+  }
+
+  // Format not allowed for other modes
+  return false;
 }
 
 /**
