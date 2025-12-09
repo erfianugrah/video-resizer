@@ -474,7 +474,8 @@ export function getDerivativeDimensions(derivative: string | null): { width: num
       const requestContext = getCurrentContext();
       if (requestContext) {
         const logger = createLogger(requestContext);
-        logger.debug('Retrieved derivative dimensions', {
+        logger.debug({
+          msg: 'Retrieved derivative dimensions',
           derivative,
           width: derivativeConfig.width,
           height: derivativeConfig.height
@@ -492,7 +493,8 @@ export function getDerivativeDimensions(derivative: string | null): { width: num
   const requestContext = getCurrentContext();
   if (requestContext) {
     const logger = createLogger(requestContext);
-    logger.debug('Derivative dimensions not found', {
+    logger.debug({
+      msg: 'Derivative dimensions not found',
       derivative,
       availableDerivatives: derivatives ? Object.keys(derivatives) : []
     });

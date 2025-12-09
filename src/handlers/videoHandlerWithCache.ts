@@ -82,7 +82,8 @@ export const handleRequestWithCaching = withErrorHandling<
     const logger = createLogger(requestContext);
     
     // Log detailed request information
-    logger.info('Video transformation request with caching', {
+    logger.info({
+      msg: 'Video transformation request with caching',
       path: url.pathname,
       requestId: requestContext.requestId,
       method: request.method,

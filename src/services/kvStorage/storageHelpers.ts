@@ -9,7 +9,6 @@ import { EnvVariables } from '../../config/environmentConfig';
 import { storeCacheKeyVersion } from '../cacheVersionService';
 import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
 import { OriginResolver } from '../origins/OriginResolver';
-import { logDebug as pinoLogDebug } from '../../utils/pinoLogger';
 import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
 
 /**
@@ -479,9 +478,14 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
         if (matchedOrigin?.ttl?.ok) {
           originTtl = matchedOrigin.ttl.ok;
           headers.set('X-Origin-Match', matchedOrigin.name);
-        } else if (config.cache?.ttl?.ok) {
-          originTtl = config.cache.ttl.ok;
-          headers.set('X-TTL-Fallback', 'global-cache');
+        } else {
+          // Fall back to default cache profile TTL
+          const cacheConfig = CacheConfigurationManager.getInstance();
+          const defaultTtl = cacheConfig.getConfig().profiles?.default?.ttl?.ok;
+          if (defaultTtl) {
+            originTtl = defaultTtl;
+            headers.set('X-TTL-Fallback', 'global-cache');
+          }
         }
       }
     } catch (error) {
@@ -517,7 +521,7 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
     
     // Log the TTL calculation for debugging
     try {
-      pinoLogDebug('KV cache TTL countdown', {
+      logDebug('KV cache TTL countdown', {
         expiresAt: new Date(metadata.expiresAt).toISOString(),
         createdAt: new Date(metadata.createdAt).toISOString(),
         now: new Date(now).toISOString(),

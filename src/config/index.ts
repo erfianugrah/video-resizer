@@ -9,7 +9,7 @@ import { CacheConfigurationManager } from './CacheConfigurationManager';
 import { DebugConfigurationManager } from './DebugConfigurationManager';
 import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
-import workerConfig from '../../config/worker-config.json' assert { type: 'json' };
+import workerConfig from '../../config/worker-config.json';
 
 // Use centralized logger
 import { createCategoryLogger } from '../utils/logger';
@@ -43,7 +43,7 @@ export function initializeConfiguration(env?: EnvVariables): ConfigurationSystem
     if (workerConfig && typeof workerConfig === 'object') {
       // Set the worker config globally so it can be accessed by OriginConfigurationManager
       if (typeof globalThis !== 'undefined') {
-        globalThis.WORKER_CONFIG = workerConfig;
+        globalThis.WORKER_CONFIG = workerConfig as any;
         
         // Check for origins configuration in the video section
         const videoOrigins = workerConfig.video?.origins;

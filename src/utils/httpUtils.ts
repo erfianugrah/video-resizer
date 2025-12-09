@@ -105,7 +105,7 @@ export function createUnsatisfiableRangeResponse(totalSize: number): Response {
  * Handles range requests for initial video access.
  * Since we store videos in KV and serve range requests from there,
  * this function simply returns the original response without any Cache API logic.
- * 
+ *
  * @param originalResponse The full response with the video content
  * @param request The original request, potentially with a Range header
  * @returns The original response (range handling happens in KV retrieval)
@@ -117,4 +117,74 @@ export async function handleRangeRequestForInitialAccess(
   // Simply return the original response
   // Range request handling is done when serving from KV storage
   return originalResponse;
+}
+
+/**
+ * CDN-CGI transformation size limit (256 MiB)
+ * Videos larger than this should bypass transformation
+ */
+export const CDN_CGI_SIZE_LIMIT = 268435456; // 256 MiB in bytes
+
+/**
+ * Get the Content-Length of a resource without downloading the full body
+ * Performs a HEAD request to retrieve size information
+ *
+ * @param url The URL to check
+ * @param options Optional fetch options (headers, etc.)
+ * @returns The Content-Length in bytes, or null if unavailable
+ */
+export async function getContentLength(
+  url: string,
+  options?: {
+    headers?: HeadersInit;
+    timeout?: number;
+  }
+): Promise<number | null> {
+  try {
+    // Create a HEAD request to get Content-Length without downloading body
+    const headRequest = new Request(url, {
+      method: 'HEAD',
+      headers: options?.headers
+    });
+
+    // Perform the HEAD request with optional timeout
+    const controller = new AbortController();
+    const timeoutId = options?.timeout
+      ? setTimeout(() => controller.abort(), options.timeout)
+      : null;
+
+    const response = await fetch(headRequest, {
+      signal: controller.signal
+    });
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    // Get Content-Length header
+    const contentLengthHeader = response.headers.get('Content-Length');
+    if (!contentLengthHeader) {
+      return null;
+    }
+
+    const contentLength = parseInt(contentLengthHeader, 10);
+    return isNaN(contentLength) ? null : contentLength;
+  } catch (error) {
+    // HEAD request failed - log but don't throw
+    console.error('Failed to get Content-Length via HEAD request:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if a video size exceeds the CDN-CGI transformation limit
+ *
+ * @param contentLength The Content-Length in bytes
+ * @returns True if the video exceeds the 256 MiB limit
+ */
+export function exceedsTransformationLimit(contentLength: number | null): boolean {
+  if (contentLength === null) {
+    return false; // Unknown size, allow transformation attempt
+  }
+  return contentLength > CDN_CGI_SIZE_LIMIT;
 }

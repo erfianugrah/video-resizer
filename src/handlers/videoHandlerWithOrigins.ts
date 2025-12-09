@@ -460,7 +460,177 @@ export const handleVideoRequestWithOrigins = withErrorHandling<
         includePerformance: true,
         debug: context.debugEnabled
       };
-      
+
+      // CRITICAL: Pre-check video size to avoid transformation timeout for large videos
+      // Perform HEAD request to get Content-Length before attempting transformation
+      let shouldBypassTransformation = false;
+      let videoSizeInBytes: number | null = null;
+
+      if (sourceResolution.sourceUrl &&
+          (sourceResolution.sourceUrl.startsWith('http://') ||
+           sourceResolution.sourceUrl.startsWith('https://'))) {
+
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Checking video size before transformation', {
+          sourceUrl: sourceResolution.sourceUrl,
+          origin: originMatch.origin.name
+        });
+
+        addBreadcrumb(context, 'SizeCheck', 'Performing HEAD request for Content-Length', {
+          url: sourceResolution.sourceUrl
+        });
+
+        // Import HTTP utilities for size checking
+        const { getContentLength, exceedsTransformationLimit, CDN_CGI_SIZE_LIMIT } =
+          await import('../utils/httpUtils');
+
+        // Get Content-Length with 5 second timeout
+        videoSizeInBytes = await getContentLength(sourceResolution.sourceUrl, {
+          timeout: 5000,
+          headers: request.headers
+        });
+
+        if (videoSizeInBytes !== null) {
+          const sizeInMB = Math.round(videoSizeInBytes / 1024 / 1024);
+          const limitInMB = Math.round(CDN_CGI_SIZE_LIMIT / 1024 / 1024);
+
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Retrieved video size', {
+            sizeBytes: videoSizeInBytes,
+            sizeMB: sizeInMB,
+            limitMB: limitInMB,
+            exceedsLimit: exceedsTransformationLimit(videoSizeInBytes)
+          });
+
+          addBreadcrumb(context, 'SizeCheck', 'Video size retrieved', {
+            sizeMB: sizeInMB,
+            exceedsLimit: exceedsTransformationLimit(videoSizeInBytes)
+          });
+
+          // Check if video exceeds transformation limit
+          if (exceedsTransformationLimit(videoSizeInBytes)) {
+            shouldBypassTransformation = true;
+
+            logger.warn({
+              msg: 'Video exceeds CDN-CGI size limit, bypassing transformation',
+              sizeMB: sizeInMB,
+              limitMB: limitInMB,
+              sourceUrl: sourceResolution.sourceUrl,
+              origin: originMatch.origin.name,
+              requestId: context.requestId
+            });
+
+            addBreadcrumb(context, 'SizeCheck', 'Bypassing transformation - video too large', {
+              sizeMB: sizeInMB,
+              limitMB: limitInMB,
+              reason: 'Exceeds 256 MiB transformation limit'
+            });
+          }
+        } else {
+          debug(context, logger, 'VideoHandlerWithOrigins', 'Could not retrieve Content-Length, proceeding with transformation', {
+            sourceUrl: sourceResolution.sourceUrl,
+            reason: 'HEAD request failed or no Content-Length header'
+          });
+
+          addBreadcrumb(context, 'SizeCheck', 'Content-Length unavailable', {
+            reason: 'Will attempt transformation'
+          });
+        }
+      }
+
+      // If size check indicates bypass, stream directly from source
+      if (shouldBypassTransformation) {
+        debug(context, logger, 'VideoHandlerWithOrigins', 'Streaming directly from source without transformation', {
+          sourceUrl: sourceResolution.sourceUrl,
+          sizeMB: videoSizeInBytes ? Math.round(videoSizeInBytes / 1024 / 1024) : 'unknown'
+        });
+
+        addBreadcrumb(context, 'DirectStream', 'Fetching directly from origin', {
+          sourceUrl: sourceResolution.sourceUrl,
+          bypassReason: 'Video exceeds transformation size limit'
+        });
+
+        // Time the direct fetch operation
+        startTimedOperation(context, 'direct-fetch-large-video', 'DirectFetch');
+
+        try {
+          // Fetch directly from source with original request headers (including Range)
+          const directResponse = await fetch(sourceResolution.sourceUrl, {
+            method: request.method,
+            headers: request.headers,
+            redirect: 'follow'
+          });
+
+          if (!directResponse.ok) {
+            logger.error({
+              msg: 'Direct fetch failed for large video',
+              status: directResponse.status,
+              sourceUrl: sourceResolution.sourceUrl,
+              requestId: context.requestId
+            });
+
+            addBreadcrumb(context, 'DirectStream', 'Direct fetch failed', {
+              status: directResponse.status
+            });
+
+            // Fall through to transformation attempt as fallback
+          } else {
+            // Success - add bypass headers and return
+            const headers = new Headers(directResponse.headers);
+            headers.set('X-Video-Size-Bypass', 'true');
+            headers.set('X-Video-Exceeds-256MiB', 'true');
+            headers.set('X-Direct-Stream', 'true');
+            headers.set('X-Bypass-Cache-API', 'true');
+            headers.set('X-Handler', 'Origins');
+            headers.set('X-Origin', originMatch.origin.name);
+
+            if (videoSizeInBytes !== null) {
+              headers.set('X-Original-Content-Length', videoSizeInBytes.toString());
+            }
+
+            const finalResponse = new Response(directResponse.body, {
+              status: directResponse.status,
+              statusText: directResponse.statusText,
+              headers
+            });
+
+            debug(context, logger, 'VideoHandlerWithOrigins', 'Successfully streamed large video directly', {
+              status: directResponse.status,
+              contentType: directResponse.headers.get('Content-Type'),
+              hasRangeSupport: directResponse.headers.get('Accept-Ranges') === 'bytes',
+              sizeMB: videoSizeInBytes ? Math.round(videoSizeInBytes / 1024 / 1024) : 'unknown'
+            });
+
+            addBreadcrumb(context, 'DirectStream', 'Direct streaming successful', {
+              status: directResponse.status,
+              bypassedTransformation: true
+            });
+
+            endTimedOperation(context, 'direct-fetch-large-video');
+
+            // Add processing time to diagnostics
+            context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
+
+            // Build response with debug info
+            const responseBuilder = new ResponseBuilder(finalResponse, context);
+            return await responseBuilder.withDebugInfo().build();
+          }
+        } catch (error) {
+          logger.error({
+            msg: 'Error during direct fetch for large video',
+            error: error instanceof Error ? error.message : String(error),
+            sourceUrl: sourceResolution.sourceUrl,
+            requestId: context.requestId
+          });
+
+          addBreadcrumb(context, 'DirectStream', 'Direct fetch error', {
+            error: error instanceof Error ? error.message : String(error)
+          });
+
+          // Fall through to transformation attempt as fallback
+        } finally {
+          endTimedOperation(context, 'direct-fetch-large-video');
+        }
+      }
+
       // Generate a unique key for this transformation to enable request coalescing
       const transformKey = `${originMatch.origin.name}:${sourceResolution.resolvedPath}:${JSON.stringify({
         width: videoOptions.width,

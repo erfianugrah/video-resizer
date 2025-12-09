@@ -252,7 +252,17 @@ async function processStreamInChunks(
           
           // Create a copy of the data to ensure it's not modified during async operations
           // Use ArrayBuffer.slice() for more efficient memory usage
-          const dataToStore = chunkData.buffer.slice(chunkData.byteOffset, chunkData.byteOffset + chunkData.byteLength);
+          const buffer = chunkData.buffer;
+          let dataToStore: ArrayBuffer;
+          if (buffer instanceof SharedArrayBuffer) {
+            // Convert SharedArrayBuffer to ArrayBuffer
+            const sharedSlice = buffer.slice(chunkData.byteOffset, chunkData.byteOffset + chunkData.byteLength);
+            const regularBuffer = new ArrayBuffer(sharedSlice.byteLength);
+            new Uint8Array(regularBuffer).set(new Uint8Array(sharedSlice));
+            dataToStore = regularBuffer;
+          } else {
+            dataToStore = buffer.slice(chunkData.byteOffset, chunkData.byteOffset + chunkData.byteLength);
+          }
           
           // Verify the size matches before storing
           if (dataToStore.byteLength !== chunkSize) {
