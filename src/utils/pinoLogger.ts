@@ -68,7 +68,7 @@ let pinoConfig: pino.LoggerOptions = {
   ...(isCloudflareWorkers ? {
     // Cloudflare Workers: Use browser mode with console output for Sentry integration
     browser: {
-      asObject: false, // Don't serialize as object
+      asObject: true, // Receive log object so we can serialize it properly
       write: {
         // Write to console.* methods so Sentry can capture them
         // Use custom serializer to properly handle Error objects

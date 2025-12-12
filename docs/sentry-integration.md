@@ -76,7 +76,7 @@ In Cloudflare Workers, Pino uses browser mode with custom write functions that p
 
 ```typescript
 browser: {
-  asObject: false,
+  asObject: true, // Receive log object so we can serialize it properly
   write: {
     trace: (o: any) => console.debug(serializeForConsole(o)),
     debug: (o: any) => console.debug(serializeForConsole(o)),
@@ -87,6 +87,8 @@ browser: {
   }
 }
 ```
+
+With `asObject: true`, Pino passes the log object to our write functions (not a pre-formatted string), allowing our custom serializer to properly handle Error objects and other complex types.
 
 This ensures Pino logs are written to console.* methods, which are then captured by Sentry's `consoleLoggingIntegration`.
 
