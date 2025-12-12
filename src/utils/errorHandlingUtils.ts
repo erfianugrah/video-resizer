@@ -1,17 +1,18 @@
 /**
  * Utility functions for standardized error handling across the application.
- * 
+ *
  * This module provides consistent error handling patterns to use throughout the codebase,
  * reducing duplication and ensuring proper logging, context capturing, and error normalization.
  */
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext, addBreadcrumb } from './requestContext';
 import { createLogger, error as pinoError, debug as pinoDebug } from './pinoLogger';
+import * as Sentry from '@sentry/cloudflare';
 
 /**
  * Basic error normalization to prevent circular dependencies.
  * This is a simplified version of the normalizeError function in errorHandlerService.ts.
- * 
+ *
  * @param err - Any error to normalize
  * @param context - Additional context data
  * @returns A VideoTransformError
@@ -21,20 +22,80 @@ function normalizeErrorBasic(err: unknown, context: Record<string, unknown> = {}
   if (err instanceof VideoTransformError) {
     return err;
   }
-  
+
   // If it's another type of Error, convert it
   if (err instanceof Error) {
     return ProcessingError.fromError(err, ErrorType.UNKNOWN_ERROR, context);
   }
-  
+
   // If it's a string or other value, create a new error
   const message = typeof err === 'string' ? err : 'Unknown error occurred';
   return new VideoTransformError(message, ErrorType.UNKNOWN_ERROR, context);
 }
 
 /**
+ * Capture error to Sentry with filtering for expected errors
+ *
+ * @param error - The error to capture
+ * @param context - Additional context data
+ */
+function captureErrorToSentry(error: unknown, context: Record<string, unknown> = {}): void {
+  // Don't capture expected errors
+  if (error instanceof Error) {
+    // Filter out client disconnects (AbortError)
+    if (error.name === 'AbortError' || (error instanceof DOMException && error.name === 'AbortError')) {
+      return;
+    }
+
+    // Filter out other expected errors if needed
+    // Add more filters here as needed
+  }
+
+  // Try to capture to Sentry (may not be available in test environment)
+  try {
+    // Capture to Sentry with context
+    Sentry.withScope((scope) => {
+      // Add context data as tags and extra context
+      Object.entries(context).forEach(([key, value]) => {
+        // Add simple values as tags for better filtering in Sentry
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          scope.setTag(key, String(value));
+        } else {
+          // Add complex values as extra context
+          scope.setExtra(key, value);
+        }
+      });
+
+      // Set error level based on error type
+      if (context.errorType) {
+        scope.setLevel(
+          context.errorType === ErrorType.RESOURCE_NOT_FOUND ||
+          context.errorType === ErrorType.PATTERN_NOT_FOUND ||
+          context.errorType === ErrorType.ORIGIN_NOT_FOUND ? 'info' :
+          context.errorType === ErrorType.INVALID_PARAMETER ||
+          context.errorType === ErrorType.INVALID_MODE ||
+          context.errorType === ErrorType.INVALID_FORMAT ? 'warning' :
+          'error'
+        );
+      }
+
+      // Capture the exception
+      if (error instanceof Error) {
+        Sentry.captureException(error);
+      } else {
+        // For non-Error objects, create a message
+        Sentry.captureMessage(String(error), 'error');
+      }
+    });
+  } catch (sentryError) {
+    // Silently fail if Sentry is not available (e.g., in test environment)
+    // This prevents test failures while still capturing errors in production
+  }
+}
+
+/**
  * Standard error logging with context tracking.
- * 
+ *
  * @param category - Component or service category
  * @param message - Error message
  * @param error - Original error object
@@ -50,7 +111,7 @@ export function logErrorWithContext(
   const normalizedErr = normalizeErrorBasic(error, context);
   const errorMessage = normalizedErr.message;
   const errorStack = normalizedErr instanceof Error ? normalizedErr.stack : undefined;
-  
+
   // Combine provided context with error context
   const combinedContext = {
     ...context,
@@ -61,7 +122,7 @@ export function logErrorWithContext(
 
   // Try to get the request context
   const requestContext = getCurrentContext();
-  
+
   // Add breadcrumb if request context is available
   if (requestContext) {
     // Add error breadcrumb
@@ -70,7 +131,7 @@ export function logErrorWithContext(
       errorType: normalizedErr.errorType,
       error: errorMessage
     });
-    
+
     // Log with pino logger
     const logger = createLogger(requestContext);
     pinoError(requestContext, logger, category, message, combinedContext);
@@ -78,6 +139,13 @@ export function logErrorWithContext(
     // Fall back to console for logging
     console.error(`[${category}] ${message}`, combinedContext);
   }
+
+  // Capture exception to Sentry (filters out expected errors)
+  captureErrorToSentry(error, {
+    message,
+    category,
+    ...combinedContext
+  });
 }
 
 /**

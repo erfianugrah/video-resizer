@@ -619,6 +619,22 @@ export default Sentry.withSentry<EnvVariables>(
           stack: errorStack,
         });
 
+        // Capture exception to Sentry (skip AbortErrors)
+        if (err instanceof Error && err.name !== 'AbortError') {
+          Sentry.captureException(err, {
+            tags: {
+              handler: 'worker',
+              url: request.url,
+            },
+            contexts: {
+              request: {
+                url: request.url,
+                method: request.method,
+              },
+            },
+          });
+        }
+
         // Track worker errors
         Sentry.metrics.count("video_worker.errors.total", 1, {
           attributes: {

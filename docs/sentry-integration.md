@@ -174,14 +174,58 @@ The wrapper automatically creates transactions for each request handled by the w
 
 ## Error Tracking
 
-Errors are automatically captured by the `Sentry.withSentry()` wrapper. Both caught and uncaught exceptions are sent to Sentry with full stack traces.
+Errors are captured through multiple mechanisms for comprehensive error monitoring:
 
-### Automatic Error Capture
+### 1. Automatic Error Capture via Wrapper
 
-- **Worker-level errors**: Caught in `src/index.ts` line 602-633
-- **Handler-level errors**: Caught in `src/handlers/videoHandler.ts` line 792-840
+The `Sentry.withSentry()` wrapper automatically captures unhandled errors with full stack traces.
 
-Both error handlers track metrics alongside error logging.
+### 2. Explicit Error Capturing
+
+Location: `src/utils/errorHandlingUtils.ts` (lines 36-94)
+
+All errors logged through `logErrorWithContext()` are automatically captured to Sentry with:
+
+```typescript
+function captureErrorToSentry(error: unknown, context: Record<string, unknown>): void {
+  // Filters out expected errors (e.g., AbortError for client disconnects)
+  // Uses Sentry.withScope() to attach rich context
+  // Sets appropriate severity levels based on error type
+  Sentry.captureException(error);
+}
+```
+
+**Features:**
+- **Smart Filtering**: Automatically excludes expected errors like client disconnects (AbortError)
+- **Rich Context**: Attaches tags and extra data for better debugging
+- **Severity Levels**:
+  - `info` for 404 errors (RESOURCE_NOT_FOUND, PATTERN_NOT_FOUND, ORIGIN_NOT_FOUND)
+  - `warning` for validation errors (INVALID_PARAMETER, INVALID_MODE, INVALID_FORMAT)
+  - `error` for server errors and unknown errors
+- **Test-Safe**: Gracefully handles test environments where Sentry isn't initialized
+
+### 3. Top-Level Error Capture
+
+Location: `src/index.ts` (lines 622-636)
+
+Worker-level errors are explicitly captured with request context:
+
+```typescript
+if (err instanceof Error && err.name !== 'AbortError') {
+  Sentry.captureException(err, {
+    tags: { handler: 'worker', url: request.url },
+    contexts: { request: { url: request.url, method: request.method } }
+  });
+}
+```
+
+### Error Filtering
+
+The integration automatically filters out:
+- **AbortError**: Client disconnects and request cancellations
+- Other expected operational errors can be added as needed
+
+This ensures the Sentry Issues dashboard shows only actionable errors, not noise from normal operations.
 
 ## Environment Detection
 
@@ -200,6 +244,7 @@ The integration correctly handles three environments:
 
 ## Data Flow
 
+### Logging Flow
 ```
 Application Code (Pino logs)
     ↓
@@ -210,6 +255,7 @@ Sentry consoleLoggingIntegration
 Sentry Cloud (Logs Dashboard)
 ```
 
+### Metrics Flow
 ```
 Application Code (Sentry.metrics.*)
     ↓
@@ -218,6 +264,7 @@ Sentry Metrics API
 Sentry Cloud (Metrics Dashboard)
 ```
 
+### Tracing Flow
 ```
 Request → Sentry.withSentry wrapper
     ↓
@@ -228,14 +275,32 @@ Handler execution (timed)
 Transaction sent to Sentry
 ```
 
+### Error Capture Flow
+```
+Error occurs
+    ↓
+logErrorWithContext() or try/catch
+    ↓
+captureErrorToSentry() filters expected errors
+    ↓
+Sentry.withScope() adds context (tags, extras, severity)
+    ↓
+Sentry.captureException()
+    ↓
+Sentry Cloud (Issues Dashboard)
+```
+
 ## Viewing Data in Sentry
 
 After deployment, data will be available in your Sentry project:
 
-- **Errors**: Issues tab
-- **Logs**: Logs tab (requires logs to be sent)
-- **Traces**: Performance → Traces
-- **Metrics**: Metrics tab
+- **Errors/Issues**: Issues tab - Shows captured exceptions with stack traces, context, and severity levels
+  - Automatically filtered to exclude noise (client disconnects, etc.)
+  - Grouped by error type and fingerprint for easy triaging
+  - Includes rich context (URL, category, error type, custom data)
+- **Logs**: Logs tab - Console output from Pino logger via `consoleLoggingIntegration`
+- **Traces**: Performance → Traces - Request lifecycle and timing data
+- **Metrics**: Metrics tab - Custom business metrics (cache hits/misses, response times, etc.)
 
 ## Notes
 
