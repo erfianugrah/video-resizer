@@ -28,9 +28,19 @@ function normalizeErrorBasic(err: unknown, context: Record<string, unknown> = {}
     return ProcessingError.fromError(err, ErrorType.UNKNOWN_ERROR, context);
   }
 
-  // If it's a string or other value, create a new error
-  const message = typeof err === 'string' ? err : 'Unknown error occurred';
-  return new VideoTransformError(message, ErrorType.UNKNOWN_ERROR, context);
+  // If it's a string, use it directly
+  if (typeof err === 'string') {
+    return new VideoTransformError(err, ErrorType.UNKNOWN_ERROR, context);
+  }
+
+  // If it's an object with a message property, extract it
+  if (err && typeof err === 'object' && 'message' in err) {
+    const message = typeof err.message === 'string' ? err.message : String(err.message);
+    return new VideoTransformError(message, ErrorType.UNKNOWN_ERROR, context);
+  }
+
+  // For any other type, create a generic error
+  return new VideoTransformError('Unknown error occurred', ErrorType.UNKNOWN_ERROR, context);
 }
 
 /**

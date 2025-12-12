@@ -192,8 +192,8 @@ export async function handleTransformationError({
   const isServerError = status >= 500 && status < 600;
   const isFileSizeError = parsedError?.errorType === 'file_size_limit' || errorText.includes('file size limit');
 
-  // Log the initial error
-  logErrorWithContext(`Transformation proxy returned ${status}`, { message: errorText }, { requestId: requestContext.requestId, url: cdnCgiUrl }, 'handleTransformationError');
+  // Log the initial error - pass errorText directly as the error
+  logErrorWithContext(`Transformation proxy returned ${status}`, errorText || `HTTP ${status} error from transformation proxy`, { requestId: requestContext.requestId, url: cdnCgiUrl, status, parsedError }, 'handleTransformationError');
   addBreadcrumb(requestContext, 'Error', 'Transformation Proxy Error', { status, errorText: errorText.substring(0, 100), parsedError });
 
   // --- Duration Limit Retry Logic ---
