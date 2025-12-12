@@ -276,8 +276,10 @@ export class DebugConfigurationManager {
       // Log changes if any occurred
       if (hasChanges) {
         // Use console.info to avoid circular dependency with logger
-        console.info('Debug configuration updated', {
-          source: 'DebugConfigurationManager',
+        console.info({
+          context: 'DebugConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Debug configuration updated',
           changes,
           timestamp: new Date().toISOString()
         });
@@ -293,16 +295,20 @@ export class DebugConfigurationManager {
         );
         
         // Log validation failure
-        console.error('Debug configuration validation failed', {
-          source: 'DebugConfigurationManager',
+        console.error({
+          context: 'DebugConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Debug configuration validation failed',
           errors: validationErrors,
           invalidConfig: newConfig,
           timestamp: new Date().toISOString()
         });
-        
+
         // Attempt graceful fallback - revert to previous config
-        console.warn('Reverting to previous debug configuration', {
-          source: 'DebugConfigurationManager',
+        console.warn({
+          context: 'DebugConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Reverting to previous debug configuration',
           previousEnabled: this.config.enabled,
           attemptedConfig: newConfig
         });
@@ -312,9 +318,10 @@ export class DebugConfigurationManager {
       }
       
       // For unknown errors, log and return current config
-      console.error('Unknown error updating debug configuration', {
-        source: 'DebugConfigurationManager',
-        error: error instanceof Error ? error.message : String(error),
+      console.error({
+        context: 'DebugConfigurationManager',
+        operation: 'updateConfig',
+        error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error),
         timestamp: new Date().toISOString()
       });
       

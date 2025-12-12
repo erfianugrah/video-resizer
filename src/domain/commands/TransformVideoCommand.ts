@@ -215,10 +215,12 @@ export class TransformVideoCommand {
       }
     } catch (err) {
       // Fallback logging if context/logger init fails
-      console.error(
-        'CRITICAL: Failed to initialize RequestContext/Logger in TransformVideoCommand constructor:',
-        err,
-      );
+      console.error({
+        context: 'TransformVideoCommand',
+        operation: 'constructor',
+        message: 'CRITICAL: Failed to initialize RequestContext/Logger',
+        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+      });
       logErrorWithContext(
         'Error initializing TransformVideoCommand context/logger',
         err,

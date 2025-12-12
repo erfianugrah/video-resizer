@@ -250,7 +250,12 @@ export class OriginConfigurationManager {
         const origin = convertPathPatternToOrigin(pathPattern, storageConfig);
         result.push(origin);
       } catch (error) {
-        console.error(`Error converting path pattern to origin: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error({
+          context: 'OriginConfigurationManager',
+          operation: 'convertPathPatternsToOrigins',
+          message: 'Error converting path pattern to origin',
+          error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+        });
       }
     }
     

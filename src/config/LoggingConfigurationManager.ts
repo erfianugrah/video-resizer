@@ -315,8 +315,10 @@ export class LoggingConfigurationManager {
       // Log changes if any occurred
       if (hasChanges) {
         // Use console.info to avoid circular dependency with logger
-        console.info('Logging configuration updated', {
-          source: 'LoggingConfigurationManager',
+        console.info({
+          context: 'LoggingConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Logging configuration updated',
           changes,
           timestamp: new Date().toISOString()
         });
@@ -333,16 +335,20 @@ export class LoggingConfigurationManager {
         );
         
         // Log validation failure
-        console.error('Logging configuration validation failed', {
-          source: 'LoggingConfigurationManager',
+        console.error({
+          context: 'LoggingConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Logging configuration validation failed',
           errors: validationErrors,
           invalidConfig: newConfig,
           timestamp: new Date().toISOString()
         });
-        
+
         // Attempt graceful fallback - revert to previous config
-        console.warn('Reverting to previous logging configuration', {
-          source: 'LoggingConfigurationManager',
+        console.warn({
+          context: 'LoggingConfigurationManager',
+          operation: 'updateConfig',
+          message: 'Reverting to previous logging configuration',
           previousLevel: this.config.level,
           attemptedConfig: newConfig
         });
@@ -352,9 +358,10 @@ export class LoggingConfigurationManager {
       }
       
       // For unknown errors, log and return current config
-      console.error('Unknown error updating logging configuration', {
-        source: 'LoggingConfigurationManager',
-        error: error instanceof Error ? error.message : String(error),
+      console.error({
+        context: 'LoggingConfigurationManager',
+        operation: 'updateConfig',
+        error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error),
         timestamp: new Date().toISOString()
       });
       

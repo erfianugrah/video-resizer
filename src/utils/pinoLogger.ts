@@ -11,7 +11,12 @@ import { LoggingConfigurationManager } from '../config/LoggingConfigurationManag
  * before the logging system is fully available
  */
 function logError(message: string, data?: Record<string, unknown>): void {
-  console.error(`PinoLogger: ${message}`, data || {});
+  console.error({
+    context: 'PinoLogger',
+    operation: 'initialization',
+    message,
+    ...(data || {})
+  });
 }
 
 // Pretty formatting is configured in the transport options

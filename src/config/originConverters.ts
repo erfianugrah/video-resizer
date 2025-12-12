@@ -238,7 +238,11 @@ export function convertLegacyConfigToOrigins(config: any): Origin[] {
   
   // Skip if missing required components
   if (!config.video?.pathPatterns || !config.video?.storage) {
-    console.warn('Cannot convert to Origins: missing pathPatterns or storage configuration');
+    console.warn({
+      context: 'OriginConverters',
+      operation: 'convertConfigToOrigins',
+      message: 'Cannot convert to Origins: missing pathPatterns or storage configuration'
+    });
     return [];
   }
   

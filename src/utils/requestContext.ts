@@ -32,7 +32,12 @@ function logDebug(message: string, data?: Record<string, unknown>): void {
  */
 function logWarn(message: string, data?: Record<string, unknown>): void {
   // Only use console.warn since we're in a core module imported by the logging system
-  console.warn(`RequestContext: ${message}`, data || {});
+  console.warn({
+    context: 'RequestContext',
+    operation: 'logWarn',
+    message,
+    ...(data || {})
+  });
 }
 
 /**

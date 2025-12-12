@@ -217,7 +217,12 @@ export function logWarn(
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
-    console.warn(`[${category}] ${message}`, data || {});
+    console.warn({
+      context: category,
+      operation: 'logWarn',
+      message,
+      ...(data || {})
+    });
     return;
   }
   
@@ -247,7 +252,12 @@ export function logError(
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
-    console.error(`[${category}] ${message}`, data || {});
+    console.error({
+      context: category,
+      operation: 'logError',
+      message,
+      ...(data || {})
+    });
     return;
   }
   

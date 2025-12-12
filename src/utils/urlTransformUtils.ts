@@ -112,7 +112,12 @@ function transformRequestUrlImpl(
       );
     } catch (logErr) {
       // Last resort fallback if logging fails
-      console.error('URL transformation error and logging error', logErr);
+      console.error({
+        context: 'URLTransformUtils',
+        operation: 'buildTargetUrl',
+        message: 'URL transformation error and logging error',
+        error: logErr instanceof Error ? { name: logErr.name, message: logErr.message, stack: logErr.stack } : String(logErr)
+      });
     }
   }
 

@@ -49,7 +49,12 @@ function logInfo(
     workerLogger.info(message, { ...data, hasContext: true });
   } else {
     // Fallback to console if the logger isn't ready yet
-    console.info(`Worker: ${message}`, data || {});
+    console.info({
+      context: 'Worker',
+      operation: 'logInfo',
+      message,
+      ...(data || {})
+    });
   }
 }
 
@@ -66,7 +71,12 @@ function logError(
     workerLogger.error(message, { ...data, hasContext: true });
   } else {
     // Fallback to console if the logger isn't ready yet
-    console.error(`Worker: ${message}`, data || {});
+    console.error({
+      context: 'Worker',
+      operation: 'logError',
+      message,
+      ...(data || {})
+    });
   }
 }
 

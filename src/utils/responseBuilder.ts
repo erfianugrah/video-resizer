@@ -346,10 +346,13 @@ export class ResponseBuilder {
     // Start pumping the body without awaiting - this runs asynchronously
     if (originalBody) {
       originalBody.pipeTo(writable).catch(err => {
-        console.error('Error piping response body:', err instanceof Error ? err.message : String(err), {
+        console.error({
+          context: 'ResponseBuilder',
+          operation: 'createStreamResponse',
+          message: 'Error piping response body',
+          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
           status,
-          bodyType: originalBody ? typeof originalBody : 'null',
-          errorType: err instanceof Error ? err.name : typeof err
+          bodyType: originalBody ? typeof originalBody : 'null'
         });
       });
     }

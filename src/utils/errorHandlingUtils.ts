@@ -180,7 +180,12 @@ export function logErrorWithContext(
     pinoError(requestContext, logger, category, message, combinedContext);
   } else {
     // Fall back to console for logging
-    console.error(`[${category}] ${message}`, combinedContext);
+    console.error({
+      context: category,
+      operation: 'logErrorWithContext',
+      message,
+      ...combinedContext
+    });
   }
 
   // Capture exception to Sentry (filters out expected errors)

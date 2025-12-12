@@ -434,5 +434,9 @@ export const cacheConfig = CacheConfigurationManager.getInstance();
 
 // Add this to ensure module gets picked up properly in tests
 if (typeof cacheConfig === 'undefined') {
-  console.warn('CacheConfigurationManager failed to initialize default instance');
+  console.warn({
+    context: 'CacheConfigurationManager',
+    operation: 'initialization',
+    message: 'Failed to initialize default instance'
+  });
 }

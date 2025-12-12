@@ -223,12 +223,18 @@ export class VideoConfigurationManager {
             origins: convertLegacyConfigToOrigins(configWithOrigins)
           };
           
-          console.debug('VideoConfigurationManager: Auto-generated Origins from legacy config', {
+          console.debug({
+            context: 'VideoConfigurationManager',
+            operation: 'loadConfig',
+            message: 'Auto-generated Origins from legacy config',
             originCount: configWithOrigins.origins.length
           });
         } catch (conversionError) {
-          console.warn('VideoConfigurationManager: Failed to auto-generate Origins', {
-            error: conversionError instanceof Error ? conversionError.message : String(conversionError)
+          console.warn({
+            context: 'VideoConfigurationManager',
+            operation: 'loadConfig',
+            message: 'Failed to auto-generate Origins',
+            error: conversionError instanceof Error ? { name: conversionError.name, message: conversionError.message, stack: conversionError.stack } : String(conversionError)
           });
         }
       }
@@ -470,7 +476,11 @@ export class VideoConfigurationManager {
           import('../utils/legacyLoggerAdapter').then(({ warn }) => {
             warn('VideoConfigurationManager', 'Storage configuration not found, using defaults');
           }).catch(() => {
-            console.warn('[VideoConfigurationManager] Storage configuration not found, using defaults');
+            console.warn({
+              context: 'VideoConfigurationManager',
+              operation: 'loadConfig',
+              message: 'Storage configuration not found, using defaults'
+            });
           });
         };
         
@@ -910,13 +920,13 @@ export class VideoConfigurationManager {
             });
           }).catch(() => {
             // Fallback to console logging
-            console.info('[VideoConfigurationManager] Updated configuration');
-            if (newConfig.pathPatterns) {
-              console.info(`[VideoConfigurationManager] Updated path patterns: ${this.config.pathPatterns?.length || 0} patterns`);
-            }
-            if (newConfig.origins) {
-              console.info(`[VideoConfigurationManager] Updated origins: ${this.getOrigins().length} origins`);
-            }
+            console.info({
+              context: 'VideoConfigurationManager',
+              operation: 'updateConfig',
+              message: 'Updated configuration',
+              pathPatternCount: newConfig.pathPatterns ? this.config.pathPatterns?.length || 0 : undefined,
+              originsCount: newConfig.origins ? this.getOrigins().length : undefined
+            });
           });
         });
       } catch (loggingError) {
@@ -930,7 +940,11 @@ export class VideoConfigurationManager {
             );
           }).catch(() => {
             // Last resort - console log
-            console.error('[VideoConfigurationManager] Error logging configuration update');
+            console.error({
+              context: 'VideoConfigurationManager',
+              operation: 'updateConfig',
+              message: 'Error logging configuration update'
+            });
           });
         } catch {
           // Silent failure - don't let logging errors impact configuration

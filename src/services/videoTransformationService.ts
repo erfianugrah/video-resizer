@@ -41,7 +41,12 @@ async function logDebug(message: string, data?: Record<string, unknown>): Promis
     debug('VideoTransformationService', message, data || {});
   } catch {
     // Fall back to console as a last resort
-    console.debug(`VideoTransformationService: ${message}`, data || {});
+    console.debug({
+      context: 'VideoTransformationService',
+      operation: 'logDebug',
+      message,
+      ...(data || {})
+    });
   }
 }
 
@@ -69,7 +74,12 @@ async function logWarn(message: string, data?: Record<string, unknown>): Promise
     warn('VideoTransformationService', message, data || {});
   } catch {
     // Fall back to console as a last resort
-    console.warn(`VideoTransformationService: ${message}`, data || {});
+    console.warn({
+      context: 'VideoTransformationService',
+      operation: 'logWarn',
+      message,
+      ...(data || {})
+    });
   }
 }
 

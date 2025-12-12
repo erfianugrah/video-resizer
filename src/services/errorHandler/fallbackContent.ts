@@ -33,7 +33,12 @@ async function fetchOriginalContentFallbackImpl(
     fallbackConfig = caching?.fallback;
   } catch (configError) {
     // If there's an error loading the config, log it and check for mocked config in tests
-    console.error('Error loading video configuration:', configError);
+    console.error({
+      context: 'FallbackContent',
+      operation: 'renderFallbackContent',
+      message: 'Error loading video configuration',
+      error: configError instanceof Error ? { name: configError.name, message: configError.message, stack: configError.stack } : String(configError)
+    });
 
     try {
       // This is to support the mocked import in tests
@@ -42,7 +47,12 @@ async function fetchOriginalContentFallbackImpl(
       caching = configManager.getCachingConfig();
       fallbackConfig = caching?.fallback;
     } catch (secondConfigError) {
-      console.error('Failed to load configuration after retry:', secondConfigError);
+      console.error({
+        context: 'FallbackContent',
+        operation: 'renderFallbackContent',
+        message: 'Failed to load configuration after retry',
+        error: secondConfigError instanceof Error ? { name: secondConfigError.name, message: secondConfigError.message, stack: secondConfigError.stack } : String(secondConfigError)
+      });
 
       // Special case for tests: if we're in a test environment for a specific test, process it
       // This handles the specific test case for 'should fetch original content when a 400 error occurs'

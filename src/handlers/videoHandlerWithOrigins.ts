@@ -1197,8 +1197,11 @@ async function transformVideoWithOrigins(
         sourceType: sourceResolution.originType
       });
     } else {
-      console.error('Error transforming video with Origins:', {
-        error: err instanceof Error ? err.message : 'Unknown error',
+      console.error({
+        context: 'VideoHandlerWithOrigins',
+        operation: 'transformVideoWithOrigins',
+        message: 'Error transforming video with Origins',
+        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
         origin: origin.name,
         sourceType: sourceResolution.originType
       });

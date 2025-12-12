@@ -304,7 +304,12 @@ export async function processRangeRequest(
               error: streamError instanceof Error ? streamError.message : String(streamError)
             });
           } else {
-            console.error('Error processing stream for range request:', streamError);
+            console.error({
+              context: 'StreamUtils',
+              operation: 'processRangeRequest',
+              message: 'Error processing stream for range request',
+              error: streamError instanceof Error ? { name: streamError.name, message: streamError.message, stack: streamError.stack } : String(streamError)
+            });
           }
         }
         
