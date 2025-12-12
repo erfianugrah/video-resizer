@@ -17,7 +17,7 @@ Location: `src/index.ts` (lines 94-107)
 ```typescript
 export default Sentry.withSentry<EnvVariables>(
   (env: EnvVariables) => ({
-    dsn: "https://8ae5724deb43d9e85dadf44dfbb16844@o4506353146462208.ingest.us.sentry.io/4510505303670784",
+    dsn: env.SENTRY_DSN,
     integrations: [
       Sentry.consoleLoggingIntegration({
         levels: ["log", "warn", "error", "debug", "trace"],
@@ -32,9 +32,24 @@ export default Sentry.withSentry<EnvVariables>(
 )
 ```
 
+### Setting Up the Sentry DSN Secret
+
+The Sentry DSN is stored as a Wrangler secret for security. To set it up for each environment:
+
+```bash
+# Development
+echo "YOUR_SENTRY_DSN" | wrangler secret put SENTRY_DSN --env development
+
+# Staging
+echo "YOUR_SENTRY_DSN" | wrangler secret put SENTRY_DSN --env staging
+
+# Production
+echo "YOUR_SENTRY_DSN" | wrangler secret put SENTRY_DSN --env production
+```
+
 ### Configuration Options
 
-- **dsn**: Sentry project DSN (Data Source Name)
+- **dsn**: Sentry project DSN (Data Source Name) - loaded from `SENTRY_DSN` secret
 - **integrations**: `consoleLoggingIntegration` captures console.* calls as logs
 - **tracesSampleRate**: `1.0` = 100% of transactions are traced
 - **sendDefaultPii**: `true` = includes IP addresses and user agents
@@ -224,7 +239,7 @@ After deployment, data will be available in your Sentry project:
 
 ## Notes
 
-- DSN is publicly visible in code (this is normal and safe)
+- DSN is stored as a Wrangler secret (`SENTRY_DSN`) for better security practices
 - PII collection is enabled (`sendDefaultPii: true`)
 - 100% of transactions are sampled (`tracesSampleRate: 1.0`) - consider reducing in production for cost management
 - Metrics use `attributes` (not `tags`) per Sentry Cloudflare SDK requirements

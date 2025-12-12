@@ -93,8 +93,7 @@ let hasInitialized = false;
 
 export default Sentry.withSentry<EnvVariables>(
   (env: EnvVariables) => ({
-    dsn:
-      "https://8ae5724deb43d9e85dadf44dfbb16844@o4506353146462208.ingest.us.sentry.io/4510505303670784",
+    dsn: env.SENTRY_DSN,
     integrations: [
       Sentry.consoleLoggingIntegration({
         levels: ["log", "warn", "error", "debug", "trace"],

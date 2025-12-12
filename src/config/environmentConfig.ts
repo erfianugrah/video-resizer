@@ -83,6 +83,7 @@ export interface EnvVariables {
   // Application Settings
   ENVIRONMENT?: string;
   VERSION?: string;
+  SENTRY_DSN?: string;
   
   // Debug Configuration
   DEBUG_ENABLED?: string;
