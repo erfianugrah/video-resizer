@@ -1,6 +1,6 @@
 # Video Resizer Architecture
 
-*Last Updated: December 9, 2025*
+_Last Updated: December 9, 2025_
 
 This section documents the architecture that is currently implemented in the codebase.
 
@@ -50,4 +50,4 @@ The architecture uses several design patterns:
 - Cache version writes and TTL refreshes run via `waitUntil` when available.
 - Background KV storage retries are bounded (3 attempts) and logged with breadcrumbs.
 
-See the [Architecture Overview](./architecture-overview.md) for the end-to-end flow and component boundaries.
+See the [Architecgure Overview](./architecture-overview.md) for the end-to-end flow and component boundaries.
