@@ -60,7 +60,7 @@ echo "YOUR_SENTRY_DSN" | wrangler secret put SENTRY_DSN --env production
 
 ### Pino Logger Configuration
 
-Location: `src/utils/pinoLogger.ts` (lines 19-94)
+Location: `src/utils/pinoLogger.ts`
 
 The Pino logger is configured to detect the Cloudflare Workers environment and output to console methods:
 
@@ -72,23 +72,76 @@ const isCloudflareWorkers = typeof globalThis !== 'undefined' &&
   typeof process === 'undefined';
 ```
 
-In Cloudflare Workers, Pino uses browser mode with custom write functions:
+In Cloudflare Workers, Pino uses browser mode with custom write functions that properly serialize Error objects:
 
 ```typescript
 browser: {
   asObject: false,
   write: {
-    trace: (o: any) => console.debug(JSON.stringify(o)),
-    debug: (o: any) => console.debug(JSON.stringify(o)),
-    info: (o: any) => console.info(JSON.stringify(o)),
-    warn: (o: any) => console.warn(JSON.stringify(o)),
-    error: (o: any) => console.error(JSON.stringify(o)),
-    fatal: (o: any) => console.error(JSON.stringify(o)),
+    trace: (o: any) => console.debug(serializeForConsole(o)),
+    debug: (o: any) => console.debug(serializeForConsole(o)),
+    info: (o: any) => console.info(serializeForConsole(o)),
+    warn: (o: any) => console.warn(serializeForConsole(o)),
+    error: (o: any) => console.error(serializeForConsole(o)),
+    fatal: (o: any) => console.error(serializeForConsole(o)),
   }
 }
 ```
 
 This ensures Pino logs are written to console.* methods, which are then captured by Sentry's `consoleLoggingIntegration`.
+
+### Error Serialization
+
+**Problem:** Error objects in JavaScript have non-enumerable properties (`name`, `message`, `stack`), causing them to serialize as `[object Object]` or `{}` when logged, making debugging difficult.
+
+**Solution:** Custom serializer that extracts error properties:
+
+```typescript
+function serializeForConsole(obj: any): string {
+  return JSON.stringify(obj, (key, value) => {
+    if (value instanceof Error) {
+      return {
+        name: value.name,
+        message: value.message,
+        stack: value.stack,
+        // Include any additional custom properties
+        ...Object.getOwnPropertyNames(value).reduce((acc, prop) => {
+          if (!['name', 'message', 'stack'].includes(prop)) {
+            acc[prop] = (value as any)[prop];
+          }
+          return acc;
+        }, {} as Record<string, any>)
+      };
+    }
+    return value;
+  });
+}
+```
+
+A general-purpose `serializeError()` utility is also exported from `src/utils/errorHandlingUtils.ts` for use throughout the codebase.
+
+### Structured Logging
+
+All console logs use structured JSON format following Cloudflare Workers Logs best practices:
+
+```typescript
+console.error({
+  context: 'ComponentName',
+  operation: 'operationName',
+  error: err instanceof Error ? {
+    name: err.name,
+    message: err.message,
+    stack: err.stack
+  } : String(err)
+});
+```
+
+**Benefits:**
+- Direct field filtering (e.g., `context = "PinoLogger"`)
+- Operation-specific queries (e.g., `operation = "recreateBaseLogger"`)
+- Error type filtering (e.g., `error.name = "TypeError"`)
+- Better indexing in Cloudflare Workers Logs
+- Readable error messages in Sentry Issues dashboard
 
 ## Metrics
 
