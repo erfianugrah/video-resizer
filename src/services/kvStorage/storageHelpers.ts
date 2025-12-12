@@ -490,7 +490,11 @@ export function createCommonHeaders(metadata: TransformationMetadata, key: strin
       }
     } catch (error) {
       // Silent fallback - no hardcoded values
-      console.error('[storageHelpers] Failed to resolve origin TTL:', error);
+      console.error({
+        context: 'StorageHelpers',
+        operation: 'resolveOriginTTL',
+        error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+      });
     }
   }
   

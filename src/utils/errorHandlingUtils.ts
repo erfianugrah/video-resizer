@@ -10,6 +10,39 @@ import { createLogger, error as pinoError, debug as pinoDebug } from './pinoLogg
 import * as Sentry from '@sentry/cloudflare';
 
 /**
+ * Safely serialize an error for console output.
+ * Error objects have non-enumerable properties, so they appear as [object Object] or {} when logged.
+ * This function extracts the important error information for proper logging.
+ *
+ * @param error - The error to serialize
+ * @returns A serializable object with error details
+ */
+export function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      // Include any additional custom properties
+      ...Object.getOwnPropertyNames(error).reduce((acc, prop) => {
+        if (!['name', 'message', 'stack'].includes(prop)) {
+          acc[prop] = (error as any)[prop];
+        }
+        return acc;
+      }, {} as Record<string, any>)
+    };
+  }
+
+  // For non-Error objects
+  if (typeof error === 'object' && error !== null) {
+    return { value: error };
+  }
+
+  // For primitives
+  return { value: String(error) };
+}
+
+/**
  * Basic error normalization to prevent circular dependencies.
  * This is a simplified version of the normalizeError function in errorHandlerService.ts.
  *

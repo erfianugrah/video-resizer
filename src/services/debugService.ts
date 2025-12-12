@@ -144,7 +144,11 @@ const sanitizeBreadcrumbs = (breadcrumbs: any[]): any[] => {
   try {
     return JSON.parse(JSON.stringify(breadcrumbs, getCircularReplacer()));
   } catch (e) {
-    console.error('Error sanitizing breadcrumbs:', e);
+    console.error({
+      context: 'DebugService',
+      operation: 'sanitizeBreadcrumbs',
+      error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e)
+    });
     return [{ category: 'Error', message: 'Failed to sanitize breadcrumbs' }];
   }
 };

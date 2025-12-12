@@ -156,7 +156,13 @@ export function convertPathPatternToOrigin(
   try {
     return validateOrigin(origin);
   } catch (error) {
-    console.warn(`Warning: Created origin from path pattern '${pathPattern.name}' failed validation:`, error);
+    console.warn({
+      context: 'OriginConverters',
+      operation: 'validateOriginFromPathPattern',
+      pathPatternName: pathPattern.name,
+      warning: 'Created origin failed validation',
+      error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+    });
     return origin;
   }
 }

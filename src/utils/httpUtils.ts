@@ -171,7 +171,11 @@ export async function getContentLength(
     return isNaN(contentLength) ? null : contentLength;
   } catch (error) {
     // HEAD request failed - log but don't throw
-    console.error('Failed to get Content-Length via HEAD request:', error);
+    console.error({
+      context: 'HttpUtils',
+      operation: 'getContentLengthViaHead',
+      error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+    });
     return null;
   }
 }

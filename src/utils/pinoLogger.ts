@@ -30,6 +30,32 @@ const isNodeJS = typeof process !== 'undefined' &&
 // Browser: has window
 const isBrowser = typeof (globalThis as any).window !== 'undefined';
 
+/**
+ * Custom JSON serializer that properly handles Error objects
+ * Error objects have non-enumerable properties, so JSON.stringify returns {}
+ * This function extracts error properties for proper serialization
+ */
+function serializeForConsole(obj: any): string {
+  return JSON.stringify(obj, (key, value) => {
+    // Handle Error objects specially
+    if (value instanceof Error) {
+      return {
+        name: value.name,
+        message: value.message,
+        stack: value.stack,
+        // Include any additional custom properties
+        ...Object.getOwnPropertyNames(value).reduce((acc, prop) => {
+          if (!['name', 'message', 'stack'].includes(prop)) {
+            acc[prop] = (value as any)[prop];
+          }
+          return acc;
+        }, {} as Record<string, any>)
+      };
+    }
+    return value;
+  });
+}
+
 // Default configuration for Pino
 let pinoConfig: pino.LoggerOptions = {
   level: 'debug',
@@ -45,12 +71,13 @@ let pinoConfig: pino.LoggerOptions = {
       asObject: false, // Don't serialize as object
       write: {
         // Write to console.* methods so Sentry can capture them
-        trace: (o: any) => console.debug(JSON.stringify(o)),
-        debug: (o: any) => console.debug(JSON.stringify(o)),
-        info: (o: any) => console.info(JSON.stringify(o)),
-        warn: (o: any) => console.warn(JSON.stringify(o)),
-        error: (o: any) => console.error(JSON.stringify(o)),
-        fatal: (o: any) => console.error(JSON.stringify(o)),
+        // Use custom serializer to properly handle Error objects
+        trace: (o: any) => console.debug(serializeForConsole(o)),
+        debug: (o: any) => console.debug(serializeForConsole(o)),
+        info: (o: any) => console.info(serializeForConsole(o)),
+        warn: (o: any) => console.warn(serializeForConsole(o)),
+        error: (o: any) => console.error(serializeForConsole(o)),
+        fatal: (o: any) => console.error(serializeForConsole(o)),
       }
     }
   } : isNodeJS ? {
@@ -160,7 +187,11 @@ function recreateBaseLogger() {
       ` (level: ${pinoConfig.level})`);
     return true;
   } catch (err) {
-    console.error('Failed to recreate Pino logger:', err);
+    console.error({
+      context: 'PinoLogger',
+      operation: 'recreateBaseLogger',
+      error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+    });
     return false;
   }
 }

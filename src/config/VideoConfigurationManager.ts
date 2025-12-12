@@ -992,6 +992,10 @@ export function updateVideoConfigFromKV(kvConfig: Partial<VideoConfiguration>): 
     // Use the regular update method to apply the changes
     manager.updateConfig(kvConfig);
   } catch (error) {
-    console.error('[VideoConfigManager] Error updating from KV:', error);
+    console.error({
+      context: 'VideoConfigManager',
+      operation: 'updateFromKV',
+      error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+    });
   }
 }

@@ -255,7 +255,12 @@ export async function processRangeRequest(
                       totalSegments
                     });
                   } else {
-                    console.error('Error writing stream segment:', err);
+                    console.error({
+                      context: 'StreamUtils',
+                      operation: 'writeStreamSegment',
+                      segment: i,
+                      error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+                    });
                   }
                   throw err; // Let the outer try/catch handle this
                 }
@@ -328,7 +333,11 @@ export async function processRangeRequest(
               range: `bytes=${start}-${end}`
             });
           } else {
-            console.error('Background stream processing error:', err);
+            console.error({
+              context: 'StreamUtils',
+              operation: 'backgroundStreamProcessing',
+              error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+            });
           }
           
           // Attempt to abort the writer if there's a TransformStream error
