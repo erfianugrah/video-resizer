@@ -7,8 +7,12 @@
 		"nodejs_compat"
 	],
 	"account_id": "25f21f141824546aa72c74451a11b419",
+	"logpush": true,
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"logs": {
+			"invocation_logs": true
+		}
 	},
 	"build": {
 		"command": "npm run build"
