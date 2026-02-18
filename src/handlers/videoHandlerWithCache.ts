@@ -1,4 +1,8 @@
 /**
+ * @deprecated This handler is dead code in production. The unified handler in
+ * videoHandler.ts handles all video requests (both legacy and Origins paths).
+ * This file is kept only for backward compatibility with existing test files.
+ *
  * Video handler implementation with KV caching integration
  */
 

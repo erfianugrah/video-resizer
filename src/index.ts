@@ -427,48 +427,8 @@ export default Sentry.withSentry<EnvVariables>(
         const shouldSkip = skipPatterns.some((pattern) => pattern(request.headers));
 
         if (!shouldSkip && runtimeConfig) {
-          try {
-            // Check if Origins configuration is available and should be used
-            const { VideoConfigurationManager } =
-              await import('./config/VideoConfigurationManager');
-            const videoConfig = VideoConfigurationManager.getInstance();
-            const useOrigins = videoConfig.shouldUseOrigins();
-
-            if (useOrigins) {
-              // Log the use of Origins system
-              logInfo(context, 'Using Origins configuration for video request', {
-                originsCount: videoConfig.getOrigins().length,
-                url: request.url,
-                path: requestUrl.pathname,
-              });
-
-              // Add a breadcrumb for using Origins
-              if (context) {
-                const { addBreadcrumb } = await import('./utils/requestContext');
-                addBreadcrumb(context, 'Origins', 'Using Origins configuration', {
-                  path: requestUrl.pathname,
-                  originsCount: videoConfig.getOrigins().length,
-                });
-              }
-
-              // Import and use the fetchVideoWithOrigins handler
-              const { handleVideoRequestWithOrigins } =
-                await import('./handlers/videoHandlerWithOrigins');
-              return handleVideoRequestWithOrigins(request, runtimeConfig, env, ctx);
-            }
-
-            // Fall back to the standard handler if Origins are not configured
-            return handleVideoRequest(request, runtimeConfig, env, ctx);
-          } catch (err) {
-            // Log error but continue with standard handler
-            logError(context, 'Error checking for Origins configuration', {
-              error: err instanceof Error ? err.message : String(err),
-              stack: err instanceof Error ? err.stack : undefined,
-            });
-
-            // Fall back to standard handler
-            return handleVideoRequest(request, runtimeConfig, env, ctx);
-          }
+          // Unified handler handles both legacy and Origins paths internally
+          return handleVideoRequest(request, runtimeConfig, env, ctx);
         }
 
         logInfo(context, 'Skipping video processing, passing through request');
