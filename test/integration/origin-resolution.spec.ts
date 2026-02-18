@@ -10,9 +10,6 @@ import {
 } from '../utils/test-utils';
 import { OriginResolver } from '../../src/services/origins/OriginResolver';
 import { Origin, Source, VideoResizerConfig } from '../../src/services/videoStorage/interfaces';
-import { ResponseBuilder } from '../../src/utils/responseBuilder';
-
-//vi.mock('../../src/utils/responseBuilder');
 
 // Mock fetch for remote sources
 vi.mock('node-fetch', () => ({
@@ -238,25 +235,6 @@ describe('Origin Resolution Integration', () => {
       // Should still select R2 because it has priority 1
       expect(result).not.toBeNull();
       expect(result?.source.type).toBe('r2');
-    });
-  });
-
-  describe('Response Building', () => {
-    // Skip these tests for now as they require complex mocking and
-    // they are covered by the unit tests for ResponseBuilder
-    it.skip('should add origin information to response headers', async () => {
-      // This test would verify that ResponseBuilder.withOriginInfo correctly
-      // adds origin information headers to the response
-    });
-
-    it.skip('should add source resolution information to headers', async () => {
-      // This test would verify that ResponseBuilder.withOriginInfo correctly
-      // adds source resolution information headers to the response
-    });
-
-    it.skip('should create proper error response for origin errors', () => {
-      // This test would verify that ResponseBuilder.createOriginErrorResponse
-      // correctly creates an error response with appropriate headers
     });
   });
 
