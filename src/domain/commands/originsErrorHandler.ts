@@ -4,6 +4,9 @@
  * Handles error classification for different HTTP status codes,
  * enhanced error response headers, and retry logic for alternative sources.
  * Extracted from TransformVideoCommand.executeWithOrigins().
+ *
+ * Phase 6: Integrates Cloudflare Media Transformation error codes from the
+ * `Cf-Resized` response header for precise error classification.
  */
 import { DiagnosticsInfo } from '../../utils/debugHeadersUtils';
 import { RequestContext } from '../../utils/requestContext';
@@ -15,6 +18,12 @@ import { Origin } from '../../services/videoStorage/interfaces';
 import { SourceResolutionResult } from '../../services/origins/OriginResolver';
 import { EnvVariables } from '../../config/environmentConfig';
 import { VideoTransformContext, VideoTransformOptions, WorkerEnvironment } from './types';
+import {
+  extractCfErrorCode,
+  getCfErrorInfo,
+  CfErrorCode,
+  type CfErrorInfo,
+} from '../../errors/cfErrorCodes';
 
 const errLogger = createCategoryLogger('OriginsErrorHandler');
 
@@ -39,6 +48,10 @@ export interface OriginErrorParams {
  * Handles R2 not found, HTTP 400/404/413/415/429/5xx errors,
  * enhanced error response headers (X-Error-Code, X-Source-Info, etc.),
  * and retry logic for alternative sources.
+ *
+ * Phase 6: First checks the `Cf-Resized` header for a Cloudflare error code.
+ * When present, the CF code provides authoritative error classification that
+ * overrides the HTTP-status-based heuristics.
  */
 export async function classifyAndHandleOriginError(params: OriginErrorParams): Promise<Response> {
   const {
@@ -54,22 +67,59 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
     env,
   } = params;
 
+  // --- Phase 6: Extract CF error code from Cf-Resized header ---
+  const cfErrorCode = extractCfErrorCode(response);
+  const cfErrorInfo = cfErrorCode !== null ? getCfErrorInfo(cfErrorCode) : undefined;
+
+  if (cfErrorCode !== null) {
+    // Record CF error code in diagnostics for downstream consumers
+    diagnosticsInfo.cfErrorCode = cfErrorCode;
+    if (cfErrorInfo) {
+      diagnosticsInfo.cfErrorInfo = {
+        label: cfErrorInfo.label,
+        description: cfErrorInfo.description,
+        retryable: cfErrorInfo.retryable,
+        shouldFallback: cfErrorInfo.shouldFallback,
+      };
+    }
+
+    errLogger.debug('Extracted Cloudflare error code from Cf-Resized header', {
+      cfErrorCode,
+      cfErrorLabel: cfErrorInfo?.label,
+      httpStatus: response.status,
+      retryable: cfErrorInfo?.retryable,
+      shouldFallback: cfErrorInfo?.shouldFallback,
+      origin: origin.name,
+    });
+  }
+
   // --- Error classification ---
-  if (response.status === 404) {
+  // CF error code takes priority for classification when available;
+  // we still fall through to HTTP status code handling for the control flow
+  // (e.g., 404 triggers retry, 400 triggers body inspection), but diagnostics
+  // are enriched with the authoritative CF error information.
+
+  if (response.status === 404 || cfErrorCode === CfErrorCode.RESOURCE_NOT_FOUND) {
     diagnosticsInfo.errors = diagnosticsInfo.errors || [];
-    diagnosticsInfo.errors.push('Source video not found (404)');
+    diagnosticsInfo.errors.push(
+      cfErrorCode === CfErrorCode.RESOURCE_NOT_FOUND
+        ? `Source video not found (CF error ${cfErrorCode})`
+        : 'Source video not found (404)'
+    );
     diagnosticsInfo.errorDetails = {
-      status: 404,
+      status: cfErrorInfo?.httpStatus || 404,
       type: 'not_found',
-      message: 'The source video URL returned a 404 Not Found response',
+      message: cfErrorInfo?.description || 'The source video URL returned a 404 Not Found response',
       source: sourceResolution.sourceUrl || 'unknown',
       originType: sourceResolution.originType,
+      ...(cfErrorCode !== null && { cfErrorCode }),
     };
 
-    errLogger.debug('Handling 404 error with retry mechanism', {
+    errLogger.debug('Handling 404/not-found error with retry mechanism', {
       origin: origin.name,
       failedSource: sourceResolution.source.type,
       failedPriority: sourceResolution.source.priority,
+      cfErrorCode,
     });
 
     const { retryWithAlternativeOrigins } =
@@ -87,14 +137,17 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
       debugInfo: context.debugInfo,
     });
   } else if (response.status === 400) {
-    await classifyBadRequestError(response, options, diagnosticsInfo);
+    await classifyBadRequestError(response, options, diagnosticsInfo, cfErrorCode, cfErrorInfo);
   } else if (response.status === 413) {
     diagnosticsInfo.errors = diagnosticsInfo.errors || [];
     diagnosticsInfo.errors.push('Payload too large (413) - Video file size exceeds limits');
     diagnosticsInfo.errorDetails = {
       status: 413,
       type: 'file_size_limit',
-      message: 'The video file size exceeds the maximum allowed for transformation',
+      message:
+        cfErrorInfo?.description ||
+        'The video file size exceeds the maximum allowed for transformation',
+      ...(cfErrorCode !== null && { cfErrorCode }),
     };
   } else if (response.status === 415) {
     diagnosticsInfo.errors = diagnosticsInfo.errors || [];
@@ -102,7 +155,9 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
     diagnosticsInfo.errorDetails = {
       status: 415,
       type: 'unsupported_format',
-      message: 'The video format or codec is not supported for transformation',
+      message:
+        cfErrorInfo?.description || 'The video format or codec is not supported for transformation',
+      ...(cfErrorCode !== null && { cfErrorCode }),
     };
   } else if (response.status === 429) {
     diagnosticsInfo.errors = diagnosticsInfo.errors || [];
@@ -111,16 +166,38 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
       status: 429,
       type: 'rate_limit',
       message: 'Rate limit exceeded for video transformation requests',
+      ...(cfErrorCode !== null && { cfErrorCode }),
     };
-  } else if (response.status >= 500) {
+  } else if (
+    response.status >= 500 ||
+    cfErrorCode === CfErrorCode.CF_INTERNAL_ERROR_A ||
+    cfErrorCode === CfErrorCode.CF_INTERNAL_ERROR_B
+  ) {
     diagnosticsInfo.errors = diagnosticsInfo.errors || [];
-    diagnosticsInfo.errors.push(
-      `Server Error (${response.status}) - Cloudflare transformation service error`
-    );
+
+    const errorLabel = cfErrorInfo
+      ? `${cfErrorInfo.label} (CF ${cfErrorCode})`
+      : `Server Error (${response.status})`;
+
+    diagnosticsInfo.errors.push(`${errorLabel} - Cloudflare transformation service error`);
     diagnosticsInfo.errorDetails = {
-      status: response.status,
+      status: cfErrorInfo?.httpStatus || response.status,
       type: 'server_error',
-      message: 'The Cloudflare transformation service encountered an internal error',
+      message:
+        cfErrorInfo?.description ||
+        'The Cloudflare transformation service encountered an internal error',
+      ...(cfErrorCode !== null && { cfErrorCode }),
+    };
+  } else if (cfErrorInfo) {
+    // CF error code is present but HTTP status didn't match any of the above categories.
+    // Use the CF error info for classification.
+    diagnosticsInfo.errors = diagnosticsInfo.errors || [];
+    diagnosticsInfo.errors.push(`${cfErrorInfo.label} (CF ${cfErrorCode})`);
+    diagnosticsInfo.errorDetails = {
+      status: cfErrorInfo.httpStatus,
+      type: cfErrorInfo.errorType,
+      message: cfErrorInfo.description,
+      cfErrorCode: cfErrorCode!,
     };
   }
 
@@ -178,15 +255,47 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
 
 /**
  * Classify a 400 Bad Request error by inspecting the response body.
+ * Phase 6: When a CF error code is available, use it for authoritative
+ * classification before falling back to body-text heuristics.
  */
 async function classifyBadRequestError(
   response: Response,
   options: VideoTransformOptions,
-  diagnosticsInfo: DiagnosticsInfo
+  diagnosticsInfo: DiagnosticsInfo,
+  cfErrorCode?: CfErrorCode | null,
+  cfErrorInfo?: CfErrorInfo
 ): Promise<void> {
   diagnosticsInfo.errors = diagnosticsInfo.errors || [];
   diagnosticsInfo.errors.push('Bad request (400) - Possible parameter issue');
 
+  // Phase 6: If we have a CF error code, use it for authoritative classification
+  if (cfErrorCode !== null && cfErrorCode !== undefined && cfErrorInfo) {
+    diagnosticsInfo.errorDetails = {
+      status: 400,
+      type: cfErrorInfo.errorType,
+      message: cfErrorInfo.description,
+      cfErrorCode,
+      cfErrorLabel: cfErrorInfo.label,
+    };
+
+    errLogger.debug('Classified 400 error using CF error code', {
+      cfErrorCode,
+      cfErrorLabel: cfErrorInfo.label,
+      description: cfErrorInfo.description,
+    });
+
+    // Still try to read the body for rawErrorText (useful for debugging)
+    try {
+      const clonedResponse = response.clone();
+      const errorResponseBody = await clonedResponse.text();
+      diagnosticsInfo.rawErrorText = errorResponseBody.substring(0, 500);
+    } catch {
+      // Body read failure is fine — we already have CF-based classification
+    }
+    return;
+  }
+
+  // Fallback: inspect the response body with text-matching heuristics
   const clonedResponse = response.clone();
   let errorResponseBody = '';
 
@@ -258,6 +367,18 @@ async function buildEnhancedErrorResponse(
 
   // Add generic error headers
   enhancedHeaders.set('X-Error-Status', String(response.status));
+
+  // Phase 6: Add CF error code header when available
+  if (diagnosticsInfo.cfErrorCode) {
+    enhancedHeaders.set('X-CF-Error-Code', String(diagnosticsInfo.cfErrorCode));
+  }
+  if (
+    diagnosticsInfo.cfErrorInfo &&
+    typeof diagnosticsInfo.cfErrorInfo === 'object' &&
+    'label' in diagnosticsInfo.cfErrorInfo
+  ) {
+    enhancedHeaders.set('X-CF-Error-Label', String(diagnosticsInfo.cfErrorInfo.label));
+  }
 
   // Use the error body text from diagnostics if available, otherwise try to read it
   let errorResponseBody = '';

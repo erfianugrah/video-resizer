@@ -40,29 +40,29 @@ export interface DiagnosticsInfo {
   transformSource?: string;
   videoId?: string;
   videoFormat?: string;
-  
+
   // Transformation details
   pathMatch?: string;
   transformParams?: TransformParams;
   actualTransformParams?: Record<string, string>;
   cdnCgiUrl?: string;
-  
+
   // Client detection
   clientHints?: boolean;
   deviceType?: 'mobile' | 'tablet' | 'desktop' | string;
   networkQuality?: 'low' | 'medium' | 'high' | string;
   browserCapabilities?: BrowserCapabilities;
-  
+
   // Cache information
   cacheability?: boolean;
   cacheTtl?: number;
   cacheTags?: string[];
   cacheVersion?: number;
-  
+
   // Errors and warnings
   errors?: string[];
   warnings?: string[];
-  
+
   // Extended diagnostics info
   derivative?: string;
   source?: string;
@@ -73,25 +73,25 @@ export interface DiagnosticsInfo {
     duration?: number;
     format?: string;
   };
-  
+
   // Configuration information (for debug UI)
   videoConfig?: Record<string, unknown>;
   cacheConfig?: Record<string, unknown>;
   debugConfig?: Record<string, unknown>;
   loggingConfig?: Record<string, unknown>;
   environment?: Record<string, unknown>;
-  
+
   // Request context information
   requestId?: string;
   breadcrumbs?: Breadcrumb[];
   performanceMetrics?: Record<string, unknown>;
-  
+
   // Headers information for debugging
   requestHeaders?: Record<string, string>;
   originalHeaders?: Record<string, string>;
   finalHeaders?: Record<string, string>;
   originalRequestHeaders?: Record<string, string>;
-  
+
   // Origin system information
   origin?: {
     name: string;
@@ -99,14 +99,14 @@ export interface DiagnosticsInfo {
     processPath?: boolean;
     capturedParams?: Record<string, string>;
   };
-  
+
   sourceResolution?: {
     type: string;
     resolvedPath: string;
     url?: string;
     source?: Record<string, unknown>;
   };
-  
+
   originUrl?: string;
   fallbackUrl?: string;
   transformRequest?: {
@@ -119,18 +119,27 @@ export interface DiagnosticsInfo {
     statusText: string;
     headers: Record<string, string>;
   };
-  
+
+  // Cloudflare Media Transformation error codes (Phase 6)
+  cfErrorCode?: number;
+  cfErrorInfo?: {
+    label: string;
+    description: string;
+    retryable: boolean;
+    shouldFallback: boolean;
+  };
+
   // Special flags
   isRangeRequest?: boolean;
   isMediaContent?: boolean;
   originalRequestHadRange?: boolean;
   cachingMethod?: string;
-  
+
   // Fallback information
   fallbackApplied?: boolean;
   fallbackReason?: string;
   fallbackResponse?: Record<string, unknown>;
-  
+
   // Akamai translation info
   originalAkamaiParams?: Record<string, string>;
   translatedCloudflareParams?: Record<string, string | boolean | number>;
@@ -145,7 +154,7 @@ export interface DiagnosticsInfo {
     percentDifference?: string;
     mappingMethod?: string;
   };
-  
+
   // Component timing info
   componentTiming?: Record<string, number>;
   executionTiming?: {
@@ -155,7 +164,7 @@ export interface DiagnosticsInfo {
     caching?: number;
     responseBuilding?: number;
   };
-  
+
   // Additional data
   [key: string]: unknown;
 }

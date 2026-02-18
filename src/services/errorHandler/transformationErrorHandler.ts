@@ -214,17 +214,32 @@ export async function handleTransformationError({
   const isFileSizeError =
     parsedError?.errorType === 'file_size_limit' || errorText.includes('file size limit');
 
+  // Phase 6: Extract CF error code information from diagnostics (set by originsErrorHandler)
+  const cfErrorCode = diagnosticsInfo?.cfErrorCode;
+  const cfErrorInfo = diagnosticsInfo?.cfErrorInfo;
+  const cfShouldFallback = cfErrorInfo?.shouldFallback === true;
+  const cfIsRetryable = cfErrorInfo?.retryable === true;
+
   // Log the initial error - pass errorText directly as the error
   logErrorWithContext(
     `Transformation proxy returned ${status}`,
     errorText || `HTTP ${status} error from transformation proxy`,
-    { requestId: requestContext.requestId, url: cdnCgiUrl, status, parsedError },
+    {
+      requestId: requestContext.requestId,
+      url: cdnCgiUrl,
+      status,
+      parsedError,
+      cfErrorCode,
+      cfShouldFallback,
+      cfIsRetryable,
+    },
     'handleTransformationError'
   );
   addBreadcrumb(requestContext, 'Error', 'Transformation Proxy Error', {
     status,
     errorText: errorText.substring(0, 100),
     parsedError,
+    cfErrorCode,
   });
 
   // --- Duration Limit Retry Logic ---
@@ -360,9 +375,10 @@ export async function handleTransformationError({
   // Only attempt direct fetch if we don't already have a successful fallbackResponse, and we have a direct URL
   // We should attempt direct fetch for server errors, file size errors, but NOT 404s
   // 404s are handled by retryWithAlternativeOrigins in TransformVideoCommand
+  // Phase 6: Also trigger fallback when CF error code indicates shouldFallback
   if (
     !fallbackResponse &&
-    (isServerError || isFileSizeError || is256MiBSizeError) &&
+    (isServerError || isFileSizeError || is256MiBSizeError || cfShouldFallback) &&
     hasValidDirectFetchUrl
   ) {
     // If it's specifically a 256MiB size error, log it differently
@@ -377,13 +393,20 @@ export async function handleTransformationError({
         reason: 'Video exceeds 256MiB size limit',
       });
     } else {
-      const reason = isServerError ? 'Server Error' : 'File Size Error';
+      const reason =
+        cfShouldFallback && cfErrorInfo
+          ? `CF Error ${cfErrorCode} (${cfErrorInfo.label})`
+          : isServerError
+            ? 'Server Error'
+            : 'File Size Error';
       logger.debug('Attempting direct source fetch', {
         sourceUrl: sourceUrlForDirectFetch,
         reason,
+        cfErrorCode,
       });
       addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch', {
         reason,
+        cfErrorCode,
       });
     }
 
@@ -485,13 +508,18 @@ export async function handleTransformationError({
   // Log if direct fetch was skipped due to invalid URL
   if (
     !fallbackResponse &&
-    (isServerError || isFileSizeError || is256MiBSizeError) &&
+    (isServerError || isFileSizeError || is256MiBSizeError || cfShouldFallback) &&
     !hasValidDirectFetchUrl
   ) {
     logger.debug('Skipping direct fetch - no valid URL available', {
       sourceUrlForDirectFetch,
       isValidUrl: hasValidDirectFetchUrl,
-      errorType: isServerError ? 'Server Error' : 'File Size Error',
+      errorType: cfShouldFallback
+        ? `CF Error ${cfErrorCode}`
+        : isServerError
+          ? 'Server Error'
+          : 'File Size Error',
+      cfErrorCode,
     });
     addBreadcrumb(requestContext, 'Fallback', 'Direct fetch skipped - invalid URL');
   }
@@ -561,6 +589,9 @@ export async function handleTransformationError({
 
     if (parsedError?.errorType) headers.set('X-Error-Type', parsedError.errorType);
     if (parsedError?.parameter) headers.set('X-Invalid-Parameter', parsedError.parameter);
+
+    // Phase 6: Include CF error code in fallback response headers
+    if (cfErrorCode) headers.set('X-CF-Error-Code', String(cfErrorCode));
 
     // Add specific headers for file size errors
     if (
@@ -650,8 +681,8 @@ export async function handleTransformationError({
   );
   addBreadcrumb(requestContext, 'Error', 'All fallbacks failed');
 
-  // Return the actual error from the transformation proxy
-  const finalErrorResponse = {
+  // Phase 6: CF error code already extracted at top of function (cfErrorCode, cfErrorInfo)
+  const finalErrorResponse: Record<string, unknown> = {
     error: parsedError?.errorType || 'transformation_failed',
     message:
       parsedError?.specificError ||
@@ -666,14 +697,33 @@ export async function handleTransformationError({
     },
   };
 
+  // Add CF error code to response body when available
+  if (cfErrorCode) {
+    finalErrorResponse.cfErrorCode = cfErrorCode;
+    if (cfErrorInfo && typeof cfErrorInfo === 'object') {
+      finalErrorResponse.cfError = {
+        code: cfErrorCode,
+        label: cfErrorInfo.label,
+        description: cfErrorInfo.description,
+      };
+    }
+  }
+
+  const responseHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    'X-Error-Type': parsedError?.errorType || 'transformation_failed',
+    'X-Original-Error': errorText.substring(0, 200),
+    'X-Fallback-Failed': 'true',
+  };
+
+  // Phase 6: Add CF error code header
+  if (cfErrorCode) {
+    responseHeaders['X-CF-Error-Code'] = String(cfErrorCode);
+  }
+
   return new Response(JSON.stringify(finalErrorResponse), {
     status: status || 500,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-      'X-Error-Type': parsedError?.errorType || 'transformation_failed',
-      'X-Original-Error': errorText.substring(0, 200), // Include in header for diagnostics
-      'X-Fallback-Failed': 'true',
-    },
+    headers: responseHeaders,
   });
 }

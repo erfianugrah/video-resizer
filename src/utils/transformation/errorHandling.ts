@@ -3,6 +3,7 @@
  */
 import { tryOrDefault, logErrorWithContext } from '../errorHandlingUtils';
 import { storeTransformationLimit } from './timeUtils';
+import { getCfErrorInfo, CfErrorCode, type CfErrorInfo } from '../../errors/cfErrorCodes';
 
 /**
  * Implementation of parseErrorMessage that might throw errors
@@ -35,6 +36,22 @@ function parseErrorMessageImpl(errorText: string): {
       );
       console.debug(`[TransformationUtils] Parsing API error: ${errorText.substring(0, 50)}...`);
     });
+
+  // Phase 6: Check for Cloudflare error codes in body text (e.g., "err=9404", "error 9412")
+  const cfCodeMatch = errorText.match(/(?:err[or]*\s*[=:]\s*)(\d{4})/i);
+  if (cfCodeMatch) {
+    const code = parseInt(cfCodeMatch[1], 10) as CfErrorCode;
+    const cfInfo = getCfErrorInfo(code);
+    if (cfInfo) {
+      return {
+        ...result,
+        specificError: cfInfo.description,
+        errorType: `cf_error_${code}`,
+        limitType: cfInfo.shouldFallback ? 'fallback' : 'validation',
+        parameter: cfInfo.label,
+      };
+    }
+  }
 
   // Check for duration validation errors
   const durationMatch = errorText.match(
