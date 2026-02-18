@@ -38,6 +38,7 @@ export interface ExecuteWithOriginsParams {
 function buildSourceUrl(
   sourceResolution: SourceResolutionResult,
   env: WorkerEnvironment | undefined,
+  requestOrigin: string,
   requestQuery: string,
   requestHash: string,
   diagnosticsInfo: DiagnosticsInfo
@@ -53,7 +54,18 @@ function buildSourceUrl(
       if (!env[bucketBinding]) {
         throw new Error(`R2 bucket binding '${bucketBinding}' not available in environment`);
       }
-      return `r2:${sourcePath}`;
+      // CF cdn-cgi media transformation requires a proper HTTP URL for its HEAD/GET probe.
+      // The r2: scheme is not a valid HTTP URL and causes 9402 errors.
+      // Use publicUrl if configured (R2 custom domain or r2.dev URL), otherwise fall back
+      // to the worker's own origin with ?__r2src=1 marker — the worker handles the cdn-cgi
+      // subrequest by serving raw R2 content (see R2 subrequest handling in index.ts).
+      if (sourceResolution.source.publicUrl) {
+        const publicUrl = sourceResolution.source.publicUrl.replace(/\/+$/, '');
+        return `${publicUrl}/${sourcePath}`;
+      }
+      // Use worker's own origin with __r2src marker — cdn-cgi will HEAD/GET this URL,
+      // and the worker intercepts it to serve raw R2 content (avoiding infinite transform loop)
+      return `${requestOrigin}/${sourcePath}?__r2src=${encodeURIComponent(bucketBinding)}`;
     }
 
     case 'remote':
@@ -418,6 +430,7 @@ export async function executeWithOrigins(params: ExecuteWithOriginsParams): Prom
     const sourceUrl = buildSourceUrl(
       sourceResolution,
       env,
+      requestOrigin,
       requestQuery,
       requestHash,
       diagnosticsInfo

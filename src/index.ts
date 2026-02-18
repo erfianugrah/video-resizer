@@ -306,6 +306,57 @@ export default Sentry.withSentry<EnvVariables>(
           }
         }
 
+        // Handle R2 subrequests from cdn-cgi media transformation.
+        // When cdn-cgi transforms a video sourced from R2, it makes HEAD/GET requests back to
+        // the worker with ?__r2src=<bucketBinding>. We intercept these to serve raw R2 content
+        // directly, avoiding infinite transformation loops.
+        const r2SrcBinding = requestUrl.searchParams.get('__r2src');
+        if (r2SrcBinding && env[r2SrcBinding]) {
+          const r2Bucket = env[r2SrcBinding] as R2Bucket;
+          // Strip leading slash and remove __r2src param to get the R2 key
+          const r2Key = decodeURIComponent(requestUrl.pathname.replace(/^\/+/, ''));
+
+          logInfo(context, 'Handling R2 subrequest from cdn-cgi', {
+            method: request.method,
+            r2Key,
+            bucketBinding: r2SrcBinding,
+          });
+
+          if (request.method === 'HEAD') {
+            // HEAD request — return metadata only
+            const r2Object = await r2Bucket.head(r2Key);
+            if (!r2Object) {
+              return new Response(null, { status: 404 });
+            }
+            return new Response(null, {
+              status: 200,
+              headers: {
+                'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
+                'Content-Length': r2Object.size.toString(),
+                'Last-Modified': r2Object.uploaded.toUTCString(),
+                ETag: r2Object.httpEtag || `"${r2Object.size}"`,
+                'Accept-Ranges': 'bytes',
+              },
+            });
+          } else {
+            // GET request — return full body
+            const r2Object = await r2Bucket.get(r2Key);
+            if (!r2Object) {
+              return new Response(null, { status: 404 });
+            }
+            return new Response(r2Object.body, {
+              status: 200,
+              headers: {
+                'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
+                'Content-Length': r2Object.size.toString(),
+                'Last-Modified': r2Object.uploaded.toUTCString(),
+                ETag: r2Object.httpEtag || `"${r2Object.size}"`,
+                'Accept-Ranges': 'bytes',
+              },
+            });
+          }
+        }
+
         // Note: We've removed the specific static asset bypass since non-MP4 file passthrough
         // already handles this. All non-MP4 files are automatically passed through to origin.
 

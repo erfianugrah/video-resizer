@@ -69,9 +69,14 @@ export const constructVideoUrlFromOrigin = tryOrNull<
         });
       }
 
-      // For R2 sources, we use the resolved path
+      // For R2 sources, construct a proper HTTP URL for cdn-cgi media transformation
       if (sourceResolution.originType === 'r2') {
-        return `r2:${sourceResolution.resolvedPath}`;
+        if (sourceResolution.source.publicUrl) {
+          const publicUrl = sourceResolution.source.publicUrl.replace(/\/+$/, '');
+          return `${publicUrl}/${sourceResolution.resolvedPath}`;
+        }
+        const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
+        return `${url.origin}/${sourceResolution.resolvedPath}?__r2src=${encodeURIComponent(bucketBinding)}`;
       }
 
       // Preserve query string and hash from original request
@@ -81,9 +86,16 @@ export const constructVideoUrlFromOrigin = tryOrNull<
       return sourceResolution.sourceUrl + requestQuery + requestHash;
     }
 
-    // For R2 sources without a source URL, construct r2: URL
+    // For R2 sources without a source URL, construct a proper HTTP URL
     if (sourceResolution.originType === 'r2') {
-      const r2Url = `r2:${sourceResolution.resolvedPath}`;
+      let r2Url: string;
+      if (sourceResolution.source.publicUrl) {
+        const publicUrl = sourceResolution.source.publicUrl.replace(/\/+$/, '');
+        r2Url = `${publicUrl}/${sourceResolution.resolvedPath}`;
+      } else {
+        const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
+        r2Url = `${url.origin}/${sourceResolution.resolvedPath}?__r2src=${encodeURIComponent(bucketBinding)}`;
+      }
 
       // Add breadcrumb for URL construction
       const requestContext = getCurrentContext();

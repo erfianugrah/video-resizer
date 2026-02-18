@@ -4,69 +4,82 @@
 
 // Origin-based configuration interfaces
 export interface Origin {
-  name: string;                      // Unique identifier for this origin
-  matcher: string;                   // Regex pattern to match incoming requests
-  captureGroups?: string[];          // Names of capture groups in the matcher (optional)
-  
+  name: string; // Unique identifier for this origin
+  matcher: string; // Regex pattern to match incoming requests
+  captureGroups?: string[]; // Names of capture groups in the matcher (optional)
+
   // Sources in priority order
   sources: Source[];
-  
+
   // General settings for this origin
   ttl?: {
-    ok: number;                      // TTL for successful responses (200-299)
-    redirects: number;               // TTL for redirects (300-399)
-    clientError: number;             // TTL for client errors (400-499)
-    serverError: number;             // TTL for server errors (500-599)
+    ok: number; // TTL for successful responses (200-299)
+    redirects: number; // TTL for redirects (300-399)
+    clientError: number; // TTL for client errors (400-499)
+    serverError: number; // TTL for server errors (500-599)
   };
-  useTtlByStatus?: boolean;          // Whether to use status-specific TTLs
-  cacheability?: boolean;            // Whether responses can be cached
-  videoCompression?: string;         // Video compression setting
-  quality?: string;                  // Quality setting
-  processPath?: boolean;             // Whether to process the path or pass it through
-  
+  useTtlByStatus?: boolean; // Whether to use status-specific TTLs
+  cacheability?: boolean; // Whether responses can be cached
+  videoCompression?: string; // Video compression setting
+  quality?: string; // Quality setting
+  processPath?: boolean; // Whether to process the path or pass it through
+
   // Additional settings from comprehensive config
-  transformOptions?: {               // Options for transformation
+  transformOptions?: {
+    // Options for transformation
     cacheability?: boolean;
     videoCompression?: string;
     quality?: string;
     fit?: string;
     bypassTransformation?: boolean;
   };
-  derivatives?: Record<string, {     // Derivative-specific configurations
-    width: number;
-    height: number;
-    compression?: string;
-  }>;
-  responsiveSelection?: {            // Responsive selection settings
+  derivatives?: Record<
+    string,
+    {
+      // Derivative-specific configurations
+      width: number;
+      height: number;
+      compression?: string;
+    }
+  >;
+  responsiveSelection?: {
+    // Responsive selection settings
     enabled: boolean;
     defaultDerivative: string;
     queryParam: string;
   };
-  multiResolution?: {                // Multi-resolution settings
+  multiResolution?: {
+    // Multi-resolution settings
     enabled: boolean;
-    resolutions: Record<string, {
-      width: number;
-      height: number;
-      bitrate: number;
-    }>;
+    resolutions: Record<
+      string,
+      {
+        width: number;
+        height: number;
+        bitrate: number;
+      }
+    >;
     defaultResolution: string;
     queryParam: string;
   };
-  accessControl?: {                  // Access control settings
+  accessControl?: {
+    // Access control settings
     enabled: boolean;
     allowedIps?: string[];
     requireAuth?: boolean;
     authHeader?: string;
     authScheme?: string;
   };
-  contentModeration?: {              // Content moderation settings
+  contentModeration?: {
+    // Content moderation settings
     enabled: boolean;
     sensitiveContent: boolean;
     ageRestriction: number;
   };
-  cacheTags?: string[];              // Cache tags for purging
+  cacheTags?: string[]; // Cache tags for purging
   metadata?: Record<string, string>; // Additional metadata
-  streaming?: {                      // Streaming settings
+  streaming?: {
+    // Streaming settings
     type: string;
     segmentDuration: number;
     manifestType: string;
@@ -74,36 +87,42 @@ export interface Origin {
       enabled: boolean;
     };
   };
-  dimensionRatio?: string;           // Aspect ratio (e.g. "16:9")
-  formatMapping?: Record<string, {   // Format-specific mappings
-    contentType: string;
-    acceptRanges: boolean;
-  }>;
+  dimensionRatio?: string; // Aspect ratio (e.g. "16:9")
+  formatMapping?: Record<
+    string,
+    {
+      // Format-specific mappings
+      contentType: string;
+      acceptRanges: boolean;
+    }
+  >;
 }
 
 export interface Source {
   type: 'r2' | 'remote' | 'fallback'; // The type of storage source
-  priority: number;                   // Priority order (lower is higher priority)
-  
+  priority: number; // Priority order (lower is higher priority)
+
   // Type-specific fields
-  bucketBinding?: string;             // For r2: binding name for the bucket
-  url?: string;                       // For remote/fallback: base URL
-  
+  bucketBinding?: string; // For r2: binding name for the bucket
+  publicUrl?: string; // For r2: public HTTP URL for cdn-cgi media transformation (e.g., "https://videos.erfi.dev")
+  url?: string; // For remote/fallback: base URL
+
   // Path mapping using template strings with capture groups
   // e.g., "videos/$1" where $1 is the first capture group from the matcher
   path: string;
-  
+
   // Authentication settings (if needed)
   auth?: Auth;
-  
+
   // Additional settings from comprehensive config
-  headers?: Record<string, string>;   // Custom headers to send with requests
-  cacheControl?: {                    // Cache-Control settings
+  headers?: Record<string, string>; // Custom headers to send with requests
+  cacheControl?: {
+    // Cache-Control settings
     maxAge?: number;
     staleWhileRevalidate?: number;
     staleIfError?: number;
   };
-  resolutionPathTemplate?: boolean;   // Whether path is a template that includes resolution variables
+  resolutionPathTemplate?: boolean; // Whether path is a template that includes resolution variables
 }
 
 export interface Auth {
@@ -195,18 +214,18 @@ export interface PathTransformConfig {
 
 // Extended Origins configuration with control flags
 export interface OriginsConfig {
-  enabled?: boolean;                   // Flag to enable/disable Origins system
-  useLegacyPathPatterns?: boolean;     // Flag to use legacy path patterns as fallback
-  items?: Origin[];                    // Actual Origin objects
+  enabled?: boolean; // Flag to enable/disable Origins system
+  useLegacyPathPatterns?: boolean; // Flag to use legacy path patterns as fallback
+  items?: Origin[]; // Actual Origin objects
 }
 
 export interface VideoResizerConfig {
   // Version indicator for schema type
   version?: string;
-  
+
   // New origins-based configuration
   origins?: Origin[] | OriginsConfig;
-  
+
   // Legacy configuration (for backward compatibility)
   storage?: StorageConfig;
   cache?: CacheConfig;
