@@ -8,11 +8,7 @@
 import { VideoConfigurationManager } from '../../config';
 import { findMatchingPathPattern, PathPattern } from '../../utils/pathUtils';
 import { EnvVariables } from '../../config/environmentConfig';
-import {
-  DebugInfo,
-  DiagnosticsInfo,
-  extractRequestHeaders,
-} from '../../utils/debugHeadersUtils';
+import { DebugInfo, DiagnosticsInfo, extractRequestHeaders } from '../../utils/debugHeadersUtils';
 import {
   addBreadcrumb,
   getClientDiagnostics,
@@ -36,10 +32,7 @@ import { generateDebugPage } from '../../services/debugService';
 import { ResponseBuilder } from '../../utils/responseBuilder';
 import type { Logger } from 'pino';
 import { Origin, Source } from '../../services/videoStorage/interfaces';
-import {
-  OriginResolver,
-  SourceResolutionResult,
-} from '../../services/origins/OriginResolver';
+import { OriginResolver, SourceResolutionResult } from '../../services/origins/OriginResolver';
 
 export interface VideoTransformOptions {
   width?: number | null;
@@ -84,10 +77,7 @@ export interface VideoTransformOptions {
  */
 export interface R2Bucket {
   get(key: string): Promise<R2Object | null>;
-  put(
-    key: string,
-    value: ReadableStream | ArrayBuffer | string,
-  ): Promise<R2Object>;
+  put(key: string, value: ReadableStream | ArrayBuffer | string): Promise<R2Object>;
   delete(key: string): Promise<void>;
 }
 
@@ -180,19 +170,14 @@ export class TransformVideoCommand {
       this.logger = context.logger || createLogger(this.requestContext);
 
       // Log initialization with breadcrumb
-      addBreadcrumb(
-        this.requestContext,
-        'CommandInit',
-        'TransformVideoCommand Initialized',
-        {
-          requestId: this.requestContext.requestId,
-          url: this.requestContext.url?.substring(0, 100), // Limit URL length
-          hasOptions: !!this.context.options,
-          hasPathPatterns: Array.isArray(this.context.pathPatterns) &&
-            this.context.pathPatterns.length > 0,
-          debugEnabled: !!this.context.debugInfo?.isEnabled,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'CommandInit', 'TransformVideoCommand Initialized', {
+        requestId: this.requestContext.requestId,
+        url: this.requestContext.url?.substring(0, 100), // Limit URL length
+        hasOptions: !!this.context.options,
+        hasPathPatterns:
+          Array.isArray(this.context.pathPatterns) && this.context.pathPatterns.length > 0,
+        debugEnabled: !!this.context.debugInfo?.isEnabled,
+      });
 
       // Log additional diagnostics if in verbose mode
       if (this.requestContext.verboseEnabled) {
@@ -206,11 +191,9 @@ export class TransformVideoCommand {
             breadcrumbCount: this.requestContext.breadcrumbs.length,
             options: {
               ...this.context.options,
-              source: this.context.options?.source
-                ? '[source url omitted]'
-                : undefined,
+              source: this.context.options?.source ? '[source url omitted]' : undefined,
             },
-          },
+          }
         );
       }
     } catch (err) {
@@ -219,13 +202,16 @@ export class TransformVideoCommand {
         context: 'TransformVideoCommand',
         operation: 'constructor',
         message: 'CRITICAL: Failed to initialize RequestContext/Logger',
-        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+        error:
+          err instanceof Error
+            ? { name: err.name, message: err.message, stack: err.stack }
+            : String(err),
       });
       logErrorWithContext(
         'Error initializing TransformVideoCommand context/logger',
         err,
         {},
-        'TransformVideoCommand.constructor',
+        'TransformVideoCommand.constructor'
       );
 
       // Create a minimal fallback request context
@@ -262,7 +248,7 @@ export class TransformVideoCommand {
         this.requestContext,
         this.logger,
         'TransformVideoCommand',
-        'Origins context already initialized',
+        'Origins context already initialized'
       );
       return true;
     }
@@ -277,7 +263,7 @@ export class TransformVideoCommand {
           this.requestContext,
           this.logger,
           'TransformVideoCommand',
-          'Origins not enabled in configuration',
+          'Origins not enabled in configuration'
         );
         return false;
       }
@@ -286,12 +272,7 @@ export class TransformVideoCommand {
       const resolver = new OriginResolver(configManager.getConfig());
 
       // Find matching origin with captures
-      addBreadcrumb(
-        this.requestContext,
-        'Origins',
-        'Resolving origin for path',
-        { path },
-      );
+      addBreadcrumb(this.requestContext, 'Origins', 'Resolving origin for path', { path });
 
       const originMatch = resolver.matchOriginWithCaptures(path);
       if (!originMatch) {
@@ -300,20 +281,15 @@ export class TransformVideoCommand {
           this.logger,
           'TransformVideoCommand',
           'No matching origin found for path',
-          { path },
+          { path }
         );
         return false;
       }
 
       // Resolve path to source
-      addBreadcrumb(
-        this.requestContext,
-        'Origins',
-        'Resolving path to source',
-        {
-          origin: originMatch.origin.name,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'Origins', 'Resolving path to source', {
+        origin: originMatch.origin.name,
+      });
 
       const sourceResult = resolver.resolvePathToSource(path);
       if (!sourceResult) {
@@ -325,7 +301,7 @@ export class TransformVideoCommand {
           {
             origin: originMatch.origin.name,
             path,
-          },
+          }
         );
         return false;
       }
@@ -343,18 +319,13 @@ export class TransformVideoCommand {
           origin: originMatch.origin.name,
           sourceType: sourceResult.originType,
           resolvedPath: sourceResult.resolvedPath,
-        },
+        }
       );
 
-      addBreadcrumb(
-        this.requestContext,
-        'Origins',
-        'Origins context initialized',
-        {
-          origin: originMatch.origin.name,
-          sourceType: sourceResult.originType,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'Origins', 'Origins context initialized', {
+        origin: originMatch.origin.name,
+        sourceType: sourceResult.originType,
+      });
 
       return true;
     } catch (err) {
@@ -368,22 +339,17 @@ export class TransformVideoCommand {
         {
           error: errorMessage,
           path,
-        },
+        }
       );
 
-      addBreadcrumb(
-        this.requestContext,
-        'Origins',
-        'Error initializing Origins context',
-        {
-          error: errorMessage,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'Origins', 'Error initializing Origins context', {
+        error: errorMessage,
+      });
 
       // Add warning to diagnostics
       if (this.requestContext.diagnostics?.warnings) {
         this.requestContext.diagnostics.warnings.push(
-          `Origins initialization error: ${errorMessage}`,
+          `Origins initialization error: ${errorMessage}`
         );
       }
 
@@ -408,21 +374,18 @@ export class TransformVideoCommand {
     }
 
     if (!sourceResolution) {
-      throw new Error(
-        'Source resolution is required for Origins-based transformation',
-      );
+      throw new Error('Source resolution is required for Origins-based transformation');
     }
 
     const url = new URL(request.url);
     const path = url.pathname;
 
     // Initialize diagnostics
-    const diagnosticsInfo: DiagnosticsInfo = this.requestContext.diagnostics ||
-      {
-        errors: [],
-        warnings: [],
-        originalUrl: request.url,
-      };
+    const diagnosticsInfo: DiagnosticsInfo = this.requestContext.diagnostics || {
+      errors: [],
+      warnings: [],
+      originalUrl: request.url,
+    };
 
     // Add Origins information to diagnostics
     diagnosticsInfo.origin = {
@@ -444,27 +407,18 @@ export class TransformVideoCommand {
       {
         origin: origin.name,
         sourceType: sourceResolution.originType,
-      },
+      }
     );
 
-    addBreadcrumb(
-      this.requestContext,
-      'Origins',
-      'Using Origins-based transformation',
-      {
-        origin: origin.name,
-        sourceType: sourceResolution.originType,
-        resolvedPath: sourceResolution.resolvedPath,
-      },
-    );
+    addBreadcrumb(this.requestContext, 'Origins', 'Using Origins-based transformation', {
+      origin: origin.name,
+      sourceType: sourceResolution.originType,
+      resolvedPath: sourceResolution.resolvedPath,
+    });
 
     try {
       // Gather client capabilities and add to diagnostics
-      addBreadcrumb(
-        this.requestContext,
-        'Context',
-        'Gathering client capabilities',
-      );
+      addBreadcrumb(this.requestContext, 'Context', 'Gathering client capabilities');
       const clientInfo = getClientDiagnostics(request);
       diagnosticsInfo.browserCapabilities = clientInfo.browserCapabilities;
       diagnosticsInfo.clientHints = clientInfo.hasClientHints;
@@ -476,7 +430,7 @@ export class TransformVideoCommand {
       const requestOrigin = requestUrl.origin;
       // Preserve query string and hash from original request to append to source URL
       const requestQuery = requestUrl.search; // includes the '?' if present
-      const requestHash = requestUrl.hash;   // includes the '#' if present
+      const requestHash = requestUrl.hash; // includes the '#' if present
 
       // Build the CDN-CGI media transformation URL
       const sourcePath = sourceResolution.resolvedPath;
@@ -486,19 +440,14 @@ export class TransformVideoCommand {
       switch (sourceResolution.originType) {
         case 'r2':
           // Use R2 bucket binding from source and bucket from source or global config
-          const bucketBinding = sourceResolution.source.bucketBinding ||
-            'VIDEO_ASSETS';
+          const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
           if (!env) {
-            throw new Error(
-              'Environment variables not available for R2 bucket access',
-            );
+            throw new Error('Environment variables not available for R2 bucket access');
           }
 
           // Check if the bucket binding exists in the environment
           if (!env || !env[bucketBinding]) {
-            throw new Error(
-              `R2 bucket binding '${bucketBinding}' not available in environment`,
-            );
+            throw new Error(`R2 bucket binding '${bucketBinding}' not available in environment`);
           }
 
           // This will be handled by fetching from the bucket directly
@@ -509,9 +458,7 @@ export class TransformVideoCommand {
         case 'fallback':
           // Use the source URL with resolved path
           if (!sourceResolution.sourceUrl) {
-            throw new Error(
-              `No source URL available for ${sourceResolution.originType} source`,
-            );
+            throw new Error(`No source URL available for ${sourceResolution.originType} source`);
           }
           // Preserve query string and hash from original request
           sourceUrl = sourceResolution.sourceUrl + requestQuery + requestHash;
@@ -529,13 +476,13 @@ export class TransformVideoCommand {
                 authType: auth.type,
               }
             );
-            
+
             // Handle bearer token authentication
             if (auth.type === 'bearer' && auth.accessKeyVar) {
               // Get the token from environment variables
               const envRecord = env as unknown as Record<string, string | undefined>;
               const accessToken = envRecord[auth.accessKeyVar];
-              
+
               if (accessToken) {
                 pinoDebug(
                   this.requestContext,
@@ -546,15 +493,15 @@ export class TransformVideoCommand {
                     accessKeyVar: auth.accessKeyVar,
                   }
                 );
-                
+
                 // For CDN-CGI, we don't need to modify the sourceUrl or add auth headers
                 // The auth is handled within fetchVideoWithOrigins when it makes the actual request
-                
+
                 // Add authentication info to diagnostics
                 diagnosticsInfo.authentication = {
                   type: 'bearer',
                   tokenSource: auth.accessKeyVar,
-                  available: true
+                  available: true,
                 };
               } else {
                 // Log warning about missing token
@@ -567,13 +514,13 @@ export class TransformVideoCommand {
                     accessKeyVar: auth.accessKeyVar,
                   }
                 );
-                
+
                 // Add to diagnostics
                 diagnosticsInfo.authentication = {
                   type: 'bearer',
                   tokenSource: auth.accessKeyVar,
                   available: false,
-                  error: 'Token not found in environment variable'
+                  error: 'Token not found in environment variable',
                 };
               }
             }
@@ -581,9 +528,7 @@ export class TransformVideoCommand {
           break;
 
         default:
-          throw new Error(
-            `Unknown source type: ${sourceResolution.originType}`,
-          );
+          throw new Error(`Unknown source type: ${sourceResolution.originType}`);
       }
 
       // Add source information to diagnostics
@@ -591,9 +536,7 @@ export class TransformVideoCommand {
       diagnosticsInfo.sourceUrl = sourceUrl;
 
       // Get the CDN-CGI path from configuration
-      const { getEnvironmentConfig } = await import(
-        '../../config/environmentConfig'
-      );
+      const { getEnvironmentConfig } = await import('../../config/environmentConfig');
       const config = getEnvironmentConfig();
       const cdnCgiPath = config.cdnCgi?.basePath || '/cdn-cgi/media';
 
@@ -607,43 +550,39 @@ export class TransformVideoCommand {
       // Check for derivative dimensions first, overriding width/height if available
       let width = options.width;
       let height = options.height;
-      
+
       // If this is an IMQuery request with a derivative, use the derivative's dimensions
       if (options.derivative) {
         // Import only when needed
         const { getDerivativeDimensions } = await import('../../utils/imqueryUtils');
         const derivativeDimensions = getDerivativeDimensions(options.derivative);
-        
+
         if (derivativeDimensions) {
           // Use derivative width/height instead of requested width/height
           width = derivativeDimensions.width || width;
           height = derivativeDimensions.height || height;
-          
+
           // Log that we're using derivative dimensions with category set to CDN-CGI for consistent filtering
           const { info } = await import('../../utils/loggerUtils');
-          info(
-            'CDN-CGI',
-            `Using derivative dimensions for ${options.derivative}`,
-            {
-              derivative: options.derivative,
-              originalWidth: options.width,
-              originalHeight: options.height,
-              derivativeWidth: width,
-              derivativeHeight: height
-            }
-          );
+          info('CDN-CGI', `Using derivative dimensions for ${options.derivative}`, {
+            derivative: options.derivative,
+            originalWidth: options.width,
+            originalHeight: options.height,
+            derivativeWidth: width,
+            derivativeHeight: height,
+          });
         }
       }
-      
+
       // Use the possibly overridden width/height
       if (width) urlParams.push(`width=${width}`);
       if (height) urlParams.push(`height=${height}`);
       if (options.mode) urlParams.push(`mode=${options.mode}`);
       if (options.fit) urlParams.push(`fit=${options.fit}`);
-      
+
       // Mode-specific parameter handling
       const mode = options.mode || 'video';
-      
+
       if (mode === 'spritesheet') {
         // Spritesheet mode - Only include compatible parameters
         // No format, quality, compression, or playback parameters allowed for spritesheet
@@ -666,7 +605,7 @@ export class TransformVideoCommand {
         if (options.compression) {
           urlParams.push(`compression=${options.compression}`);
         }
-        
+
         // Video-specific parameters
         if (options.time) urlParams.push(`time=${options.time}`);
         if (options.duration) urlParams.push(`duration=${options.duration}`);
@@ -676,7 +615,7 @@ export class TransformVideoCommand {
         if (options.audio !== undefined) {
           urlParams.push(`audio=${options.audio ? 'true' : 'false'}`);
         }
-        
+
         // Video controls - only for video mode
         if (options.loop !== undefined) {
           urlParams.push(`loop=${options.loop ? 'true' : 'false'}`);
@@ -695,12 +634,12 @@ export class TransformVideoCommand {
 
       // Add source URL - use directly without encoding
       cdnCgiUrl += `/${sourceUrl}`;
-      
+
       // Add version parameter for cache busting if available
       if (options.version !== undefined) {
         const originalCdnCgiUrl = cdnCgiUrl;
         cdnCgiUrl = addVersionToUrl(cdnCgiUrl, options.version);
-        
+
         // Only log if version was actually added (version > 1)
         if (cdnCgiUrl !== originalCdnCgiUrl) {
           pinoDebug(
@@ -711,7 +650,7 @@ export class TransformVideoCommand {
             {
               version: options.version,
               originalUrl: originalCdnCgiUrl,
-              versionedUrl: cdnCgiUrl
+              versionedUrl: cdnCgiUrl,
             }
           );
         }
@@ -719,37 +658,30 @@ export class TransformVideoCommand {
 
       // Use info level for CDN-CGI operations to ensure visibility
       const { info } = await import('../../utils/loggerUtils');
-      info(
-        'CDN-CGI',
-        `Created CDN-CGI URL: ${cdnCgiUrl}`,
-        {
-          url: cdnCgiUrl,
-          sourceUrl,
-          params: urlParams.join(','),
-          originType: sourceResolution.originType,
-          urlLength: cdnCgiUrl.length,
-          isIMQuery: !!options.derivative,
-          derivative: options.derivative || 'none',
-          // Include both original and derivative dimensions to clearly show the substitution
-          imqueryDimensions: options.derivative ? { 
-            requestedWidth: options.width, 
-            requestedHeight: options.height,
-            actualWidth: width,
-            actualHeight: height,
-            usingDerivativeDimensions: (width !== options.width || height !== options.height)
-          } : null
-        }
-      );
+      info('CDN-CGI', `Created CDN-CGI URL: ${cdnCgiUrl}`, {
+        url: cdnCgiUrl,
+        sourceUrl,
+        params: urlParams.join(','),
+        originType: sourceResolution.originType,
+        urlLength: cdnCgiUrl.length,
+        isIMQuery: !!options.derivative,
+        derivative: options.derivative || 'none',
+        // Include both original and derivative dimensions to clearly show the substitution
+        imqueryDimensions: options.derivative
+          ? {
+              requestedWidth: options.width,
+              requestedHeight: options.height,
+              actualWidth: width,
+              actualHeight: height,
+              usingDerivativeDimensions: width !== options.width || height !== options.height,
+            }
+          : null,
+      });
 
-      addBreadcrumb(
-        this.requestContext,
-        'Transformation',
-        'Created CDN-CGI URL',
-        {
-          sourceType: sourceResolution.originType,
-          paramCount: urlParams.length,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'Transformation', 'Created CDN-CGI URL', {
+        sourceType: sourceResolution.originType,
+        paramCount: urlParams.length,
+      });
 
       // Add CDN-CGI URL to diagnostics
       diagnosticsInfo.cdnCgiUrl = cdnCgiUrl;
@@ -761,8 +693,7 @@ export class TransformVideoCommand {
       });
 
       // Check for debug headers for tracking in diagnostics
-      const debugHeaders = this.context.debugMode ||
-        this.context.debugInfo?.isEnabled;
+      const debugHeaders = this.context.debugMode || this.context.debugInfo?.isEnabled;
       if (debugHeaders) {
         diagnosticsInfo.transformRequest = {
           url: transformRequest.url,
@@ -776,19 +707,14 @@ export class TransformVideoCommand {
 
       // Handle R2 source differently than HTTP sources
       if (sourceResolution.originType === 'r2') {
-        const bucketBinding = sourceResolution.source.bucketBinding ||
-          'VIDEO_ASSETS';
+        const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
         if (!env) {
-          throw new Error(
-            'Environment variables not available for R2 bucket access',
-          );
+          throw new Error('Environment variables not available for R2 bucket access');
         }
 
         // Check if the bucket binding exists in the environment
         if (!env || !env[bucketBinding]) {
-          throw new Error(
-            `R2 bucket binding '${bucketBinding}' not available in environment`,
-          );
+          throw new Error(`R2 bucket binding '${bucketBinding}' not available in environment`);
         }
 
         // Get R2 object
@@ -806,13 +732,14 @@ export class TransformVideoCommand {
               origin: origin.name,
               failedSource: sourceResolution.source.type,
               failedPriority: sourceResolution.source.priority,
-              path: sourcePath
+              path: sourcePath,
             }
           );
-          
+
           // Import and use the new retry function
-          const { retryWithAlternativeOrigins } = await import('../../services/transformation/retryWithAlternativeOrigins');
-          
+          const { retryWithAlternativeOrigins } =
+            await import('../../services/transformation/retryWithAlternativeOrigins');
+
           return await retryWithAlternativeOrigins({
             originalRequest: request,
             transformOptions: options as any, // Cast to any to match VideoOptions type
@@ -822,7 +749,7 @@ export class TransformVideoCommand {
             env: env as EnvVariables, // Cast to ensure type compatibility
             requestContext: this.requestContext,
             pathPatterns: this.context.pathPatterns,
-            debugInfo: this.context.debugInfo
+            debugInfo: this.context.debugInfo,
           });
         }
 
@@ -832,8 +759,7 @@ export class TransformVideoCommand {
             'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
             'Content-Length': r2Object.size.toString(),
             'Last-Modified': r2Object.uploaded.toUTCString(),
-            'ETag': r2Object.httpEtag ||
-              `"${r2Object.size}-${r2Object.uploaded.getTime()}"`,
+            ETag: r2Object.httpEtag || `"${r2Object.size}-${r2Object.uploaded.getTime()}"`,
           },
         });
 
@@ -868,9 +794,9 @@ export class TransformVideoCommand {
             type: 'not_found',
             message: 'The source video URL returned a 404 Not Found response',
             source: sourceResolution.sourceUrl || 'unknown',
-            originType: sourceResolution.originType
+            originType: sourceResolution.originType,
           };
-          
+
           // Use the new retry mechanism for 404 errors
           pinoDebug(
             this.requestContext,
@@ -880,13 +806,14 @@ export class TransformVideoCommand {
             {
               origin: origin.name,
               failedSource: sourceResolution.source.type,
-              failedPriority: sourceResolution.source.priority
+              failedPriority: sourceResolution.source.priority,
             }
           );
-          
+
           // Import and use the new retry function
-          const { retryWithAlternativeOrigins } = await import('../../services/transformation/retryWithAlternativeOrigins');
-          
+          const { retryWithAlternativeOrigins } =
+            await import('../../services/transformation/retryWithAlternativeOrigins');
+
           return await retryWithAlternativeOrigins({
             originalRequest: request,
             transformOptions: options as any, // Cast to any to match VideoOptions type
@@ -896,19 +823,19 @@ export class TransformVideoCommand {
             env: env as EnvVariables, // Cast to ensure type compatibility
             requestContext: this.requestContext,
             pathPatterns: this.context.pathPatterns,
-            debugInfo: this.context.debugInfo
+            debugInfo: this.context.debugInfo,
           });
         } else if (response.status === 400) {
           diagnosticsInfo.errors = diagnosticsInfo.errors || [];
           diagnosticsInfo.errors.push('Bad request (400) - Possible parameter issue');
-          
+
           // Clone the response to read the body without consuming it
           const clonedResponse = response.clone();
           let errorResponseBody = '';
-          
+
           try {
             errorResponseBody = await clonedResponse.text();
-            
+
             // Try to parse more specific error details if available
             // First check for time parameter errors
             if (errorResponseBody.includes('time') && errorResponseBody.includes('exceeds')) {
@@ -917,28 +844,33 @@ export class TransformVideoCommand {
                 type: 'seek_time_error',
                 message: 'The specified timestamp (time parameter) exceeds the video duration',
                 parameter: 'time',
-                requestedTime: options.time || 'unknown'
+                requestedTime: options.time || 'unknown',
               };
-            } 
+            }
             // Check for invalid mode combinations
-            else if (errorResponseBody.includes('invalid') && 
-                    (errorResponseBody.includes('mode') || errorResponseBody.includes('combination'))) {
+            else if (
+              errorResponseBody.includes('invalid') &&
+              (errorResponseBody.includes('mode') || errorResponseBody.includes('combination'))
+            ) {
               diagnosticsInfo.errorDetails = {
                 status: 400,
                 type: 'invalid_mode_error',
                 message: 'Invalid parameter combination for the specified mode',
                 parameter: 'mode',
-                requestedMode: options.mode || 'video'
+                requestedMode: options.mode || 'video',
               };
             }
             // Check for format errors
-            else if (errorResponseBody.includes('format') && errorResponseBody.includes('invalid')) {
+            else if (
+              errorResponseBody.includes('format') &&
+              errorResponseBody.includes('invalid')
+            ) {
               diagnosticsInfo.errorDetails = {
                 status: 400,
                 type: 'format_error',
                 message: 'Invalid format specified for transformation',
                 parameter: 'format',
-                requestedFormat: options.format || 'unknown'
+                requestedFormat: options.format || 'unknown',
               };
             }
             // General parameter error fallback
@@ -946,11 +878,12 @@ export class TransformVideoCommand {
               diagnosticsInfo.errorDetails = {
                 status: 400,
                 type: 'parameter_error',
-                message: 'The transformation request was rejected, possibly due to invalid parameters',
-                errorText: errorResponseBody.substring(0, 200) // Include first 200 chars of error
+                message:
+                  'The transformation request was rejected, possibly due to invalid parameters',
+                errorText: errorResponseBody.substring(0, 200), // Include first 200 chars of error
               };
             }
-            
+
             // Add the original error text to diagnostics for debugging
             diagnosticsInfo.rawErrorText = errorResponseBody.substring(0, 500); // Limit to 500 chars
           } catch (bodyReadError) {
@@ -958,8 +891,9 @@ export class TransformVideoCommand {
             diagnosticsInfo.errorDetails = {
               status: 400,
               type: 'parameter_error',
-              message: 'The transformation request was rejected, possibly due to invalid parameters',
-              bodyReadError: 'Failed to read error response body'
+              message:
+                'The transformation request was rejected, possibly due to invalid parameters',
+              bodyReadError: 'Failed to read error response body',
             };
           }
         } else if (response.status === 413) {
@@ -968,7 +902,7 @@ export class TransformVideoCommand {
           diagnosticsInfo.errorDetails = {
             status: 413,
             type: 'file_size_limit',
-            message: 'The video file size exceeds the maximum allowed for transformation'
+            message: 'The video file size exceeds the maximum allowed for transformation',
           };
         } else if (response.status === 415) {
           diagnosticsInfo.errors = diagnosticsInfo.errors || [];
@@ -976,7 +910,7 @@ export class TransformVideoCommand {
           diagnosticsInfo.errorDetails = {
             status: 415,
             type: 'unsupported_format',
-            message: 'The video format or codec is not supported for transformation'
+            message: 'The video format or codec is not supported for transformation',
           };
         } else if (response.status === 429) {
           diagnosticsInfo.errors = diagnosticsInfo.errors || [];
@@ -984,22 +918,24 @@ export class TransformVideoCommand {
           diagnosticsInfo.errorDetails = {
             status: 429,
             type: 'rate_limit',
-            message: 'Rate limit exceeded for video transformation requests'
+            message: 'Rate limit exceeded for video transformation requests',
           };
         } else if (response.status >= 500) {
           diagnosticsInfo.errors = diagnosticsInfo.errors || [];
-          diagnosticsInfo.errors.push(`Server Error (${response.status}) - Cloudflare transformation service error`);
+          diagnosticsInfo.errors.push(
+            `Server Error (${response.status}) - Cloudflare transformation service error`
+          );
           diagnosticsInfo.errorDetails = {
             status: response.status,
             type: 'server_error',
-            message: 'The Cloudflare transformation service encountered an internal error'
+            message: 'The Cloudflare transformation service encountered an internal error',
           };
         }
-        
+
         // Handle error with the extracted error handler
         // Make sure we're passing a properly versioned fallbackOriginUrl
         let fallbackOriginUrl = sourceResolution.sourceUrl || null;
-        
+
         // Apply version to fallback URL if needed
         if (fallbackOriginUrl && options.version !== undefined) {
           fallbackOriginUrl = addVersionToUrl(fallbackOriginUrl, options.version);
@@ -1010,11 +946,11 @@ export class TransformVideoCommand {
             'Applied version to fallback URL in CDN-CGI error handler',
             {
               fallbackOriginUrl,
-              version: options.version
+              version: options.version,
             }
           );
         }
-        
+
         // Add detailed error headers for better client debugging
         if (response.status !== 200) {
           try {
@@ -1022,18 +958,18 @@ export class TransformVideoCommand {
             const enhancedResponse = new Response(response.body, {
               status: response.status,
               statusText: response.statusText,
-              headers: response.headers
+              headers: response.headers,
             });
-            
+
             // Add error information headers
             const enhancedHeaders = new Headers(enhancedResponse.headers);
-            
+
             // Add generic error headers
             enhancedHeaders.set('X-Error-Status', String(response.status));
-            
+
             // Use the error body text from diagnostics if available, otherwise try to read it
             let errorResponseBody = '';
-            
+
             if (diagnosticsInfo.rawErrorText && typeof diagnosticsInfo.rawErrorText === 'string') {
               // Use the error text we already read earlier
               errorResponseBody = diagnosticsInfo.rawErrorText;
@@ -1052,25 +988,32 @@ export class TransformVideoCommand {
                 // Continue with empty error text if we can't read it
               }
             }
-            
+
             // Add specific error headers based on status code
             if (response.status === 404) {
               enhancedHeaders.set('X-Error-Type', 'not_found');
               enhancedHeaders.set('X-Error-Source', sourceResolution.originType);
             } else if (response.status === 400) {
               enhancedHeaders.set('X-Error-Type', 'parameter_error');
-              
+
               // Add more specific information if available from diagnosticsInfo
-              if (diagnosticsInfo.errorDetails && 
-                  typeof diagnosticsInfo.errorDetails === 'object' && 
-                  'type' in diagnosticsInfo.errorDetails) {
+              if (
+                diagnosticsInfo.errorDetails &&
+                typeof diagnosticsInfo.errorDetails === 'object' &&
+                'type' in diagnosticsInfo.errorDetails
+              ) {
                 enhancedHeaders.set('X-Error-Subtype', String(diagnosticsInfo.errorDetails.type));
               }
-              
-              if (diagnosticsInfo.errorDetails && 
-                  typeof diagnosticsInfo.errorDetails === 'object' && 
-                  'parameter' in diagnosticsInfo.errorDetails) {
-                enhancedHeaders.set('X-Error-Parameter', String(diagnosticsInfo.errorDetails.parameter));
+
+              if (
+                diagnosticsInfo.errorDetails &&
+                typeof diagnosticsInfo.errorDetails === 'object' &&
+                'parameter' in diagnosticsInfo.errorDetails
+              ) {
+                enhancedHeaders.set(
+                  'X-Error-Parameter',
+                  String(diagnosticsInfo.errorDetails.parameter)
+                );
               }
             } else if (response.status === 413) {
               enhancedHeaders.set('X-Error-Type', 'file_size_limit');
@@ -1084,15 +1027,15 @@ export class TransformVideoCommand {
               enhancedHeaders.set('X-Error-Type', 'server_error');
               enhancedHeaders.set('X-Server-Error', 'true');
             }
-            
+
             // Create a new response with the enhanced headers and the original error text
             // The body stream can only be read once, so we need to create a new response with the text we've already read
             const finalResponse = new Response(errorResponseBody, {
               status: enhancedResponse.status,
               statusText: enhancedResponse.statusText,
-              headers: enhancedHeaders
+              headers: enhancedHeaders,
             });
-            
+
             // Use the enhanced response for error handling
             return await handleTransformationError({
               errorResponse: finalResponse,
@@ -1114,7 +1057,7 @@ export class TransformVideoCommand {
             );
           }
         }
-        
+
         // Default case - use original response if header enhancement failed
         return await handleTransformationError({
           errorResponse: response,
@@ -1132,14 +1075,11 @@ export class TransformVideoCommand {
       addBreadcrumb(
         this.requestContext,
         'Response',
-        'Transformation successful, building final response',
+        'Transformation successful, building final response'
       );
 
       // Build final response with ResponseBuilder
-      const responseBuilder = new ResponseBuilder(
-        response,
-        this.requestContext,
-      );
+      const responseBuilder = new ResponseBuilder(response, this.requestContext);
 
       // Determine TTL based on origin configuration
       let cacheTtl = 86400; // Default 1 day
@@ -1147,19 +1087,11 @@ export class TransformVideoCommand {
       if (origin.ttl) {
         // Use status-specific TTL if available and enabled
         if (origin.useTtlByStatus) {
-          if (
-            response.status >= 200 && response.status < 300 && origin.ttl.ok
-          ) {
+          if (response.status >= 200 && response.status < 300 && origin.ttl.ok) {
             cacheTtl = origin.ttl.ok;
-          } else if (
-            response.status >= 300 && response.status < 400 &&
-            origin.ttl.redirects
-          ) {
+          } else if (response.status >= 300 && response.status < 400 && origin.ttl.redirects) {
             cacheTtl = origin.ttl.redirects;
-          } else if (
-            response.status >= 400 && response.status < 500 &&
-            origin.ttl.clientError
-          ) {
+          } else if (response.status >= 400 && response.status < 500 && origin.ttl.clientError) {
             cacheTtl = origin.ttl.clientError;
           } else if (response.status >= 500 && origin.ttl.serverError) {
             cacheTtl = origin.ttl.serverError;
@@ -1177,18 +1109,17 @@ export class TransformVideoCommand {
         mustRevalidate: false,
         // Store origin information for better retrieval from KV cache
         originName: origin.name,
-        originTtl: cacheTtl // Store the TTL from the origin config for KV cache
+        originTtl: cacheTtl, // Store the TTL from the origin config for KV cache
       };
 
       responseBuilder.withCaching(
         response.status,
         cacheConfig,
         sourceResolution.originType,
-        options.derivative || undefined,
+        options.derivative || undefined
       );
       responseBuilder.withDebugInfo(
-        this.context.debugInfo ??
-          (this.context.debugMode ? { isEnabled: true } : undefined),
+        this.context.debugInfo ?? (this.context.debugMode ? { isEnabled: true } : undefined)
       );
 
       // Add Origins information to the response
@@ -1196,16 +1127,13 @@ export class TransformVideoCommand {
         'X-Origin': origin.name,
         'X-Source-Type': sourceResolution.originType,
         'X-Handler': 'Origins',
-        'X-Origin-TTL': cacheTtl.toString() // Add the origin TTL for KV cache to use
+        'X-Origin-TTL': cacheTtl.toString(), // Add the origin TTL for KV cache to use
       });
 
       // Check for debug view mode
-      const debugView = url.searchParams.get('debug') === 'view' ||
-        url.searchParams.get('debug') === 'true';
-      if (
-        debugView &&
-        (this.context.debugInfo?.isEnabled || !!this.context.debugMode)
-      ) {
+      const debugView =
+        url.searchParams.get('debug') === 'view' || url.searchParams.get('debug') === 'true';
+      if (debugView && (this.context.debugInfo?.isEnabled || !!this.context.debugMode)) {
         addBreadcrumb(this.requestContext, 'Debug', 'Preparing debug view');
 
         return await generateDebugPage({
@@ -1221,46 +1149,41 @@ export class TransformVideoCommand {
       return await responseBuilder.build();
     } catch (err) {
       // Log error
-      const errorMessage = err instanceof Error
-        ? err.message
-        : 'Unknown execution error in Origins transformation';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Unknown execution error in Origins transformation';
 
-      logErrorWithContext('Error in Origins transformation', err, {
-        origin: origin.name,
-        sourceType: sourceResolution.originType,
-        path,
-      }, 'TransformVideoCommand.executeWithOrigins');
+      logErrorWithContext(
+        'Error in Origins transformation',
+        err,
+        {
+          origin: origin.name,
+          sourceType: sourceResolution.originType,
+          path,
+        },
+        'TransformVideoCommand.executeWithOrigins'
+      );
 
       // Add error to diagnostics
       if (diagnosticsInfo.errors) {
-        diagnosticsInfo.errors.push(
-          `Origins Transformation Error: ${errorMessage}`,
-        );
+        diagnosticsInfo.errors.push(`Origins Transformation Error: ${errorMessage}`);
       }
 
       // Build error response
-      const errorResponse = new Response(
-        `Error transforming video with Origins: ${errorMessage}`,
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'text/plain',
-            'Cache-Control': 'no-store',
-            'X-Error': 'OriginsTransformationError',
-            'X-Origin': origin.name,
-            'X-Source-Type': sourceResolution.originType,
-            'X-Handler': 'Origins',
-          },
+      const errorResponse = new Response(`Error transforming video with Origins: ${errorMessage}`, {
+        status: 500,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'no-store',
+          'X-Error': 'OriginsTransformationError',
+          'X-Origin': origin.name,
+          'X-Source-Type': sourceResolution.originType,
+          'X-Handler': 'Origins',
         },
-      );
+      });
 
-      const responseBuilder = new ResponseBuilder(
-        errorResponse,
-        this.requestContext,
-      );
+      const responseBuilder = new ResponseBuilder(errorResponse, this.requestContext);
       responseBuilder.withDebugInfo(
-        this.context.debugInfo ??
-          (this.context.debugMode ? { isEnabled: true } : undefined),
+        this.context.debugInfo ?? (this.context.debugMode ? { isEnabled: true } : undefined)
       );
 
       return await responseBuilder.build();
@@ -1274,12 +1197,11 @@ export class TransformVideoCommand {
    * @returns The next source to try, or null if there are no more sources
    */
   private findNextSourceByPriority(origin: Origin, currentPriority: number): Source | null {
-
     // Get all sources with higher priority number (lower priority = higher precedence)
     const higherPrioritySources = origin.sources
-      .filter(source => source.priority > currentPriority)
+      .filter((source) => source.priority > currentPriority)
       .sort((a, b) => a.priority - b.priority);
-    
+
     // Return the source with the next highest priority, or null if there are none
     return higherPrioritySources.length > 0 ? higherPrioritySources[0] : null;
   }
@@ -1292,19 +1214,19 @@ export class TransformVideoCommand {
    */
   private getNextSourceUrl(origin: Origin, currentPriority: number): string | null {
     // First check if the current source has a valid URL (for non-R2 sources)
-    const currentSource = origin.sources.find(source => source.priority === currentPriority);
-    
+    const currentSource = origin.sources.find((source) => source.priority === currentPriority);
+
     // If current source is not R2 and has a URL, use it for direct fetch from same origin
     if (currentSource && currentSource.type !== 'r2' && currentSource.url) {
       return currentSource.url;
     }
-    
+
     // If current source doesn't have a valid URL or is R2, find the next source
     // Find all sources with higher priority number (lower priority = higher precedence)
     const higherPrioritySources = origin.sources
-      .filter(source => source.priority > currentPriority)
+      .filter((source) => source.priority > currentPriority)
       .sort((a, b) => a.priority - b.priority);
-      
+
     // Look for the first source with a valid URL
     for (const source of higherPrioritySources) {
       // Only remote and fallback sources have valid URLs
@@ -1312,7 +1234,7 @@ export class TransformVideoCommand {
         return source.url;
       }
     }
-    
+
     return null;
   }
 
@@ -1332,71 +1254,33 @@ export class TransformVideoCommand {
     const path = url.pathname;
 
     // Initialize diagnostics - use existing diagnostics from request context if available
-    const diagnosticsInfo: DiagnosticsInfo = this.requestContext.diagnostics ||
-      {
-        errors: [],
-        warnings: [],
-        originalUrl: request.url,
-      };
+    const diagnosticsInfo: DiagnosticsInfo = this.requestContext.diagnostics || {
+      errors: [],
+      warnings: [],
+      originalUrl: request.url,
+    };
 
     // Ensure diagnostics arrays exist
     if (!diagnosticsInfo.errors) diagnosticsInfo.errors = [];
     if (!diagnosticsInfo.warnings) diagnosticsInfo.warnings = [];
 
     // Log execution start
-    pinoDebug(
-      this.requestContext,
-      this.logger,
-      'TransformVideoCommand',
-      'Starting execution',
-      { path },
-    );
-    addBreadcrumb(
-      this.requestContext,
-      'Execution',
-      'Command execution started',
-    );
+    pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Starting execution', {
+      path,
+    });
+    addBreadcrumb(this.requestContext, 'Execution', 'Command execution started');
 
     try {
-      // For test compatibility - check if this is the invalid options test
-      if (
-        request.url.includes('invalid-option-test') ||
-        options.width === 3000 ||
-        options.width === 5000
-      ) {
-        addBreadcrumb(
-          this.requestContext,
-          'Test',
-          'Invalid option test triggered',
-          {
-            width: options.width,
-          },
-        );
-
-        // Return a forced error response for the test
-        return new Response(
-          'Error transforming video: Width must be between 10 and 2000 pixels',
-          {
-            status: 500,
-            headers: { 'Content-Type': 'text/plain' },
-          },
-        );
-      }
-
       // Collect request headers for diagnostics if debug is enabled
       if (this.context.debugInfo?.isEnabled || this.context.debugMode) {
         diagnosticsInfo.requestHeaders = extractRequestHeaders(request);
       }
 
       // Try to initialize Origins context if not already provided
-      const shouldUseOrigins = VideoConfigurationManager.getInstance()
-        .shouldUseOrigins();
+      const shouldUseOrigins = VideoConfigurationManager.getInstance().shouldUseOrigins();
 
       // If Origins should be used and context not already initialized, attempt to initialize it
-      if (
-        shouldUseOrigins &&
-        (!this.context.origin || !this.context.sourceResolution)
-      ) {
+      if (shouldUseOrigins && (!this.context.origin || !this.context.sourceResolution)) {
         await this.initializeOrigins(path);
       }
 
@@ -1406,20 +1290,15 @@ export class TransformVideoCommand {
       }
 
       // If we reach here, we're falling back to legacy path patterns
-      addBreadcrumb(
-        this.requestContext,
-        'Routing',
-        'Falling back to legacy path patterns',
-        {
-          path,
-          shouldUseOrigins,
-        },
-      );
+      addBreadcrumb(this.requestContext, 'Routing', 'Falling back to legacy path patterns', {
+        path,
+        shouldUseOrigins,
+      });
 
       // If Origin initialization failed but was enabled, add a warning to diagnostics
       if (shouldUseOrigins) {
         diagnosticsInfo.warnings.push(
-          'Origins enabled but initialization failed, falling back to legacy path patterns',
+          'Origins enabled but initialization failed, falling back to legacy path patterns'
         );
       }
 
@@ -1442,16 +1321,12 @@ export class TransformVideoCommand {
             this.logger,
             'TransformVideoCommand',
             'Calculated fallback URL',
-            { fallbackOriginUrl },
+            { fallbackOriginUrl }
           );
         }
       } else {
         diagnosticsInfo.warnings.push('No matching path pattern found');
-        addBreadcrumb(
-          this.requestContext,
-          'Routing',
-          'No matching pattern found',
-        );
+        addBreadcrumb(this.requestContext, 'Routing', 'No matching pattern found');
       }
 
       // Handle pass-through case (no pattern or pattern shouldn't be processed)
@@ -1463,7 +1338,7 @@ export class TransformVideoCommand {
           'Path configured for pass-through',
           {
             pattern: pathPattern?.name,
-          },
+          }
         );
         addBreadcrumb(this.requestContext, 'Routing', 'Pass-through request', {
           pattern: pathPattern?.name,
@@ -1472,7 +1347,7 @@ export class TransformVideoCommand {
         // Handle diagnostics
         if (pathPattern) {
           diagnosticsInfo.warnings.push(
-            `Path pattern ${pathPattern.name} is configured to not process`,
+            `Path pattern ${pathPattern.name} is configured to not process`
           );
         }
 
@@ -1480,20 +1355,13 @@ export class TransformVideoCommand {
         const passThroughResponse = await fetch(request);
 
         // Use ResponseBuilder for consistent response handling
-        const responseBuilder = new ResponseBuilder(
-          passThroughResponse,
-          this.requestContext,
-        );
+        const responseBuilder = new ResponseBuilder(passThroughResponse, this.requestContext);
         responseBuilder.withDebugInfo(this.context.debugInfo);
         return await responseBuilder.build();
       }
 
       // Gather client capabilities and add to diagnostics
-      addBreadcrumb(
-        this.requestContext,
-        'Context',
-        'Gathering client capabilities',
-      );
+      addBreadcrumb(this.requestContext, 'Context', 'Gathering client capabilities');
       const clientInfo = getClientDiagnostics(request);
       diagnosticsInfo.browserCapabilities = clientInfo.browserCapabilities;
       diagnosticsInfo.clientHints = clientInfo.hasClientHints;
@@ -1530,35 +1398,29 @@ export class TransformVideoCommand {
       addBreadcrumb(
         this.requestContext,
         'Response',
-        'Transformation successful, building final response',
+        'Transformation successful, building final response'
       );
 
       // Build final response with ResponseBuilder
-      const responseBuilder = new ResponseBuilder(
-        transformResult.response,
-        this.requestContext,
-      );
+      const responseBuilder = new ResponseBuilder(transformResult.response, this.requestContext);
 
       // Convert the cacheConfig to a Record<string, unknown> if not null
       const cacheConfig = transformResult.cacheConfig
-        ? { ...transformResult.cacheConfig } as Record<string, unknown>
+        ? ({ ...transformResult.cacheConfig } as Record<string, unknown>)
         : undefined;
 
       responseBuilder.withCaching(
         transformResult.response.status,
         cacheConfig,
         transformResult.source,
-        transformResult.derivative,
+        transformResult.derivative
       );
       responseBuilder.withDebugInfo(this.context.debugInfo);
 
       // Check for debug view mode
-      const debugView = url.searchParams.get('debug') === 'view' ||
-        url.searchParams.get('debug') === 'true';
-      if (
-        debugView &&
-        (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)
-      ) {
+      const debugView =
+        url.searchParams.get('debug') === 'view' || url.searchParams.get('debug') === 'true';
+      if (debugView && (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)) {
         addBreadcrumb(this.requestContext, 'Debug', 'Preparing debug view');
 
         return await generateDebugPage({
@@ -1574,38 +1436,26 @@ export class TransformVideoCommand {
       return await responseBuilder.build();
     } catch (err: unknown) {
       // Error handling
-      const errorMessage = err instanceof Error
-        ? err.message
-        : 'Unknown execution error';
+      const errorMessage = err instanceof Error ? err.message : 'Unknown execution error';
 
       logErrorWithContext(
         'Unhandled error during TransformVideoCommand execution',
         err,
         { requestId: this.requestContext.requestId },
-        'TransformVideoCommand.execute',
+        'TransformVideoCommand.execute'
       );
-      addBreadcrumb(
-        this.requestContext,
-        'Error',
-        'Unhandled Command Execution Error',
-        { error: errorMessage },
-      );
+      addBreadcrumb(this.requestContext, 'Error', 'Unhandled Command Execution Error', {
+        error: errorMessage,
+      });
 
       // Add error to diagnostics
       diagnosticsInfo.errors.push(`Unhandled Execution Error: ${errorMessage}`);
 
       // Check for debug view mode
-      const debugView = url.searchParams.get('debug') === 'view' ||
-        url.searchParams.get('debug') === 'true';
-      if (
-        debugView &&
-        (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)
-      ) {
-        addBreadcrumb(
-          this.requestContext,
-          'Debug',
-          'Preparing error debug view',
-        );
+      const debugView =
+        url.searchParams.get('debug') === 'view' || url.searchParams.get('debug') === 'true';
+      if (debugView && (this.context.debugInfo?.isEnabled || this.requestContext.debugEnabled)) {
+        addBreadcrumb(this.requestContext, 'Debug', 'Preparing error debug view');
 
         return await generateDebugPage({
           diagnosticsInfo,
@@ -1617,21 +1467,15 @@ export class TransformVideoCommand {
       }
 
       // Build error response
-      const errorResponse = new Response(
-        `Error transforming video: ${errorMessage}`,
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'text/plain',
-            'Cache-Control': 'no-store',
-          },
+      const errorResponse = new Response(`Error transforming video: ${errorMessage}`, {
+        status: 500,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'no-store',
         },
-      );
+      });
 
-      const responseBuilder = new ResponseBuilder(
-        errorResponse,
-        this.requestContext,
-      );
+      const responseBuilder = new ResponseBuilder(errorResponse, this.requestContext);
       responseBuilder.withDebugInfo(this.context.debugInfo);
       responseBuilder.withCdnErrorInfo(500, errorMessage, request.url);
 

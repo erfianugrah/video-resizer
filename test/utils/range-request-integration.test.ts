@@ -16,35 +16,35 @@ vi.mock('../../src/utils/streamUtils', async () => {
             'Content-Length': '500',
             'Accept-Ranges': 'bytes',
             'X-Range-Handled-By': options?.handlerTag || 'Stream-Range-Handler',
-            'X-Bypass-Cache-API': options?.bypassCacheAPI ? 'true' : 'false'
-          })
+            'X-Bypass-Cache-API': options?.bypassCacheAPI ? 'true' : 'false',
+          }),
         });
       }
       return response;
     }),
-    processRangeRequest: vi.fn()
+    processRangeRequest: vi.fn(),
   };
 });
 
 vi.mock('../../src/services/videoTransformationService', () => ({
   transformVideo: vi.fn().mockImplementation(async () => {
     return new Response('video content', {
-      status: 200, 
+      status: 200,
       headers: new Headers({
         'Content-Type': 'video/mp4',
         'Content-Length': '1000',
-        'Accept-Ranges': 'bytes'
-      })
+        'Accept-Ranges': 'bytes',
+      }),
     });
-  })
+  }),
 }));
 
 // Setup mock for Cache API
 const mockCacheStorage = {
   open: vi.fn().mockResolvedValue({
     match: vi.fn().mockResolvedValue(null),
-    put: vi.fn().mockResolvedValue(undefined)
-  })
+    put: vi.fn().mockResolvedValue(undefined),
+  }),
 };
 
 // @ts-ignore: Mocking global caches
@@ -53,7 +53,7 @@ global.caches = mockCacheStorage;
 describe('Range Request Integration', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    
+
     // Restore the mocks with default implementation
     (streamUtils.handleRangeRequest as any).mockImplementation(
       async (response, rangeHeader, options) => {
@@ -65,8 +65,8 @@ describe('Range Request Integration', () => {
               'Content-Range': 'bytes 0-499/1000',
               'Content-Length': '500',
               'Accept-Ranges': 'bytes',
-              'X-Range-Handled-By': options?.handlerTag || 'Stream-Range-Handler'
-            })
+              'X-Range-Handled-By': options?.handlerTag || 'Stream-Range-Handler',
+            }),
           });
         }
         return response;
@@ -78,9 +78,9 @@ describe('Range Request Integration', () => {
     it('should use streamUtils for fallback video range requests', async () => {
       // Create a request with range header
       const request = new Request('https://example.com/videos/test.mp4', {
-        headers: { 'Range': 'bytes=0-499' }
+        headers: { Range: 'bytes=0-499' },
       });
-      
+
       // Mock transformVideo to return a fallback response
       const { transformVideo } = await import('../../src/services/videoTransformationService');
       (transformVideo as any).mockImplementationOnce(async () => {
@@ -90,26 +90,26 @@ describe('Range Request Integration', () => {
             'Content-Type': 'video/mp4',
             'Content-Length': '1000',
             'Accept-Ranges': 'bytes',
-            'X-Fallback-Applied': 'true'
-          })
+            'X-Fallback-Applied': 'true',
+          }),
         });
       });
-      
+
       // Call the handler
       const response = await handleVideoRequest(
-        request, 
+        request,
         { mode: 'development', isProduction: false, pathPatterns: [] },
         {},
         { waitUntil: vi.fn() }
       );
-      
+
       // Verify streamUtils.handleRangeRequest was called
       expect(streamUtils.handleRangeRequest).toHaveBeenCalled();
-      
+
       // Check that we got a proper 206 response
       expect(response.status).toBe(206);
       expect(response.headers.get('X-Range-Handled-By')).toBe('VideoHandler-Direct-Stream');
-      
+
       // Make sure bypassCacheAPI parameter was true when calling handleRangeRequest
       expect(streamUtils.handleRangeRequest).toHaveBeenCalledWith(
         expect.anything(),
@@ -118,90 +118,66 @@ describe('Range Request Integration', () => {
           bypassCacheAPI: true,
           preserveHeaders: true,
           handlerTag: 'VideoHandler-Direct-Stream',
-          fallbackApplied: true
+          fallbackApplied: true,
         })
       );
     });
   });
 
   describe('httpUtils.ts integration', () => {
-    it('should use streamUtils for direct stream range requests', async () => {
-      // Create original response with bypass flag
+    it('should return original response for bypass-flagged range requests', async () => {
+      // handleRangeRequestForInitialAccess now simply returns the original response.
+      // Range handling is deferred to KV retrieval, so no streamUtils or Cache API usage.
       const originalResponse = new Response('original video', {
         status: 200,
         headers: new Headers({
           'Content-Type': 'video/mp4',
           'Content-Length': '1000',
           'Accept-Ranges': 'bytes',
-          'X-Bypass-Cache-API': 'true'
-        })
+          'X-Bypass-Cache-API': 'true',
+        }),
       });
-      
-      // Create a request with range header
+
       const request = new Request('https://example.com/videos/test.mp4', {
-        headers: { 'Range': 'bytes=0-499' }
+        headers: { Range: 'bytes=0-499' },
       });
-      
-      // Call the handler
+
       const response = await handleRangeRequestForInitialAccess(originalResponse, request);
-      
-      // Verify streamUtils.handleRangeRequest was called
-      expect(streamUtils.handleRangeRequest).toHaveBeenCalled();
-      
-      // Verify response is a 206 with proper headers
-      expect(response.status).toBe(206);
-      
-      // Check the general structure of the call but don't be too strict about the exact values
-      const callArgs = (streamUtils.handleRangeRequest as any).mock.calls[0];
-      expect(callArgs[1]).toBe('bytes=0-499');
-      expect(callArgs[2].bypassCacheAPI).toBe(true);
-      expect(callArgs[2].preserveHeaders).toBe(true);
-      expect(response.headers.get('X-Range-Handled-By')).toBeTruthy();
+
+      // handleRangeRequestForInitialAccess returns the original response unchanged
+      expect(response).toBe(originalResponse);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Content-Type')).toBe('video/mp4');
+
+      // streamUtils should NOT be called - range handling happens at KV retrieval layer
+      expect(streamUtils.handleRangeRequest).not.toHaveBeenCalled();
     });
-    
-    it('should use Cache API for regular video range requests', async () => {
-      // Create original response without bypass flag
+
+    it('should return original response for regular video range requests', async () => {
+      // handleRangeRequestForInitialAccess now simply returns the original response.
+      // It no longer uses the Cache API; range handling is deferred to KV retrieval.
       const originalResponse = new Response('original video', {
         status: 200,
         headers: new Headers({
           'Content-Type': 'video/mp4',
           'Content-Length': '1000',
-          'Accept-Ranges': 'bytes'
-        })
+          'Accept-Ranges': 'bytes',
+        }),
       });
-      
-      // Create a request with range header
+
       const request = new Request('https://example.com/videos/test.mp4', {
-        headers: { 'Range': 'bytes=0-499' }
+        headers: { Range: 'bytes=0-499' },
       });
-      
-      // Mock the Cache API to return a proper 206 response
-      const mockCacheMatch = vi.fn().mockResolvedValue(
-        new Response('partial content', {
-          status: 206,
-          headers: new Headers({
-            'Content-Type': 'video/mp4',
-            'Content-Length': '500',
-            'Content-Range': 'bytes 0-499/1000',
-            'Accept-Ranges': 'bytes'
-          })
-        })
-      );
-      
-      mockCacheStorage.open.mockResolvedValue({
-        match: mockCacheMatch,
-        put: vi.fn().mockResolvedValue(undefined)
-      });
-      
-      // Call the handler
+
       const response = await handleRangeRequestForInitialAccess(originalResponse, request);
-      
-      // Verify Cache API was used (streamUtils wasn't called for this case)
-      expect(mockCacheStorage.open).toHaveBeenCalled();
-      expect(mockCacheMatch).toHaveBeenCalled();
-      
-      // Verify response is a 206 with proper headers
-      expect(response.status).toBe(206);
+
+      // handleRangeRequestForInitialAccess returns the original response unchanged
+      expect(response).toBe(originalResponse);
+      expect(response.status).toBe(200);
+
+      // Neither Cache API nor streamUtils should be called
+      expect(mockCacheStorage.open).not.toHaveBeenCalled();
+      expect(streamUtils.handleRangeRequest).not.toHaveBeenCalled();
     });
   });
 });

@@ -3,21 +3,24 @@
  * Focuses on complex patterns, overlapping rules, and unusual URL structures
  */
 import { describe, it, expect, vi } from 'vitest';
-import { 
-  findMatchingPathPattern, 
-  matchPathWithCaptures, 
-  extractVideoId, 
+import {
+  findMatchingPathPattern,
+  matchPathWithCaptures,
+  extractVideoId,
   normalizeVideoPath,
-  PathPattern
+  PathPattern,
 } from '../../src/utils/pathUtils';
 
 // Mock required modules
 vi.mock('../../src/config/VideoConfigurationManager', () => ({
   VideoConfigurationManager: {
     getInstance: vi.fn().mockReturnValue({
-      getCdnCgiConfig: vi.fn().mockReturnValue({ basePath: '/cdn-cgi/media' })
-    })
-  }
+      getCdnCgiConfig: vi.fn().mockReturnValue({ basePath: '/cdn-cgi/media' }),
+      getConfig: vi.fn().mockReturnValue({
+        origins: [],
+      }),
+    }),
+  },
 }));
 
 // Mock console logging
@@ -37,62 +40,62 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['typeWithSlash', 'type', 'videoId']
+        captureGroups: ['typeWithSlash', 'type', 'videoId'],
       };
-      
+
       // Test cases
       const testCases = [
-        { 
-          path: '/videos/abc123', 
-          shouldMatch: true, 
-          expectedCaptures: { 
-            '1': undefined, 
-            '2': undefined, 
+        {
+          path: '/videos/abc123',
+          shouldMatch: true,
+          expectedCaptures: {
+            '1': undefined,
+            '2': undefined,
             '3': 'abc123',
-            'typeWithSlash': undefined,
-            'type': undefined,
-            'videoId': 'abc123'
-          } 
+            typeWithSlash: undefined,
+            type: undefined,
+            videoId: 'abc123',
+          },
         },
-        { 
-          path: '/videos/clip/abc123', 
-          shouldMatch: true, 
-          expectedCaptures: { 
-            '1': 'clip/', 
-            '2': 'clip', 
+        {
+          path: '/videos/clip/abc123',
+          shouldMatch: true,
+          expectedCaptures: {
+            '1': 'clip/',
+            '2': 'clip',
             '3': 'abc123',
-            'typeWithSlash': 'clip/',
-            'type': 'clip',
-            'videoId': 'abc123'
-          } 
+            typeWithSlash: 'clip/',
+            type: 'clip',
+            videoId: 'abc123',
+          },
         },
-        { 
-          path: '/videos/trailer/abc123.mp4', 
-          shouldMatch: true, 
-          expectedCaptures: { 
-            '1': 'trailer/', 
-            '2': 'trailer', 
+        {
+          path: '/videos/trailer/abc123.mp4',
+          shouldMatch: true,
+          expectedCaptures: {
+            '1': 'trailer/',
+            '2': 'trailer',
             '3': 'abc123',
-            'typeWithSlash': 'trailer/',
-            'type': 'trailer',
-            'videoId': 'abc123'
-          } 
+            typeWithSlash: 'trailer/',
+            type: 'trailer',
+            videoId: 'abc123',
+          },
         },
-        { 
-          path: '/videos/other/abc123', 
-          shouldMatch: false, 
-          expectedCaptures: {} 
-        }
+        {
+          path: '/videos/other/abc123',
+          shouldMatch: false,
+          expectedCaptures: {},
+        },
       ];
-      
+
       // Test each case
       for (const { path, shouldMatch, expectedCaptures } of testCases) {
         const result = matchPathWithCaptures(path, [pattern]);
-        
+
         if (shouldMatch) {
           expect(result).not.toBeNull();
           expect(result?.matched).toBe(true);
-          
+
           // Check all captures
           if (result) {
             for (const [key, expectedValue] of Object.entries(expectedCaptures)) {
@@ -113,23 +116,23 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['videoId']
+        captureGroups: ['videoId'],
       };
-      
+
       // Test lookahead pattern
       const path1 = '/videos/abc123.mp4';
       const result1 = matchPathWithCaptures(path1, [patternWithLookahead]);
-      
+
       expect(result1).not.toBeNull();
       expect(result1?.captures['videoId']).toBe('abc123');
-      
+
       // Note: Negative lookaheads are tricky in path matchers and have behavior
       // that may not be intuitive. The test below would fail because
       // the regex still matches part of the path even with the negative lookahead.
       // For example, "^/videos/([a-z0-9-]+)(?!\\.webm)" would still match
       // "/videos/abc123.webm" capturing "abc12" because the lookahead only
       // checks that ".webm" doesn't come after the capture point.
-      
+
       // A better pattern for this purpose would be:
       const betterPattern: PathPattern = {
         name: 'exclude-webm-pattern',
@@ -137,15 +140,15 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['videoId']
+        captureGroups: ['videoId'],
       };
-      
+
       // Test the better pattern with both file types
       const mp4Path = '/videos/abc123.mp4';
       const mp4Result = matchPathWithCaptures(mp4Path, [betterPattern]);
       expect(mp4Result).not.toBeNull();
       expect(mp4Result?.captures['videoId']).toBe('abc123');
-      
+
       const webmPath = '/videos/abc123.webm';
       const webmResult = matchPathWithCaptures(webmPath, [betterPattern]);
       expect(webmResult).toBeNull();
@@ -159,13 +162,13 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['videoId']
+        captureGroups: ['videoId'],
       };
-      
+
       // Test with special characters
       const path = '/videos/sample-video+with.special%20chars';
       const result = matchPathWithCaptures(path, [pattern]);
-      
+
       expect(result).not.toBeNull();
       expect(result?.captures['videoId']).toBe('sample-video+with.special%20chars');
     });
@@ -185,7 +188,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 1 // Lowest priority
+          priority: 1, // Lowest priority
         },
         {
           name: 'videos-pattern',
@@ -193,7 +196,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 10 // Medium priority
+          priority: 10, // Medium priority
         },
         {
           name: 'videos-category-pattern',
@@ -202,7 +205,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           baseUrl: null,
           originUrl: null,
           priority: 20, // High priority
-          captureGroups: ['category']
+          captureGroups: ['category'],
         },
         {
           name: 'videos-category-id-pattern',
@@ -211,18 +214,18 @@ describe('Path Pattern Matching Edge Cases', () => {
           baseUrl: null,
           originUrl: null,
           priority: 30, // Highest priority
-          captureGroups: ['category', 'videoId']
-        }
+          captureGroups: ['category', 'videoId'],
+        },
       ];
-      
+
       // Tests
       const testCases = [
         { path: '/', expectedPattern: 'root-pattern' },
         { path: '/videos/', expectedPattern: 'videos-pattern' },
         { path: '/videos/sports/', expectedPattern: 'videos-category-pattern' },
-        { path: '/videos/sports/abc123', expectedPattern: 'videos-category-id-pattern' }
+        { path: '/videos/sports/abc123', expectedPattern: 'videos-category-id-pattern' },
       ];
-      
+
       // Run tests
       for (const { path, expectedPattern } of testCases) {
         const result = findMatchingPathPattern(path, patterns);
@@ -240,7 +243,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 10
+          priority: 10,
         },
         {
           name: 'second-pattern',
@@ -248,15 +251,15 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 10
-        }
+          priority: 10,
+        },
       ];
-      
+
       // The first pattern in the array should match
       const result = findMatchingPathPattern('/videos/test.mp4', patterns);
       expect(result).not.toBeNull();
       expect(result?.name).toBe('first-pattern');
-      
+
       // Reverse the array and test again
       const reversedPatterns = [...patterns].reverse();
       const resultReversed = findMatchingPathPattern('/videos/test.mp4', reversedPatterns);
@@ -273,7 +276,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: -10 // Negative priority
+          priority: -10, // Negative priority
         },
         {
           name: 'zero-priority',
@@ -281,7 +284,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 0 // Zero priority
+          priority: 0, // Zero priority
         },
         {
           name: 'positive-priority',
@@ -289,23 +292,23 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 10 // Positive priority
-        }
+          priority: 10, // Positive priority
+        },
       ];
-      
+
       // The positive priority pattern should match first
       const result = findMatchingPathPattern('/videos/test.mp4', patterns);
       expect(result).not.toBeNull();
       expect(result?.name).toBe('positive-priority');
-      
+
       // Test without the positive priority pattern
-      const filteredPatterns = patterns.filter(p => p.name !== 'positive-priority');
+      const filteredPatterns = patterns.filter((p) => p.name !== 'positive-priority');
       const resultFiltered = findMatchingPathPattern('/videos/test.mp4', filteredPatterns);
       expect(resultFiltered).not.toBeNull();
       expect(resultFiltered?.name).toBe('zero-priority');
-      
+
       // Test with only negative priority
-      const negativePatterns = patterns.filter(p => p.name === 'negative-priority');
+      const negativePatterns = patterns.filter((p) => p.name === 'negative-priority');
       const resultNegative = findMatchingPathPattern('/videos/test.mp4', negativePatterns);
       expect(resultNegative).not.toBeNull();
       expect(resultNegative?.name).toBe('negative-priority');
@@ -320,7 +323,7 @@ describe('Path Pattern Matching Edge Cases', () => {
     it('should handle extremely long paths', () => {
       // Create an extremely long path
       const longPath = '/videos/' + 'a'.repeat(500) + '/test.mp4';
-      
+
       // Create a pattern that would match it
       const pattern: PathPattern = {
         name: 'long-path',
@@ -328,9 +331,9 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['longPartial', 'filename']
+        captureGroups: ['longPartial', 'filename'],
       };
-      
+
       // Check if it matches
       const result = matchPathWithCaptures(longPath, [pattern]);
       expect(result).not.toBeNull();
@@ -341,11 +344,11 @@ describe('Path Pattern Matching Edge Cases', () => {
     it('should handle paths with double slashes correctly', () => {
       // Path with double slashes
       const path = '/videos//test//sample.mp4';
-      
+
       // Normalize first
       const normalizedPath = normalizeVideoPath(path);
       expect(normalizedPath).toBe('/videos/test/sample.mp4');
-      
+
       // Create a pattern that matches the normalized path
       const pattern: PathPattern = {
         name: 'normalized-path',
@@ -353,9 +356,9 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['folder', 'filename']
+        captureGroups: ['folder', 'filename'],
       };
-      
+
       // Check if it matches
       const result = matchPathWithCaptures(normalizedPath, [pattern]);
       expect(result).not.toBeNull();
@@ -366,7 +369,7 @@ describe('Path Pattern Matching Edge Cases', () => {
     it('should handle paths with URL-encoded characters', () => {
       // Path with URL-encoded spaces and special characters
       const path = '/videos/sample%20video%20with%20spaces';
-      
+
       // Define a pattern to match it
       const pattern: PathPattern = {
         name: 'encoded-chars',
@@ -374,9 +377,9 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['videoId']
+        captureGroups: ['videoId'],
       };
-      
+
       // Check if it matches
       const result = matchPathWithCaptures(path, [pattern]);
       expect(result).not.toBeNull();
@@ -386,12 +389,12 @@ describe('Path Pattern Matching Edge Cases', () => {
     it('should handle paths with empty segments properly', () => {
       // Path with empty segments
       const path = '/videos///sample.mp4';
-      
+
       // Normalize first - based on the implementation details of normalizeVideoPath
       // the function doesn't eliminate all multiple slashes, just some specific cases
       const normalizedPath = normalizeVideoPath(path);
       expect(normalizedPath).toBe('/videos//sample.mp4');
-      
+
       // Define a pattern that handles the actual normalized path
       const pattern: PathPattern = {
         name: 'empty-segments',
@@ -399,9 +402,9 @@ describe('Path Pattern Matching Edge Cases', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['filename']
+        captureGroups: ['filename'],
       };
-      
+
       // Check if it matches
       const result = matchPathWithCaptures(normalizedPath, [pattern]);
       expect(result).not.toBeNull();
@@ -417,7 +420,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          captureGroups: ['videoId']
+          captureGroups: ['videoId'],
         },
         {
           name: 'nested-id',
@@ -425,7 +428,7 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          captureGroups: ['category', 'videoId']
+          captureGroups: ['category', 'videoId'],
         },
         {
           name: 'parameterized-id',
@@ -433,18 +436,18 @@ describe('Path Pattern Matching Edge Cases', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          captureGroups: ['videoId']
-        }
+          captureGroups: ['videoId'],
+        },
       ];
-      
+
       // Test extracting from standard pattern
       const videoId1 = extractVideoId('/videos/abc123', patterns[0]);
       expect(videoId1).toBe('abc123');
-      
+
       // Test extracting from nested pattern
       const videoId2 = extractVideoId('/videos/sports/abc123', patterns[1]);
       expect(videoId2).toBe('abc123');
-      
+
       // Test extracting from parameterized pattern
       const videoId3 = extractVideoId('/v/?id=abc123', patterns[2]);
       expect(videoId3).toBe('abc123');
@@ -463,9 +466,9 @@ describe('Path Pattern Matching Edge Cases', () => {
         matcher: '^/videos/([a-z0-9-+', // Invalid regex
         processPath: true,
         baseUrl: null,
-        originUrl: null
+        originUrl: null,
       };
-      
+
       // Finding should not throw but return null
       expect(() => {
         const result = findMatchingPathPattern('/videos/test.mp4', [invalidPattern]);
@@ -488,7 +491,7 @@ describe('Path Pattern Matching Edge Cases', () => {
         baseUrl: null, // Explicitly null
         originUrl: null, // Explicitly null
       };
-      
+
       // Should match despite null properties
       const result = findMatchingPathPattern('/videos/test.mp4', [patternWithNulls]);
       expect(result).not.toBeNull();
@@ -502,15 +505,15 @@ describe('Path Pattern Matching Edge Cases', () => {
         matcher: '', // Empty matcher may match differently than expected
         processPath: true,
         baseUrl: null,
-        originUrl: null
+        originUrl: null,
       };
-      
+
       // The expected behavior is that the pathUtils implementation handles this case
       // without throwing an exception, regardless of whether it matches or not.
-      // It appears the current implementation allows empty matchers to match, which is 
+      // It appears the current implementation allows empty matchers to match, which is
       // an implementation detail we should accommodate in our test.
       const result = findMatchingPathPattern('/videos/test.mp4', [emptyMatcherPattern]);
-      
+
       // Simply verify the function runs without errors - the match behavior is implementation-specific
       expect(result).toBeDefined();
       if (result !== null) {

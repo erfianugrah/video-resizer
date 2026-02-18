@@ -7,30 +7,35 @@ import { handleConfigUpload, handleConfigGet } from '../../src/handlers/configHa
 
 // Mock configuration service
 const mockConfigService = {
+  initialize: vi.fn(),
   loadConfiguration: vi.fn(),
-  storeConfiguration: vi.fn()
+  storeConfiguration: vi.fn(),
 };
 
 // Mock the getInstance method
 vi.mock('../../src/services/configurationService', () => {
   return {
     ConfigurationService: {
-      getInstance: () => mockConfigService
-    }
+      getInstance: () => mockConfigService,
+    },
   };
 });
 
 describe('Configuration Handler', () => {
-  // Mock KV namespace
+  // Mock KV namespace (must have get/put/delete to pass isKVNamespace check)
   const mockKV = {
     get: vi.fn(),
-    put: vi.fn()
-  };
+    put: vi.fn(),
+    delete: vi.fn(),
+    list: vi.fn(),
+    getWithMetadata: vi.fn(),
+    deleteBulk: vi.fn(),
+  } as unknown as KVNamespace;
 
   // Mock environment with KV namespace and API token
   const mockEnv = {
     VIDEO_CONFIGURATION_STORE: mockKV,
-    CONFIG_API_TOKEN: 'test-token'
+    CONFIG_API_TOKEN: 'test-token',
   };
 
   // Sample valid config
@@ -38,11 +43,11 @@ describe('Configuration Handler', () => {
     version: '1.0.0',
     lastUpdated: new Date().toISOString(),
     video: {
-      derivatives: {}
+      derivatives: {},
     },
     cache: {},
     debug: {},
-    logging: {}
+    logging: {},
   };
 
   // Valid auth token
@@ -58,7 +63,7 @@ describe('Configuration Handler', () => {
     it('should return 401 when missing authorization header', async () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       const response = await handleConfigUpload(req, mockEnv);
@@ -71,10 +76,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
         headers: {
-          'Authorization': 'Invalid',
-          'Content-Type': 'application/json'
+          Authorization: 'Invalid',
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       const response = await handleConfigUpload(req, mockEnv);
@@ -87,10 +92,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'PUT',
         headers: {
-          'Authorization': validAuthHeader,
-          'Content-Type': 'application/json'
+          Authorization: validAuthHeader,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       const response = await handleConfigUpload(req, mockEnv);
@@ -103,10 +108,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
         headers: {
-          'Authorization': validAuthHeader,
-          'Content-Type': 'application/json'
+          Authorization: validAuthHeader,
+          'Content-Type': 'application/json',
         },
-        body: 'invalid json'
+        body: 'invalid json',
       });
 
       const response = await handleConfigUpload(req, mockEnv);
@@ -119,10 +124,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
         headers: {
-          'Authorization': validAuthHeader,
-          'Content-Type': 'application/json'
+          Authorization: validAuthHeader,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       mockConfigService.storeConfiguration.mockResolvedValue(true);
@@ -138,10 +143,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
         headers: {
-          'Authorization': validAuthHeader,
-          'Content-Type': 'application/json'
+          Authorization: validAuthHeader,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       mockConfigService.storeConfiguration.mockResolvedValue(false);
@@ -156,10 +161,10 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'POST',
         headers: {
-          'Authorization': validAuthHeader,
-          'Content-Type': 'application/json'
+          Authorization: validAuthHeader,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sampleConfig)
+        body: JSON.stringify(sampleConfig),
       });
 
       const response = await handleConfigUpload(req, {});
@@ -172,7 +177,7 @@ describe('Configuration Handler', () => {
   describe('handleConfigGet', () => {
     it('should return 401 when missing authorization header', async () => {
       const req = new Request('https://example.com/admin/config', {
-        method: 'GET'
+        method: 'GET',
       });
 
       const response = await handleConfigGet(req, mockEnv);
@@ -185,8 +190,8 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'GET',
         headers: {
-          'Authorization': 'Invalid'
-        }
+          Authorization: 'Invalid',
+        },
       });
 
       const response = await handleConfigGet(req, mockEnv);
@@ -199,8 +204,8 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'DELETE',
         headers: {
-          'Authorization': validAuthHeader
-        }
+          Authorization: validAuthHeader,
+        },
       });
 
       const response = await handleConfigGet(req, mockEnv);
@@ -213,8 +218,8 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'GET',
         headers: {
-          'Authorization': validAuthHeader
-        }
+          Authorization: validAuthHeader,
+        },
       });
 
       mockConfigService.loadConfiguration.mockResolvedValue(sampleConfig);
@@ -222,19 +227,19 @@ describe('Configuration Handler', () => {
       const response = await handleConfigGet(req, mockEnv);
       expect(response.status).toBe(200);
       const responseBody = await response.json();
-      
+
       // Verify that the response contains the sample config data
       expect(responseBody.version).toEqual(sampleConfig.version);
       expect(responseBody.video).toEqual(sampleConfig.video);
       expect(responseBody.cache).toEqual(sampleConfig.cache);
       expect(responseBody.debug).toEqual(sampleConfig.debug);
       expect(responseBody.logging).toEqual(sampleConfig.logging);
-      
+
       // Verify that the metadata is included
       expect(responseBody._meta).toBeDefined();
       expect(responseBody._meta.environment).toBeDefined();
       expect(responseBody._meta.retrievedAt).toBeDefined();
-      
+
       expect(mockConfigService.loadConfiguration).toHaveBeenCalledWith(mockEnv);
     });
 
@@ -242,8 +247,8 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'GET',
         headers: {
-          'Authorization': validAuthHeader
-        }
+          Authorization: validAuthHeader,
+        },
       });
 
       mockConfigService.loadConfiguration.mockResolvedValue(null);
@@ -258,8 +263,8 @@ describe('Configuration Handler', () => {
       const req = new Request('https://example.com/admin/config', {
         method: 'GET',
         headers: {
-          'Authorization': validAuthHeader
-        }
+          Authorization: validAuthHeader,
+        },
       });
 
       const response = await handleConfigGet(req, {});

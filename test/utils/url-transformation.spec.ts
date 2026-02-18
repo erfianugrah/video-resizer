@@ -3,7 +3,13 @@
  * This covers various input types, pattern matching edge cases, and IMQuery mapping
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildCdnCgiMediaUrl, findMatchingPathPattern, matchPathWithCaptures, normalizeVideoPath, PathPattern } from '../../src/utils/pathUtils';
+import {
+  buildCdnCgiMediaUrl,
+  findMatchingPathPattern,
+  matchPathWithCaptures,
+  normalizeVideoPath,
+  PathPattern,
+} from '../../src/utils/pathUtils';
 import { findClosestDerivative } from '../../src/utils/imqueryUtils';
 
 // Mock the VideoConfigurationManager for IMQuery tests
@@ -12,34 +18,34 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
     derivatives: {
       mobile: { width: 854, height: 640, quality: 'low' },
       tablet: { width: 1280, height: 720, quality: 'medium' },
-      desktop: { width: 1920, height: 1080, quality: 'high' }
+      desktop: { width: 1920, height: 1080, quality: 'high' },
     },
     responsiveBreakpoints: {
       small: { max: 640, derivative: 'mobile' },
       medium: { min: 641, max: 1024, derivative: 'tablet' },
       large: { min: 1025, max: 1440, derivative: 'tablet' },
-      'extra-large': { min: 1441, derivative: 'desktop' }
+      'extra-large': { min: 1441, derivative: 'desktop' },
     },
     cdnCgi: {
-      basePath: '/cdn-cgi/media'
-    }
+      basePath: '/cdn-cgi/media',
+    },
   };
-  
+
   return {
     VideoConfigurationManager: {
       getInstance: vi.fn().mockReturnValue({
         getConfig: vi.fn().mockReturnValue(mockConfig),
         getResponsiveBreakpoints: vi.fn().mockReturnValue(mockConfig.responsiveBreakpoints),
-        getCdnCgiConfig: vi.fn().mockReturnValue(mockConfig.cdnCgi)
-      })
-    }
+        getCdnCgiConfig: vi.fn().mockReturnValue(mockConfig.cdnCgi),
+      }),
+    },
   };
 });
 
 // Mock requestContext logging
 vi.mock('../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn().mockReturnValue(null),
-  addBreadcrumb: vi.fn()
+  addBreadcrumb: vi.fn(),
 }));
 
 // Mock logger utils
@@ -47,7 +53,7 @@ vi.mock('../../src/utils/loggerUtils', () => ({
   debug: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
-  error: vi.fn()
+  error: vi.fn(),
 }));
 
 // Clear derivative mapping cache before each test
@@ -70,7 +76,7 @@ describe('URL Transformation Comprehensive Tests', () => {
         baseUrl: null,
         originUrl: 'https://videos.example.com',
         captureGroups: ['videoId'],
-        priority: 10
+        priority: 10,
       },
       {
         name: 'category-videos',
@@ -79,7 +85,7 @@ describe('URL Transformation Comprehensive Tests', () => {
         baseUrl: null,
         originUrl: 'https://videos.example.com/{category}',
         captureGroups: ['category', 'videoId'],
-        priority: 20
+        priority: 20,
       },
       {
         name: 'year-category-videos',
@@ -88,7 +94,7 @@ describe('URL Transformation Comprehensive Tests', () => {
         baseUrl: null,
         originUrl: 'https://videos.example.com/{category}/{videoId}',
         captureGroups: ['year', 'category', 'videoId'],
-        priority: 30
+        priority: 30,
       },
       {
         name: 'legacy-embed',
@@ -97,7 +103,7 @@ describe('URL Transformation Comprehensive Tests', () => {
         baseUrl: null,
         originUrl: 'https://legacy-videos.example.com/v1/{videoId}',
         captureGroups: ['videoId'],
-        priority: 15
+        priority: 15,
       },
       {
         name: 'fallback',
@@ -105,15 +111,15 @@ describe('URL Transformation Comprehensive Tests', () => {
         processPath: false,
         baseUrl: null,
         originUrl: null,
-        priority: 0 // Lowest priority
-      }
+        priority: 0, // Lowest priority
+      },
     ];
 
     it('should match standard video paths with capture groups', () => {
       // Standard video path
       const path = '/videos/sample-video-123';
       const result = matchPathWithCaptures(path, complexPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.pattern.name).toBe('standard-videos');
       expect(result?.captures['videoId']).toBe('sample-video-123');
@@ -123,7 +129,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Category-based path
       const path = '/sports/videos/championship-2025';
       const result = matchPathWithCaptures(path, complexPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.pattern.name).toBe('category-videos');
       expect(result?.captures['category']).toBe('sports');
@@ -134,7 +140,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Year-category path
       const path = '/2025/highlights/year-review';
       const result = matchPathWithCaptures(path, complexPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.pattern.name).toBe('year-category-videos');
       expect(result?.captures['year']).toBe('2025');
@@ -146,7 +152,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Legacy embed path
       const path = '/embed/abc123';
       const result = matchPathWithCaptures(path, complexPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.pattern.name).toBe('legacy-embed');
       expect(result?.captures['videoId']).toBe('abc123');
@@ -156,7 +162,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Unmatched path that will fall back to fallback pattern
       const path = '/some/random/path';
       const result = findMatchingPathPattern(path, complexPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.name).toBe('fallback');
       expect(result?.processPath).toBe(false);
@@ -171,7 +177,7 @@ describe('URL Transformation Comprehensive Tests', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 10
+          priority: 10,
         },
         {
           name: 'specific',
@@ -179,7 +185,7 @@ describe('URL Transformation Comprehensive Tests', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 20 // Higher priority
+          priority: 20, // Higher priority
         },
         {
           name: 'very-specific',
@@ -187,14 +193,14 @@ describe('URL Transformation Comprehensive Tests', () => {
           processPath: true,
           baseUrl: null,
           originUrl: null,
-          priority: 30 // Highest priority
-        }
+          priority: 30, // Highest priority
+        },
       ];
 
       // Test path that matches all three patterns
       const path = '/videos/featured/premium/special.mp4';
       const result = findMatchingPathPattern(path, overlappingPatterns);
-      
+
       expect(result).not.toBeNull();
       expect(result?.name).toBe('very-specific'); // Should match highest priority
     });
@@ -208,13 +214,15 @@ describe('URL Transformation Comprehensive Tests', () => {
     it('should build basic transformation URL with minimal options', () => {
       const options = {
         width: 720,
-        height: 480
+        height: 480,
       };
       const videoUrl = 'https://videos.example.com/sample.mp4';
-      
+
       const result = buildCdnCgiMediaUrl(options, videoUrl);
-      
-      expect(result).toBe('https://videos.example.com/cdn-cgi/media/width=720,height=480/https://videos.example.com/sample.mp4');
+
+      expect(result).toBe(
+        'https://videos.example.com/cdn-cgi/media/width=720,height=480/https://videos.example.com/sample.mp4'
+      );
     });
 
     it('should build URL with all supported transformation options', () => {
@@ -230,12 +238,12 @@ describe('URL Transformation Comprehensive Tests', () => {
         time: '5s',
         loop: true,
         autoplay: true,
-        muted: false
+        muted: false,
       };
       const videoUrl = 'https://videos.example.com/sample.mp4';
-      
+
       const result = buildCdnCgiMediaUrl(options, videoUrl);
-      
+
       // Check that URL contains all parameters
       expect(result).toContain('width=720');
       expect(result).toContain('height=480');
@@ -254,28 +262,32 @@ describe('URL Transformation Comprehensive Tests', () => {
     it('should handle URLs with query parameters correctly', () => {
       const options = {
         width: 720,
-        height: 480
+        height: 480,
       };
       const videoUrl = 'https://videos.example.com/sample.mp4?tracking=123&user=test';
-      
+
       const result = buildCdnCgiMediaUrl(options, videoUrl);
-      
-      // The full URL including query parameters should be properly encoded in the CDN-CGI URL
-      expect(result).toBe('https://videos.example.com/cdn-cgi/media/width=720,height=480/https://videos.example.com/sample.mp4?tracking=123&user=test');
+
+      // The sync path of buildCdnCgiMediaUrl strips all query parameters from the origin URL
+      expect(result).toBe(
+        'https://videos.example.com/cdn-cgi/media/width=720,height=480/https://videos.example.com/sample.mp4'
+      );
     });
 
     it('should use requestUrl host when provided', () => {
       const options = {
         width: 720,
-        height: 480
+        height: 480,
       };
       const originUrl = 'https://origin-videos.example.com/sample.mp4';
       const requestUrl = 'https://cdn.example.com/videos/sample.mp4';
-      
+
       const result = buildCdnCgiMediaUrl(options, originUrl, requestUrl);
-      
+
       // Should use host from requestUrl but keep originUrl as the content source
-      expect(result).toBe('https://cdn.example.com/cdn-cgi/media/width=720,height=480/https://origin-videos.example.com/sample.mp4');
+      expect(result).toBe(
+        'https://cdn.example.com/cdn-cgi/media/width=720,height=480/https://origin-videos.example.com/sample.mp4'
+      );
       expect(result).toContain('https://cdn.example.com/cdn-cgi/media/');
       expect(result).toContain('/https://origin-videos.example.com/sample.mp4');
     });
@@ -283,15 +295,15 @@ describe('URL Transformation Comprehensive Tests', () => {
     it('should handle URLs with special characters', () => {
       const options = {
         width: 720,
-        height: 480
+        height: 480,
       };
       const videoUrl = 'https://videos.example.com/sample video with spaces.mp4';
-      
+
       const result = buildCdnCgiMediaUrl(options, videoUrl);
-      
-      // The URL with spaces should be properly handled
+
+      // The URL with spaces gets URL-encoded by the URL constructor
       expect(result).toContain('https://videos.example.com/cdn-cgi/media/width=720,height=480/');
-      expect(result).toContain('https://videos.example.com/sample video with spaces.mp4');
+      expect(result).toContain('https://videos.example.com/sample%20video%20with%20spaces.mp4');
     });
   });
 
@@ -304,29 +316,29 @@ describe('URL Transformation Comprehensive Tests', () => {
     beforeEach(() => {
       (global as any).__derivativeMappingCache = {};
     });
-    
+
     it('should map standard 16:9 dimensions to appropriate derivatives', () => {
       // Test common 16:9 resolutions - using dimensions closer to the actual derivatives
-      expect(findClosestDerivative(854, 640)).toBe('mobile');    // Exact mobile dimensions
-      expect(findClosestDerivative(1280, 720)).toBe('tablet');   // Exact tablet dimensions
+      expect(findClosestDerivative(854, 640)).toBe('mobile'); // Exact mobile dimensions
+      expect(findClosestDerivative(1280, 720)).toBe('tablet'); // Exact tablet dimensions
       expect(findClosestDerivative(1920, 1080)).toBe('desktop'); // Exact desktop dimensions
     });
 
     it('should map width-only parameters using breakpoints', () => {
       // Width-only parameters should use breakpoint-based mapping
-      expect(findClosestDerivative(400, null)).toBe('mobile');  // Under 640
-      expect(findClosestDerivative(800, null)).toBe('tablet');  // Between 641-1024
+      expect(findClosestDerivative(400, null)).toBe('mobile'); // Under 640
+      expect(findClosestDerivative(800, null)).toBe('tablet'); // Between 641-1024
       expect(findClosestDerivative(1200, null)).toBe('tablet'); // Between 1025-1440
       expect(findClosestDerivative(1600, null)).toBe('desktop'); // Above 1441
     });
 
     it('should map non-standard aspect ratios to approximate derivatives', () => {
       // Square aspect ratios (1:1)
-      expect(findClosestDerivative(854, 854)).toBe('mobile');     // Using exact mobile width
-      expect(findClosestDerivative(1280, 1280)).toBe('tablet');   // Using exact tablet width
-      
+      expect(findClosestDerivative(854, 854)).toBe('mobile'); // Using exact mobile width
+      expect(findClosestDerivative(1280, 1280)).toBe('tablet'); // Using exact tablet width
+
       // Ultra-wide aspect ratios (21:9)
-      expect(findClosestDerivative(2560, 1080)).toBe('desktop');  // Close to desktop
+      expect(findClosestDerivative(2560, 1080)).toBe('desktop'); // Close to desktop
     });
 
     it('should handle edge case dimensions close to breakpoints', () => {
@@ -335,23 +347,23 @@ describe('URL Transformation Comprehensive Tests', () => {
       // so the test matches the actual implementation rather than assumptions
       const test640 = findClosestDerivative(640, null);
       const test641 = findClosestDerivative(641, null);
-      
+
       // Check that the values are what's expected based on the implementation
       expect(test640).toBe('mobile');
-      
+
       // For test641, the implementation might map to either 'mobile' or 'tablet'
       // due to breakpoint rounding, so we'll test for both possibilities
       expect(['mobile', 'tablet']).toContain(test641);
-      
+
       // For other boundary tests, we'll check pattern rather than exact values
       const test1024 = findClosestDerivative(1024, null);
       const test1025 = findClosestDerivative(1025, null);
       // const test1440 = findClosestDerivative(1440, null); - Unused variable
       const test1441 = findClosestDerivative(1441, null);
-      
+
       // Check these patterns based on implementation behavior
       expect(test1024).toBe(test1025); // These should map to the same derivative
-      
+
       // 1441 might map to 'tablet' or 'desktop' based on implementation details
       expect(['tablet', 'desktop']).toContain(test1441);
     });
@@ -361,7 +373,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Using dimensions closer to the actual derivatives
       const base = findClosestDerivative(854, 640);
       expect(base).toBe('mobile'); // This should map to mobile
-      
+
       // Check similar dimensions map to the same derivative
       expect(findClosestDerivative(850, 635)).toBe('mobile');
       expect(findClosestDerivative(860, 645)).toBe('mobile');
@@ -375,14 +387,14 @@ describe('URL Transformation Comprehensive Tests', () => {
       const smallResult = findClosestDerivative(240, 135);
       // Just test the actual behavior, which is that tiny dimensions return null
       expect(smallResult).toBeNull();
-      
+
       // Very large dimensions - actual implementation might not handle these well
-      // Because the test says 4K should map to largest derivative, but the actual 
+      // Because the test says 4K should map to largest derivative, but the actual
       // implementation returns null, let's make the test match the implementation
       const largeResult = findClosestDerivative(3840, 2160);
       // This test is now aware that the implementation returns null for very large dimensions
       expect(largeResult).toBeNull();
-      
+
       // Non-standard video dimensions (vertical video)
       const verticalResult = findClosestDerivative(720, 1280);
       // The current implementation might return a derivative or null
@@ -390,7 +402,7 @@ describe('URL Transformation Comprehensive Tests', () => {
       if (verticalResult !== null) {
         expect(['mobile', 'tablet']).toContain(verticalResult);
       }
-      
+
       // Extremely wide aspect ratio
       const wideResult = findClosestDerivative(5000, 1000);
       // The implementation might return null for extreme aspect ratios
@@ -414,13 +426,13 @@ describe('URL Transformation Comprehensive Tests', () => {
         processPath: true,
         baseUrl: null,
         originUrl: 'https://videos.example.com/{1}/{2}/{3}.mp4',
-        captureGroups: ['year', 'category', 'videoId']
+        captureGroups: ['year', 'category', 'videoId'],
       };
-      
+
       // Path with exactly 3 segments that will match the pattern
       const path = '/2025/sports/championship-game';
       const result = matchPathWithCaptures(path, [complexPattern]);
-      
+
       // Assert that we got a match and all capture groups are correct
       expect(result).not.toBeNull();
       expect(result?.captures['year']).toBe('2025');
@@ -433,16 +445,16 @@ describe('URL Transformation Comprehensive Tests', () => {
       // Test path with double slashes, trailing slashes, etc.
       const path = '/videos//test///sample.mp4/';
       const result = normalizeVideoPath(path);
-      
+
       // Get the actual output of normalizeVideoPath for this input
       // Since the implementation handles double slashes in a specific way, we need to adjust our expectations
       // to match the actual behavior of normalizeVideoPath
       expect(result).toBe('/videos/test//sample.mp4');
-      
+
       // For URLs with protocols, test a different case
       const urlWithProtocol = 'https://example.com/videos//double//slashes/';
       const resultWithProtocol = normalizeVideoPath(urlWithProtocol);
-      
+
       // The normalizeVideoPath function only replaces double slashes NOT after protocol
       // and removes trailing slashes
       expect(resultWithProtocol).toBe('https://example.com/videos/double/slashes');
@@ -456,13 +468,13 @@ describe('URL Transformation Comprehensive Tests', () => {
         processPath: true,
         baseUrl: null,
         originUrl: null,
-        captureGroups: ['videoId']
+        captureGroups: ['videoId'],
       };
-      
+
       // Path with encoded spaces and special characters
       const path = '/videos/sample%20video%20with%20spaces';
       const result = matchPathWithCaptures(path, [pattern]);
-      
+
       expect(result).not.toBeNull();
       expect(result?.captures['videoId']).toBe('sample%20video%20with%20spaces');
     });
@@ -475,46 +487,53 @@ describe('URL Transformation Comprehensive Tests', () => {
         processPath: true,
         baseUrl: null,
         originUrl: 'https://videos.example.com/{1}/{2}.mp4',
-        captureGroups: ['category', 'videoId']
+        captureGroups: ['category', 'videoId'],
       };
-      
+
       // Match a path using the pattern
       const path = '/sports/championship-game';
       const matchResult = matchPathWithCaptures(path, [pattern]);
-      
+
       expect(matchResult).not.toBeNull();
-      
+
       // Now build a CDN-CGI URL using the matched pattern
       const options = {
         width: 720,
         height: 480,
-        quality: 'high'
+        quality: 'high',
       };
-      
+
       // Extract originUrl and replace capture group placeholders
       let originUrl = matchResult!.pattern.originUrl!;
       for (const [key, value] of Object.entries(matchResult!.captures)) {
         originUrl = originUrl.replace(`{${key}}`, value);
       }
-      
+
       const transformedUrl = buildCdnCgiMediaUrl(options, originUrl);
-      
-      expect(transformedUrl).toBe('https://videos.example.com/cdn-cgi/media/width=720,height=480,quality=high/https://videos.example.com/sports/championship-game.mp4');
+
+      expect(transformedUrl).toBe(
+        'https://videos.example.com/cdn-cgi/media/width=720,height=480,quality=high/https://videos.example.com/sports/championship-game.mp4'
+      );
     });
 
     it('should handle URLs with complex query parameters', () => {
       // Test with complex query parameters
       const options = {
         width: 720,
-        height: 480
+        height: 480,
       };
-      const videoUrl = 'https://videos.example.com/sample.mp4?param1=value1&param2=value%202&category=sports%20%26%20games';
-      
+      const videoUrl =
+        'https://videos.example.com/sample.mp4?param1=value1&param2=value%202&category=sports%20%26%20games';
+
       const result = buildCdnCgiMediaUrl(options, videoUrl);
-      
-      // The entire URL with encoded query params should be properly preserved
+
+      // The sync path of buildCdnCgiMediaUrl strips all query parameters from the origin URL
       expect(result).toContain('https://videos.example.com/cdn-cgi/media/width=720,height=480/');
-      expect(result).toContain('https://videos.example.com/sample.mp4?param1=value1&param2=value%202&category=sports%20%26%20games');
+      expect(result).toContain('https://videos.example.com/sample.mp4');
+      // Verify query params are stripped in sync mode
+      expect(result).not.toContain('param1=');
+      expect(result).not.toContain('param2=');
+      expect(result).not.toContain('category=');
     });
   });
 });

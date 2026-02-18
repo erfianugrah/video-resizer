@@ -3,19 +3,24 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ConfigurationService, WorkerConfiguration, WorkerConfigurationSchema } from '../../src/services/configurationService';
+import {
+  ConfigurationService,
+  WorkerConfiguration,
+  WorkerConfigurationSchema,
+} from '../../src/services/configurationService';
+import { ConfigurationError } from '../../src/errors';
 
 describe('ConfigurationService', () => {
   // Mock KV namespace
   const mockKV = {
     get: vi.fn(),
     put: vi.fn().mockResolvedValue(undefined),
-    list: vi.fn()
+    list: vi.fn(),
   };
 
   // Mock environment with KV namespace
   const mockEnv = {
-    VIDEO_CONFIGURATION_STORE: mockKV
+    VIDEO_CONFIGURATION_STORE: mockKV,
   };
 
   // Sample configuration
@@ -28,8 +33,8 @@ describe('ConfigurationService', () => {
           width: 1920,
           height: 1080,
           mode: 'video',
-          quality: 'high'
-        }
+          quality: 'high',
+        },
       },
       defaults: {
         width: null,
@@ -45,7 +50,7 @@ describe('ConfigurationService', () => {
         loop: null,
         preload: 'auto',
         autoplay: null,
-        muted: null
+        muted: null,
       },
       validOptions: {
         mode: ['video', 'frame', 'spritesheet'],
@@ -57,7 +62,7 @@ describe('ConfigurationService', () => {
         preload: ['none', 'metadata', 'auto'],
         loop: [true, false],
         autoplay: [true, false],
-        muted: [true, false]
+        muted: [true, false],
       },
       responsive: {
         breakpoints: {
@@ -66,31 +71,31 @@ describe('ConfigurationService', () => {
           md: 768,
           lg: 1024,
           xl: 1280,
-          '2xl': 1536
+          '2xl': 1536,
         },
         availableQualities: [360, 480, 720, 1080, 1440, 2160],
         deviceWidths: {
           mobile: 640,
           tablet: 1024,
-          desktop: 1920
+          desktop: 1920,
         },
         networkQuality: {
           slow: {
             maxWidth: 640,
             maxHeight: 360,
-            maxBitrate: 1000000
+            maxBitrate: 1000000,
           },
           medium: {
             maxWidth: 1280,
             maxHeight: 720,
-            maxBitrate: 2500000
+            maxBitrate: 2500000,
           },
           fast: {
             maxWidth: 1920,
             maxHeight: 1080,
-            maxBitrate: 5000000
-          }
-        }
+            maxBitrate: 5000000,
+          },
+        },
       },
       paramMapping: {
         width: 'width',
@@ -105,10 +110,10 @@ describe('ConfigurationService', () => {
         loop: 'loop',
         preload: 'preload',
         autoplay: 'autoplay',
-        muted: 'muted'
+        muted: 'muted',
       },
       cdnCgi: {
-        basePath: '/cdn-cgi/media'
+        basePath: '/cdn-cgi/media',
       },
       pathPatterns: [],
       caching: {
@@ -117,10 +122,10 @@ describe('ConfigurationService', () => {
         fallback: {
           enabled: true,
           badRequestOnly: true,
-          preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag']
-        }
+          preserveHeaders: ['Content-Type', 'Cache-Control', 'Etag'],
+        },
       },
-      cache: {}
+      cache: {},
     },
     cache: {
       method: 'kv',
@@ -136,8 +141,8 @@ describe('ConfigurationService', () => {
         ok: 86400,
         redirects: 3600,
         clientError: 60,
-        serverError: 10
-      }
+        serverError: 10,
+      },
     },
     debug: {
       enabled: false,
@@ -145,7 +150,7 @@ describe('ConfigurationService', () => {
       includeHeaders: false,
       includePerformance: true,
       allowedIps: [],
-      excludedPaths: ['/favicon.ico', '/robots.txt']
+      excludedPaths: ['/favicon.ico', '/robots.txt'],
     },
     logging: {
       level: 'info',
@@ -160,9 +165,9 @@ describe('ConfigurationService', () => {
       performanceThresholdMs: 1000,
       breadcrumbs: {
         enabled: true,
-        maxItems: 20
-      }
-    }
+        maxItems: 20,
+      },
+    },
   };
 
   beforeEach(() => {
@@ -172,10 +177,13 @@ describe('ConfigurationService', () => {
     // Reset singleton
     ConfigurationService.resetInstance();
 
-    // Mock KV values
-    mockKV.get.mockImplementation(async (key) => {
+    // Mock KV values - return parsed object for 'json' format (matches real KV API)
+    mockKV.get.mockImplementation(async (key: string, format?: string) => {
       if (key === 'worker-config') {
-        return JSON.stringify(sampleConfig);
+        if (format === 'json') {
+          return sampleConfig; // KV.get(key, 'json') returns parsed object
+        }
+        return JSON.stringify(sampleConfig); // KV.get(key, 'text') returns string
       }
       return null;
     });
@@ -193,7 +201,7 @@ describe('ConfigurationService', () => {
       const service = ConfigurationService.getInstance();
       const config = await service.loadConfiguration(mockEnv);
 
-      expect(mockKV.get).toHaveBeenCalledWith('worker-config');
+      expect(mockKV.get).toHaveBeenCalledWith('worker-config', 'json');
       expect(config).toBeDefined();
       expect(config?.version).toBe('1.0.0');
       expect(config?.video.derivatives).toHaveProperty('high');
@@ -202,39 +210,45 @@ describe('ConfigurationService', () => {
 
     it('should return cached configuration when available', async () => {
       const service = ConfigurationService.getInstance();
-      
+
       // First call should hit KV
       await service.loadConfiguration(mockEnv);
       expect(mockKV.get).toHaveBeenCalledTimes(1);
-      
+
       // Second call should use cached value
       await service.loadConfiguration(mockEnv);
       expect(mockKV.get).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle missing KV namespace', async () => {
+    it('should throw ConfigurationError for missing KV namespace', async () => {
       const service = ConfigurationService.getInstance();
-      const config = await service.loadConfiguration({});
 
-      expect(config).toBeNull();
+      await expect(service.loadConfiguration({})).rejects.toThrow(ConfigurationError);
+      await expect(service.loadConfiguration({})).rejects.toThrow(
+        'No configuration available in KV storage'
+      );
     });
 
-    it('should handle missing configuration in KV', async () => {
+    it('should throw ConfigurationError for missing configuration in KV', async () => {
       mockKV.get.mockResolvedValue(null);
-      
-      const service = ConfigurationService.getInstance();
-      const config = await service.loadConfiguration(mockEnv);
 
-      expect(config).toBeNull();
+      const service = ConfigurationService.getInstance();
+
+      await expect(service.loadConfiguration(mockEnv)).rejects.toThrow(ConfigurationError);
+      await expect(service.loadConfiguration(mockEnv)).rejects.toThrow(
+        'No configuration available in KV storage'
+      );
     });
 
-    it('should handle invalid JSON in KV', async () => {
+    it('should throw ConfigurationError for invalid JSON in KV', async () => {
       mockKV.get.mockResolvedValue('invalid json');
-      
-      const service = ConfigurationService.getInstance();
-      const config = await service.loadConfiguration(mockEnv);
 
-      expect(config).toBeNull();
+      const service = ConfigurationService.getInstance();
+
+      await expect(service.loadConfiguration(mockEnv)).rejects.toThrow(ConfigurationError);
+      await expect(service.loadConfiguration(mockEnv)).rejects.toThrow(
+        'No configuration available in KV storage'
+      );
     });
   });
 
@@ -244,11 +258,14 @@ describe('ConfigurationService', () => {
       const result = await service.storeConfiguration(mockEnv, sampleConfig);
 
       expect(result).toBe(true);
-      expect(mockKV.put).toHaveBeenCalledWith(
-        'worker-config',
-        JSON.stringify(sampleConfig),
-        { expirationTtl: 86400 * 30 }
-      );
+      // The new storeToKV no longer passes expirationTtl and updates lastUpdated
+      expect(mockKV.put).toHaveBeenCalledTimes(1);
+      expect(mockKV.put).toHaveBeenCalledWith('worker-config', expect.any(String));
+      // Verify the stored data is valid JSON containing the config
+      const storedData = JSON.parse(mockKV.put.mock.calls[0][1]);
+      expect(storedData.version).toBe('1.0.0');
+      expect(storedData.lastUpdated).toBeDefined();
+      expect(storedData.video.derivatives).toHaveProperty('high');
     });
 
     it('should handle missing KV namespace', async () => {
@@ -258,17 +275,22 @@ describe('ConfigurationService', () => {
       expect(result).toBe(false);
     });
 
-    it('should validate configuration before storing', async () => {
+    it('should throw when storing partial config without base configuration loaded', async () => {
       const invalidConfig = {
         version: '1.0.0',
         lastUpdated: new Date().toISOString(),
-        // Missing required fields
+        // Missing required fields - treated as partial update, but no base config loaded
       };
-      
-      const service = ConfigurationService.getInstance();
-      const result = await service.storeConfiguration(mockEnv, invalidConfig as any);
 
-      expect(result).toBe(false);
+      const service = ConfigurationService.getInstance();
+
+      // The new service throws ConfigurationError when no base config is available for partial updates
+      await expect(service.storeConfiguration(mockEnv, invalidConfig as any)).rejects.toThrow(
+        ConfigurationError
+      );
+      await expect(service.storeConfiguration(mockEnv, invalidConfig as any)).rejects.toThrow(
+        'No base configuration available for update'
+      );
       expect(mockKV.put).not.toHaveBeenCalled();
     });
   });
@@ -276,109 +298,55 @@ describe('ConfigurationService', () => {
   describe('Config section getters', () => {
     it('should get video configuration', async () => {
       const service = ConfigurationService.getInstance();
-      // Reset to force a new load
-      service['config'] = null;
-      service['lastFetchTimestamp'] = 0;
-      
-      const customMockKV = {
-        get: vi.fn().mockResolvedValue(JSON.stringify(sampleConfig)),
-        put: vi.fn().mockResolvedValue(undefined)
-      };
-      
-      const customEnv = {
-        VIDEO_CONFIGURATION_STORE: customMockKV
-      };
-      
-      const videoConfig = await service.getVideoConfig(customEnv);
+      // Load config first so that this.config is set
+      await service.loadConfiguration(mockEnv);
+
+      const videoConfig = await service.getVideoConfig();
       expect(videoConfig).not.toBeNull();
       expect(videoConfig?.derivatives).toHaveProperty('high');
-      expect(customMockKV.get).toHaveBeenCalledWith('worker-config');
     });
 
     it('should get cache configuration', async () => {
       const service = ConfigurationService.getInstance();
-      // Reset to force a new load
-      service['config'] = null;
-      service['lastFetchTimestamp'] = 0;
-      
-      const customMockKV = {
-        get: vi.fn().mockResolvedValue(JSON.stringify(sampleConfig)),
-        put: vi.fn().mockResolvedValue(undefined)
-      };
-      
-      const customEnv = {
-        VIDEO_CONFIGURATION_STORE: customMockKV
-      };
-      
-      const cacheConfig = await service.getCacheConfig(customEnv);
+      // Load config first so that this.config is set
+      await service.loadConfiguration(mockEnv);
+
+      const cacheConfig = await service.getCacheConfig();
       expect(cacheConfig).not.toBeNull();
-      expect(cacheConfig?.method).toBe('cacheApi');
-      expect(customMockKV.get).toHaveBeenCalledWith('worker-config');
+      expect(cacheConfig?.method).toBe('kv');
     });
 
     it('should get logging configuration', async () => {
       const service = ConfigurationService.getInstance();
-      // Reset to force a new load
-      service['config'] = null;
-      service['lastFetchTimestamp'] = 0;
-      
-      const customMockKV = {
-        get: vi.fn().mockResolvedValue(JSON.stringify(sampleConfig)),
-        put: vi.fn().mockResolvedValue(undefined)
-      };
-      
-      const customEnv = {
-        VIDEO_CONFIGURATION_STORE: customMockKV
-      };
-      
-      const loggingConfig = await service.getLoggingConfig(customEnv);
+      // Load config first so that this.config is set
+      await service.loadConfiguration(mockEnv);
+
+      const loggingConfig = await service.getLoggingConfig();
       expect(loggingConfig).not.toBeNull();
       expect(loggingConfig?.level).toBe('info');
-      expect(customMockKV.get).toHaveBeenCalledWith('worker-config');
     });
 
     it('should get debug configuration', async () => {
       const service = ConfigurationService.getInstance();
-      // Reset to force a new load
-      service['config'] = null;
-      service['lastFetchTimestamp'] = 0;
-      
-      const customMockKV = {
-        get: vi.fn().mockResolvedValue(JSON.stringify(sampleConfig)),
-        put: vi.fn().mockResolvedValue(undefined)
-      };
-      
-      const customEnv = {
-        VIDEO_CONFIGURATION_STORE: customMockKV
-      };
-      
-      const debugConfig = await service.getDebugConfig(customEnv);
+      // Load config first so that this.config is set
+      await service.loadConfiguration(mockEnv);
+
+      const debugConfig = await service.getDebugConfig();
       expect(debugConfig).not.toBeNull();
       expect(debugConfig?.enabled).toBe(false);
-      expect(customMockKV.get).toHaveBeenCalledWith('worker-config');
     });
 
     it('should return null for section getters when config not loaded', async () => {
-      const service = ConfigurationService.getInstance();
-      // Reset the instance completely
+      // Reset the instance completely so this.config is null
       ConfigurationService.resetInstance();
       const freshService = ConfigurationService.getInstance();
-      
-      // Mock KV to return null for this test
-      const emptyMockKV = {
-        get: vi.fn().mockResolvedValue(null),
-        put: vi.fn().mockResolvedValue(undefined)
-      };
-      
-      const emptyEnv = {
-        VIDEO_CONFIGURATION_STORE: emptyMockKV
-      };
-      
-      const videoConfig = await freshService.getVideoConfig(emptyEnv);
-      const cacheConfig = await freshService.getCacheConfig(emptyEnv);
-      const loggingConfig = await freshService.getLoggingConfig(emptyEnv);
-      const debugConfig = await freshService.getDebugConfig(emptyEnv);
-      
+
+      // Getters take no arguments; they return null when this.config is null
+      const videoConfig = await freshService.getVideoConfig();
+      const cacheConfig = await freshService.getCacheConfig();
+      const loggingConfig = await freshService.getLoggingConfig();
+      const debugConfig = await freshService.getDebugConfig();
+
       expect(videoConfig).toBeNull();
       expect(cacheConfig).toBeNull();
       expect(loggingConfig).toBeNull();
@@ -390,47 +358,47 @@ describe('ConfigurationService', () => {
   it('should add lastUpdated if missing', async () => {
     // Create service with mocked implementation that captures the data for inspection
     let capturedData: string | null = null;
-    
+
     const mockStoreImpl = vi.fn((key, data, options) => {
       capturedData = data;
       return Promise.resolve(undefined);
     });
-    
+
     const mockStore = {
       get: vi.fn().mockResolvedValue(null),
       put: mockStoreImpl,
     };
-    
+
     const mockEnvWithStore = {
-      VIDEO_CONFIGURATION_STORE: mockStore
+      VIDEO_CONFIGURATION_STORE: mockStore,
     };
-    
+
     // Create config without timestamp
     const configWithoutTimestamp = {
       ...sampleConfig,
-      lastUpdated: undefined
+      lastUpdated: undefined,
     };
     delete configWithoutTimestamp.lastUpdated; // Ensure it's truly undefined
-    
+
     // Reset and get fresh instance
     ConfigurationService.resetInstance();
     const service = ConfigurationService.getInstance();
-    
-    // Skip validation 
+
+    // Skip validation
     vi.spyOn(WorkerConfigurationSchema, 'parse').mockReturnValue(configWithoutTimestamp as any);
-    
+
     // Store configuration
     await service.storeConfiguration(mockEnvWithStore, configWithoutTimestamp as any);
-    
+
     // Verify the mock was called
     expect(mockStoreImpl).toHaveBeenCalled();
-    
+
     // Check that the captured data has a lastUpdated property
     expect(capturedData).not.toBeNull();
     if (capturedData) {
       const parsed = JSON.parse(capturedData);
       expect(parsed).toHaveProperty('lastUpdated');
-      
+
       // Verify it's a valid date string
       const lastUpdatedDate = new Date(parsed.lastUpdated);
       expect(lastUpdatedDate).toBeInstanceOf(Date);
