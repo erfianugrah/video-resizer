@@ -5,11 +5,17 @@
 import { withErrorHandling, logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { VideoResizerConfig, StorageResult } from './interfaces';
 import { EnvVariables } from '../../config/environmentConfig';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
-import { addBreadcrumb } from '../../utils/requestContext';
-import { getPresignedUrl, storePresignedUrl, isUrlExpiring, refreshPresignedUrl, UrlGeneratorFunction } from '../presignedUrlCacheService';
+import { getCurrentContext, addBreadcrumb } from '../../utils/requestContext';
+import {
+  getPresignedUrl,
+  storePresignedUrl,
+  isUrlExpiring,
+  refreshPresignedUrl,
+  UrlGeneratorFunction,
+} from '../presignedUrlCacheService';
 import { applyPathTransformation } from './pathTransform';
-import { logDebug } from './logging';
+import { createCategoryLogger } from '../../utils/logger';
+const logger = createCategoryLogger('VideoStorage');
 import { getPresignedUrlKV, getCacheKV } from '../../utils/flexibleBindings';
 // For TypeScript type checking without importing actual implementations
 // The actual FixedLengthStream is provided by the Cloudflare Workers runtime
@@ -23,17 +29,17 @@ declare class FixedLengthStream {
  * Implementation of fetchFromFallback that might throw errors
  */
 async function fetchFromFallbackImpl(
-  path: string, 
+  path: string,
   fallbackUrl: string,
   config: VideoResizerConfig,
   env: EnvVariables
 ): Promise<StorageResult | null> {
   // Get the current request context if available
   const requestContext = getCurrentContext();
-  
+
   // Get cache KV namespace using flexible binding
   const cacheKV = getCacheKV(env);
-  
+
   // Build fetch options from config with proper type safety
   const fetchOptions: RequestInit & { cf?: Record<string, unknown> } = {
     cf: {
@@ -44,7 +50,7 @@ async function fetchFromFallbackImpl(
       'User-Agent': config?.storage?.fetchOptions?.userAgent ?? 'Cloudflare-Video-Resizer/1.0',
     },
   };
-  
+
   // Add any additional headers from config if they exist
   if (config?.storage?.fetchOptions?.headers) {
     Object.entries(config.storage.fetchOptions.headers).forEach(([key, value]) => {
@@ -54,28 +60,28 @@ async function fetchFromFallbackImpl(
       }
     });
   }
-  
+
   // Apply path transformations for fallback URLs
   const transformedPath = applyPathTransformation(path, config, 'fallback');
-  
-  logDebug('VideoStorageService', 'Fallback path after transformation', { 
-    originalPath: path, 
-    transformedPath 
+
+  logger.debug('Fallback path after transformation', {
+    originalPath: path,
+    transformedPath,
   });
-  
+
   // Set the base URL
   let finalUrl = new URL(transformedPath, fallbackUrl).toString();
   const originalFinalUrl = finalUrl; // Store original URL for header signing
-  
+
   // Check if fallback auth is enabled specifically for this URL
   if (config?.storage?.fallbackAuth?.enabled) {
-    logDebug('VideoStorageService', 'Fallback auth enabled', {
+    logger.debug('Fallback auth enabled', {
       type: config.storage.fallbackAuth.type,
-      url: finalUrl
+      url: finalUrl,
     });
-    
+
     const fallbackAuth = config.storage.fallbackAuth;
-    
+
     // Handle different auth types
     if (fallbackAuth.type === 'aws-s3') {
       // Check if we're using origin-auth
@@ -84,34 +90,34 @@ async function fetchFromFallbackImpl(
         // Create an AWS-compatible signer
         const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
         const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
-        
+
         // Access environment variables
         const envRecord = env as unknown as Record<string, string | undefined>;
-        
+
         const accessKey = envRecord[accessKeyVar] as string;
         const secretKey = envRecord[secretKeyVar] as string;
-        
+
         if (accessKey && secretKey) {
           try {
             // Import AwsClient
             const { AwsClient } = await import('aws4fetch');
-            
+
             // Setup AWS client
             const aws = new AwsClient({
               accessKeyId: accessKey,
               secretAccessKey: secretKey,
               service: fallbackAuth.service ?? 's3',
-              region: fallbackAuth.region ?? 'us-east-1'
+              region: fallbackAuth.region ?? 'us-east-1',
             });
-            
+
             // Create a request to sign
             const signRequest = new Request(originalFinalUrl, {
-              method: 'GET'
+              method: 'GET',
             });
-            
+
             // Sign the request
             const signedRequest = await aws.sign(signRequest);
-            
+
             // Extract the headers and add them to fetch options
             signedRequest.headers.forEach((value, key) => {
               // Only include AWS specific headers
@@ -121,10 +127,10 @@ async function fetchFromFallbackImpl(
                 }
               }
             });
-            
-            logDebug('VideoStorageService', 'Added AWS signed headers for fallback', {
+
+            logger.debug('Added AWS signed headers for fallback', {
               url: finalUrl,
-              headerCount: Object.keys(fetchOptions.headers || {}).length
+              headerCount: Object.keys(fetchOptions.headers || {}).length,
             });
           } catch (err) {
             // Log error with standardized error handling
@@ -134,11 +140,11 @@ async function fetchFromFallbackImpl(
               {
                 url: finalUrl,
                 accessKeyVar,
-                secretKeyVar
+                secretKeyVar,
               },
               'VideoStorageService'
             );
-            
+
             // Continue without authentication if in permissive mode
             if (config.storage.auth?.securityLevel !== 'permissive') {
               return null;
@@ -151,11 +157,11 @@ async function fetchFromFallbackImpl(
             new Error('Missing credentials'),
             {
               accessKeyVar,
-              secretKeyVar
+              secretKeyVar,
             },
             'VideoStorageService'
           );
-          
+
           // Continue without authentication if in permissive mode
           if (config.storage.auth?.securityLevel !== 'permissive') {
             return null;
@@ -167,52 +173,57 @@ async function fetchFromFallbackImpl(
       const presignedKV = getPresignedUrlKV(env);
       if (presignedKV) {
         try {
-          const cachedEntry = await getPresignedUrl(
-            presignedKV,
-            transformedPath,
-            {
-              storageType: 'fallback',
-              authType: 'aws-s3-presigned-url',
-              region: fallbackAuth.region ?? 'us-east-1',
-              service: fallbackAuth.service ?? 's3',
-              env
-            }
-          );
-          
+          const cachedEntry = await getPresignedUrl(presignedKV, transformedPath, {
+            storageType: 'fallback',
+            authType: 'aws-s3-presigned-url',
+            region: fallbackAuth.region ?? 'us-east-1',
+            service: fallbackAuth.service ?? 's3',
+            env,
+          });
+
           if (cachedEntry) {
             // Use the cached URL
             finalUrl = cachedEntry.url;
-            
+
             // Log cache hit
-            logDebug('VideoStorageService', 'Using cached AWS S3 Presigned URL for fallback', {
+            logger.debug('Using cached AWS S3 Presigned URL for fallback', {
               path: transformedPath,
               expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
-              urlLength: cachedEntry.url.length
+              urlLength: cachedEntry.url.length,
             });
-            
+
             // Add breadcrumb for the cache hit
             const requestContext = getCurrentContext();
             if (requestContext) {
               addBreadcrumb(requestContext, 'Cache', 'Presigned URL cache hit for fallback', {
                 path: transformedPath,
                 storageType: 'fallback',
-                expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's'
+                expiresIn: Math.floor((cachedEntry.expiresAt - Date.now()) / 1000) + 's',
               });
             }
-            
+
             // Check if URL is close to expiration and refresh in background
-            if ('executionCtx' in env && env.executionCtx?.waitUntil && isUrlExpiring(cachedEntry, 600) && presignedKV) {
+            if (
+              'executionCtx' in env &&
+              env.executionCtx?.waitUntil &&
+              isUrlExpiring(cachedEntry, 600) &&
+              presignedKV
+            ) {
               // Create URL generator function for refreshing
-              const generateAwsUrl: UrlGeneratorFunction = async (path: string): Promise<string> => {
+              const generateAwsUrl: UrlGeneratorFunction = async (
+                path: string
+              ): Promise<string> => {
                 const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
                 const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
                 const sessionTokenVar = fallbackAuth.sessionTokenVar;
                 const envRecord = env as unknown as Record<string, string | undefined>;
                 const accessKey = envRecord[accessKeyVar] as string;
                 const secretKey = envRecord[secretKeyVar] as string;
-                const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
+                const sessionToken = sessionTokenVar
+                  ? (envRecord[sessionTokenVar] as string)
+                  : undefined;
                 const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
-                
+
                 // Generate new URL
                 const { AwsClient } = await import('aws4fetch');
                 const aws = new AwsClient({
@@ -220,135 +231,125 @@ async function fetchFromFallbackImpl(
                   secretAccessKey: secretKey,
                   sessionToken,
                   service: fallbackAuth.service ?? 's3',
-                  region: fallbackAuth.region ?? 'us-east-1'
+                  region: fallbackAuth.region ?? 'us-east-1',
                 });
-                
+
                 const pathUrl = new URL(path, fallbackUrl).toString();
                 const signRequest = new Request(pathUrl, { method: 'GET' });
                 const signedRequest = await aws.sign(signRequest, {
                   aws: { signQuery: true },
-                  expiresIn
+                  expiresIn,
                 });
-                
+
                 return signedRequest.url;
               };
-              
+
               // Use waitUntil for non-blocking refresh
               env.executionCtx.waitUntil(
                 (async () => {
                   if (presignedKV) {
-                    await refreshPresignedUrl(
-                      presignedKV,
-                      cachedEntry,
-                      {
-                        thresholdSeconds: 600, // 10 minutes threshold
-                        env,
-                        generateUrlFn: generateAwsUrl
-                      }
-                    );
+                    await refreshPresignedUrl(presignedKV, cachedEntry, {
+                      thresholdSeconds: 600, // 10 minutes threshold
+                      env,
+                      generateUrlFn: generateAwsUrl,
+                    });
                   }
                 })()
               );
             }
-            
+
             // Skip normal URL generation since we have a cached URL
           } else {
             // No cached URL found, generate a new one
-            logDebug('VideoStorageService', 'No cached presigned URL found for fallback, generating new one', {
-              path: transformedPath
+            logger.debug('No cached presigned URL found for fallback, generating new one', {
+              path: transformedPath,
             });
           }
         } catch (err) {
           // Log error but continue with normal URL generation
-          logDebug('VideoStorageService', 'Error retrieving cached presigned URL for fallback', {
+          logger.debug('Error retrieving cached presigned URL for fallback', {
             path: transformedPath,
-            error: err instanceof Error ? err.message : String(err)
+            error: err instanceof Error ? err.message : String(err),
           });
         }
       }
-      
+
       // If no cached URL was found, or cache lookup failed, generate a new one
       if (finalUrl === originalFinalUrl) {
         // Handle presigned URL generation
         const accessKeyVar = fallbackAuth.accessKeyVar ?? 'AWS_ACCESS_KEY_ID';
         const secretKeyVar = fallbackAuth.secretKeyVar ?? 'AWS_SECRET_ACCESS_KEY';
         const sessionTokenVar = fallbackAuth.sessionTokenVar;
-        
+
         // Access environment variables
         const envRecord = env as unknown as Record<string, string | undefined>;
-        
+
         const accessKey = envRecord[accessKeyVar] as string;
         const secretKey = envRecord[secretKeyVar] as string;
-        const sessionToken = sessionTokenVar ? envRecord[sessionTokenVar] as string : undefined;
-        
+        const sessionToken = sessionTokenVar ? (envRecord[sessionTokenVar] as string) : undefined;
+
         // Get expiration time for presigned URL
         const expiresIn = fallbackAuth.expiresInSeconds ?? 3600;
-        
+
         if (accessKey && secretKey) {
           try {
             // Import AwsClient
             const { AwsClient } = await import('aws4fetch');
-            
+
             // Setup AWS client
             const aws = new AwsClient({
               accessKeyId: accessKey,
               secretAccessKey: secretKey,
               sessionToken,
               service: fallbackAuth.service ?? 's3',
-              region: fallbackAuth.region ?? 'us-east-1'
+              region: fallbackAuth.region ?? 'us-east-1',
             });
-            
+
             // Create a request to sign
             const signRequest = new Request(originalFinalUrl, {
-              method: 'GET'
+              method: 'GET',
             });
-            
+
             // Sign the request with query parameters instead of headers
             const signedRequest = await aws.sign(signRequest, {
               aws: {
-                signQuery: true
+                signQuery: true,
               },
-              expiresIn
+              expiresIn,
             });
-            
+
             // Use the signed URL with query parameters
             finalUrl = signedRequest.url;
-            
+
             // Use our helper function for consistent logging
-            logDebug('VideoStorageService', 'Generated AWS S3 Presigned URL for fallback', {
+            logger.debug('Generated AWS S3 Presigned URL for fallback', {
               // Avoid logging the full URL which contains credentials
               urlLength: finalUrl.length,
               expiresIn,
-              success: true
+              success: true,
             });
-            
+
             // Cache the generated URL if KV binding exists
             if (presignedKV) {
               try {
-                await storePresignedUrl(
-                  presignedKV,
-                  transformedPath,
-                  finalUrl,
-                  originalFinalUrl,
-                  {
-                    storageType: 'fallback',
-                    expiresInSeconds: expiresIn,
-                    authType: 'aws-s3-presigned-url',
-                    region: fallbackAuth.region ?? 'us-east-1',
-                    service: fallbackAuth.service ?? 's3',
-                    env
-                  }
-                );
-                
-                logDebug('VideoStorageService', 'Cached new presigned URL for fallback', {
+                await storePresignedUrl(presignedKV, transformedPath, finalUrl, originalFinalUrl, {
+                  storageType: 'fallback',
+                  expiresInSeconds: expiresIn,
+                  authType: 'aws-s3-presigned-url',
+                  region: fallbackAuth.region ?? 'us-east-1',
+                  service: fallbackAuth.service ?? 's3',
+                  env,
+                });
+
+                logger.debug('Cached new presigned URL for fallback', {
                   path: transformedPath,
-                  expiresIn
+                  expiresIn,
                 });
               } catch (cacheErr) {
                 // Log but continue - caching failure shouldn't stop the request
-                logDebug('VideoStorageService', 'Error caching presigned URL for fallback', {
+                logger.debug('Error caching presigned URL for fallback', {
                   path: transformedPath,
-                  error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr)
+                  error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
                 });
               }
             }
@@ -360,11 +361,11 @@ async function fetchFromFallbackImpl(
               {
                 url: originalFinalUrl,
                 accessKeyVar,
-                secretKeyVar
+                secretKeyVar,
               },
               'VideoStorageService'
             );
-            
+
             // Fail if we can't generate the presigned URL
             return null;
           }
@@ -375,11 +376,11 @@ async function fetchFromFallbackImpl(
             new Error('Missing credentials'),
             {
               accessKeyVar,
-              secretKeyVar
+              secretKeyVar,
             },
             'VideoStorageService'
           );
-          
+
           // Fail if credentials are missing
           return null;
         }
@@ -389,26 +390,26 @@ async function fetchFromFallbackImpl(
       // Check if authorization is in headers directly
       if (fallbackAuth.headers && 'Authorization' in fallbackAuth.headers) {
         if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-          (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+          (fetchOptions.headers as Record<string, string>)['Authorization'] =
             fallbackAuth.headers['Authorization'];
         }
-      } 
+      }
       // Check for environment variable based token
       else if (fallbackAuth.accessKeyVar) {
         // Access environment variables
         const envRecord = env as unknown as Record<string, string | undefined>;
         const accessToken = envRecord[fallbackAuth.accessKeyVar];
-        
+
         if (accessToken) {
           // Add bearer token to headers
           if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-            (fetchOptions.headers as Record<string, string>)['Authorization'] = 
+            (fetchOptions.headers as Record<string, string>)['Authorization'] =
               `Bearer ${accessToken}`;
           }
-          
+
           // Log that we added the bearer token
-          logDebug('VideoStorageService', 'Added bearer token from environment variable to fallback request', {
-            accessKeyVar: fallbackAuth.accessKeyVar
+          logger.debug('Added bearer token from environment variable to fallback request', {
+            accessKeyVar: fallbackAuth.accessKeyVar,
           });
         } else {
           // Log error with standardized error handling
@@ -416,11 +417,11 @@ async function fetchFromFallbackImpl(
             'Bearer token not found in environment variable for fallback',
             new Error('Missing token'),
             {
-              accessKeyVar: fallbackAuth.accessKeyVar
+              accessKeyVar: fallbackAuth.accessKeyVar,
             },
             'VideoStorageService'
           );
-          
+
           // Continue without authentication if in permissive mode
           if (config.storage.auth?.securityLevel !== 'permissive') {
             return null;
@@ -437,71 +438,73 @@ async function fetchFromFallbackImpl(
         });
       }
     }
-    
+
     // Set cache TTL for authenticated requests
     if (config.storage.auth?.cacheTtl && fetchOptions.cf) {
       fetchOptions.cf.cacheTtl = config.storage.auth.cacheTtl;
     }
   } else {
-    logDebug('VideoStorageService', 'Fallback auth not enabled for this URL', {
-      url: finalUrl
+    logger.debug('Fallback auth not enabled for this URL', {
+      url: finalUrl,
     });
   }
-  
+
   // Fetch the video from the fallback URL
-  logDebug('VideoStorageService', 'Fetching from fallback URL', { url: finalUrl });
-  
+  logger.debug('Fetching from fallback URL', { url: finalUrl });
+
   const response = await fetch(finalUrl, fetchOptions);
-  
+
   if (!response.ok) {
-    logDebug('VideoStorageService', 'Fallback fetch failed', { 
-      url: finalUrl, 
-      status: response.status, 
-      statusText: response.statusText 
+    logger.debug('Fallback fetch failed', {
+      url: finalUrl,
+      status: response.status,
+      statusText: response.statusText,
     });
     return null;
   }
-  
+
   // Clone the response to ensure we can access its body multiple times
   const clonedResponse = response.clone();
-  
+
   // Check if we should store this in KV (in the background)
   if (response.ok && env.executionCtx?.waitUntil && cacheKV) {
     // Get content length to check file size
     const contentLengthHeader = response.headers.get('Content-Length');
     const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
-    
+
     // Skip KV storage completely for files larger than 128MB
-    if (contentLength > 128 * 1024 * 1024) { // 128MB threshold
-      logDebug('VideoStorageService', `Skipping KV storage for large fallback content (${Math.round(contentLength/1024/1024)}MB) - exceeds 128MB limit`, {
-        path: transformedPath,
-        size: contentLength
-      });
+    if (contentLength > 128 * 1024 * 1024) {
+      // 128MB threshold
+      logger.debug(
+        `Skipping KV storage for large fallback content (${Math.round(contentLength / 1024 / 1024)}MB) - exceeds 128MB limit`,
+        {
+          path: transformedPath,
+          size: contentLength,
+        }
+      );
     } else {
       // For smaller files, proceed with KV storage
-      
+
       // We need to clone the response before passing it to waitUntil and returning it
       const responseClone = response.clone();
-      
+
       // Use waitUntil to process in the background without blocking the response
-      env.executionCtx.waitUntil(
-        streamFallbackToKV(env, transformedPath, responseClone, config)
-      );
-      
-      logDebug('VideoStorageService', 'Initiating background storage of fallback content', {
+      env.executionCtx.waitUntil(streamFallbackToKV(env, transformedPath, responseClone, config));
+
+      logger.debug('Initiating background storage of fallback content', {
         path: transformedPath,
-        size: contentLength || 'unknown'
+        size: contentLength || 'unknown',
       });
     }
   }
-  
+
   return {
     response: clonedResponse,
     sourceType: 'fallback',
     contentType: response.headers.get('Content-Type'),
     size: parseInt(response.headers.get('Content-Length') || '0', 10) || null,
     originalUrl: finalUrl,
-    path: transformedPath
+    path: transformedPath,
   };
 }
 
@@ -518,20 +521,20 @@ export async function streamFallbackToKV(
 ): Promise<void> {
   // Get cache KV namespace using flexible binding
   const cacheKV = getCacheKV(env);
-  
+
   // Use the correct KV namespace from env
   if (!cacheKV || !fallbackResponse.body || !fallbackResponse.ok) {
     return;
   }
-  
+
   // CRITICAL: Double-check - never cache partial/range responses
   // This is a safeguard in case the caller didn't check
   if (fallbackResponse.status === 206 || fallbackResponse.headers.get('Content-Range')) {
-    logDebug('VideoStorageService', 'Refusing to cache partial content response', {
+    logger.debug('Refusing to cache partial content response', {
       path: sourcePath,
       status: fallbackResponse.status,
       contentRange: fallbackResponse.headers.get('Content-Range'),
-      reason: 'Partial responses should never be cached'
+      reason: 'Partial responses should never be cached',
     });
     return;
   }
@@ -540,80 +543,108 @@ export async function streamFallbackToKV(
     const transformedPath = applyPathTransformation(sourcePath, config, 'fallback');
     const contentType = fallbackResponse.headers.get('Content-Type') || 'video/mp4';
     const contentLength = parseInt(fallbackResponse.headers.get('Content-Length') || '0', 10);
-    
+
     // Safety check: Skip storing files larger than 128MB to avoid memory issues
     if (contentLength > 128 * 1024 * 1024) {
-      logDebug('VideoStorageService', 'Skipping KV storage for large file in streamFallbackToKV', {
+      logger.debug('Skipping KV storage for large file in streamFallbackToKV', {
         path: transformedPath,
         size: Math.round(contentLength / 1024 / 1024) + 'MB',
-        reason: 'Exceeds 128MB safety limit'
+        reason: 'Exceeds 128MB safety limit',
       });
       return;
     }
-    
-    logDebug('VideoStorageService', 'Starting background streaming of fallback to KV', { 
+
+    logger.debug('Starting background streaming of fallback to KV', {
       path: transformedPath,
       contentType,
-      contentLength 
+      contentLength,
     });
 
     // For files close to our limit, use optimized streaming approach
     if (contentLength > 40 * 1024 * 1024) {
-      logDebug('KVCache', 'Using optimized streaming for large file', {
+      logger.debug('Using optimized streaming for large file', {
         path: transformedPath,
-        sizeMB: Math.round(contentLength / 1024 / 1024)
+        sizeMB: Math.round(contentLength / 1024 / 1024),
       });
-      
+
       // Import necessary functions
       const { storeTransformedVideoWithStreaming } = await import('../kvStorage/streamStorage');
-      
+
       // For extremely large files, we need to be even more careful with the stream
       // Instead of using FixedLengthStream, we'll implement our own stream-based approach
       // that avoids any tee() operations entirely
-      
+
       // Create a TransformStream to directly process chunks
       const { readable, writable } = new TransformStream();
-      
+
       // Create a writer for the writable side
       const writer = writable.getWriter();
-      
+
       // Run the direct pumping in the background
       if (env.executionCtx) {
-        env.executionCtx.waitUntil((async () => {
-        try {
-          if (!fallbackResponse.body) {
-            throw new Error('Response body is null');
-          }
-          
-          // Get a reader from the original response
-          const reader = fallbackResponse.body.getReader();
-          
-          // Process chunks directly to the KV in 10MB chunks
-          const { storeTransformedVideoWithStreaming } = await import('../kvStorage/streamStorage');
-          
-          // We'll process chunks directly to KV, completely bypassing the Response.body approach
-          let totalBytesProcessed = 0;
-          const chunks = [];
-          let currentChunkSize = 0;
-          const targetChunkSize = 10 * 1024 * 1024; // 10MB chunks
-          
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            totalBytesProcessed += value.byteLength;
-            
-            // Write the chunk to the response stream
-            await writer.write(value);
-            
-            // Also collect chunks for KV storage
-            chunks.push(value);
-            currentChunkSize += value.byteLength;
-            
-            // If we have enough data for a KV chunk, process it
-            if (currentChunkSize >= targetChunkSize) {
-              // Process this batch of chunks
-              if (cacheKV) {
+        env.executionCtx.waitUntil(
+          (async () => {
+            try {
+              if (!fallbackResponse.body) {
+                throw new Error('Response body is null');
+              }
+
+              // Get a reader from the original response
+              const reader = fallbackResponse.body.getReader();
+
+              // Process chunks directly to the KV in 10MB chunks
+              const { storeTransformedVideoWithStreaming } =
+                await import('../kvStorage/streamStorage');
+
+              // We'll process chunks directly to KV, completely bypassing the Response.body approach
+              let totalBytesProcessed = 0;
+              const chunks = [];
+              let currentChunkSize = 0;
+              const targetChunkSize = 10 * 1024 * 1024; // 10MB chunks
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                totalBytesProcessed += value.byteLength;
+
+                // Write the chunk to the response stream
+                await writer.write(value);
+
+                // Also collect chunks for KV storage
+                chunks.push(value);
+                currentChunkSize += value.byteLength;
+
+                // If we have enough data for a KV chunk, process it
+                if (currentChunkSize >= targetChunkSize) {
+                  // Process this batch of chunks
+                  if (cacheKV) {
+                    await processChunksToKV(
+                      cacheKV,
+                      transformedPath,
+                      chunks,
+                      contentType,
+                      {
+                        width: (config as any).width || null,
+                        height: (config as any).height || null,
+                        format: (config as any).format || null,
+                        env: env,
+                        contentLength,
+                      },
+                      config?.cache?.ttl?.ok ?? 3600,
+                      totalBytesProcessed,
+                      contentLength
+                    );
+                  }
+
+                  // Reset for next batch
+                  chunks.length = 0;
+                  currentChunkSize = 0;
+                }
+              }
+
+              // Process any remaining chunks
+              if (chunks.length > 0 && cacheKV) {
                 await processChunksToKV(
                   cacheKV,
                   transformedPath,
@@ -624,68 +655,43 @@ export async function streamFallbackToKV(
                     height: (config as any).height || null,
                     format: (config as any).format || null,
                     env: env,
-                    contentLength
+                    contentLength,
                   },
                   config?.cache?.ttl?.ok ?? 3600,
                   totalBytesProcessed,
                   contentLength
                 );
               }
-              
-              // Reset for next batch
-              chunks.length = 0;
-              currentChunkSize = 0;
+
+              // Close the writer
+              writer.close();
+
+              logger.debug('Successfully processed extremely large file directly', {
+                path: transformedPath,
+                totalBytes: totalBytesProcessed,
+                expectedBytes: contentLength,
+              });
+            } catch (err) {
+              logErrorWithContext(
+                'Error in direct stream processing',
+                err,
+                { sourcePath, transformedPath, size: contentLength },
+                'VideoStorageService'
+              );
+              writer.abort();
             }
-          }
-          
-          // Process any remaining chunks
-          if (chunks.length > 0 && cacheKV) {
-            await processChunksToKV(
-              cacheKV,
-              transformedPath,
-              chunks,
-              contentType,
-              {
-                width: (config as any).width || null,
-                height: (config as any).height || null,
-                format: (config as any).format || null,
-                env: env,
-                contentLength
-              },
-              config?.cache?.ttl?.ok ?? 3600,
-              totalBytesProcessed,
-              contentLength
-            );
-          }
-          
-          // Close the writer
-          writer.close();
-          
-          logDebug('VideoStorageService', 'Successfully processed extremely large file directly', {
-            path: transformedPath,
-            totalBytes: totalBytesProcessed,
-            expectedBytes: contentLength
-          });
-        } catch (err) {
-          logErrorWithContext(
-            'Error in direct stream processing',
-            err,
-            { sourcePath, transformedPath, size: contentLength },
-            'VideoStorageService'
-          );
-          writer.abort();
-        }
-      })());
+          })()
+        );
       }
-      
+
       // Use the readable part of the stream for sending the response
       const newResponse = new Response(readable, {
         headers: new Headers({
           'Content-Type': contentType,
-          'Content-Length': contentLength.toString()
-        })
+          'Content-Length': contentLength.toString(),
+        }),
       });
-      
+
       // Helper function to process chunks directly to KV
       async function processChunksToKV(
         namespace: KVNamespace,
@@ -701,17 +707,17 @@ export async function streamFallbackToKV(
           // Combine chunks
           const totalLength = chunks.reduce((sum, arr) => sum + arr.byteLength, 0);
           const combinedChunk = new Uint8Array(totalLength);
-          
+
           let offset = 0;
           for (const chunk of chunks) {
             combinedChunk.set(chunk, offset);
             offset += chunk.byteLength;
           }
-          
+
           // Generate a unique key for this chunk
           const chunkNumber = Math.floor(processedBytes / (10 * 1024 * 1024));
           const key = `direct_${path}_chunk_${chunkNumber}`;
-          
+
           // Store directly
           await namespace.put(key, combinedChunk.buffer, {
             metadata: {
@@ -719,15 +725,15 @@ export async function streamFallbackToKV(
               chunkNumber,
               totalBytes,
               processedBytes,
-              timestamp: Date.now()
-            }
+              timestamp: Date.now(),
+            },
           });
-          
-          logDebug('VideoStorageService', 'Stored chunk directly to KV', {
+
+          logger.debug('Stored chunk directly to KV', {
             key,
             chunkSize: totalLength,
             chunkNumber,
-            totalProcessed: processedBytes
+            totalProcessed: processedBytes,
           });
         } catch (err) {
           logErrorWithContext(
@@ -738,7 +744,7 @@ export async function streamFallbackToKV(
           );
         }
       }
-      
+
       // Store with direct streaming
       await storeTransformedVideoWithStreaming(
         cacheKV,
@@ -748,43 +754,43 @@ export async function streamFallbackToKV(
           width: (config as any).width || null,
           height: (config as any).height || null,
           format: (config as any).format || null,
-          env: env
+          env: env,
         },
         config?.cache?.ttl?.ok ?? 3600
       );
-      
-      logDebug('VideoStorageService', 'Successfully initiated direct streaming to KV', {
+
+      logger.debug('Successfully initiated direct streaming to KV', {
         path: transformedPath,
         kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE',
-        sizeMB: Math.round(contentLength / 1024 / 1024)
+        sizeMB: Math.round(contentLength / 1024 / 1024),
       });
-      
+
       return;
     }
-    
+
     // For large files, use standard streaming
     // Import the storeTransformedVideo function from the correct relative path
     const { storeTransformedVideo } = await import('../../services/kvStorage/storeVideo');
-    
+
     // Check if this is a large file that would benefit from streaming
     const useStreaming = contentLength > 40 * 1024 * 1024; // 40MB threshold for streaming
-    
+
     if (useStreaming) {
-      logDebug('VideoStorageService', 'Using streaming mode for large fallback content', {
+      logger.debug('Using streaming mode for large fallback content', {
         path: transformedPath,
         sizeMB: Math.round(contentLength / 1024 / 1024),
-        contentType
+        contentType,
       });
     }
-    
+
     // Create a new response with the body for KV storage
     // Since fallbackResponse was already cloned before being passed to this function,
     // we can just use it directly without another clone
     const storageResponse = new Response(fallbackResponse.body, {
       headers: new Headers({
         'Content-Type': contentType,
-        'Content-Length': contentLength ? contentLength.toString() : ''
-      })
+        'Content-Length': contentLength ? contentLength.toString() : '',
+      }),
     });
 
     // Store in KV with chunking support using streaming for large files
@@ -798,15 +804,15 @@ export async function streamFallbackToKV(
         width: (config as any).width || null,
         height: (config as any).height || null,
         format: (config as any).format || null,
-        env: env
+        env: env,
       },
       config?.cache?.ttl?.ok ?? 3600,
       useStreaming // Pass the streaming flag
     );
-    
-    logDebug('VideoStorageService', 'Successfully stored fallback content in KV', {
+
+    logger.debug('Successfully stored fallback content in KV', {
       path: transformedPath,
-      kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE'
+      kvNamespace: 'VIDEO_TRANSFORMATIONS_CACHE',
     });
   } catch (err) {
     logErrorWithContext(
@@ -830,9 +836,9 @@ export const fetchFromFallback = withErrorHandling<
   {
     functionName: 'fetchFromFallback',
     component: 'VideoStorageService',
-    logErrors: true
+    logErrors: true,
   },
   {
-    storageType: 'fallback'
+    storageType: 'fallback',
   }
 );

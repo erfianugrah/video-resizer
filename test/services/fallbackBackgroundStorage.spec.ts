@@ -38,9 +38,15 @@ vi.mock('../../src/services/videoStorage/pathTransform', () => ({
   applyPathTransformation: vi.fn((path: string) => path),
 }));
 
-// Mock logging
-vi.mock('../../src/services/videoStorage/logging', () => ({
-  logDebug: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
 }));
 
 // Mock errorHandlingUtils
@@ -62,13 +68,9 @@ vi.mock('../../src/services/presignedUrlCacheService', () => ({
   refreshPresignedUrl: vi.fn(),
 }));
 
-// Mock legacyLoggerAdapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn().mockReturnValue(null),
-}));
-
 // Mock requestContext
 vi.mock('../../src/utils/requestContext', () => ({
+  getCurrentContext: vi.fn().mockReturnValue(null),
   addBreadcrumb: vi.fn(),
 }));
 

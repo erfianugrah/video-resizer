@@ -1,21 +1,70 @@
 /**
  * Centralized Logger Module
- * 
+ *
  * This is the single source of truth for all logging operations in the video-resizer.
  * It consolidates and standardizes all logging functionality.
  */
 
-import { 
+import pino from 'pino';
+import {
   createLogger,
-  debug as pinoDebug, 
-  info as pinoInfo, 
-  warn as pinoWarn, 
+  debug as pinoDebug,
+  info as pinoInfo,
+  warn as pinoWarn,
   error as pinoError,
-  updatePinoLoggerConfig
+  updatePinoLoggerConfig,
 } from './pinoLogger';
-import { getCurrentContext } from './legacyLoggerAdapter';
-import { RequestContext } from './requestContext';
+import {
+  RequestContext,
+  createRequestContext,
+  getCurrentContext,
+  setCurrentContext,
+} from './requestContext';
 import { LoggingConfigurationManager } from '../config/LoggingConfigurationManager';
+
+// Local cache for logger to avoid recreating it
+let currentLogger: pino.Logger | null = null;
+
+/**
+ * Initialize the request logger with a request
+ * Creates a request context, sets it as current, and creates a Pino logger.
+ * @param request The request object
+ * @returns The created context and logger
+ */
+export function initializeLegacyLogger(request: Request) {
+  // First check if we already have a context from the context manager
+  let context = getCurrentContext();
+
+  // If we don't have a context from the manager, create a new one and set it
+  if (!context) {
+    context = createRequestContext(request);
+
+    // Set the context in the central manager
+    setCurrentContext(context);
+  }
+
+  // Create/update logger with the context
+  currentLogger = createLogger(context);
+
+  // Log initialization for verbose mode only
+  if (context.verboseEnabled) {
+    pinoDebug(context, currentLogger, 'LegacyLoggerAdapter', 'Initialized', {
+      url: request.url,
+      requestId: context.requestId,
+      fromExistingContext: !!getCurrentContext(),
+    });
+  }
+
+  return { context, logger: currentLogger };
+}
+
+/**
+ * Clear the current request logger
+ * Resets the cached logger instance
+ */
+export function clearLegacyLogger() {
+  currentLogger = null;
+}
 
 /**
  * Type definitions for logging
@@ -54,7 +103,7 @@ function getContextAndLogger() {
   if (!context) {
     return null;
   }
-  
+
   const logger = createLogger(context);
   return { context, logger };
 }
@@ -67,7 +116,7 @@ function shouldFilterLog(category: string, options?: LogOptions): boolean {
   if (options?.force) {
     return false;
   }
-  
+
   // Check component filtering
   const loggingConfig = LoggingConfigurationManager.getInstance();
   return !loggingConfig.shouldLogComponent(category);
@@ -77,17 +126,17 @@ function shouldFilterLog(category: string, options?: LogOptions): boolean {
  * Enrich log data with additional context based on options
  */
 function enrichLogData(
-  data: LogData | undefined, 
-  context: RequestContext, 
+  data: LogData | undefined,
+  context: RequestContext,
   options?: LogOptions
 ): LogData {
   const enrichedData = { ...data };
   const enrichOptions = options?.enrich;
-  
+
   if (!enrichOptions) {
     return enrichedData;
   }
-  
+
   // Add memory usage if requested
   if (enrichOptions.includeMemoryUsage && typeof process !== 'undefined' && process.memoryUsage) {
     try {
@@ -96,41 +145,41 @@ function enrichLogData(
         heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
         heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
         rss: Math.round(memUsage.rss / 1024 / 1024) + 'MB',
-        external: Math.round(memUsage.external / 1024 / 1024) + 'MB'
+        external: Math.round(memUsage.external / 1024 / 1024) + 'MB',
       };
     } catch (e) {
       // Ignore errors - may not be available in all environments
     }
   }
-  
+
   // Add request metadata if requested
   if (enrichOptions.includeRequestMetadata && context.url) {
     enrichedData.request = {
       url: context.url,
       breadcrumbCount: context.breadcrumbs.length,
-      requestId: context.requestId
+      requestId: context.requestId,
     };
   }
-  
+
   // Add timing information if requested
   if (enrichOptions.includeTiming) {
     const now = performance.now();
     enrichedData.timing = {
       elapsed: Math.round(now - context.startTime) + 'ms',
       timestamp: new Date().toISOString(),
-      breadcrumbCount: context.breadcrumbs.length
+      breadcrumbCount: context.breadcrumbs.length,
     };
   }
-  
+
   // Add environment information if requested
   if (enrichOptions.includeEnvironment) {
     enrichedData.environment = {
       runtime: typeof process !== 'undefined' ? 'node' : 'browser',
       platform: typeof process !== 'undefined' ? process.platform : 'web',
-      nodeVersion: typeof process !== 'undefined' ? process.version : undefined
+      nodeVersion: typeof process !== 'undefined' ? process.version : undefined,
     };
   }
-  
+
   return enrichedData;
 }
 
@@ -142,8 +191,8 @@ function enrichLogData(
  * @param options Logging options
  */
 export function logDebug(
-  category: string, 
-  message: string, 
+  category: string,
+  message: string,
   data?: LogData,
   options?: LogOptions
 ): void {
@@ -151,7 +200,7 @@ export function logDebug(
   if (shouldFilterLog(category, options)) {
     return;
   }
-  
+
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
@@ -160,7 +209,7 @@ export function logDebug(
     }
     return;
   }
-  
+
   const { context, logger } = contextAndLogger;
   const enrichedData = enrichLogData(data, context, options);
   pinoDebug(context, logger, category, message, enrichedData);
@@ -174,8 +223,8 @@ export function logDebug(
  * @param options Logging options
  */
 export function logInfo(
-  category: string, 
-  message: string, 
+  category: string,
+  message: string,
   data?: LogData,
   options?: LogOptions
 ): void {
@@ -183,14 +232,14 @@ export function logInfo(
   if (shouldFilterLog(category, options)) {
     return;
   }
-  
+
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
     console.info(`[${category}] ${message}`, data || {});
     return;
   }
-  
+
   const { context, logger } = contextAndLogger;
   const enrichedData = enrichLogData(data, context, options);
   pinoInfo(context, logger, category, message, enrichedData);
@@ -204,8 +253,8 @@ export function logInfo(
  * @param options Logging options
  */
 export function logWarn(
-  category: string, 
-  message: string, 
+  category: string,
+  message: string,
   data?: LogData,
   options?: LogOptions
 ): void {
@@ -213,7 +262,7 @@ export function logWarn(
   if (shouldFilterLog(category, options)) {
     return;
   }
-  
+
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
@@ -221,11 +270,11 @@ export function logWarn(
       context: category,
       operation: 'logWarn',
       message,
-      ...(data || {})
+      ...(data || {}),
     });
     return;
   }
-  
+
   const { context, logger } = contextAndLogger;
   const enrichedData = enrichLogData(data, context, options);
   pinoWarn(context, logger, category, message, enrichedData);
@@ -239,8 +288,8 @@ export function logWarn(
  * @param options Logging options
  */
 export function logError(
-  category: string, 
-  message: string, 
+  category: string,
+  message: string,
   data?: LogData,
   options?: LogOptions
 ): void {
@@ -248,7 +297,7 @@ export function logError(
   if (shouldFilterLog(category, options)) {
     return;
   }
-  
+
   const contextAndLogger = getContextAndLogger();
   if (!contextAndLogger) {
     // Fallback to console only during initialization
@@ -256,11 +305,11 @@ export function logError(
       context: category,
       operation: 'logError',
       message,
-      ...(data || {})
+      ...(data || {}),
     });
     return;
   }
-  
+
   const { context, logger } = contextAndLogger;
   const enrichedData = enrichLogData(data, context, options);
   pinoError(context, logger, category, message, enrichedData);
@@ -280,7 +329,7 @@ export function logErrorWithContext(
   data?: LogData
 ): void {
   let formattedError: any;
-  
+
   if (error instanceof Error) {
     // Handle Error objects
     formattedError = {
@@ -288,67 +337,70 @@ export function logErrorWithContext(
       name: error.name,
       stack: error.stack,
       // Include any additional properties without overwriting
-      ...(Object.getOwnPropertyNames(error).reduce((acc, key) => {
-        if (!['message', 'name', 'stack'].includes(key)) {
-          acc[key] = (error as any)[key];
-        }
-        return acc;
-      }, {} as Record<string, unknown>))
+      ...Object.getOwnPropertyNames(error).reduce(
+        (acc, key) => {
+          if (!['message', 'name', 'stack'].includes(key)) {
+            acc[key] = (error as any)[key];
+          }
+          return acc;
+        },
+        {} as Record<string, unknown>
+      ),
     };
   } else if (error === null || error === undefined) {
     // Handle null/undefined
     formattedError = {
       message: 'Unknown error',
-      type: 'unknown'
+      type: 'unknown',
     };
   } else if (typeof error === 'string') {
     // Handle string errors
     formattedError = {
       message: error,
-      type: 'string'
+      type: 'string',
     };
   } else if (typeof error === 'object') {
     // Handle other objects
     formattedError = {
       message: JSON.stringify(error),
       type: 'object',
-      data: error
+      data: error,
     };
   } else {
     // Handle primitives
     formattedError = {
       message: String(error),
-      type: typeof error
+      type: typeof error,
     };
   }
-  
+
   const errorData: LogData = {
     ...data,
-    error: formattedError
+    error: formattedError,
   };
-  
+
   logError(category, message, errorData);
 }
 
 /**
  * Create a category-specific logger
  * This is useful for modules that want to avoid passing category name repeatedly
- * 
+ *
  * @param category The category name for all logs from this logger
  * @returns Logger methods bound to the specified category
  */
 export function createCategoryLogger(category: string) {
   return {
-    debug: (message: string, data?: LogData, options?: LogOptions) => 
+    debug: (message: string, data?: LogData, options?: LogOptions) =>
       logDebug(category, message, data, options),
-    info: (message: string, data?: LogData, options?: LogOptions) => 
+    info: (message: string, data?: LogData, options?: LogOptions) =>
       logInfo(category, message, data, options),
-    warn: (message: string, data?: LogData, options?: LogOptions) => 
+    warn: (message: string, data?: LogData, options?: LogOptions) =>
       logWarn(category, message, data, options),
-    error: (message: string, data?: LogData, options?: LogOptions) => 
+    error: (message: string, data?: LogData, options?: LogOptions) =>
       logError(category, message, data, options),
     errorWithContext: (message: string, error: unknown, data?: LogData) =>
-      logErrorWithContext(category, message, error, data)
+      logErrorWithContext(category, message, error, data),
   };
 }
 
@@ -383,33 +435,32 @@ export function clearPerformanceMetrics(): void {
  * @param category Component category
  * @returns Function to stop the measurement
  */
-export function startPerformanceMeasurement(
-  operation: string, 
-  category: string
-): () => void {
+export function startPerformanceMeasurement(operation: string, category: string): () => void {
   const startTime = performance.now();
-  
+
   return () => {
     const duration = performance.now() - startTime;
     const metrics: PerformanceMetrics = {
       operation,
       duration,
-      category
+      category,
     };
-    
+
     // Add to metrics collection
     performanceMetrics.push(metrics);
-    
+
     // Check if we should log based on threshold
     const loggingConfig = LoggingConfigurationManager.getInstance();
-    if (loggingConfig.shouldLogPerformance() && 
-        duration >= loggingConfig.getPerformanceThreshold()) {
+    if (
+      loggingConfig.shouldLogPerformance() &&
+      duration >= loggingConfig.getPerformanceThreshold()
+    ) {
       logWarn(category, `Slow operation detected: ${operation}`, {
         duration: Math.round(duration) + 'ms',
-        threshold: loggingConfig.getPerformanceThreshold() + 'ms'
+        threshold: loggingConfig.getPerformanceThreshold() + 'ms',
       });
     }
-    
+
     // Schedule batch logging if not already scheduled
     if (!performanceTimer) {
       performanceTimer = setTimeout(flushPerformanceMetrics, 5000); // Flush every 5 seconds
@@ -426,22 +477,27 @@ export function flushPerformanceMetrics(): void {
     performanceTimer = null;
     return;
   }
-  
+
   // Calculate statistics
   const stats = calculatePerformanceStats(performanceMetrics);
-  
+
   // Log aggregated metrics
-  logInfo('PerformanceMonitor', 'Performance metrics summary', {
-    totalOperations: performanceMetrics.length,
-    averageDuration: Math.round(stats.average) + 'ms',
-    minDuration: Math.round(stats.min) + 'ms',
-    maxDuration: Math.round(stats.max) + 'ms',
-    p95Duration: Math.round(stats.p95) + 'ms',
-    topOperations: stats.topOperations
-  }, {
-    force: true // Always log performance summaries
-  });
-  
+  logInfo(
+    'PerformanceMonitor',
+    'Performance metrics summary',
+    {
+      totalOperations: performanceMetrics.length,
+      averageDuration: Math.round(stats.average) + 'ms',
+      minDuration: Math.round(stats.min) + 'ms',
+      maxDuration: Math.round(stats.max) + 'ms',
+      p95Duration: Math.round(stats.p95) + 'ms',
+      topOperations: stats.topOperations,
+    },
+    {
+      force: true, // Always log performance summaries
+    }
+  );
+
   // Clear metrics
   performanceMetrics = [];
   performanceTimer = null;
@@ -451,49 +507,50 @@ export function flushPerformanceMetrics(): void {
  * Calculate performance statistics
  */
 function calculatePerformanceStats(metrics: PerformanceMetrics[]) {
-  const durations = metrics.map(m => m.duration).sort((a, b) => a - b);
+  const durations = metrics.map((m) => m.duration).sort((a, b) => a - b);
   const sum = durations.reduce((acc, d) => acc + d, 0);
-  
+
   // Group by operation
-  const operationGroups = metrics.reduce((acc, m) => {
-    if (!acc[m.operation]) {
-      acc[m.operation] = [];
-    }
-    acc[m.operation].push(m.duration);
-    return acc;
-  }, {} as Record<string, number[]>);
-  
+  const operationGroups = metrics.reduce(
+    (acc, m) => {
+      if (!acc[m.operation]) {
+        acc[m.operation] = [];
+      }
+      acc[m.operation].push(m.duration);
+      return acc;
+    },
+    {} as Record<string, number[]>
+  );
+
   // Find top operations by average duration
   const topOperations = Object.entries(operationGroups)
     .map(([operation, durations]) => ({
       operation,
       avgDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
-      count: durations.length
+      count: durations.length,
     }))
     .sort((a, b) => b.avgDuration - a.avgDuration)
     .slice(0, 5)
-    .map(op => ({
+    .map((op) => ({
       ...op,
-      avgDuration: Math.round(op.avgDuration) + 'ms'
+      avgDuration: Math.round(op.avgDuration) + 'ms',
     }));
-  
+
   return {
     average: sum / durations.length,
     min: durations[0] || 0,
     max: durations[durations.length - 1] || 0,
     p95: durations[Math.floor(durations.length * 0.95)] || 0,
-    topOperations
+    topOperations,
   };
 }
 
 /**
  * Export additional utilities
  */
-export { 
-  updatePinoLoggerConfig,
-  getCurrentContext,
-  createLogger
-};
+export { updatePinoLoggerConfig, createLogger };
+
+export { getCurrentContext } from './requestContext';
 
 /**
  * Export types

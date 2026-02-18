@@ -48,12 +48,20 @@ vi.mock('../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
 }));
 
-// Mock logger utils
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 // Clear derivative mapping cache before each test

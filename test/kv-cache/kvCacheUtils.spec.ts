@@ -73,15 +73,6 @@ vi.mock('../../src/utils/requestContext', () => ({
 }));
 
 // Mock the legacy logger adapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/videos/test.mp4',
-    startTime: Date.now(),
-    debugEnabled: false,
-  })),
-}));
-
 // Mock logger
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn(() => ({

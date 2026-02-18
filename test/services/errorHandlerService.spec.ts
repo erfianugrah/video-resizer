@@ -61,8 +61,11 @@ vi.mock('../../src/config', () => ({
   },
 }));
 
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn().mockReturnValue(null),
+  addBreadcrumb: vi.fn(),
+  createRequestContext: vi.fn(),
+  setCurrentContext: vi.fn(),
 }));
 
 // Reset mocks before each test

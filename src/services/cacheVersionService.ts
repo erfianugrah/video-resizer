@@ -3,8 +3,7 @@
  * Enables cache busting for the media proxy
  */
 
-import { addBreadcrumb } from '../utils/requestContext';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { addBreadcrumb, getCurrentContext } from '../utils/requestContext';
 import { EnvVariables } from '../config/environmentConfig';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { cacheConfig } from '../config/CacheConfigurationManager';
@@ -45,7 +44,10 @@ export const getCacheKeyVersion = withErrorHandling<
   [EnvVariables | undefined, string],
   Promise<number | null>
 >(
-  async function getCacheKeyVersionImpl(env: EnvVariables | undefined, cacheKey: string): Promise<number | null> {
+  async function getCacheKeyVersionImpl(
+    env: EnvVariables | undefined,
+    cacheKey: string
+  ): Promise<number | null> {
     // Check if versioning is disabled in configuration
     if (!cacheConfig.isVersioningEnabled()) {
       logDebug('Cache versioning is disabled by configuration');
@@ -54,45 +56,45 @@ export const getCacheKeyVersion = withErrorHandling<
 
     // Support flexible binding names
     const versionBindingName = env?.VERSION_KV_NAME || 'VIDEO_CACHE_KEY_VERSIONS';
-    const versionKV = env && env[versionBindingName] as KVNamespace | undefined;
-    
+    const versionKV = env && (env[versionBindingName] as KVNamespace | undefined);
+
     if (!versionKV) {
       logDebug('Version KV namespace not available', {
         attemptedBinding: versionBindingName,
-        hasVersionKvName: !!env?.VERSION_KV_NAME
+        hasVersionKvName: !!env?.VERSION_KV_NAME,
       });
       return null;
     }
 
     const versionKey = createVersionKey(cacheKey);
-    
+
     // Get value with metadata
     const { value, metadata } = await versionKV.getWithMetadata<VersionMetadata>(versionKey);
-    
+
     // Version is stored in metadata
     if (!metadata || typeof metadata.version !== 'number') {
       logDebug('No version metadata found for cache key', { cacheKey, versionKey });
       return null;
     }
-    
+
     logDebug('Found cache key version', { cacheKey, version: metadata.version });
-    
+
     // Add breadcrumb for tracking
     const requestContext = getCurrentContext();
     if (requestContext) {
       addBreadcrumb(requestContext, 'Cache', 'Retrieved cache key version', {
         cacheKey,
         versionKey,
-        version: metadata.version
+        version: metadata.version,
       });
     }
-    
+
     return metadata.version;
   },
   {
     functionName: 'getCacheKeyVersion',
     component: 'CacheVersionService',
-    logErrors: true
+    logErrors: true,
   }
 );
 
@@ -122,44 +124,44 @@ export const storeCacheKeyVersion = withErrorHandling<
 
     // Support flexible binding names
     const versionBindingName = env?.VERSION_KV_NAME || 'VIDEO_CACHE_KEY_VERSIONS';
-    const versionKV = env && env[versionBindingName] as KVNamespace | undefined;
-    
+    const versionKV = env && (env[versionBindingName] as KVNamespace | undefined);
+
     if (!versionKV) {
       logDebug('Version KV namespace not available', {
         attemptedBinding: versionBindingName,
-        hasVersionKvName: !!env?.VERSION_KV_NAME
+        hasVersionKvName: !!env?.VERSION_KV_NAME,
       });
       return false;
     }
 
     const versionKey = createVersionKey(cacheKey);
     const now = Date.now();
-    
+
     // Create metadata with version and timestamps
     const metadata: VersionMetadata = {
       version,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
-    
+
     // Store with empty value and version in metadata
     // This is faster to retrieve and more efficient
     const options: KVNamespacePutOptions = {
       metadata,
       // Add TTL if provided
-      ...(ttl ? { expirationTtl: ttl } : {})
+      ...(ttl ? { expirationTtl: ttl } : {}),
     };
-    
+
     // Store an empty string as the value, with metadata containing the version
     await versionKV.put(versionKey, '', options);
-    
-    logDebug('Stored cache key version in metadata', { 
-      cacheKey, 
-      versionKey, 
+
+    logDebug('Stored cache key version in metadata', {
+      cacheKey,
+      versionKey,
       version,
-      ttl: ttl || 'none' 
+      ttl: ttl || 'none',
     });
-    
+
     // Add breadcrumb for tracking
     const requestContext = getCurrentContext();
     if (requestContext) {
@@ -167,16 +169,16 @@ export const storeCacheKeyVersion = withErrorHandling<
         cacheKey,
         versionKey,
         version,
-        ttl: ttl || 'none'
+        ttl: ttl || 'none',
       });
     }
-    
+
     return true;
   },
   {
     functionName: 'storeCacheKeyVersion',
     component: 'CacheVersionService',
-    logErrors: true
+    logErrors: true,
   }
 );
 
@@ -192,7 +194,7 @@ export const getNextCacheKeyVersion = withErrorHandling<
   Promise<number>
 >(
   async function getNextCacheKeyVersionImpl(
-    env: EnvVariables | undefined, 
+    env: EnvVariables | undefined,
     cacheKey: string,
     forceIncrement: boolean = false
   ): Promise<number> {
@@ -206,40 +208,40 @@ export const getNextCacheKeyVersion = withErrorHandling<
       logDebug('Environment variables not available, returning version 1');
       return 1;
     }
-    
+
     const currentVersion = await getCacheKeyVersion(env, cacheKey);
-    
+
     // If no version exists, start with 1
     if (!currentVersion) {
-      logDebug('Generated first cache key version', { 
-        cacheKey, 
+      logDebug('Generated first cache key version', {
+        cacheKey,
         currentVersion: 'none',
-        nextVersion: 1 
+        nextVersion: 1,
       });
       return 1;
     }
-    
+
     // Only increment if forceIncrement is true (explicit cache miss)
     // Do NOT automatically increment just because the version is > 1
     const shouldIncrement = forceIncrement;
     const nextVersion = shouldIncrement ? currentVersion + 1 : currentVersion;
-    
-    logDebug('Generated next cache key version', { 
-      cacheKey, 
+
+    logDebug('Generated next cache key version', {
+      cacheKey,
       currentVersion,
       nextVersion,
       forceIncrement,
       shouldIncrement,
       versionChanged: currentVersion !== nextVersion,
       reasonForIncrement: shouldIncrement ? 'Explicit cache miss/force increment' : undefined,
-      reasonForNoIncrement: !shouldIncrement ? 'No explicit cache miss' : undefined
+      reasonForNoIncrement: !shouldIncrement ? 'No explicit cache miss' : undefined,
     });
-    
+
     return nextVersion;
   },
   {
     functionName: 'getNextCacheKeyVersion',
     component: 'CacheVersionService',
-    logErrors: true
+    logErrors: true,
   }
 );

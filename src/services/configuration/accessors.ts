@@ -2,39 +2,33 @@
  * Accessors for specific configuration sections
  */
 import { WorkerConfiguration } from './schemas';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
+import { createCategoryLogger } from '../../utils/logger';
 import { withErrorHandling } from '../../utils/errorHandlingUtils';
 import { ConfigurationError } from '../../errors';
+
+const logger = createCategoryLogger('ConfigurationService');
 
 /**
  * Get video configuration section
  * @param config Complete worker configuration
  * @returns Video configuration section or null if not available
  */
-export const getVideoConfig = withErrorHandling<
-  [WorkerConfiguration | null],
-  any | null
->(
+export const getVideoConfig = withErrorHandling<[WorkerConfiguration | null], any | null>(
   (config: WorkerConfiguration | null) => {
     if (!config) {
       return null;
     }
-    
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Getting video config', {
-        hasConfig: !!config.video
-      });
-    }
-    
+
+    logger.debug('Getting video config', {
+      hasConfig: !!config.video,
+    });
+
     return config.video;
   },
   {
     functionName: 'getVideoConfig',
     component: 'ConfigurationService',
-    logErrors: true
+    logErrors: true,
   }
 );
 
@@ -43,29 +37,22 @@ export const getVideoConfig = withErrorHandling<
  * @param config Complete worker configuration
  * @returns Cache configuration section or null if not available
  */
-export const getCacheConfig = withErrorHandling<
-  [WorkerConfiguration | null],
-  any | null
->(
+export const getCacheConfig = withErrorHandling<[WorkerConfiguration | null], any | null>(
   (config: WorkerConfiguration | null) => {
     if (!config) {
       return null;
     }
-    
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Getting cache config', {
-        hasConfig: !!config.cache
-      });
-    }
-    
+
+    logger.debug('Getting cache config', {
+      hasConfig: !!config.cache,
+    });
+
     return config.cache;
   },
   {
     functionName: 'getCacheConfig',
     component: 'ConfigurationService',
-    logErrors: true
+    logErrors: true,
   }
 );
 
@@ -74,29 +61,22 @@ export const getCacheConfig = withErrorHandling<
  * @param config Complete worker configuration
  * @returns Logging configuration section or null if not available
  */
-export const getLoggingConfig = withErrorHandling<
-  [WorkerConfiguration | null],
-  any | null
->(
+export const getLoggingConfig = withErrorHandling<[WorkerConfiguration | null], any | null>(
   (config: WorkerConfiguration | null) => {
     if (!config) {
       return null;
     }
-    
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Getting logging config', {
-        hasConfig: !!config.logging
-      });
-    }
-    
+
+    logger.debug('Getting logging config', {
+      hasConfig: !!config.logging,
+    });
+
     return config.logging;
   },
   {
     functionName: 'getLoggingConfig',
     component: 'ConfigurationService',
-    logErrors: true
+    logErrors: true,
   }
 );
 
@@ -105,28 +85,21 @@ export const getLoggingConfig = withErrorHandling<
  * @param config Complete worker configuration
  * @returns Debug configuration section or null if not available
  */
-export const getDebugConfig = withErrorHandling<
-  [WorkerConfiguration | null],
-  any | null
->(
+export const getDebugConfig = withErrorHandling<[WorkerConfiguration | null], any | null>(
   (config: WorkerConfiguration | null) => {
     if (!config) {
       return null;
     }
-    
-    const requestContext = getCurrentContext();
-    if (requestContext) {
-      const logger = createLogger(requestContext);
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Getting debug config', {
-        hasConfig: !!config.debug
-      });
-    }
-    
+
+    logger.debug('Getting debug config', {
+      hasConfig: !!config.debug,
+    });
+
     return config.debug;
   },
   {
     functionName: 'getDebugConfig',
     component: 'ConfigurationService',
-    logErrors: true
+    logErrors: true,
   }
 );

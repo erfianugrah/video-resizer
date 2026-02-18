@@ -6,8 +6,7 @@ import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { translateAkamaiParamName, translateAkamaiParamValue } from '../utils/transformationUtils';
 import { getResponsiveVideoSize } from '../utils/responsiveWidthUtils';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
-import { addBreadcrumb } from '../utils/requestContext';
+import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
 import {
   hasIMQueryParams,
   convertImQueryToClientHints,
@@ -15,7 +14,9 @@ import {
   validateAkamaiParams,
   findClosestDerivative,
 } from '../utils/imqueryUtils';
-import { debug, info, warn } from '../utils/loggerUtils';
+import { createCategoryLogger } from '../utils/logger';
+
+const logger = createCategoryLogger('VideoOptionsService');
 
 /**
  * Type for video derivatives
@@ -85,7 +86,7 @@ export function determineVideoOptions(
 
   // Log IMQuery detection
   if (usingIMQuery) {
-    debug('VideoOptionsService', 'IMQuery parameters detected', {
+    logger.debug('IMQuery parameters detected', {
       url: request.url,
       imwidth: params.get('imwidth'),
       imheight: params.get('imheight'),
@@ -104,7 +105,7 @@ export function determineVideoOptions(
     // Validate IMQuery parameters
     const validationResult = validateAkamaiParams(originalParams);
     if (!validationResult.isValid && validationResult.warnings.length > 0) {
-      warn('IMQuery', 'IMQuery parameter validation warnings', {
+      logger.warn('IMQuery parameter validation warnings', {
         warnings: validationResult.warnings,
       });
 
@@ -130,7 +131,7 @@ export function determineVideoOptions(
       // If only width is provided, it will try breakpoint-based matching first
       const matchedDerivative = findClosestDerivative(imwidth, imheight);
 
-      debug('VideoOptionsService', 'Derivative matching attempted', {
+      logger.debug('Derivative matching attempted', {
         imwidth,
         imheight,
         matchedDerivative,
@@ -165,7 +166,7 @@ export function determineVideoOptions(
         const mappingMethod = imwidth && !imheight ? 'breakpoint' : 'percentage';
 
         // IMPORTANT: Log derivative configuration to understand caching issues
-        debug('IMQuery', 'Applied derivative configuration for caching', {
+        logger.debug('IMQuery: Applied derivative configuration for caching', {
           derivative: matchedDerivative,
           mappingMethod,
           requestedWidth,
@@ -198,7 +199,7 @@ export function determineVideoOptions(
           source: 'imquery-derivative',
         });
 
-        debug('IMQuery', 'Applied derivative based on IMQuery dimensions', {
+        logger.debug('IMQuery: Applied derivative based on IMQuery dimensions', {
           requestedWidth,
           requestedHeight,
           derivative: matchedDerivative,
@@ -209,7 +210,7 @@ export function determineVideoOptions(
         });
       } else {
         // No matching derivative, fall back to direct dimensions
-        debug('IMQuery', 'No matching derivative for IMQuery dimensions', {
+        logger.debug('IMQuery: No matching derivative for IMQuery dimensions', {
           imwidth,
           imheight,
         });
@@ -225,7 +226,7 @@ export function determineVideoOptions(
       const imrefValue = params.get('imref') || '';
       const imrefParams = parseImQueryRef(imrefValue);
 
-      debug('IMQuery', 'Parsed IMQuery reference', {
+      logger.debug('IMQuery: Parsed IMQuery reference', {
         imref: imrefValue,
         params: imrefParams,
       });
@@ -261,7 +262,7 @@ export function determineVideoOptions(
       // Use the enhanced request for further processing
       request = enhancedRequest;
 
-      debug('IMQuery', 'Enhanced request with IMQuery client hints', {
+      logger.debug('IMQuery: Enhanced request with IMQuery client hints', {
         addedHeaders: clientHints,
       });
 

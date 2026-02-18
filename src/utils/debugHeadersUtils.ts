@@ -5,8 +5,7 @@
  * and handling debug reports. This eliminates duplication between debugHeadersUtils.ts,
  * debugService.ts, and responseBuilder.ts.
  */
-import { getCurrentContext } from './legacyLoggerAdapter';
-import { addBreadcrumb, getPerformanceMetrics } from './requestContext';
+import { getCurrentContext, addBreadcrumb, getPerformanceMetrics } from './requestContext';
 import { createCategoryLogger } from './logger';
 import { getCircularReplacer } from './errorHandlingUtils';
 

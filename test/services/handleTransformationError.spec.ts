@@ -11,18 +11,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleTransformationError } from '../../src/services/errorHandlerService';
 
 // Mock modules
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn().mockReturnValue({
-    requestId: 'test-request-id',
-    breadcrumbs: [],
-    diagnostics: { errors: [], warnings: [] },
-    url: 'https://example.com/videos/test.mp4',
-    startTime: 0,
-    componentTiming: {},
-    debugEnabled: false,
-  }),
-}));
-
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),

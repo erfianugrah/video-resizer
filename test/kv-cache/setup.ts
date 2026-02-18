@@ -9,42 +9,42 @@ vi.mock('../../src/config', () => {
       ok: 86400,
       redirects: 3600,
       clientError: 60,
-      serverError: 10
-    }
+      serverError: 10,
+    },
   };
 
   return {
     getCacheConfig: vi.fn((env) => {
       // Log the environment variables when called
       console.debug('Mock getCacheConfig called with env:', env);
-      
+
       // Return based on environment
       if (env && env.CACHE_ENABLE_KV === 'true') {
         return {
           ...cacheConfig,
-          enableKVCache: true
+          enableKVCache: true,
         };
       }
-      
+
       return cacheConfig;
     }),
     getVideoPathPatterns: vi.fn(() => [
       {
         pattern: '/videos/:path',
         ttl: 86400,
-        cacheTag: 'video'
-      }
+        cacheTag: 'video',
+      },
     ]),
     CacheConfigurationManager: {
       getInstance: vi.fn(() => ({
-        getConfig: vi.fn(() => ({ 
+        getConfig: vi.fn(() => ({
           defaultMaxAge: 86400,
           method: 'cf',
           enableCacheTags: true,
-          enableKVCache: true
-        }))
-      }))
-    }
+          enableKVCache: true,
+        })),
+      })),
+    },
   };
 });
 
@@ -55,12 +55,12 @@ vi.mock('../../src/utils/pinoLogger', () => {
       debug: vi.fn(),
       info: vi.fn(),
       error: vi.fn(),
-      warn: vi.fn()
+      warn: vi.fn(),
     })),
     debug: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
-    warn: vi.fn()
+    warn: vi.fn(),
   };
 });
 
@@ -68,65 +68,69 @@ vi.mock('../../src/utils/pinoLogger', () => {
 class MockKVNamespace implements KVNamespace {
   private store: Map<string, ArrayBuffer> = new Map();
   private metadata: Map<string, any> = new Map();
-  
+
   async put(key: string, value: ArrayBuffer | string, options?: any): Promise<void> {
-    const buffer = typeof value === 'string' 
-      ? new TextEncoder().encode(value) 
-      : value;
-    
+    const buffer = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+
     this.store.set(key, buffer);
-    
+
     if (options?.metadata) {
       this.metadata.set(key, options.metadata);
     }
   }
-  
+
   async get(key: string, options?: any): Promise<any> {
     if (options === 'arrayBuffer' || options?.type === 'arrayBuffer') {
       return this.store.get(key) || null;
     }
-    
+
     const buffer = this.store.get(key);
     if (!buffer) return null;
-    
+
     if (options === 'text' || options?.type === 'text') {
       return new TextDecoder().decode(buffer);
     }
-    
+
     if (options === 'json' || options?.type === 'json') {
       const text = new TextDecoder().decode(buffer);
       return JSON.parse(text);
     }
-    
+
     return buffer;
   }
-  
+
   async getWithMetadata<T = any>(key: string, type?: string): Promise<{ value: any; metadata: T }> {
     const value = await this.get(key, type);
     const metadata = this.metadata.get(key) as T;
     return { value, metadata };
   }
-  
+
   async delete(key: string): Promise<void> {
     this.store.delete(key);
     this.metadata.delete(key);
   }
-  
-  async list(options?: any): Promise<{ keys: { name: string; expiration?: number; metadata?: any }[], list_complete: boolean, cursor: string }> {
+
+  async list(
+    options?: any
+  ): Promise<{
+    keys: { name: string; expiration?: number; metadata?: any }[];
+    list_complete: boolean;
+    cursor: string;
+  }> {
     const prefix = options?.prefix || '';
     const keys = Array.from(this.store.keys())
-      .filter(key => key.startsWith(prefix))
-      .map(name => {
+      .filter((key) => key.startsWith(prefix))
+      .map((name) => {
         return {
           name,
-          metadata: this.metadata.get(name)
+          metadata: this.metadata.get(name),
         };
       });
-    
+
     return {
       keys,
       list_complete: true,
-      cursor: ''
+      cursor: '',
     };
   }
 }
@@ -143,7 +147,7 @@ vi.mock('../../src/utils/requestContext', () => ({
     debugEnabled: false,
     breadcrumbs: [],
     diagnostics: {},
-    componentTiming: {}
+    componentTiming: {},
   })),
   addBreadcrumb: vi.fn(),
   initRequestContext: vi.fn(),
@@ -156,23 +160,9 @@ vi.mock('../../src/utils/requestContext', () => ({
     diagnostics: {},
     componentTiming: {},
     verboseEnabled: false,
-    executionContext: request?.ctx
+    executionContext: request?.ctx,
   })),
-  setCurrentContext: vi.fn()
-}));
-
-// Mock the legacy logger adapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/videos/test.mp4',
-    startTime: Date.now(),
-    debugEnabled: false
-  })),
-  info: vi.fn(),
-  debug: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn()
+  setCurrentContext: vi.fn(),
 }));
 
 // Mock the video transformation service
@@ -183,10 +173,10 @@ vi.mock('../../src/services/videoTransformationService', () => ({
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Length': '20',
-        'Cache-Control': 'public, max-age=86400'
-      }
+        'Cache-Control': 'public, max-age=86400',
+      },
     });
-  })
+  }),
 }));
 
 // Reset all mocks before each test

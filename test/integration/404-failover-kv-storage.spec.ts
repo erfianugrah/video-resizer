@@ -11,15 +11,18 @@ vi.mock('../../src/utils/pinoLogger', () => ({
   }),
 }));
 
-vi.mock('../../src/services/errorHandler/logging', () => ({
-  logDebug: vi.fn(),
-}));
-
 vi.mock('../../src/utils/logger', () => ({
   logDebug: vi.fn(),
   logInfo: vi.fn(),
   logWarn: vi.fn(),
   logError: vi.fn(),
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', () => ({

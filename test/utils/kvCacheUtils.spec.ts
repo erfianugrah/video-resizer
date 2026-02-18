@@ -85,17 +85,13 @@ vi.mock('../../src/utils/logger', () => ({
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
-  getCurrentContext: vi.fn(),
-  addBreadcrumb: vi.fn(),
-}));
-
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
   getCurrentContext: vi.fn().mockReturnValue({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
     startTime: Date.now(),
     debugEnabled: false,
   }),
+  addBreadcrumb: vi.fn(),
 }));
 
 describe('KV Cache Utils', () => {

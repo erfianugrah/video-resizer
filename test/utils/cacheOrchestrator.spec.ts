@@ -35,16 +35,6 @@ vi.mock('../../src/utils/kvCacheUtils', () => ({
   storeInKVCache: vi.fn().mockResolvedValue(true),
 }));
 
-// Mock the legacy logger adapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/videos/test.mp4',
-    startTime: Date.now(),
-    debugEnabled: false,
-  })),
-}));
-
 // Mock the CacheConfigurationManager (dynamically imported in withCaching)
 vi.mock('../../src/config/CacheConfigurationManager', () => ({
   CacheConfigurationManager: {

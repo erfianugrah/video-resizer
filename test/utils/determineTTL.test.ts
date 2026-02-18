@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { determineTTL } from '../../src/utils/determineTTL';
-import { getCurrentContext } from '../../src/utils/legacyLoggerAdapter';
+import { getCurrentContext } from '../../src/utils/requestContext';
 import { VideoConfigurationManager } from '../../src/config/VideoConfigurationManager';
 
 // Mock dependencies
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn(() => ({
     url: 'https://example.com/videos/test-video.mp4',
     requestId: 'test-request-id',
   })),
+  addBreadcrumb: vi.fn(),
+  createRequestContext: vi.fn(),
+  setCurrentContext: vi.fn(),
 }));
 
 vi.mock('../../src/utils/logger', () => ({

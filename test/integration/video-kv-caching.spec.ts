@@ -30,13 +30,19 @@ vi.mock('../../src/utils/pinoLogger', () => ({
   warn: vi.fn(),
 }));
 
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/videos/test.mp4',
-    startTime: Date.now(),
-  })),
+vi.mock('../../src/utils/logger', () => ({
   initializeLegacyLogger: vi.fn(),
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', () => ({

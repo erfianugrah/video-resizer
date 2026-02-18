@@ -3,10 +3,10 @@
  */
 import { VideoTransformError, ErrorType } from '../../errors';
 import { withErrorHandling, getCircularReplacer } from '../../utils/errorHandlingUtils';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
-import { addBreadcrumb } from '../../utils/requestContext';
+import { getCurrentContext, addBreadcrumb } from '../../utils/requestContext';
 import type { DebugInfo, DiagnosticsInfo } from '../../utils/debugHeadersUtils';
-import { logDebug, logError } from './logging';
+import { createCategoryLogger } from '../../utils/logger';
+const logger = createCategoryLogger('ErrorHandler');
 import { normalizeError } from './normalizeError';
 import { fetchOriginalContentFallback } from './fallbackContent';
 
@@ -39,7 +39,7 @@ async function createErrorResponseImpl(
   }
 
   // Log error processing request
-  logError('ErrorHandlerService', 'Error processing request', {
+  logger.error('Error processing request', {
     error: normalizedError.message,
     errorType: normalizedError.errorType,
     statusCode: normalizedError.statusCode,
@@ -109,7 +109,7 @@ async function createErrorResponseImpl(
   }
 
   // Log the configuration to help with debugging
-  logDebug('FallbackHandler', 'Caching config loaded', {
+  logger.debug('Caching config loaded', {
     method: caching?.method,
     debug: caching?.debug,
     fallbackEnabled: fallbackConfig?.enabled,
@@ -126,7 +126,7 @@ async function createErrorResponseImpl(
     // It's a 400 error OR it's a 500 error (server error)
     if (!fallbackConfig.badRequestOnly || normalizedError.statusCode === 400 || isServerError) {
       // Log fallback attempt
-      logDebug('ErrorHandlerService', 'Attempting fallback for error', {
+      logger.debug('Attempting fallback for error', {
         statusCode: normalizedError.statusCode,
         isServerError,
         errorType: normalizedError.errorType,

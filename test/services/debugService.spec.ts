@@ -5,12 +5,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { addDebugHeaders, createDebugReport } from '../../src/services/debugService';
 import { DebugInfo, DiagnosticsInfo } from '../../src/utils/debugHeadersUtils';
 
-// Mock logging functions
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 describe('debugService', () => {

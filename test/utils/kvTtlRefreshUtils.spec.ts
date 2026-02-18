@@ -6,13 +6,6 @@ import { refreshKeyTtl, checkAndRefreshTtl } from '../../src/utils/kvTtlRefreshU
 import { CacheConfigurationManager } from '../../src/config/CacheConfigurationManager';
 
 // Mock dependencies
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn().mockReturnValue({
-    requestId: 'test-request-id',
-    url: 'https://example.com/test',
-  }),
-}));
-
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
@@ -24,6 +17,10 @@ vi.mock('../../src/utils/pinoLogger', () => ({
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
+  getCurrentContext: vi.fn().mockReturnValue({
+    requestId: 'test-request-id',
+    url: 'https://example.com/test',
+  }),
   addBreadcrumb: vi.fn(),
 }));
 

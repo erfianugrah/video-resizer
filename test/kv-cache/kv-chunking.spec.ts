@@ -14,7 +14,7 @@ vi.mock('../../src/utils/pinoLogger', () => ({
   })),
 }));
 
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn(() => ({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
@@ -24,9 +24,6 @@ vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
       waitUntil: vi.fn((promise) => promise),
     },
   })),
-}));
-
-vi.mock('../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
 }));
 

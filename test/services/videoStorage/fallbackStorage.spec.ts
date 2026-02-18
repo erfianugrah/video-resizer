@@ -8,7 +8,7 @@ vi.mock('../../../src/utils/errorHandlingUtils', () => ({
   tryOrDefault: vi.fn((fn, _context, _defaultValue) => fn),
 }));
 
-vi.mock('../../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn(() => ({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
@@ -18,14 +18,20 @@ vi.mock('../../../src/utils/legacyLoggerAdapter', () => ({
       waitUntil: vi.fn((promise) => promise),
     },
   })),
-}));
-
-vi.mock('../../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
 }));
 
-vi.mock('../../../src/services/videoStorage/logging', () => ({
-  logDebug: vi.fn(),
+const { mockLoggerDebug } = vi.hoisted(() => ({
+  mockLoggerDebug: vi.fn(),
+}));
+vi.mock('../../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: mockLoggerDebug,
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
 }));
 
 vi.mock('../../../src/services/videoStorage/pathTransform', () => ({
@@ -94,9 +100,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     expect(storeTransformedVideo.mock.calls[0][4]).toBe(3600);
 
     // Verify logging
-    const { logDebug } = await import('../../../src/services/videoStorage/logging');
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       'Starting background streaming of fallback to KV',
       expect.objectContaining({
         path: 'videos/test.mp4',
@@ -105,8 +109,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       })
     );
 
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       'Successfully stored fallback content in KV',
       expect.objectContaining({
         path: 'videos/test.mp4',
@@ -155,11 +158,8 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     expect(typeof callArgs[4]).toBe('number'); // TTL
 
     // Verify logging for file
-    const { logDebug } = await import('../../../src/services/videoStorage/logging');
-
     // Check if log message about content was recorded
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       expect.stringContaining('Starting background streaming of fallback to KV'),
       expect.objectContaining({
         path: 'videos/large-test.mp4',
@@ -169,8 +169,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify success message
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       'Successfully stored fallback content in KV',
       expect.objectContaining({
         path: 'videos/large-test.mp4',
@@ -330,9 +329,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     );
 
     // Verify the log message about file processing
-    const { logDebug } = await import('../../../src/services/videoStorage/logging');
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       expect.stringContaining('Starting background streaming of fallback to KV'),
       expect.objectContaining({
         contentLength: contentLength,

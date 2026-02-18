@@ -3,9 +3,12 @@
  */
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { hasClientHints, getVideoSizeFromClientHints } from './clientHints';
-import { hasCfDeviceType, getVideoSizeFromCfDeviceType, getVideoSizeFromUserAgent } from './deviceUtils';
-import { getCurrentContext } from './legacyLoggerAdapter';
-import { addBreadcrumb } from './requestContext';
+import {
+  hasCfDeviceType,
+  getVideoSizeFromCfDeviceType,
+  getVideoSizeFromUserAgent,
+} from './deviceUtils';
+import { getCurrentContext, addBreadcrumb } from './requestContext';
 
 /**
  * Interface for responsive video size result
@@ -38,40 +41,40 @@ export function getResponsiveVideoSize(
       width: widthParam,
       height: heightParam,
       quality: 'explicit',
-      method: 'parameter'
+      method: 'parameter',
     };
   }
-  
+
   // If only one dimension is specified, calculate the other based on 16:9 aspect ratio
   if (widthParam) {
     return {
       width: widthParam,
-      height: Math.round(widthParam * 9 / 16),
+      height: Math.round((widthParam * 9) / 16),
       quality: 'explicit-width',
-      method: 'parameter-derived'
+      method: 'parameter-derived',
     };
   }
-  
+
   if (heightParam) {
     return {
-      width: Math.round(heightParam * 16 / 9),
+      width: Math.round((heightParam * 16) / 9),
       height: heightParam,
       quality: 'explicit-height',
-      method: 'parameter-derived'
+      method: 'parameter-derived',
     };
   }
-  
+
   // Check for ?quality=auto param which explicitly requests adaptive quality
   // This functionality is actually handled in videoOptionsService.ts
-  
+
   // Otherwise, use adaptive sizing based on client capabilities
   // Try to get size info from various sources, in order of accuracy
   let videoSize;
-  
+
   // Start with client hints, which are most accurate when available
   if (hasClientHints(request)) {
     videoSize = getVideoSizeFromClientHints(request);
-    
+
     // Add breadcrumb for client hints detection
     const requestContext = getCurrentContext();
     if (requestContext) {
@@ -80,24 +83,24 @@ export function getResponsiveVideoSize(
         height: videoSize.height,
         viewportWidth: videoSize.viewportWidth,
         density: videoSize.dpr,
-        quality: 'adaptive'
+        quality: 'adaptive',
       });
     }
-    
+
     return {
       width: videoSize.width,
       height: videoSize.height,
       quality: 'adaptive',
       method: 'client-hints',
       viewportWidth: videoSize.viewportWidth,
-      usingClientHints: true
+      usingClientHints: true,
     };
   }
-  
+
   // Next try CF-Device-Type header
   if (hasCfDeviceType(request)) {
     videoSize = getVideoSizeFromCfDeviceType(request);
-    
+
     // Add breadcrumb for device type detection
     const requestContext = getCurrentContext();
     if (requestContext) {
@@ -105,22 +108,22 @@ export function getResponsiveVideoSize(
         width: videoSize.width,
         height: videoSize.height,
         deviceType: videoSize.deviceType,
-        quality: 'adaptive'
+        quality: 'adaptive',
       });
     }
-    
+
     return {
       width: videoSize.width,
       height: videoSize.height,
       quality: 'adaptive',
       method: 'cf-device-type',
-      deviceType: videoSize.deviceType
+      deviceType: videoSize.deviceType,
     };
   }
-  
+
   // Fall back to User-Agent detection
   videoSize = getVideoSizeFromUserAgent(request);
-  
+
   // Add breadcrumb for user agent detection
   const requestContext = getCurrentContext();
   if (requestContext) {
@@ -129,16 +132,16 @@ export function getResponsiveVideoSize(
       height: videoSize.height,
       deviceType: videoSize.deviceType,
       userAgent: request.headers.get('User-Agent')?.substring(0, 50) || 'unknown',
-      quality: 'adaptive'
+      quality: 'adaptive',
     });
   }
-  
+
   return {
     width: videoSize.width,
     height: videoSize.height,
     quality: 'adaptive',
     method: 'user-agent',
-    deviceType: videoSize.deviceType
+    deviceType: videoSize.deviceType,
   };
 }
 
@@ -160,20 +163,20 @@ export function calculateConstrainedDimensions(
   if (originalWidth <= maxWidth && originalHeight <= maxHeight) {
     return { width: originalWidth, height: originalHeight };
   }
-  
+
   // Calculate aspect ratio
   const aspectRatio = originalWidth / originalHeight;
-  
+
   // Calculate dimensions constrained by maxWidth
   let newWidth = maxWidth;
   let newHeight = Math.round(newWidth / aspectRatio);
-  
+
   // If height still exceeds maxHeight, constrain by height instead
   if (newHeight > maxHeight) {
     newHeight = maxHeight;
     newWidth = Math.round(newHeight * aspectRatio);
   }
-  
+
   return { width: newWidth, height: newHeight };
 }
 
@@ -186,10 +189,12 @@ export function findClosestQualityLevel(targetHeight: number): number {
   const configManager = VideoConfigurationManager.getInstance();
   const availableQualities = configManager.getResponsiveConfig().availableQualities;
   const sortedQualities = [...availableQualities].sort((a, b) => a - b);
-  
+
   // Find the first quality that meets or exceeds the target,
   // or fallback to the highest quality if none found
-  return sortedQualities.find(q => q >= targetHeight) || sortedQualities[sortedQualities.length - 1];
+  return (
+    sortedQualities.find((q) => q >= targetHeight) || sortedQualities[sortedQualities.length - 1]
+  );
 }
 
 /**
@@ -201,7 +206,7 @@ export function findClosestQualityLevel(targetHeight: number): number {
  */
 export function getVideoQualityPreset(
   request: Request,
-  deviceType: string, 
+  deviceType: string,
   networkQuality: string
 ): number {
   // Define a matrix of device types and network qualities
@@ -210,28 +215,28 @@ export function getVideoQualityPreset(
       slow: 240,
       medium: 360,
       fast: 480,
-      ultrafast: 720
+      ultrafast: 720,
     },
     tablet: {
       slow: 360,
       medium: 480,
       fast: 720,
-      ultrafast: 1080
+      ultrafast: 1080,
     },
     desktop: {
       slow: 480,
       medium: 720,
       fast: 1080,
-      ultrafast: 1440
+      ultrafast: 1440,
     },
     'large-desktop': {
       slow: 720,
       medium: 1080,
       fast: 1440,
-      ultrafast: 2160
-    }
+      ultrafast: 2160,
+    },
   };
-  
+
   // Get quality based on device type and network quality
   const qualityMap = qualityMatrix[deviceType] || qualityMatrix.desktop;
   const quality = qualityMap[networkQuality] || qualityMap.medium;
@@ -239,7 +244,7 @@ export function getVideoQualityPreset(
   // Get user's preference for quality
   const url = new URL(request.url);
   const qualityPreference = url.searchParams.get('quality');
-  
+
   // Apply user preferences
   if (qualityPreference === 'low') {
     return Math.min(quality, 480);
@@ -249,6 +254,6 @@ export function getVideoQualityPreset(
       return Math.max(quality, 1080);
     }
   }
-  
+
   return quality;
 }

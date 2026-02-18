@@ -4,10 +4,11 @@
 import { ConfigurationError } from '../../errors';
 import { ConfigEnvironment, WorkerConfiguration } from './schemas';
 import { validateConfig } from './validation';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
+import { createCategoryLogger } from '../../utils/logger';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { ConfigurationCache } from './caching';
+
+const logger = createCategoryLogger('ConfigurationService');
 
 // Constants
 const CONFIG_KEY = 'worker-config';
@@ -26,47 +27,40 @@ export async function storeToKV(
   cache: ConfigurationCache,
   metrics: Record<string, number | boolean>
 ): Promise<boolean> {
-  const requestContext = getCurrentContext();
-  const logger = requestContext ? createLogger(requestContext) : null;
-  
   // Support flexible binding names
   const kvBindingName = env.CONFIG_KV_NAME || 'VIDEO_CONFIGURATION_STORE';
   const kvNamespace = env[kvBindingName] as KVNamespace | undefined;
-  
+
   if (!kvNamespace) {
-    if (logger && requestContext) {
-      pinoError(requestContext, logger, 'ConfigurationService', 'KV namespace not available for storing config', {
-        environment: env.ENVIRONMENT || 'unknown',
-        attemptedBinding: kvBindingName,
-        hasConfigKvName: !!env.CONFIG_KV_NAME
-      });
-    }
+    logger.error('KV namespace not available for storing config', {
+      environment: env.ENVIRONMENT || 'unknown',
+      attemptedBinding: kvBindingName,
+      hasConfigKvName: !!env.CONFIG_KV_NAME,
+    });
     metrics.kvErrorCount = (metrics.kvErrorCount as number) + 1;
     return false;
   }
-  
+
   // Validate config before storing
   try {
     validateConfig(config);
   } catch (error) {
-    if (logger && requestContext) {
-      pinoError(requestContext, logger, 'ConfigurationService', 'Invalid configuration for storage', {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
+    logger.error('Invalid configuration for storage', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     metrics.validationErrorCount = (metrics.validationErrorCount as number) + 1;
     return false;
   }
-  
+
   // Update lastUpdated timestamp
   const updatedConfig = {
     ...config,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
   };
-  
+
   // Track KV store metrics
   metrics.kvStoreCount = (metrics.kvStoreCount as number) + 1;
-  
+
   try {
     // Store configuration in KV without expiration
     await kvNamespace.put(
@@ -74,34 +68,30 @@ export async function storeToKV(
       JSON.stringify(updatedConfig)
       // Removed the expirationTtl to prevent configuration expiration
     );
-    
+
     // Update metrics
     metrics.kvStoreSuccessCount = (metrics.kvStoreSuccessCount as number) + 1;
     metrics.lastConfigUpdateTimestamp = Date.now();
-    
+
     // Update cache with new configuration
     cache.set(CONFIG_KEY, updatedConfig);
-    
-    if (logger && requestContext) {
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration stored successfully', {
-        version: updatedConfig.version,
-        updatedAt: updatedConfig.lastUpdated
-      });
-    }
-    
+
+    logger.debug('Configuration stored successfully', {
+      version: updatedConfig.version,
+      updatedAt: updatedConfig.lastUpdated,
+    });
+
     return true;
   } catch (error) {
     // Update metrics for failure
     metrics.kvStoreFailCount = (metrics.kvStoreFailCount as number) + 1;
     metrics.kvErrorCount = (metrics.kvErrorCount as number) + 1;
-    
-    if (logger && requestContext) {
-      pinoError(requestContext, logger, 'ConfigurationService', 'Failed to store configuration to KV', {
-        error: error instanceof Error ? error.message : String(error),
-        key: CONFIG_KEY
-      });
-    }
-    
+
+    logger.error('Failed to store configuration to KV', {
+      error: error instanceof Error ? error.message : String(error),
+      key: CONFIG_KEY,
+    });
+
     return false;
   }
 }
@@ -118,10 +108,10 @@ export function createUpdatedConfiguration(
 ): WorkerConfiguration {
   // Create a deep copy of the current config
   const baseConfig = JSON.parse(JSON.stringify(config));
-  
+
   // Apply updates deeply
   const newConfig = deepMerge(baseConfig, updates);
-  
+
   // Update version (increment patch version)
   const versionParts = newConfig.version.split('.');
   if (versionParts.length === 3) {
@@ -129,10 +119,10 @@ export function createUpdatedConfiguration(
     versionParts[2] = isNaN(patch) ? '1' : (patch + 1).toString();
     newConfig.version = versionParts.join('.');
   }
-  
+
   // Update timestamp
   newConfig.lastUpdated = new Date().toISOString();
-  
+
   return newConfig;
 }
 
@@ -151,11 +141,16 @@ function deepMerge(target: any, source: any): any {
   }
 
   // Loop through source properties and merge
-  Object.keys(source).forEach(key => {
+  Object.keys(source).forEach((key) => {
     // Special case for arrays - don't try to merge them, just replace them
     if (Array.isArray(source[key])) {
       output[key] = source[key];
-    } else if (source[key] instanceof Object && key in target && target[key] instanceof Object && !Array.isArray(target[key])) {
+    } else if (
+      source[key] instanceof Object &&
+      key in target &&
+      target[key] instanceof Object &&
+      !Array.isArray(target[key])
+    ) {
       // Recursively merge objects (but not arrays)
       output[key] = deepMerge(target[key], source[key]);
     } else {

@@ -1,29 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { 
-  createVersionKey, 
-  getCacheKeyVersion, 
+import {
+  createVersionKey,
+  getCacheKeyVersion,
   storeCacheKeyVersion,
-  getNextCacheKeyVersion
+  getNextCacheKeyVersion,
 } from '../../src/services/cacheVersionService';
 
 // Mock dependencies
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => null)
-}));
-
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn(),
   debug: vi.fn(),
-  error: vi.fn()
+  error: vi.fn(),
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
-  addBreadcrumb: vi.fn()
+  getCurrentContext: vi.fn(() => null),
+  addBreadcrumb: vi.fn(),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', () => ({
   logErrorWithContext: vi.fn(),
-  withErrorHandling: vi.fn((fn, options) => fn)
+  withErrorHandling: vi.fn((fn, options) => fn),
 }));
 
 describe('cacheVersionService', () => {
@@ -52,12 +49,12 @@ describe('cacheVersionService', () => {
     beforeEach(() => {
       // Create mock getWithMetadata function
       mockKVNamespace = {
-        getWithMetadata: vi.fn()
+        getWithMetadata: vi.fn(),
       };
 
       // Create mock environment
       mockEnv = {
-        VIDEO_CACHE_KEY_VERSIONS: mockKVNamespace
+        VIDEO_CACHE_KEY_VERSIONS: mockKVNamespace,
       };
     });
 
@@ -69,9 +66,9 @@ describe('cacheVersionService', () => {
     it('should return null when metadata is not found', async () => {
       mockKVNamespace.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: null
+        metadata: null,
       });
-      
+
       const result = await getCacheKeyVersion(mockEnv, 'test-key');
       expect(result).toBeNull();
     });
@@ -79,9 +76,9 @@ describe('cacheVersionService', () => {
     it('should return null when version is not a number in metadata', async () => {
       mockKVNamespace.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: { otherField: 'value' }
+        metadata: { otherField: 'value' },
       });
-      
+
       const result = await getCacheKeyVersion(mockEnv, 'test-key');
       expect(result).toBeNull();
     });
@@ -89,9 +86,9 @@ describe('cacheVersionService', () => {
     it('should return version number from metadata', async () => {
       mockKVNamespace.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: { version: 3 }
+        metadata: { version: 3 },
       });
-      
+
       const result = await getCacheKeyVersion(mockEnv, 'test-key');
       expect(result).toBe(3);
     });
@@ -104,12 +101,12 @@ describe('cacheVersionService', () => {
     beforeEach(() => {
       // Create mock put function
       mockKVNamespace = {
-        put: vi.fn().mockResolvedValue(undefined)
+        put: vi.fn().mockResolvedValue(undefined),
       };
 
       // Create mock environment
       mockEnv = {
-        VIDEO_CACHE_KEY_VERSIONS: mockKVNamespace
+        VIDEO_CACHE_KEY_VERSIONS: mockKVNamespace,
       };
     });
 
@@ -126,9 +123,9 @@ describe('cacheVersionService', () => {
         '',
         expect.objectContaining({
           metadata: expect.objectContaining({
-            version: 2
+            version: 2,
           }),
-          expirationTtl: 300
+          expirationTtl: 300,
         })
       );
     });
@@ -141,8 +138,8 @@ describe('cacheVersionService', () => {
         '',
         expect.objectContaining({
           metadata: expect.objectContaining({
-            version: 1
-          })
+            version: 1,
+          }),
         })
       );
       // Verify the options object doesn't contain expirationTtl
@@ -153,12 +150,12 @@ describe('cacheVersionService', () => {
 
   describe('getNextCacheKeyVersion', () => {
     let mockEnv: any;
-    
+
     beforeEach(() => {
       mockEnv = {
         VIDEO_CACHE_KEY_VERSIONS: {
-          getWithMetadata: vi.fn()
-        }
+          getWithMetadata: vi.fn(),
+        },
       };
     });
 
@@ -166,9 +163,9 @@ describe('cacheVersionService', () => {
       // Mock the behavior for no version found
       mockEnv.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: null
+        metadata: null,
       });
-      
+
       const result = await getNextCacheKeyVersion(mockEnv, 'test-key');
       expect(result).toBe(1);
     });
@@ -177,21 +174,21 @@ describe('cacheVersionService', () => {
       // Mock the behavior for version 1
       mockEnv.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: { version: 1 }
+        metadata: { version: 1 },
       });
-      
+
       // Don't force increment - should stay at 1
       const result = await getNextCacheKeyVersion(mockEnv, 'test-key', false);
       expect(result).toBe(1);
     });
-    
+
     it('should always increment when there is a cache miss (forceIncrement=true)', async () => {
       // Mock the behavior for version 1
       mockEnv.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: { version: 1 }
+        metadata: { version: 1 },
       });
-      
+
       // Force increment - should go to 2 even though it's version 1
       const result = await getNextCacheKeyVersion(mockEnv, 'test-key', true);
       expect(result).toBe(2);
@@ -201,13 +198,13 @@ describe('cacheVersionService', () => {
       // Mock the behavior for version 3
       mockEnv.VIDEO_CACHE_KEY_VERSIONS.getWithMetadata.mockResolvedValue({
         value: '',
-        metadata: { version: 3 }
+        metadata: { version: 3 },
       });
-      
+
       // Without force increment - should keep version 3
       const result = await getNextCacheKeyVersion(mockEnv, 'test-key');
       expect(result).toBe(3);
-      
+
       // With force increment (cache miss) - should increment to 4
       const resultWithMiss = await getNextCacheKeyVersion(mockEnv, 'test-key', true);
       expect(resultWithMiss).toBe(4);

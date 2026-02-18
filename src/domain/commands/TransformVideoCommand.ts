@@ -15,13 +15,10 @@ import {
   getCurrentContext,
   RequestContext,
 } from '../../utils/requestContext';
-import {
-  createLogger,
-  debug as pinoDebug,
-  error as pinoError,
-  info as pinoInfo,
-} from '../../utils/pinoLogger';
+import { createCategoryLogger, createLogger } from '../../utils/logger';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
+
+const tvcLogger = createCategoryLogger('TransformVideoCommand');
 import {
   executeTransformation,
   prepareVideoTransformation,
@@ -181,11 +178,7 @@ export class TransformVideoCommand {
 
       // Log additional diagnostics if in verbose mode
       if (this.requestContext.verboseEnabled) {
-        pinoDebug(
-          this.requestContext,
-          this.logger,
-          'TransformVideoCommand',
-          'Command initialized with context',
+        tvcLogger.debug('Command initialized with context',
           {
             requestId: this.requestContext.requestId,
             breadcrumbCount: this.requestContext.breadcrumbs.length,
@@ -244,11 +237,7 @@ export class TransformVideoCommand {
   private async initializeOrigins(path: string): Promise<boolean> {
     // Skip if Origins context is already initialized
     if (this.context.origin && this.context.sourceResolution) {
-      pinoDebug(
-        this.requestContext,
-        this.logger,
-        'TransformVideoCommand',
-        'Origins context already initialized'
+      tvcLogger.debug('Origins context already initialized'
       );
       return true;
     }
@@ -259,11 +248,7 @@ export class TransformVideoCommand {
 
       if (!configManager.shouldUseOrigins()) {
         // Origins not enabled in configuration
-        pinoDebug(
-          this.requestContext,
-          this.logger,
-          'TransformVideoCommand',
-          'Origins not enabled in configuration'
+        tvcLogger.debug('Origins not enabled in configuration'
         );
         return false;
       }
@@ -276,11 +261,7 @@ export class TransformVideoCommand {
 
       const originMatch = resolver.matchOriginWithCaptures(path);
       if (!originMatch) {
-        pinoDebug(
-          this.requestContext,
-          this.logger,
-          'TransformVideoCommand',
-          'No matching origin found for path',
+        tvcLogger.debug('No matching origin found for path',
           { path }
         );
         return false;
@@ -293,11 +274,7 @@ export class TransformVideoCommand {
 
       const sourceResult = resolver.resolvePathToSource(path);
       if (!sourceResult) {
-        pinoDebug(
-          this.requestContext,
-          this.logger,
-          'TransformVideoCommand',
-          'Failed to resolve path to source',
+        tvcLogger.debug('Failed to resolve path to source',
           {
             origin: originMatch.origin.name,
             path,
@@ -310,11 +287,7 @@ export class TransformVideoCommand {
       this.context.origin = originMatch.origin;
       this.context.sourceResolution = sourceResult;
 
-      pinoDebug(
-        this.requestContext,
-        this.logger,
-        'TransformVideoCommand',
-        'Origins context initialized',
+      tvcLogger.debug('Origins context initialized',
         {
           origin: originMatch.origin.name,
           sourceType: sourceResult.originType,
@@ -331,11 +304,7 @@ export class TransformVideoCommand {
     } catch (err) {
       // Log error but don't fail the request - we'll fall back to legacy path patterns
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      pinoDebug(
-        this.requestContext,
-        this.logger,
-        'TransformVideoCommand',
-        'Error initializing Origins context',
+      tvcLogger.debug('Error initializing Origins context',
         {
           error: errorMessage,
           path,
@@ -399,11 +368,7 @@ export class TransformVideoCommand {
       url: sourceResolution.sourceUrl,
     };
 
-    pinoDebug(
-      this.requestContext,
-      this.logger,
-      'TransformVideoCommand',
-      'Using Origins-based transformation',
+    tvcLogger.debug('Using Origins-based transformation',
       {
         origin: origin.name,
         sourceType: sourceResolution.originType,
@@ -466,11 +431,7 @@ export class TransformVideoCommand {
           // Check if authentication is needed for this source
           if (sourceResolution.source.auth?.enabled) {
             const auth = sourceResolution.source.auth;
-            pinoDebug(
-              this.requestContext,
-              this.logger,
-              'TransformVideoCommand',
-              'Source requires authentication',
+            tvcLogger.debug('Source requires authentication',
               {
                 sourceType: sourceResolution.originType,
                 authType: auth.type,
@@ -484,11 +445,7 @@ export class TransformVideoCommand {
               const accessToken = envRecord[auth.accessKeyVar];
 
               if (accessToken) {
-                pinoDebug(
-                  this.requestContext,
-                  this.logger,
-                  'TransformVideoCommand',
-                  'Adding bearer token to source URL',
+                tvcLogger.debug('Adding bearer token to source URL',
                   {
                     accessKeyVar: auth.accessKeyVar,
                   }
@@ -505,11 +462,7 @@ export class TransformVideoCommand {
                 };
               } else {
                 // Log warning about missing token
-                pinoDebug(
-                  this.requestContext,
-                  this.logger,
-                  'TransformVideoCommand',
-                  'Bearer token not found in environment variable',
+                tvcLogger.debug('Bearer token not found in environment variable',
                   {
                     accessKeyVar: auth.accessKeyVar,
                   }
@@ -563,8 +516,9 @@ export class TransformVideoCommand {
           height = derivativeDimensions.height || height;
 
           // Log that we're using derivative dimensions with category set to CDN-CGI for consistent filtering
-          const { info } = await import('../../utils/loggerUtils');
-          info('CDN-CGI', `Using derivative dimensions for ${options.derivative}`, {
+          const { createCategoryLogger } = await import('../../utils/logger');
+          const cdnLogger = createCategoryLogger('CDN-CGI');
+          cdnLogger.info(`Using derivative dimensions for ${options.derivative}`, {
             derivative: options.derivative,
             originalWidth: options.width,
             originalHeight: options.height,
@@ -642,11 +596,7 @@ export class TransformVideoCommand {
 
         // Only log if version was actually added (version > 1)
         if (cdnCgiUrl !== originalCdnCgiUrl) {
-          pinoDebug(
-            this.requestContext,
-            this.logger,
-            'TransformVideoCommand',
-            'Added version parameter to CDN-CGI URL for cache busting',
+          tvcLogger.debug('Added version parameter to CDN-CGI URL for cache busting',
             {
               version: options.version,
               originalUrl: originalCdnCgiUrl,
@@ -657,8 +607,9 @@ export class TransformVideoCommand {
       }
 
       // Use info level for CDN-CGI operations to ensure visibility
-      const { info } = await import('../../utils/loggerUtils');
-      info('CDN-CGI', `Created CDN-CGI URL: ${cdnCgiUrl}`, {
+      const { createCategoryLogger: createCdnLogger } = await import('../../utils/logger');
+      const cdnCgiLogger = createCdnLogger('CDN-CGI');
+      cdnCgiLogger.info(`Created CDN-CGI URL: ${cdnCgiUrl}`, {
         url: cdnCgiUrl,
         sourceUrl,
         params: urlParams.join(','),
@@ -723,11 +674,7 @@ export class TransformVideoCommand {
 
         if (!r2Object) {
           // Object not found in R2 - use the new retry mechanism
-          pinoDebug(
-            this.requestContext,
-            this.logger,
-            'TransformVideoCommand',
-            'R2 object not found, using retry mechanism',
+          tvcLogger.debug('R2 object not found, using retry mechanism',
             {
               origin: origin.name,
               failedSource: sourceResolution.source.type,
@@ -798,11 +745,7 @@ export class TransformVideoCommand {
           };
 
           // Use the new retry mechanism for 404 errors
-          pinoDebug(
-            this.requestContext,
-            this.logger,
-            'TransformVideoCommand',
-            'Handling 404 error with retry mechanism',
+          tvcLogger.debug('Handling 404 error with retry mechanism',
             {
               origin: origin.name,
               failedSource: sourceResolution.source.type,
@@ -939,11 +882,7 @@ export class TransformVideoCommand {
         // Apply version to fallback URL if needed
         if (fallbackOriginUrl && options.version !== undefined) {
           fallbackOriginUrl = addVersionToUrl(fallbackOriginUrl, options.version);
-          pinoDebug(
-            this.requestContext,
-            this.logger,
-            'TransformVideoCommand',
-            'Applied version to fallback URL in CDN-CGI error handler',
+          tvcLogger.debug('Applied version to fallback URL in CDN-CGI error handler',
             {
               fallbackOriginUrl,
               version: options.version,
@@ -1265,7 +1204,7 @@ export class TransformVideoCommand {
     if (!diagnosticsInfo.warnings) diagnosticsInfo.warnings = [];
 
     // Log execution start
-    pinoDebug(this.requestContext, this.logger, 'TransformVideoCommand', 'Starting execution', {
+    tvcLogger.debug('Starting execution', {
       path,
     });
     addBreadcrumb(this.requestContext, 'Execution', 'Command execution started');
@@ -1316,11 +1255,7 @@ export class TransformVideoCommand {
         const originBaseUrl = pathPattern.originUrl || pathPattern.baseUrl;
         if (originBaseUrl) {
           fallbackOriginUrl = new URL(url.pathname, originBaseUrl).toString();
-          pinoDebug(
-            this.requestContext,
-            this.logger,
-            'TransformVideoCommand',
-            'Calculated fallback URL',
+          tvcLogger.debug('Calculated fallback URL',
             { fallbackOriginUrl }
           );
         }
@@ -1331,11 +1266,7 @@ export class TransformVideoCommand {
 
       // Handle pass-through case (no pattern or pattern shouldn't be processed)
       if (!pathPattern || !pathPattern.processPath) {
-        pinoDebug(
-          this.requestContext,
-          this.logger,
-          'TransformVideoCommand',
-          'Path configured for pass-through',
+        tvcLogger.debug('Path configured for pass-through',
           {
             pattern: pathPattern?.name,
           }

@@ -39,15 +39,6 @@ vi.mock('../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
 }));
 
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/test.mp4',
-    startTime: Date.now(),
-    breadcrumbs: [],
-  })),
-}));
-
 // Create a simple mock for the KV storage
 vi.mock('../../src/utils/kvCacheUtils', () => ({
   getFromKVCache: vi.fn(),

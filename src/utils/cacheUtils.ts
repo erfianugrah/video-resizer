@@ -2,7 +2,7 @@
  * Utilities for managing cache configuration for videos
  */
 import { CacheConfigurationManager, cacheConfig } from '../config/CacheConfigurationManager';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { getCurrentContext } from '../utils/requestContext';
 import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 import { createCategoryLogger } from './logger';
 
@@ -20,7 +20,7 @@ const logDebug = tryOrDefault<[string, Record<string, unknown>?], void>(
   {
     functionName: 'logDebug',
     component: 'CacheUtils',
-    logErrors: false // Avoid recursive error logging for the logger itself
+    logErrors: false, // Avoid recursive error logging for the logger itself
   },
   undefined // No return value needed
 );
@@ -63,19 +63,19 @@ function determineCacheConfigImpl(url: string): CacheConfig {
   // Get cache profiles from configuration manager
   const cacheSettings = cacheConfig.getConfig();
   const profiles = cacheSettings.profiles;
-  
+
   if (!profiles) {
     logDebug('No cache profiles found in configuration, using default empty config');
     return defaultCacheConfig;
   }
-  
+
   // Extract the path from the URL for pattern matching
   const path = new URL(url).pathname;
-  
+
   // Try to match against each profile using regex patterns
   for (const [profileName, profile] of Object.entries(profiles)) {
     if (profileName === 'default') continue; // Skip default for now, we'll use it as fallback
-    
+
     try {
       if (profile.regex) {
         const regex = new RegExp(profile.regex);
@@ -85,15 +85,15 @@ function determineCacheConfigImpl(url: string): CacheConfig {
             cacheability: profile.cacheability,
             videoCompression: profile.videoCompression,
             useTtlByStatus: profile.useTtlByStatus,
-            ttl: profile.ttl
+            ttl: profile.ttl,
           };
-          
+
           logDebug(`Matched cache profile: ${profileName}`, {
             path,
             regex: profile.regex,
-            cacheability: profile.cacheability
+            cacheability: profile.cacheability,
           });
-          
+
           return config;
         }
       }
@@ -105,22 +105,22 @@ function determineCacheConfigImpl(url: string): CacheConfig {
         {
           regex: profile.regex,
           url,
-          path
+          path,
         },
         'CacheUtils'
       );
     }
   }
-  
+
   // If we didn't match any specific profile, use the default profile if available
   if (profiles.default) {
     logDebug('Using default cache profile for path', { path });
-    
+
     return {
       cacheability: profiles.default.cacheability,
       videoCompression: profiles.default.videoCompression,
       useTtlByStatus: profiles.default.useTtlByStatus,
-      ttl: profiles.default.ttl
+      ttl: profiles.default.ttl,
     };
   }
 
@@ -131,7 +131,7 @@ function determineCacheConfigImpl(url: string): CacheConfig {
 /**
  * Determine cache configuration based on URL by matching against configured profiles
  * Using tryOrDefault for safe cache configuration determination with proper error handling
- * 
+ *
  * @param url - The full URL to check
  * @returns Cache configuration object
  */
@@ -140,7 +140,7 @@ export const determineCacheConfig = tryOrDefault<[string], CacheConfig>(
   {
     functionName: 'determineCacheConfig',
     component: 'CacheUtils',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default if determination fails completely
@@ -151,7 +151,7 @@ export const determineCacheConfig = tryOrDefault<[string], CacheConfig>(
       redirects: 0,
       clientError: 0,
       serverError: 0,
-    }
+    },
   }
 );
 
@@ -165,7 +165,7 @@ function shouldCacheImpl(config: CacheConfig): boolean {
 /**
  * Determines if a response should be cached based on the configuration
  * Using tryOrDefault for safe cache decision with proper error handling
- * 
+ *
  * @param config - The cache configuration
  * @returns boolean indicating if the response should be cached
  */
@@ -174,7 +174,7 @@ export const shouldCache = tryOrDefault<[CacheConfig], boolean>(
   {
     functionName: 'shouldCache',
     component: 'CacheUtils',
-    logErrors: false // Low importance function, avoid excessive logging
+    logErrors: false, // Low importance function, avoid excessive logging
   },
   false // Default to not caching if there's an error determining status
 );

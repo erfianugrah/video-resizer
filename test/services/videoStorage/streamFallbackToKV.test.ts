@@ -1,5 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Mock logger - must use vi.hoisted for vi.mock hoisting
+const { mockLoggerDebug } = vi.hoisted(() => ({
+  mockLoggerDebug: vi.fn(),
+}));
+vi.mock('../../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: mockLoggerDebug,
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+}));
+
 // Instead of trying to test the entire integration, let's focus on verifying our fix
 // by directly reading and testing the source file
 describe('streamFallbackToKV Streams API Implementation', () => {
@@ -21,11 +35,6 @@ describe('streamFallbackToKV Streams API Implementation', () => {
       // Simple implementation that just returns successful promise
       return Promise.resolve(true);
     }),
-  }));
-
-  // Mock logging
-  vi.mock('../../../src/services/videoStorage/logging', () => ({
-    logDebug: vi.fn(),
   }));
 
   vi.mock('../../../src/utils/errorHandlingUtils', () => ({
@@ -85,9 +94,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
     expect(responseArg.headers.get('Content-Length')).toBe(largeContentLength.toString());
 
     // Verify the logging for file processing
-    const { logDebug } = await import('../../../src/services/videoStorage/logging');
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       'Starting background streaming of fallback to KV',
       expect.objectContaining({
         path: 'videos/large-test.mp4',
@@ -96,8 +103,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
       })
     );
 
-    expect(logDebug).toHaveBeenCalledWith(
-      'VideoStorageService',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       'Successfully stored fallback content in KV',
       expect.objectContaining({
         path: 'videos/large-test.mp4',

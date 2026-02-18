@@ -11,8 +11,7 @@ import {
   buildCdnCgiMediaUrl,
   extractVideoId,
 } from '../utils/pathUtils';
-import { addBreadcrumb, RequestContext } from '../utils/requestContext';
-import { getCurrentContext } from '../utils/legacyLoggerAdapter';
+import { addBreadcrumb, RequestContext, getCurrentContext } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling, tryOrNull } from '../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../utils/imqueryUtils';

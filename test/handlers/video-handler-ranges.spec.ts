@@ -42,9 +42,19 @@ vi.mock('../../src/utils/pinoLogger', () => ({
   warn: vi.fn(),
 }));
 
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../src/utils/logger', () => ({
   initializeLegacyLogger: vi.fn(),
-  getCurrentContext: vi.fn(() => ({ requestId: 'test-123' })),
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', () => ({

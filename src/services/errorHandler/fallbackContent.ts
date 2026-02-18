@@ -4,7 +4,8 @@
 import { VideoTransformError } from '../../errors';
 import { withErrorHandling } from '../../utils/errorHandlingUtils';
 import { parseErrorMessage } from '../../utils/transformationUtils';
-import { logDebug, logError } from './logging';
+import { createCategoryLogger } from '../../utils/logger';
+const logger = createCategoryLogger('ErrorHandler');
 
 /**
  * Implementation of fetchOriginalContentFallback that might throw errors
@@ -70,7 +71,7 @@ async function fetchOriginalContentFallbackImpl(
   }
 
   // Log configuration loaded for fallback
-  logDebug('ErrorHandlerService', 'Configuration loaded for fallback', {
+  logger.debug('Configuration loaded for fallback', {
     errorStatus: error.statusCode,
     errorType: error.errorType,
     cachingMethod: caching?.method,
@@ -82,12 +83,12 @@ async function fetchOriginalContentFallbackImpl(
 
   // Check if fallback is enabled in config
   if (!fallbackConfig || !fallbackConfig.enabled) {
-    logDebug('ErrorHandlerService', 'Fallback disabled in config, skipping');
+    logger.debug('Fallback disabled in config, skipping');
     return null;
   }
 
   // Log the fallback URL attempt for debugging
-  logDebug('ErrorHandlerService', 'Preparing fallback with original URL', {
+  logger.debug('Preparing fallback with original URL', {
     originalUrl,
     fallbackEnabled: true,
     errorStatus: error.statusCode,
@@ -100,7 +101,7 @@ async function fetchOriginalContentFallbackImpl(
 
   if (isServerError && retryCount < maxRetries) {
     // Implement retry logic for server errors
-    logDebug('ErrorHandlerService', 'Server error detected, retrying transformation', {
+    logger.debug('Server error detected, retrying transformation', {
       errorStatus: error.statusCode,
       errorType: error.errorType,
       retryCount: retryCount,
@@ -149,7 +150,7 @@ async function fetchOriginalContentFallbackImpl(
       );
 
       if (transformedResponse && transformedResponse.ok) {
-        logDebug('ErrorHandlerService', 'Retry transformation successful', {
+        logger.debug('Retry transformation successful', {
           retryCount: retryCount + 1,
           status: transformedResponse.status,
         });
@@ -167,7 +168,7 @@ async function fetchOriginalContentFallbackImpl(
 
       // If still failing, retry with increased retry count or fall back
       if (retryCount + 1 < maxRetries) {
-        logDebug('ErrorHandlerService', 'Retry failed, attempting again', {
+        logger.debug('Retry failed, attempting again', {
           retryCount: retryCount + 1,
           maxRetries: maxRetries,
         });
@@ -176,12 +177,12 @@ async function fetchOriginalContentFallbackImpl(
         return fetchOriginalContentFallbackImpl(originalUrl, error, request, retryCount + 1);
       }
 
-      logDebug('ErrorHandlerService', 'Maximum retries reached, falling back to original content', {
+      logger.debug('Maximum retries reached, falling back to original content', {
         retryCount: retryCount,
         maxRetries: maxRetries,
       });
     } catch (retryError) {
-      logError('ErrorHandlerService', 'Error during retry attempt', {
+      logger.error('Error during retry attempt', {
         error: retryError instanceof Error ? retryError.message : String(retryError),
         retryCount: retryCount,
       });
@@ -191,7 +192,7 @@ async function fetchOriginalContentFallbackImpl(
   // Only apply fallback for 400 Bad Request errors if badRequestOnly is true
   if (fallbackConfig.badRequestOnly && error.statusCode !== 400) {
     // Skip fallback for non-400 errors when badRequestOnly is true
-    logDebug('ErrorHandlerService', 'Error not eligible for fallback', {
+    logger.debug('Error not eligible for fallback', {
       errorStatus: error.statusCode,
       badRequestOnly: fallbackConfig.badRequestOnly,
       isServerError: isServerError,
@@ -199,7 +200,7 @@ async function fetchOriginalContentFallbackImpl(
     return null;
   }
 
-  logDebug('ErrorHandlerService', 'Fetching original content as fallback', {
+  logger.debug('Fetching original content as fallback', {
     originalUrl,
     errorType: error.errorType,
     errorMessage: error.message,
@@ -217,7 +218,7 @@ async function fetchOriginalContentFallbackImpl(
   });
 
   // Log detailed information about the original request before fetching
-  logDebug('ErrorHandlerService', 'Original request details for fallback', {
+  logger.debug('Original request details for fallback', {
     originalUrl,
     method: request.method,
     headersIncluded: Array.from(request.headers.keys()),
@@ -231,7 +232,7 @@ async function fetchOriginalContentFallbackImpl(
   const response = await fetch(originalRequest);
 
   // Log detailed response information
-  logDebug('ErrorHandlerService', 'Original content response details', {
+  logger.debug('Original content response details', {
     status: response.status,
     statusText: response.statusText,
     contentType: response.headers.get('Content-Type'),
@@ -327,7 +328,7 @@ async function fetchOriginalContentFallbackImpl(
       // Store in Cache API
       await cache.put(fallbackRequest, responseToCache);
 
-      logDebug('ErrorHandlerService', 'Cached original content for future fallbacks', {
+      logger.debug('Cached original content for future fallbacks', {
         originalUrl,
         fallbackCacheKey: fallbackCacheKey.toString(),
         status: originalResponse.status,
@@ -337,7 +338,7 @@ async function fetchOriginalContentFallbackImpl(
 
       return true;
     } catch (cacheError) {
-      logError('ErrorHandlerService', 'Failed to cache original content', {
+      logger.error('Failed to cache original content', {
         error: cacheError instanceof Error ? cacheError.message : String(cacheError),
         originalUrl,
         fallbackCacheKey: fallbackCacheKey.toString(),
@@ -364,7 +365,7 @@ async function fetchOriginalContentFallbackImpl(
       const cachedFallback = await cache.match(fallbackRequest);
 
       if (cachedFallback) {
-        logDebug('ErrorHandlerService', 'Found cached original content for fallback', {
+        logger.debug('Found cached original content for fallback', {
           fallbackCacheKey: fallbackCacheKey.toString(),
           status: cachedFallback.status,
           contentType: cachedFallback.headers.get('Content-Type'),
@@ -376,7 +377,7 @@ async function fetchOriginalContentFallbackImpl(
 
       return null;
     } catch (checkError) {
-      logError('ErrorHandlerService', 'Error checking for cached original', {
+      logger.error('Error checking for cached original', {
         error: checkError instanceof Error ? checkError.message : String(checkError),
         originalUrl,
       });
@@ -410,7 +411,7 @@ async function fetchOriginalContentFallbackImpl(
         cachedHeaders.set('Cache-Tag', fallbackCacheTag);
       }
 
-      logDebug('ErrorHandlerService', 'Using cached original content for fallback', {
+      logger.debug('Using cached original content for fallback', {
         originalUrl,
         retryCount,
         status: cachedOriginal.status,
@@ -432,7 +433,7 @@ async function fetchOriginalContentFallbackImpl(
   // Cache the original content for future fallbacks
   if (ctx && typeof ctx.waitUntil === 'function') {
     // Store in background with waitUntil
-    logDebug('ErrorHandlerService', 'Caching original content in background', {
+    logger.debug('Caching original content in background', {
       originalUrl,
       hasExecutionContext: true,
     });
@@ -440,7 +441,7 @@ async function fetchOriginalContentFallbackImpl(
     ctx.waitUntil(cacheOriginalContent(response, originalUrl));
   } else {
     // No execution context, try to cache directly but don't block response
-    logDebug('ErrorHandlerService', 'No execution context, will attempt direct caching', {
+    logger.debug('No execution context, will attempt direct caching', {
       originalUrl,
     });
 
@@ -448,7 +449,7 @@ async function fetchOriginalContentFallbackImpl(
     Promise.resolve()
       .then(() => cacheOriginalContent(response, originalUrl))
       .catch((error) => {
-        logError('ErrorHandlerService', 'Error in direct caching of original', {
+        logger.error('Error in direct caching of original', {
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -463,13 +464,13 @@ async function fetchOriginalContentFallbackImpl(
   headers.set('Cache-Tag', cacheTags);
 
   // Log successful fallback
-  logDebug('ErrorHandlerService', 'Successfully fetched fallback content', {
+  logger.debug('Successfully fetched fallback content', {
     status: response.status,
     contentType: response.headers.get('Content-Type'),
     preservedHeaders: preserveHeaders,
   });
 
-  logDebug('ErrorHandlerService', 'Successfully fetched original content', {
+  logger.debug('Successfully fetched original content', {
     originalUrl,
     status: response.status,
     contentType: response.headers.get('Content-Type'),

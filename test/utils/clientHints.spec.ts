@@ -2,14 +2,26 @@
  * Tests for clientHints
  */
 import { describe, it, expect, vi } from 'vitest';
-import { hasClientHints, getVideoSizeFromClientHints, getNetworkQuality } from '../../src/utils/clientHints';
+import {
+  hasClientHints,
+  getVideoSizeFromClientHints,
+  getNetworkQuality,
+} from '../../src/utils/clientHints';
 
-// Mock loggerUtils
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 describe('clientHints', () => {
@@ -111,7 +123,7 @@ describe('clientHints', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'ECT': '2g',
+          ECT: '2g',
         },
       });
 
@@ -129,7 +141,7 @@ describe('clientHints', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'ECT': '3g',
+          ECT: '3g',
         },
       });
 
@@ -146,7 +158,7 @@ describe('clientHints', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'Downlink': '3.5',
+          Downlink: '3.5',
         },
       });
 
@@ -165,7 +177,7 @@ describe('clientHints', () => {
       const request = new Request('https://example.com/video.mp4', {
         headers: {
           'Sec-CH-Save-Data': 'on',
-          'ECT': '4g',
+          ECT: '4g',
         },
       });
 
@@ -210,13 +222,13 @@ describe('clientHints', () => {
       expect(result.source).toBe('user-agent-desktop');
       expect(result.supportsHints).toBe(false);
     });
-    
+
     it('should properly combine multiple client hint signals', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'ECT': '4g',
-          'Downlink': '8.5',
+          ECT: '4g',
+          Downlink: '8.5',
           'Sec-CH-Save-Data': 'on',
         },
       });

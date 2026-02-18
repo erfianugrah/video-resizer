@@ -18,7 +18,7 @@ vi.mock('../../../src/utils/errorHandlingUtils', () => ({
   toTransformError: vi.fn((err: any) => err),
 }));
 
-vi.mock('../../../src/utils/legacyLoggerAdapter', () => ({
+vi.mock('../../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn(() => ({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
@@ -28,18 +28,19 @@ vi.mock('../../../src/utils/legacyLoggerAdapter', () => ({
       waitUntil: vi.fn((promise: any) => promise),
     },
   })),
-}));
-
-vi.mock('../../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
 }));
 
-vi.mock('../../../src/services/videoStorage/logging', () => ({
-  logDebug: vi.fn(),
-}));
-
-vi.mock('../../../src/services/errorHandler/logging', () => ({
-  logDebug: vi.fn(),
+// Mock logger used by both videoStorage and errorHandler modules
+const mockLoggerDebug = vi.fn();
+vi.mock('../../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: mockLoggerDebug,
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
 }));
 
 vi.mock('../../../src/utils/transformationUtils', () => ({
@@ -202,9 +203,7 @@ describe('Large File Background Caching Integration', () => {
     expect(global.fetch).toHaveBeenCalled();
 
     // Verify logging to confirm large file was processed
-    const { logDebug } = await import('../../../src/services/errorHandler/logging');
-    expect(logDebug).toHaveBeenCalledWith(
-      'handleTransformationError',
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
       expect.stringContaining('Direct source fetch successful'),
       expect.any(Object)
     );

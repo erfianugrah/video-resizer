@@ -6,8 +6,10 @@
  */
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext, addBreadcrumb } from './requestContext';
-import { createLogger, error as pinoError, debug as pinoDebug } from './pinoLogger';
+import { createCategoryLogger } from './logger';
 import * as Sentry from '@sentry/cloudflare';
+
+const errLogger = createCategoryLogger('Application');
 
 /**
  * Create a JSON replacer that handles circular references.
@@ -201,9 +203,9 @@ export function logErrorWithContext(
       error: errorMessage,
     });
 
-    // Log with pino logger
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, category, message, combinedContext);
+    // Log with category logger
+    const categoryLogger = createCategoryLogger(category);
+    categoryLogger.error(message, combinedContext);
   } else {
     // Fall back to console for logging
     console.error({

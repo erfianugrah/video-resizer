@@ -13,21 +13,17 @@ vi.mock('../src/handlers/videoHandler', () => ({
   }),
 }));
 
-vi.mock('../src/utils/loggingManager', () => ({
-  initializeLogging: vi.fn(),
-}));
-
 // Mock our configuration system
 vi.mock('../src/config', () => ({
   initializeConfiguration: vi.fn(),
   VideoConfigurationManager: {
     getInstance: vi.fn().mockReturnValue({
       getCachingConfig: vi.fn().mockReturnValue({
-        method: 'kv', 
-        debug: false
-      })
-    })
-  }
+        method: 'kv',
+        debug: false,
+      }),
+    }),
+  },
 }));
 
 vi.mock('../src/config/environmentConfig', () => ({

@@ -45,19 +45,6 @@ vi.mock('../../src/utils/logger', () => ({
   logErrorWithContext: vi.fn(),
 }));
 
-// Mock for getCurrentContext from legacyLoggerAdapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn().mockReturnValue({
-    requestId: 'test-request-id',
-    url: 'https://example.com/video.mp4',
-    startTime: Date.now(),
-    breadcrumbs: [],
-    executionContext: {
-      waitUntil: vi.fn((promise: Promise<unknown>) => promise),
-    },
-  }),
-}));
-
 // Mock requestContext
 vi.mock('../../src/utils/requestContext', () => ({
   getCurrentContext: vi.fn(() => ({

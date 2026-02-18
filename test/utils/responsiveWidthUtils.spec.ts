@@ -2,35 +2,43 @@
  * Tests for responsiveWidthUtils
  */
 import { describe, it, expect, vi } from 'vitest';
-import { 
-  getResponsiveVideoSize, 
+import {
+  getResponsiveVideoSize,
   calculateConstrainedDimensions,
   findClosestQualityLevel,
-  getVideoQualityPreset
+  getVideoQualityPreset,
 } from '../../src/utils/responsiveWidthUtils';
 
-// Mock imports
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 // Mock VideoConfigurationManager
 vi.mock('../../src/config/VideoConfigurationManager', () => {
   const mockConfig = {
     responsive: {
-      availableQualities: [240, 360, 480, 720, 1080, 1440, 2160]
-    }
+      availableQualities: [240, 360, 480, 720, 1080, 1440, 2160],
+    },
   };
-  
+
   return {
     VideoConfigurationManager: {
       getInstance: vi.fn().mockReturnValue({
-        getResponsiveConfig: vi.fn().mockReturnValue(mockConfig.responsive)
-      })
-    }
+        getResponsiveConfig: vi.fn().mockReturnValue(mockConfig.responsive),
+      }),
+    },
   };
 });
 
@@ -38,14 +46,14 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
 vi.mock('../../src/utils/clientHints', () => ({
   hasClientHints: vi.fn(),
   getVideoSizeFromClientHints: vi.fn(),
-  getNetworkQuality: vi.fn()
+  getNetworkQuality: vi.fn(),
 }));
 
 // Mock device utils functions
 vi.mock('../../src/utils/deviceUtils', () => ({
   hasCfDeviceType: vi.fn(),
   getVideoSizeFromCfDeviceType: vi.fn(),
-  getVideoSizeFromUserAgent: vi.fn(() => ({ width: 854, height: 480, source: 'test' }))
+  getVideoSizeFromUserAgent: vi.fn(() => ({ width: 854, height: 480, source: 'test' })),
 }));
 
 // Mock imported functions from utils
@@ -104,7 +112,7 @@ describe('responsiveWidthUtils', () => {
       vi.mocked(getVideoSizeFromClientHints).mockReturnValue({
         width: 1920,
         height: 1080,
-        source: 'client-hints-1080p'
+        source: 'client-hints-1080p',
       });
 
       // Act
@@ -124,7 +132,7 @@ describe('responsiveWidthUtils', () => {
       vi.mocked(getVideoSizeFromCfDeviceType).mockReturnValue({
         width: 720,
         height: 480,
-        source: 'cf-device-type-mobile'
+        source: 'cf-device-type-mobile',
       });
 
       // Act

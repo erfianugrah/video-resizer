@@ -12,10 +12,6 @@ vi.mock('../../src/utils/urlVersionUtils', () => ({
 import { addVersionToUrl, normalizeUrlForCaching } from '../../src/utils/urlVersionUtils';
 
 // Mock dependencies
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => null),
-}));
-
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn(),
   debug: vi.fn(),
@@ -23,6 +19,7 @@ vi.mock('../../src/utils/pinoLogger', () => ({
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
+  getCurrentContext: vi.fn(() => null),
   addBreadcrumb: vi.fn(),
 }));
 
