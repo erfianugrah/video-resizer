@@ -13,10 +13,12 @@ import { ResponseBuilder } from '../../utils/responseBuilder';
 import { generateDebugPage } from '../../services/debugService';
 import { Origin } from '../../services/videoStorage/interfaces';
 import { SourceResolutionResult } from '../../services/origins/OriginResolver';
-import { EnvVariables } from '../../config/environmentConfig';
+import { EnvVariables, getEnvironmentConfig } from '../../config/environmentConfig';
 import { VideoTransformContext, VideoTransformOptions, R2Bucket, WorkerEnvironment } from './types';
 import { classifyAndHandleOriginError } from './originsErrorHandler';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
+import { getDerivativeDimensions } from '../../utils/imqueryUtils';
+import { retryWithAlternativeOrigins } from '../../services/transformation/retryWithAlternativeOrigins';
 
 const execLogger = createCategoryLogger('OriginsExecution');
 
@@ -118,9 +120,7 @@ function handleSourceAuthentication(
  * Build CDN-CGI URL parameters from video transform options.
  * Handles IMQuery/derivative dimension overrides.
  */
-async function buildCdnCgiUrlParams(
-  options: VideoTransformOptions
-): Promise<{
+async function buildCdnCgiUrlParams(options: VideoTransformOptions): Promise<{
   urlParams: string[];
   width: number | null | undefined;
   height: number | null | undefined;
@@ -132,14 +132,12 @@ async function buildCdnCgiUrlParams(
   let height = options.height;
 
   if (options.derivative) {
-    const { getDerivativeDimensions } = await import('../../utils/imqueryUtils');
     const derivativeDimensions = getDerivativeDimensions(options.derivative);
 
     if (derivativeDimensions) {
       width = derivativeDimensions.width || width;
       height = derivativeDimensions.height || height;
 
-      const { createCategoryLogger } = await import('../../utils/logger');
       const cdnLogger = createCategoryLogger('CDN-CGI');
       cdnLogger.info(`Using derivative dimensions for ${options.derivative}`, {
         derivative: options.derivative,
@@ -232,9 +230,6 @@ async function fetchTransformedVideo(
         failedPriority: sourceResolution.source.priority,
         path: sourcePath,
       });
-
-      const { retryWithAlternativeOrigins } =
-        await import('../../services/transformation/retryWithAlternativeOrigins');
 
       return await retryWithAlternativeOrigins({
         originalRequest: request,
@@ -433,7 +428,6 @@ export async function executeWithOrigins(params: ExecuteWithOriginsParams): Prom
     diagnosticsInfo.sourceUrl = sourceUrl;
 
     // Get the CDN-CGI path from configuration
-    const { getEnvironmentConfig } = await import('../../config/environmentConfig');
     const config = getEnvironmentConfig();
     const cdnCgiPath = config.cdnCgi?.basePath || '/cdn-cgi/media';
 
@@ -464,8 +458,7 @@ export async function executeWithOrigins(params: ExecuteWithOriginsParams): Prom
     }
 
     // Log CDN-CGI URL creation
-    const { createCategoryLogger: createCdnLogger } = await import('../../utils/logger');
-    const cdnCgiLogger = createCdnLogger('CDN-CGI');
+    const cdnCgiLogger = createCategoryLogger('CDN-CGI');
     cdnCgiLogger.info(`Created CDN-CGI URL: ${cdnCgiUrl}`, {
       url: cdnCgiUrl,
       sourceUrl,

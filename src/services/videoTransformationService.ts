@@ -2,10 +2,13 @@
  * Service for transforming videos using CDN-CGI paths
  * Abstracts the command pattern implementation behind a service interface
  */
-import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
+import {
+  VideoTransformOptions,
+  TransformVideoCommand,
+} from '../domain/commands/TransformVideoCommand';
 import { PathPattern } from '../utils/pathUtils';
 import { DebugInfo } from '../utils/debugHeadersUtils';
-import { getCurrentContext } from '../utils/requestContext';
+import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
 import { createCategoryLogger, createLogger } from '../utils/logger';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 
@@ -66,9 +69,6 @@ export const transformVideo = withErrorHandling<
     }
   ): Promise<Response> {
     try {
-      // Use dynamic import to get the context modules
-      const { getCurrentContext } = await import('../utils/requestContext');
-
       // Get the current request context - should be available from the handler
       const requestContext = getCurrentContext();
       let logger;
@@ -100,7 +100,6 @@ export const transformVideo = withErrorHandling<
       // Create logger if we have a context
       if (requestContext) {
         logger = createLogger(requestContext);
-        const { addBreadcrumb } = await import('../utils/requestContext');
 
         // Add breadcrumb for the transformation
         addBreadcrumb(
@@ -114,9 +113,6 @@ export const transformVideo = withErrorHandling<
           }
         );
       }
-
-      // Import dynamically to avoid circular dependencies
-      const { TransformVideoCommand } = await import('../domain/commands/TransformVideoCommand');
 
       // Create and execute the command - pass the request context
       const command = new TransformVideoCommand({
@@ -147,7 +143,6 @@ export const transformVideo = withErrorHandling<
 
       // Add a performance breadcrumb if we have a context
       if (requestContext) {
-        const { addBreadcrumb } = await import('../utils/requestContext');
         addBreadcrumb(requestContext, 'Performance', 'Video transformation completed', {
           operation: 'transformVideo',
           durationMs: duration,
@@ -174,7 +169,6 @@ export const transformVideo = withErrorHandling<
 
       // Add an error breadcrumb if we have a context
       try {
-        const { getCurrentContext, addBreadcrumb } = await import('../utils/requestContext');
         const requestContext = getCurrentContext();
 
         if (requestContext) {
@@ -290,24 +284,21 @@ export function estimateOptimalBitrate(
   });
 
   // Add a breadcrumb if the context is available
-  Promise.resolve().then(async () => {
-    try {
-      const { getCurrentContext, addBreadcrumb } = await import('../utils/requestContext');
-      const requestContext = getCurrentContext();
+  try {
+    const requestContext = getCurrentContext();
 
-      if (requestContext) {
-        addBreadcrumb(requestContext, 'VideoTransformationService', 'Bitrate calculation', {
-          width,
-          height,
-          resolutionCategory,
-          networkQuality,
-          bitrate: finalBitrate,
-        });
-      }
-    } catch {
-      // Silently fail if we can't access the context
+    if (requestContext) {
+      addBreadcrumb(requestContext, 'VideoTransformationService', 'Bitrate calculation', {
+        width,
+        height,
+        resolutionCategory,
+        networkQuality,
+        bitrate: finalBitrate,
+      });
     }
-  });
+  } catch {
+    // Silently fail if we can't access the context
+  }
 
   return finalBitrate;
 }

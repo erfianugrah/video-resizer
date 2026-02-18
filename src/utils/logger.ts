@@ -414,6 +414,7 @@ export interface PerformanceMetrics {
   metadata?: Record<string, unknown>;
 }
 
+const MAX_PERFORMANCE_METRICS = 1000;
 let performanceMetrics: PerformanceMetrics[] = [];
 let performanceTimer: NodeJS.Timeout | null = null;
 
@@ -445,6 +446,11 @@ export function startPerformanceMeasurement(operation: string, category: string)
       duration,
       category,
     };
+
+    // Enforce max size to prevent unbounded memory growth
+    if (performanceMetrics.length >= MAX_PERFORMANCE_METRICS) {
+      performanceMetrics.splice(0, Math.floor(MAX_PERFORMANCE_METRICS / 2));
+    }
 
     // Add to metrics collection
     performanceMetrics.push(metrics);

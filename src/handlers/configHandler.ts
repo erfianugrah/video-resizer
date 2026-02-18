@@ -6,7 +6,7 @@
 
 import { ConfigurationService, WorkerConfiguration } from '../services/configurationService';
 import { ConfigurationError } from '../errors';
-import { getCurrentContext, createRequestContext } from '../utils/requestContext';
+import { getCurrentContext, createRequestContext, addBreadcrumb } from '../utils/requestContext';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
 import { z } from 'zod';
 import { getKVNamespace } from '../utils/flexibleBindings';
@@ -30,11 +30,9 @@ interface Env {
 /**
  * Authentication schema for config upload requests
  */
-const AuthHeaderSchema = z
-  .string()
-  .refine((val) => val.startsWith('Bearer '), {
-    message: 'Authorization header must use Bearer scheme',
-  });
+const AuthHeaderSchema = z.string().refine((val) => val.startsWith('Bearer '), {
+  message: 'Authorization header must use Bearer scheme',
+});
 
 /**
  * Handle configuration upload request
@@ -50,7 +48,6 @@ export const handleConfigUpload = withErrorHandling<[Request, Env], Response>(
       const context = createRequestContext(request);
 
       // Add breadcrumb for request processing start
-      const { addBreadcrumb } = await import('../utils/requestContext');
       addBreadcrumb(context, 'ConfigHandler', 'Processing configuration upload request', {
         method: request.method,
         url: request.url,
@@ -333,7 +330,6 @@ export const handleConfigUpload = withErrorHandling<[Request, Env], Response>(
       // Try to add a breadcrumb if the context is available
       try {
         const context = createRequestContext(request);
-        const { addBreadcrumb } = await import('../utils/requestContext');
         addBreadcrumb(context, 'ConfigHandler', 'Unhandled exception', {
           error: errMessage,
           url: request.url,
@@ -388,7 +384,6 @@ export const handleConfigGet = withErrorHandling<[Request, Env], Response>(
       const context = createRequestContext(request);
 
       // Add breadcrumb for request processing start
-      const { addBreadcrumb } = await import('../utils/requestContext');
       addBreadcrumb(context, 'ConfigHandler', 'Processing configuration retrieve request', {
         method: request.method,
         url: request.url,
@@ -625,7 +620,6 @@ export const handleConfigGet = withErrorHandling<[Request, Env], Response>(
       // Try to add a breadcrumb if the context is available
       try {
         const context = createRequestContext(request);
-        const { addBreadcrumb } = await import('../utils/requestContext');
         addBreadcrumb(context, 'ConfigHandler', 'Unhandled exception', {
           error: errMessage,
           url: request.url,

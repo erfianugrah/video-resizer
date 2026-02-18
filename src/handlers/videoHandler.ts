@@ -12,7 +12,12 @@ import { determineVideoOptions } from './videoOptionsService';
 import { getEnvironmentConfig, EnvVariables } from '../config/environmentConfig';
 import { EnvironmentConfig } from '../config/environmentConfig';
 import type { ExecutionContextExt, EnvWithExecutionContext } from '../types/cloudflare';
-import { addBreadcrumb, startTimedOperation, endTimedOperation } from '../utils/requestContext';
+import {
+  addBreadcrumb,
+  startTimedOperation,
+  endTimedOperation,
+  getCurrentContext,
+} from '../utils/requestContext';
 import { createCategoryLogger } from '../utils/logger';
 
 const vhLogger = createCategoryLogger('VideoHandler');
@@ -21,6 +26,18 @@ import { OriginResolver } from '../services/origins/OriginResolver';
 import { Origin } from '../services/videoStorage/interfaces';
 import { getVersionKV } from '../utils/flexibleBindings';
 import * as Sentry from '@sentry/cloudflare';
+import { getCacheKeyVersion } from '../services/cacheVersionService';
+import { generateKVKey } from '../services/kvStorage/keyUtils';
+import {
+  getContentLength,
+  exceedsTransformationLimit,
+  CDN_CGI_SIZE_LIMIT,
+} from '../utils/httpUtils';
+import { ResponseBuilder } from '../utils/responseBuilder';
+import { transformVideo } from '../services/videoTransformationService';
+import { TransformVideoCommand } from '../domain/commands/TransformVideoCommand';
+import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
+import { handleTransformationError } from '../services/errorHandlerService';
 
 import {
   setupHandlerContext,
@@ -33,9 +50,14 @@ import {
   storeInKVCacheAsync,
   handleVideoError,
 } from './videoHandlerHelpers';
+import { BoundedLRUMap } from '../utils/BoundedLRUMap';
 
 // In-flight transformation tracking to prevent duplicate origin fetches (Origins path)
-const inFlightTransformations = new Map<string, Promise<Response>>();
+// Bounded to 500 entries with 5-minute TTL to prevent unbounded memory growth
+const inFlightTransformations = new BoundedLRUMap<string, Promise<Response>>({
+  maxSize: 500,
+  ttlMs: 5 * 60 * 1000,
+});
 
 /**
  * Main handler for video requests — unified for both legacy and Origins paths.
@@ -99,9 +121,6 @@ export const handleVideoRequest = withErrorHandling<
 
         // Cache version management
         if (env) {
-          const { getCacheKeyVersion } = await import('../services/cacheVersionService');
-          const { generateKVKey } = await import('../services/kvStorage/keyUtils');
-
           const versionCacheKey = generateKVKey(path, initialVideoOptions);
           const currentVersion = (await getCacheKeyVersion(env, versionCacheKey)) || 1;
           initialVideoOptions.version = currentVersion;
@@ -143,8 +162,6 @@ export const handleVideoRequest = withErrorHandling<
         if (shouldUseOrigins) {
           const versionKV = getVersionKV(env);
           if (versionKV) {
-            const { getCacheKeyVersion } = await import('../services/cacheVersionService');
-            const { generateKVKey } = await import('../services/kvStorage/keyUtils');
             const updatedCacheKey = generateKVKey(path, initialVideoOptions);
             const updatedVersion = (await getCacheKeyVersion(env, updatedCacheKey)) || 1;
 
@@ -317,8 +334,6 @@ async function handleOriginsPath(
   env: EnvVariables | undefined,
   config: EnvironmentConfig
 ): Promise<Response> {
-  const { ResponseBuilder } = await import('../utils/responseBuilder');
-
   // No matching origin → 404
   if (!originMatch) {
     vhLogger.debug('No matching origin for path', {
@@ -450,9 +465,6 @@ async function handleOriginsPath(
     addBreadcrumb(context, 'SizeCheck', 'Performing HEAD request for Content-Length', {
       url: sourceResolution.sourceUrl,
     });
-
-    const { getContentLength, exceedsTransformationLimit, CDN_CGI_SIZE_LIMIT } =
-      await import('../utils/httpUtils');
 
     videoSizeInBytes = await getContentLength(sourceResolution.sourceUrl, {
       timeout: 5000,
@@ -828,8 +840,7 @@ async function transformVideoLegacy(
   debugInfo: any,
   env?: EnvVariables
 ): Promise<Response> {
-  const { transformVideo: transform } = await import('../services/videoTransformationService');
-  return transform(request, options, pathPatterns, debugInfo, env);
+  return transformVideo(request, options, pathPatterns, debugInfo, env);
 }
 
 /**
@@ -850,9 +861,6 @@ async function transformVideoWithOrigins(
     url: sourceResolution.sourceUrl,
   });
 
-  const { TransformVideoCommand } = await import('../domain/commands/TransformVideoCommand');
-  type WorkerEnvironment = import('../domain/commands/TransformVideoCommand').WorkerEnvironment;
-
   try {
     const command = new TransformVideoCommand({
       origin,
@@ -865,8 +873,6 @@ async function transformVideoWithOrigins(
 
     return await command.execute();
   } catch (err) {
-    const { handleTransformationError } = await import('../services/errorHandlerService');
-
     vhLogger.error('Error transforming video with Origins', {
       error: err instanceof Error ? err.message : 'Unknown error',
       origin: origin.name,
@@ -886,8 +892,6 @@ async function transformVideoWithOrigins(
       },
     });
 
-    const { getCurrentContext } = await import('../utils/requestContext');
-    const { ResponseBuilder } = await import('../utils/responseBuilder');
     const currentCtx = getCurrentContext();
     const responseCtx = currentCtx || {
       requestId: `origins-error-${Date.now()}`,

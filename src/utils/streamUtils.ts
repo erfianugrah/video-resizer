@@ -5,6 +5,8 @@
 import { logErrorWithContext } from './errorHandlingUtils';
 import { getCurrentContext, addBreadcrumb } from './requestContext';
 import { createCategoryLogger } from './logger';
+import { setBypassHeaders } from './bypassHeadersUtils';
+import { parseRangeHeader } from './httpUtils';
 
 const streamLogger = createCategoryLogger('StreamUtils');
 
@@ -347,9 +349,6 @@ export async function processRangeRequest(
     // Handler tag for diagnostics
     headers.set('X-Range-Handled-By', options.handlerTag || 'Stream-Range-Handler');
 
-    // Use the centralized bypass headers utility
-    const { setBypassHeaders } = await import('./bypassHeadersUtils');
-
     // Handle bypass flags if needed
     if (options.bypassCacheAPI) {
       setBypassHeaders(headers, { isFallback: options.fallbackApplied });
@@ -416,8 +415,6 @@ export async function handleRangeRequest(
       return response;
     }
 
-    // Import parse function
-    const { parseRangeHeader } = await import('./httpUtils');
     const parsedRange = parseRangeHeader(rangeHeader, contentLength);
 
     if (!parsedRange) {

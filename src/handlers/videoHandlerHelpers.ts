@@ -7,7 +7,7 @@
 
 import { EnvVariables } from '../config/environmentConfig';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
-import { TransformOptions } from '../utils/kvCacheUtils';
+import { TransformOptions, getFromKVCache, storeInKVCache } from '../utils/kvCacheUtils';
 import {
   createRequestContext,
   addBreadcrumb,
@@ -24,6 +24,12 @@ import { isCdnCgiMediaPath } from '../utils/pathUtils';
 import type { EnvWithExecutionContext } from '../types/cloudflare';
 import { getCacheKV } from '../utils/flexibleBindings';
 import * as Sentry from '@sentry/cloudflare';
+import { CacheConfigurationManager } from '../config/CacheConfigurationManager';
+import { DebugConfigurationManager } from '../config/DebugConfigurationManager';
+import { generateCacheTags } from '../services/videoStorageService';
+import { hasBypassHeaders } from '../utils/bypassHeadersUtils';
+import { handleRangeRequest } from '../utils/streamUtils';
+import { handleRangeRequestForInitialAccess } from '../utils/httpUtils';
 
 const vhLogger = createCategoryLogger('VideoHandler');
 const kvLogger = createCategoryLogger('KVCacheUtils');
@@ -142,9 +148,6 @@ export async function checkKVCache(
   request: Request,
   context: RequestContext
 ): Promise<KVCacheCheckResult> {
-  const { CacheConfigurationManager } = await import('../config');
-  const { getFromKVCache } = await import('../utils/kvCacheUtils');
-
   // Try to get the response from KV cache
   addBreadcrumb(context, 'Cache', 'Checking KV cache', {
     url: request.url,
@@ -167,9 +170,7 @@ export async function checkKVCache(
   // Prepare KV cache check if env is available and not skipped
   if (env && !skipCache) {
     // Get KV cache configuration
-    const { CacheConfigurationManager: CacheCfg } =
-      await import('../config/CacheConfigurationManager');
-    const cacheConfig = CacheCfg.getInstance();
+    const cacheConfig = CacheConfigurationManager.getInstance();
     const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
 
     // Only check KV cache if it's enabled in config
@@ -268,7 +269,6 @@ export async function buildKVCacheHitResponse(
   endTimedOperation(context, 'cache-lookup');
 
   // Ensure debug configuration is applied to the context
-  const { DebugConfigurationManager } = await import('../config/DebugConfigurationManager');
   const debugConfig = DebugConfigurationManager.getInstance();
 
   // Override context debug flags with current configuration
@@ -340,9 +340,6 @@ export async function handleRangeRequests(
     return finalResponse;
   }
 
-  // Import the centralized bypass headers utility
-  const { hasBypassHeaders } = await import('../utils/bypassHeadersUtils');
-
   // Check if this is a fallback response, large video, or any other bypass flag
   const bypassCacheApi =
     hasBypassHeaders(finalResponse.headers) ||
@@ -380,8 +377,6 @@ export async function handleRangeRequests(
       finalResponse.status !== 206
     ) {
       try {
-        const { handleRangeRequest } = await import('../utils/streamUtils');
-
         vhLogger.debug('Processing range request for direct stream', {
           rangeHeader,
           contentLength: finalResponse.headers.get('Content-Length'),
@@ -434,8 +429,6 @@ export async function handleRangeRequests(
     }
   } else {
     // Regular video - use Cache API for range handling
-    const { handleRangeRequestForInitialAccess } = await import('../utils/httpUtils');
-
     addBreadcrumb(context, 'RangeRequest', 'Processing range request for initial access', {
       range: request.headers.get('Range'),
       contentLength: finalResponse.headers.get('Content-Length'),
@@ -514,7 +507,6 @@ export async function buildFinalResponse(
   startTimedOperation(context, 'response-building', 'Response');
 
   // Ensure debug configuration is applied to the context
-  const { DebugConfigurationManager } = await import('../config/DebugConfigurationManager');
   const debugConfig = DebugConfigurationManager.getInstance();
 
   context.debugEnabled = debugConfig.isDebugEnabled() || context.debugEnabled;
@@ -539,9 +531,6 @@ export async function buildFinalResponse(
   // Check if we should add cache tags
   if (finalResponse.ok && finalResponse.status < 300) {
     try {
-      const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
-      const { generateCacheTags } = await import('../services/videoStorageService');
-
       const cacheConfigMgr = CacheConfigurationManager.getInstance();
       if (cacheConfigMgr.getConfig().enableCacheTags) {
         const reqUrl = new URL(request.url);
@@ -632,7 +621,6 @@ export async function storeInKVCacheAsync(
 ): Promise<void> {
   if (skipCache) return;
 
-  const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
   const cacheConfig = CacheConfigurationManager.getInstance();
   const kvCacheEnabled = cacheConfig.isKVCacheEnabled();
 
@@ -643,7 +631,6 @@ export async function storeInKVCacheAsync(
     return;
   }
 
-  const { storeInKVCache } = await import('../utils/kvCacheUtils');
   const sourcePath = url.pathname;
 
   const imwidth = url.searchParams.get('imwidth');
@@ -757,7 +744,6 @@ export async function handleVideoError(
 
   // Add storage diagnostics for better debugging
   try {
-    const { VideoConfigurationManager } = await import('../config/VideoConfigurationManager');
     const configManager = VideoConfigurationManager.getInstance();
     context.diagnostics.storageDiagnostics = configManager.getStorageDiagnostics(
       env as Record<string, unknown>

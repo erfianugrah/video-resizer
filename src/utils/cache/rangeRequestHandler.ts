@@ -7,6 +7,8 @@
  */
 
 import { createCategoryLogger } from '../logger';
+import { parseRangeHeader } from '../httpUtils';
+import { processRangeRequest } from '../streamUtils';
 
 const logger = createCategoryLogger('RangeRequestHandler');
 
@@ -26,8 +28,6 @@ export async function processRangeResponse(
   requestId: string
 ): Promise<Response> {
   try {
-    const { parseRangeHeader } = await import('../httpUtils');
-
     const contentLength = parseInt(responseForClient.headers.get('Content-Length') || '0', 10);
     const rangeHeader = request.headers.get('Range') || '';
 
@@ -50,8 +50,6 @@ export async function processRangeResponse(
             parsedRange,
             contentLength,
           });
-
-          const { processRangeRequest } = await import('../streamUtils');
 
           responseForClient = await processRangeRequest(
             responseForClient,

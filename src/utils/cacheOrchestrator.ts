@@ -17,6 +17,7 @@ import { buildCoalescingCacheKey } from './cache/cacheKeyBuilder';
 import { executeWithCoalescing } from './cache/requestCoalescing';
 import { initiateKVStorage } from './cache/kvStorageRetry';
 import { processRangeResponse } from './cache/rangeRequestHandler';
+import { CacheConfigurationManager } from '../config/CacheConfigurationManager';
 
 // Create a category-specific logger for CacheOrchestrator
 const logger = createCategoryLogger('CacheOrchestrator');
@@ -60,8 +61,6 @@ export async function withCaching(
   const url = new URL(request.url);
 
   // Get cache configuration to check bypass parameters properly
-  // Import at the function level to avoid circular dependencies
-  const { CacheConfigurationManager } = await import('../config/CacheConfigurationManager');
   const cacheConfig = CacheConfigurationManager.getInstance();
   if (!cacheConfig) {
     logger.warn('CacheConfigurationManager instance unavailable - bypassing cache orchestration');
