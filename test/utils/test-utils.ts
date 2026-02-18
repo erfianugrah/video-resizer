@@ -59,6 +59,7 @@ export function createMockConfig(options?: Partial<EnvironmentConfig>): Environm
       purgeOnUpdate: false,
       bypassParams: [],
       enableKVCache: true,
+      kvReadCacheTtl: 30,
       kvTtl: {
         ok: 86400,
         redirects: 3600,

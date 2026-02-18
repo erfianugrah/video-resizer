@@ -1,6 +1,6 @@
 /**
  * CacheConfigurationManager
- * 
+ *
  * A centralized configuration manager for caching with Zod schema validation
  */
 import { z } from 'zod';
@@ -31,79 +31,85 @@ export const CacheProfileSchema = z.object({
 
 // Define schema for MIME types
 export const MimeTypesSchema = z.object({
-  video: z.array(z.string()).default([
-    'video/mp4',
-    'video/webm',
-    'video/ogg',
-    'video/x-msvideo',
-    'video/quicktime',
-    'video/x-matroska',
-    'video/x-flv',
-    'video/3gpp',
-    'video/3gpp2',
-    'video/mpeg',
-    'application/x-mpegURL',
-    'application/dash+xml'
-  ]),
-  image: z.array(z.string()).default([
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/webp',
-    'image/gif',
-    'image/avif'
-  ])
+  video: z
+    .array(z.string())
+    .default([
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/x-msvideo',
+      'video/quicktime',
+      'video/x-matroska',
+      'video/x-flv',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/mpeg',
+      'application/x-mpegURL',
+      'application/dash+xml',
+    ]),
+  image: z
+    .array(z.string())
+    .default(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif']),
 });
 
 // Define schema for cache configuration
 export const CacheConfigSchema = z.object({
   // Enable/disable KV cache operations
   enableKVCache: z.boolean().default(true),
-  
+
   // Enable/disable cache versioning
   enableVersioning: z.boolean().default(true),
-  
+
   // Enable storing KV items indefinitely without expiration
   storeIndefinitely: z.boolean().default(false),
-  
+
   // Enable TTL refresh for indefinitely stored items
   // When false, indefinitely stored items won't have their metadata refreshed
   refreshIndefiniteStorage: z.boolean().default(false),
-  
+
   // Enable debug logging for cache operations
   debug: z.boolean().default(false),
-  
+
   // Default behavior for cache headers
   defaultMaxAge: z.number().nonnegative().default(300),
   respectOriginHeaders: z.boolean().default(true),
   cacheEverything: z.boolean().default(false),
-  
+
   // TTL refresh settings
-  ttlRefresh: z.object({
-    // Minimum percentage of TTL that must elapse before refreshing
-    minElapsedPercent: z.number().min(0).max(100).default(10),
-    // Minimum seconds remaining before refreshing
-    minRemainingSeconds: z.number().nonnegative().default(60),
-  }).default({
-    minElapsedPercent: 10,
-    minRemainingSeconds: 60,
-  }),
-  
+  ttlRefresh: z
+    .object({
+      // Minimum percentage of TTL that must elapse before refreshing
+      minElapsedPercent: z.number().min(0).max(100).default(10),
+      // Minimum seconds remaining before refreshing
+      minRemainingSeconds: z.number().nonnegative().default(60),
+    })
+    .default({
+      minElapsedPercent: 10,
+      minRemainingSeconds: 60,
+    }),
+
   // Cache tagging and purging
   enableCacheTags: z.boolean().default(true),
   cacheTagPrefix: z.string().default('video-'),
   purgeOnUpdate: z.boolean().default(false),
-  
+
   // Bypass settings
   bypassQueryParameters: z.array(z.string()).default(['nocache', 'bypass']),
   bypassHeaderValue: z.string().default('no-cache'),
-  
+
+  // KV read cache TTL (cacheTtl parameter on KV.get()) — how long values are cached at the edge PoP
+  // Minimum is 30 seconds per CF docs (reduced from 60s on Jan 30, 2026)
+  kvReadCacheTtl: z.number().min(30).default(30),
+
   // Storage limits
-  maxSizeBytes: z.number().nonnegative().default(25 * 1024 * 1024), // Default 25MiB
-  
+  maxSizeBytes: z
+    .number()
+    .nonnegative()
+    .default(25 * 1024 * 1024), // Default 25MiB
+
   // MIME type settings
   mimeTypes: MimeTypesSchema.optional(),
-  
+
   // Cache profiles for different content types
   profiles: z.record(CacheProfileSchema).default({
     default: {
@@ -140,10 +146,11 @@ const defaultCacheConfig: CacheConfiguration = {
   purgeOnUpdate: false,
   bypassQueryParameters: ['nocache', 'bypass'],
   bypassHeaderValue: 'no-cache',
+  kvReadCacheTtl: 30, // 30 seconds edge PoP cache for KV reads
   maxSizeBytes: 25 * 1024 * 1024, // 25MiB default
   ttlRefresh: {
     minElapsedPercent: 10, // Refresh TTL after 10% elapsed
-    minRemainingSeconds: 60 // Only if at least 60s remains
+    minRemainingSeconds: 60, // Only if at least 60s remains
   },
   mimeTypes: {
     video: [
@@ -158,16 +165,9 @@ const defaultCacheConfig: CacheConfiguration = {
       'video/3gpp2',
       'video/mpeg',
       'application/x-mpegURL',
-      'application/dash+xml'
+      'application/dash+xml',
     ],
-    image: [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'image/gif',
-      'image/avif'
-    ]
+    image: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif'],
   },
   profiles: {
     default: {
@@ -237,10 +237,10 @@ export class CacheConfigurationManager {
       this.config = CacheConfigSchema.parse(initialConfig);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const issues = error.errors.map(issue => 
-          `${issue.path.join('.')}: ${issue.message}`
-        ).join(', ');
-        
+        const issues = error.errors
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join(', ');
+
         throw ConfigurationError.invalidValue(
           'cacheConfig',
           initialConfig,
@@ -248,7 +248,7 @@ export class CacheConfigurationManager {
           { additionalInfo: `Validation errors: ${issues}` }
         );
       }
-      
+
       throw ConfigurationError.invalidValue(
         'cacheConfig',
         initialConfig,
@@ -294,7 +294,7 @@ export class CacheConfigurationManager {
   public isDebugEnabled(): boolean {
     return this.config.debug;
   }
-  
+
   /**
    * Check if KV cache is enabled
    */
@@ -318,7 +318,7 @@ export class CacheConfigurationManager {
     if (url.searchParams.has('debug')) {
       return true;
     }
-    
+
     // Check for other bypass parameters (nocache, bypass)
     // Do NOT treat all query parameters (like imwidth) as bypass triggers
     for (const param of this.config.bypassQueryParameters) {
@@ -336,13 +336,13 @@ export class CacheConfigurationManager {
     // Check all profiles for a matching regex
     for (const [name, profile] of Object.entries(this.config.profiles)) {
       if (name === 'default') continue; // Skip default, we'll fall back to it
-      
+
       const regex = new RegExp(profile.regex);
       if (regex.test(path)) {
         return profile;
       }
     }
-    
+
     // Fall back to default profile
     return this.config.profiles.default;
   }
@@ -362,16 +362,16 @@ export class CacheConfigurationManager {
           ...(newConfig.profiles || {}),
         },
       };
-      
+
       // Validate the merged configuration
       this.config = CacheConfigSchema.parse(mergedConfig);
       return this.config;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const issues = error.errors.map(issue => 
-          `${issue.path.join('.')}: ${issue.message}`
-        ).join(', ');
-        
+        const issues = error.errors
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join(', ');
+
         throw ConfigurationError.invalidValue(
           'cacheConfig',
           newConfig,
@@ -379,39 +379,39 @@ export class CacheConfigurationManager {
           { additionalInfo: `Validation errors: ${issues}` }
         );
       }
-      
-      throw ConfigurationError.invalidValue(
-        'cacheConfig',
-        newConfig,
-        'Valid cache configuration'
-      );
+
+      throw ConfigurationError.invalidValue('cacheConfig', newConfig, 'Valid cache configuration');
     }
   }
 
   /**
    * Add a new cache profile
    */
-  public addProfile(name: string, profile: Partial<CacheProfileConfiguration>): CacheProfileConfiguration {
+  public addProfile(
+    name: string,
+    profile: Partial<CacheProfileConfiguration>
+  ): CacheProfileConfiguration {
     try {
       // Validate the profile
       const validatedProfile = CacheProfileSchema.parse(profile);
-      
+
       // Add the useTtlByStatus field with default value true if it doesn't exist
       const profileWithDefaults = {
         ...validatedProfile,
-        useTtlByStatus: validatedProfile.useTtlByStatus !== undefined ? validatedProfile.useTtlByStatus : true
+        useTtlByStatus:
+          validatedProfile.useTtlByStatus !== undefined ? validatedProfile.useTtlByStatus : true,
       };
-      
+
       // Update the config with the new profile
       this.config.profiles[name] = profileWithDefaults;
-      
+
       return profileWithDefaults;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const issues = error.errors.map(issue => 
-          `${issue.path.join('.')}: ${issue.message}`
-        ).join(', ');
-        
+        const issues = error.errors
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join(', ');
+
         throw ConfigurationError.invalidValue(
           `cacheProfile.${name}`,
           profile,
@@ -419,7 +419,7 @@ export class CacheConfigurationManager {
           { additionalInfo: `Validation errors: ${issues}` }
         );
       }
-      
+
       throw ConfigurationError.invalidValue(
         `cacheProfile.${name}`,
         profile,
@@ -437,6 +437,6 @@ if (typeof cacheConfig === 'undefined') {
   console.warn({
     context: 'CacheConfigurationManager',
     operation: 'initialization',
-    message: 'Failed to initialize default instance'
+    message: 'Failed to initialize default instance',
   });
 }

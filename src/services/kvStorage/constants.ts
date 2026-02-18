@@ -2,9 +2,11 @@
  * Constants for chunking configuration
  */
 // Maximum size for a single KV entry (20 MiB is conservative for 25MiB KV value limit)
-export const MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY = 20 * 1024 * 1024; 
+export const MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY = 20 * 1024 * 1024;
 // Standard chunk size for large videos (5 MiB chunk size)
 // Note: The retrieval code uses actualChunkSizes from manifest, so changing this won't break existing chunks
-export const STANDARD_CHUNK_SIZE = 5 * 1024 * 1024; 
-// KV read cache TTL (1 hour edge cache for KV reads)
-export const DEFAULT_KV_READ_CACHE_TTL = 60 * 60;
+export const STANDARD_CHUNK_SIZE = 5 * 1024 * 1024;
+// KV read cache TTL — fallback default for edge PoP cache on KV.get()
+// Minimum is 30 seconds per CF docs (reduced from 60s on Jan 30, 2026)
+// Prefer reading from CacheConfigurationManager.kvReadCacheTtl at runtime
+export const DEFAULT_KV_READ_CACHE_TTL = 30;

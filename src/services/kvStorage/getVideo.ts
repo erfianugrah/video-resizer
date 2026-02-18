@@ -51,7 +51,10 @@ async function getTransformedVideoImpl(
   const key = generateKVKey(sourcePath, options);
   const isRangeRequest = request?.headers.has('Range') || false;
   const rangeHeaderValue = request?.headers.get('Range');
-  const kvReadOptions = { cacheTtl: DEFAULT_KV_READ_CACHE_TTL }; // Use edge cache for KV reads
+  // Read KV edge cache TTL from config, falling back to the constant default (30s)
+  const cacheConfig = CacheConfigurationManager.getInstance().getConfig();
+  const kvReadCacheTtl = cacheConfig.kvReadCacheTtl ?? DEFAULT_KV_READ_CACHE_TTL;
+  const kvReadOptions = { cacheTtl: kvReadCacheTtl };
 
   // Log lookup information
   logDebug('[GET_VIDEO] Attempting to retrieve video', {

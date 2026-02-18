@@ -1,6 +1,6 @@
 /**
  * Environment configuration for video resizer
- * 
+ *
  * This module handles parsing and processing environment variables into
  * properly typed configuration objects for the application.
  */
@@ -39,6 +39,7 @@ export interface EnvironmentConfig {
     purgeOnUpdate: boolean;
     bypassParams: string[];
     enableKVCache: boolean;
+    kvReadCacheTtl: number; // cacheTtl on KV.get() — edge PoP cache duration (min 30s)
     kvTtl: {
       ok: number;
       redirects: number;
@@ -84,7 +85,7 @@ export interface EnvVariables {
   ENVIRONMENT?: string;
   VERSION?: string;
   SENTRY_DSN?: string;
-  
+
   // Debug Configuration
   DEBUG_ENABLED?: string;
   DEBUG_VERBOSE?: string;
@@ -92,7 +93,7 @@ export interface EnvVariables {
   DEBUG_PERFORMANCE?: string;
   DEBUG_ALLOWED_IPS?: string;
   DEBUG_EXCLUDED_PATHS?: string;
-  
+
   // Cache Configuration
   CACHE_DEBUG?: string;
   CACHE_DEFAULT_TTL?: string;
@@ -106,7 +107,7 @@ export interface EnvVariables {
   CACHE_KV_TTL_REDIRECTS?: string;
   CACHE_KV_TTL_CLIENT_ERROR?: string;
   CACHE_KV_TTL_SERVER_ERROR?: string;
-  
+
   // Logging Configuration
   LOG_LEVEL?: string;
   LOG_FORMAT?: string;
@@ -120,50 +121,54 @@ export interface EnvVariables {
   LOG_PERFORMANCE_THRESHOLD?: string;
   // The comprehensive logging configuration from wrangler.jsonc
   // This can be either a string (JSON) or an already parsed object
-  LOGGING_CONFIG?: string | {
-    pino?: {
-      level?: string;
-      browser?: {
-        asObject?: boolean;
+  LOGGING_CONFIG?:
+    | string
+    | {
+        pino?: {
+          level?: string;
+          browser?: {
+            asObject?: boolean;
+          };
+          base?: {
+            service?: string;
+            env?: string;
+          };
+          transport?: unknown;
+        };
+        sampling?: {
+          enabled?: boolean;
+          rate?: number;
+        };
+        breadcrumbs?: {
+          enabled?: boolean;
+          maxItems?: number;
+        };
       };
-      base?: {
-        service?: string;
-        env?: string;
-      };
-      transport?: unknown;
-    };
-    sampling?: {
-      enabled?: boolean;
-      rate?: number;
-    };
-    breadcrumbs?: {
-      enabled?: boolean;
-      maxItems?: number;
-    };
-  };
-  
+
   // Video Configuration
   VIDEO_DEFAULT_QUALITY?: string;
   VIDEO_DEFAULT_COMPRESSION?: string;
   VIDEO_DEFAULT_AUDIO?: string;
   VIDEO_DEFAULT_FIT?: string;
-  
+
   // Path Patterns
   PATH_PATTERNS?: PathPattern[] | string;
-  
+
   // CDN-CGI Configuration
   CDN_CGI_BASE_PATH?: string;
-  
+
   // Advanced Settings
   WORKER_CONCURRENCY?: string;
   REQUEST_TIMEOUT?: string;
   MAX_VIDEO_SIZE?: string;
-  
+
   // Worker specific bindings
-  ASSETS?: {
-    fetch: (request: Request) => Promise<Response>;
-  } | undefined;
-  
+  ASSETS?:
+    | {
+        fetch: (request: Request) => Promise<Response>;
+      }
+    | undefined;
+
   // Storage bindings
   VIDEOS_BUCKET?: R2Bucket | undefined;
   VIDEO_TRANSFORMS_KV?: KVNamespace | undefined;
@@ -171,23 +176,23 @@ export interface EnvVariables {
   VIDEO_CONFIGURATION_STORE?: KVNamespace | undefined;
   VIDEO_CACHE_KEY_VERSIONS?: KVNamespace | undefined;
   PRESIGNED_URLS?: KVNamespace | undefined;
-  
+
   // Flexible binding name configuration variables
   CONFIG_KV_NAME?: string;
   CACHE_KV_NAME?: string;
   VERSION_KV_NAME?: string;
   PRESIGNED_KV_NAME?: string;
   VIDEO_BUCKET_NAME?: string;
-  
+
   // Allow dynamic binding access
   [key: string]: any;
-  
+
   // Worker Execution Context
   executionCtx?: {
     waitUntil: (promise: Promise<any>) => void;
     passThroughOnException: () => void;
   };
-  
+
   // API Authentication
   CONFIG_API_TOKEN?: string;
 }
@@ -200,24 +205,25 @@ export interface EnvVariables {
  */
 function parseBoolean(value?: string, defaultValue = false): boolean {
   if (value === undefined) return defaultValue;
-  
+
   // String value 'true' (case insensitive)
   if (value.toLowerCase() === 'true') return true;
-  
+
   // String value '1' is also considered true
   if (value === '1') return true;
-  
-  // String value 'yes' (case insensitive) also means true 
+
+  // String value 'yes' (case insensitive) also means true
   if (value.toLowerCase() === 'yes') return true;
-  
+
   // Debug log the boolean parsing
-  const parsedValue = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
-  logDebug('parseBoolean', { 
-    rawValue: value, 
-    parsedValue, 
-    defaultValue 
+  const parsedValue =
+    value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+  logDebug('parseBoolean', {
+    rawValue: value,
+    parsedValue,
+    defaultValue,
   });
-  
+
   return parsedValue;
 }
 
@@ -241,7 +247,10 @@ function parseNumber(value?: string, defaultValue = 0): number {
  */
 function parseStringArray(value?: string, defaultValue: string[] = []): string[] {
   if (!value) return defaultValue;
-  return value.split(',').map(item => item.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -254,32 +263,32 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
   logDebug('Initializing environment configuration', {
     environment: env.ENVIRONMENT || 'development',
     version: env.VERSION || '1.0.0',
-    hasLoggingConfig: !!env.LOGGING_CONFIG
+    hasLoggingConfig: !!env.LOGGING_CONFIG,
   });
-  
+
   // Determine if we're in production, staging, or development
   const mode = (env.ENVIRONMENT || 'development').toLowerCase();
   const isProduction = mode === 'production';
   const isStaging = mode === 'staging';
   const isDevelopment = mode === 'development';
-  
+
   // Log environment determination
   logDebug('Environment determined', {
     mode,
     isProduction,
     isStaging,
-    isDevelopment
+    isDevelopment,
   });
-  
+
   // Debug log environment variables
-  logDebug('Environment configuration parsing', { 
+  logDebug('Environment configuration parsing', {
     ENVIRONMENT: env.ENVIRONMENT,
     mode,
     isProduction,
     CACHE_ENABLE_KV: env.CACHE_ENABLE_KV,
-    CACHE_ENABLE_KV_TYPE: typeof env.CACHE_ENABLE_KV
+    CACHE_ENABLE_KV_TYPE: typeof env.CACHE_ENABLE_KV,
   });
-  
+
   // Configuration object
   const config: EnvironmentConfig = {
     // General settings
@@ -288,7 +297,7 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
     isStaging,
     isDevelopment,
     version: env.VERSION || '1.0.0',
-    
+
     // Debug settings
     debug: {
       enabled: parseBoolean(env.DEBUG_ENABLED, !isProduction),
@@ -298,7 +307,7 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       allowedIps: parseStringArray(env.DEBUG_ALLOWED_IPS),
       excludedPaths: parseStringArray(env.DEBUG_EXCLUDED_PATHS),
     },
-    
+
     // Cache settings
     cache: {
       debug: parseBoolean(env.CACHE_DEBUG),
@@ -309,6 +318,7 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       purgeOnUpdate: parseBoolean(env.CACHE_PURGE_ON_UPDATE),
       bypassParams: parseStringArray(env.CACHE_BYPASS_PARAMS, ['nocache', 'bypass']),
       enableKVCache: parseBoolean(env.CACHE_ENABLE_KV, isProduction), // Enable KV by default in production
+      kvReadCacheTtl: parseNumber(env.CACHE_KV_READ_CACHE_TTL, 30), // Edge PoP cache for KV reads (min 30s per CF docs)
       kvTtl: {
         ok: parseNumber(env.CACHE_KV_TTL_OK, 300), // 5 minutes (changed from 24 hours)
         redirects: parseNumber(env.CACHE_KV_TTL_REDIRECTS, 300), // 5 minutes (changed from 1 hour)
@@ -316,7 +326,7 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
         serverError: parseNumber(env.CACHE_KV_TTL_SERVER_ERROR, 10), // 10 seconds
       },
     },
-    
+
     // Logging configuration
     logging: {
       level: (env.LOG_LEVEL?.toLowerCase() || 'info') as 'debug' | 'info' | 'warn' | 'error',
@@ -330,11 +340,12 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       performance: parseBoolean(env.LOG_PERFORMANCE),
       performanceThreshold: parseNumber(env.LOG_PERFORMANCE_THRESHOLD, 1000),
       // These are processed separately by LoggingConfigurationManager from LOGGING_CONFIG
-      pinoSettings: typeof env.LOGGING_CONFIG === 'string' 
-        ? JSON.parse(env.LOGGING_CONFIG) 
-        : env.LOGGING_CONFIG,
+      pinoSettings:
+        typeof env.LOGGING_CONFIG === 'string'
+          ? JSON.parse(env.LOGGING_CONFIG)
+          : env.LOGGING_CONFIG,
     },
-    
+
     // Video configuration
     video: {
       defaultQuality: env.VIDEO_DEFAULT_QUALITY || 'auto',
@@ -342,12 +353,12 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       defaultAudio: parseBoolean(env.VIDEO_DEFAULT_AUDIO, true),
       defaultFit: env.VIDEO_DEFAULT_FIT || 'contain',
     },
-    
+
     // CDN-CGI configuration
     cdnCgi: {
       basePath: env.CDN_CGI_BASE_PATH || '/cdn-cgi/media',
     },
-    
+
     // Advanced settings
     advanced: {
       workerConcurrency: parseNumber(env.WORKER_CONCURRENCY, 10),
@@ -355,47 +366,47 @@ export function getEnvironmentConfig(env: EnvVariables = {}): EnvironmentConfig 
       maxVideoSize: parseNumber(env.MAX_VIDEO_SIZE, 0),
     },
   };
-  
+
   // Handle path patterns - can be either object or JSON string
   if (env.PATH_PATTERNS) {
     logDebug('Processing PATH_PATTERNS configuration', {
       type: typeof env.PATH_PATTERNS,
       isString: typeof env.PATH_PATTERNS === 'string',
-      isArray: Array.isArray(env.PATH_PATTERNS)
+      isArray: Array.isArray(env.PATH_PATTERNS),
     });
-    
+
     if (typeof env.PATH_PATTERNS === 'string') {
       try {
         config.pathPatterns = JSON.parse(env.PATH_PATTERNS);
         logDebug('Successfully parsed PATH_PATTERNS JSON', {
-          patternCount: config.pathPatterns?.length || 0
+          patternCount: config.pathPatterns?.length || 0,
         });
       } catch (err) {
         const errMessage = err instanceof Error ? err.message : String(err);
         const errStack = err instanceof Error ? err.stack : undefined;
-        logError('Error parsing PATH_PATTERNS environment variable', { 
-          error: errMessage, 
+        logError('Error parsing PATH_PATTERNS environment variable', {
+          error: errMessage,
           stack: errStack,
-          rawValue: env.PATH_PATTERNS.substring(0, 100) + '...' // Log first 100 chars for debugging
+          rawValue: env.PATH_PATTERNS.substring(0, 100) + '...', // Log first 100 chars for debugging
         });
       }
     } else {
       // Already an object array
       config.pathPatterns = env.PATH_PATTERNS;
       logDebug('Using PATH_PATTERNS as object', {
-        patternCount: config.pathPatterns?.length || 0
+        patternCount: config.pathPatterns?.length || 0,
       });
     }
   } else {
     logDebug('No PATH_PATTERNS configuration provided');
   }
-  
+
   logDebug('Environment configuration completed', {
     mode: config.mode,
     hasPathPatterns: !!config.pathPatterns,
     enableKVCache: config.cache.enableKVCache,
-    logLevel: config.logging.level
+    logLevel: config.logging.level,
   });
-  
+
   return config;
 }
