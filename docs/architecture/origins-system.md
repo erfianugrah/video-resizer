@@ -1,5 +1,7 @@
 # Origins System
 
+_Last Updated: February 18, 2026_
+
 ## Overview
 
 The Origins system is a comprehensive update to the video-resizer architecture that provides a more intuitive and flexible way to configure video sources. It replaces the legacy `pathPatterns` and `pathTransforms` approach with a unified configuration model that simplifies source management and improves maintainability.
@@ -62,7 +64,7 @@ The Origins system introduces a pattern-based approach to video source configura
 The Origins system is built around these key components:
 
 - **OriginResolver**: Core service for matching paths and resolving sources
-- **VideoHandlerWithOrigins**: Handler implementation using the Origins approach
+- **VideoHandler (videoHandler.ts)**: Handler implementation using the Origins approach
 - **TransformVideoCommand**: Updated to support Origins-based path resolution
 - **Storage Services**: Modified to work with source-specific configurations
 
@@ -108,27 +110,27 @@ Origins are configured as an array in the top-level configuration:
 
 #### Origin Object
 
-| Property | Description |
-|----------|-------------|
-| `name` | Unique identifier for the origin |
-| `matcher` | Regular expression to match request paths |
-| `captureGroups` | Names for the regex capture groups |
-| `sources` | Array of source configurations in priority order |
-| `ttl` | Cache TTL settings for different response types |
-| `transformOptions` | Video transformation options for this origin |
-| `quality` | Default quality setting for videos from this origin (affects cache keys) |
+| Property           | Description                                                                  |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `name`             | Unique identifier for the origin                                             |
+| `matcher`          | Regular expression to match request paths                                    |
+| `captureGroups`    | Names for the regex capture groups                                           |
+| `sources`          | Array of source configurations in priority order                             |
+| `ttl`              | Cache TTL settings for different response types                              |
+| `transformOptions` | Video transformation options for this origin                                 |
+| `quality`          | Default quality setting for videos from this origin (affects cache keys)     |
 | `videoCompression` | Default compression setting for videos from this origin (affects cache keys) |
 
 #### Source Object
 
-| Property | Description |
-|----------|-------------|
-| `type` | Source type: "r2", "remote", or "fallback" |
-| `priority` | Priority order (lower = higher priority) |
-| `path` | Path template using capture variables |
-| `bucketBinding` | (For r2) Environment binding for R2 bucket |
-| `url` | (For remote/fallback) Base URL for the source |
-| `auth` | Authentication configuration |
+| Property        | Description                                   |
+| --------------- | --------------------------------------------- |
+| `type`          | Source type: "r2", "remote", or "fallback"    |
+| `priority`      | Priority order (lower = higher priority)      |
+| `path`          | Path template using capture variables         |
+| `bucketBinding` | (For r2) Environment binding for R2 bucket    |
+| `url`           | (For remote/fallback) Base URL for the source |
+| `auth`          | Authentication configuration                  |
 
 #### Path Templating
 
@@ -139,6 +141,7 @@ Path templates can use captured variables:
 ```
 
 Available variables:
+
 - Named captures: `${name}`
 - Numeric captures: `${1}`, `${2}`, etc.
 - Special variables: `${request_path}`
@@ -265,6 +268,7 @@ The video-resizer system includes a compatibility layer that:
 2. **Automatic Detection**: The system automatically detects which configuration style to use.
 
 3. **Feature Flags**: Configuration flags control the behavior:
+
    ```json
    "video": {
      "origins": {
@@ -308,6 +312,7 @@ When an origin has transformation options like `quality` or `videoCompression`, 
 #### Example
 
 If an origin has `videoCompression: "auto"` configured:
+
 - Cache lookup key: `video:path/video.mp4:w=1920:h=1080:c=auto`
 - Storage key: `video:path/video.mp4:w=1920:h=1080:c=auto`
 
@@ -315,7 +320,7 @@ Without early option application, these would mismatch causing cache misses.
 
 #### Implementation Note
 
-The system applies origin options in `videoHandlerWithOrigins.ts` before KV cache lookup:
+The system applies origin options in `videoHandler.ts` before KV cache lookup:
 
 ```typescript
 // Apply origin-specific options to initial video options for consistent cache keys
@@ -362,8 +367,8 @@ The Origins system adds informational headers to responses:
 ## Related Features
 
 - [Multi-Origin Fallback](./multi-origin-fallback.md) - Details of the enhanced fallback strategy
-- [Background Fallback Caching](./background-fallback-caching.md) - Background caching for fallback content
-- [Large Fallback Chunking](./large-fallback-chunking.md) - Handling large files that exceed transformation limits
+- [Background Fallback Caching](../features/background-fallback-caching.md) - Background caching for fallback content
+- [Large Fallback Chunking](../features/large-fallback-chunking.md) - Handling large files that exceed transformation limits
 
 ## Conclusion
 

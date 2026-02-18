@@ -4,7 +4,6 @@ This directory contains the implementation of the Error Handler Service, which w
 
 ## Directory Structure
 
-- `logging.ts` - Helper functions for consistent logging throughout the service
 - `normalizeError.ts` - Utilities for normalizing different types of errors into VideoTransformError
 - `fallbackContent.ts` - Implementation of original content fallback when transformation fails
 - `errorResponse.ts` - Functions for creating appropriate error responses

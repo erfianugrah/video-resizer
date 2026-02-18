@@ -1,6 +1,6 @@
 # Video Resizer Configuration Schema Reference (Updated)
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 This document provides a comprehensive reference of the updated configuration schema used in the Video Resizer. It covers all available configuration options with a streamlined approach that eliminates redundancy between path patterns and cache profiles.
 
@@ -33,6 +33,10 @@ The Video Resizer uses a modular configuration system organized into these main 
 
 All configuration is validated using [Zod](https://github.com/colinhacks/zod) schemas to ensure type safety and consistency.
 
+> **Note:** All configuration managers (e.g., `VideoConfigurationManager`, `CacheConfigurationManager`, `DebugConfigurationManager`) and `ConfigProvider` expose a `resetInstance()` static method. This is primarily used in testing to reset singleton state between test runs and ensure a clean configuration slate.
+
+> **Note:** `OriginConfigurationManager.setWorkerConfig()` is the preferred method for injecting worker configuration at startup. It replaces the old `globalThis.WORKER_CONFIG` pattern, providing a cleaner and more testable approach to configuration initialization.
+
 ## Key Changes
 
 This update streamlines the configuration and adds support for advanced features:
@@ -47,6 +51,7 @@ The configuration has been streamlined by **eliminating the redundant "cache pro
 4. **Simplified TTL determination**: TTL is now determined directly from matching path pattern
 
 These changes ensure that:
+
 - There's a single source of truth for TTL configuration
 - Path pattern TTLs are consistently used for matching URLs
 - The system is more intuitive and easier to maintain
@@ -112,7 +117,7 @@ Derivatives are preset configurations for different use cases:
 interface VideoDerivative {
   width?: number | null;
   height?: number | null;
-  mode?: 'video' | 'frame' | 'spritesheet';
+  mode?: 'video' | 'frame' | 'spritesheet' | 'audio';
   fit?: 'contain' | 'scale-down' | 'cover';
   audio?: boolean;
   format?: string | null;
@@ -144,26 +149,27 @@ Path patterns define URL matching rules, transformation settings, and caching be
 
 ```typescript
 interface PathPattern {
-  name: string;               // Unique identifier for the pattern
-  matcher: string;            // Regex pattern for URL matching
-  processPath: boolean;       // Whether to transform this path
-  baseUrl?: string | null;    // Base URL for transformations
-  originUrl?: string | null;  // Origin URL for video source
-  quality?: string;           // Default quality for this pattern
-  ttl: {                      // Status-based TTLs
+  name: string; // Unique identifier for the pattern
+  matcher: string; // Regex pattern for URL matching
+  processPath: boolean; // Whether to transform this path
+  baseUrl?: string | null; // Base URL for transformations
+  originUrl?: string | null; // Origin URL for video source
+  quality?: string; // Default quality for this pattern
+  ttl: {
+    // Status-based TTLs
     ok: number;
     redirects: number;
     clientError: number;
     serverError: number;
   };
-  useTtlByStatus?: boolean;   // Use status-based TTLs
-  priority?: number;          // Pattern matching priority
-  captureGroups?: string[];   // Named regex capture groups
+  useTtlByStatus?: boolean; // Use status-based TTLs
+  priority?: number; // Pattern matching priority
+  captureGroups?: string[]; // Named regex capture groups
   transformationOverrides?: Record<string, any>; // Override params
-  auth?: AuthConfig;          // Authentication settings
+  auth?: AuthConfig; // Authentication settings
   // Caching properties (moved from cache profiles)
-  cacheability?: boolean;     // Whether to cache this content
-  videoCompression?: string;  // Compression for this pattern
+  cacheability?: boolean; // Whether to cache this content
+  videoCompression?: string; // Compression for this pattern
 }
 ```
 
@@ -181,20 +187,20 @@ Default options applied when specific values aren't provided:
 
 ```typescript
 const defaultOptions = {
-  quality: 'auto',            // Default video quality
-  compression: 'auto',        // Default compression level
-  audio: true,                // Include audio by default
-  fit: 'contain',             // Default fit mode
-  format: 'mp4'               // Default video format
+  quality: 'auto', // Default video quality
+  compression: 'auto', // Default compression level
+  audio: true, // Include audio by default
+  fit: 'contain', // Default fit mode
+  format: 'mp4', // Default video format
 };
 
 const validOptions = {
-  modes: ['video', 'frame', 'spritesheet'],
+  modes: ['video', 'frame', 'spritesheet', 'audio'],
   formats: ['mp4', 'webm', 'gif', 'jpg', 'webp', 'png'],
   fitOptions: ['contain', 'scale-down', 'cover'],
   qualityLevels: ['low', 'medium', 'high', 'auto'],
   compressionLevels: ['low', 'medium', 'high', 'auto'],
-  preloadOptions: ['none', 'metadata', 'auto']
+  preloadOptions: ['none', 'metadata', 'auto'],
 };
 ```
 
@@ -206,23 +212,25 @@ The cache configuration controls global caching settings.
 
 ```typescript
 interface CacheConfig {
-  enableKVCache: boolean;     // Enable KV cache storage
+  enableKVCache: boolean; // Enable KV cache storage
   storeIndefinitely: boolean; // Store KV items indefinitely without TTL expiration (TTL resolved dynamically from origin config)
-  debug: boolean;             // Enable cache debug logging
-  defaultMaxAge: number;      // Default Cache-Control max-age
+  debug: boolean; // Enable cache debug logging
+  defaultMaxAge: number; // Default Cache-Control max-age
   respectOriginHeaders: boolean; // Respect origin Cache-Control
-  cacheEverything: boolean;   // Cache all status codes
-  enableCacheTags: boolean;   // Enable Cache-Tag headers
-  cacheTagPrefix: string;     // Prefix for cache tags
-  purgeOnUpdate: boolean;     // Purge cache on config update
+  cacheEverything: boolean; // Cache all status codes
+  enableCacheTags: boolean; // Enable Cache-Tag headers
+  cacheTagPrefix: string; // Prefix for cache tags
+  purgeOnUpdate: boolean; // Purge cache on config update
   bypassQueryParameters: string[]; // Parameters that bypass cache
-  bypassHeaderValue: string;  // Header value to bypass cache
-  maxSizeBytes: number;       // Max size for cached items
-  mimeTypes?: {               // MIME type settings
+  bypassHeaderValue: string; // Header value to bypass cache
+  maxSizeBytes: number; // Max size for cached items
+  mimeTypes?: {
+    // MIME type settings
     video: string[];
     image: string[];
   };
-  ttl: {                      // Global fallback TTLs
+  ttl: {
+    // Global fallback TTLs
     ok: number;
     redirects: number;
     clientError: number;
@@ -252,10 +260,10 @@ TTL settings control cache duration based on response status:
 
 ```typescript
 interface CacheTTL {
-  ok: number;               // 2xx responses (success)
-  redirects: number;        // 3xx responses (redirects)
-  clientError: number;      // 4xx responses (client errors)
-  serverError: number;      // 5xx responses (server errors)
+  ok: number; // 2xx responses (success)
+  redirects: number; // 3xx responses (redirects)
+  clientError: number; // 4xx responses (client errors)
+  serverError: number; // 5xx responses (server errors)
 }
 ```
 
@@ -279,15 +287,15 @@ KV Chunking settings control how large videos are split into manageable chunks f
 
 ```typescript
 interface KvChunkingConfig {
-  enabled: boolean;          // Enable KV chunking
-  sizeThreshold: number;     // Size threshold for chunking in bytes
-  chunkSize: number;         // Size of each chunk in bytes
-  timeoutMs: number;         // Timeout for chunk operations in milliseconds
-  maxChunks: number;         // Maximum allowed chunks
-  parallelFetches: number;   // Maximum parallel chunk fetches
+  enabled: boolean; // Enable KV chunking
+  sizeThreshold: number; // Size threshold for chunking in bytes
+  chunkSize: number; // Size of each chunk in bytes
+  timeoutMs: number; // Timeout for chunk operations in milliseconds
+  maxChunks: number; // Maximum allowed chunks
+  parallelFetches: number; // Maximum parallel chunk fetches
   logChunkOperations: boolean; // Log detailed chunk operations
-  useEdgeCache: boolean;     // Use edge cache for KV reads
-  edgeCacheTtl: number;      // Edge cache TTL in seconds
+  useEdgeCache: boolean; // Use edge cache for KV reads
+  edgeCacheTtl: number; // Edge cache TTL in seconds
 }
 ```
 
@@ -332,23 +340,23 @@ The debug configuration controls debugging features and diagnostic output.
 
 ```typescript
 interface DebugConfig {
-  enabled: boolean;            // Master debug switch
-  verbose: boolean;            // Enable verbose output
-  includeHeaders: boolean;     // Include headers in debug output
+  enabled: boolean; // Master debug switch
+  verbose: boolean; // Enable verbose output
+  includeHeaders: boolean; // Include headers in debug output
   includePerformance: boolean; // Include performance metrics
-  dashboardMode: boolean;      // Enable debug dashboard
-  viewMode: boolean;           // Enable debug view
-  headerMode: boolean;         // Enable debug headers
-  debugQueryParam: string;     // Query param to enable debug
-  debugViewParam: string;      // Value for debug view
+  dashboardMode: boolean; // Enable debug dashboard
+  viewMode: boolean; // Enable debug view
+  headerMode: boolean; // Enable debug headers
+  debugQueryParam: string; // Query param to enable debug
+  debugViewParam: string; // Value for debug view
   preserveDebugParams: boolean; // Keep debug params in URLs
-  debugHeaders: string[];      // Headers that enable debug
-  renderStaticHtml: boolean;   // Render static HTML debug
-  includeStackTrace: boolean;  // Include stack traces
-  maxContentLength: number;    // Max debug content length
-  truncationMessage: string;   // Message when content truncated
-  allowedIps: string[];        // IPs allowed to see debug
-  excludedPaths: string[];     // Paths excluded from debug
+  debugHeaders: string[]; // Headers that enable debug
+  renderStaticHtml: boolean; // Render static HTML debug
+  includeStackTrace: boolean; // Include stack traces
+  maxContentLength: number; // Max debug content length
+  truncationMessage: string; // Message when content truncated
+  allowedIps: string[]; // IPs allowed to see debug
+  excludedPaths: string[]; // Paths excluded from debug
 }
 ```
 
@@ -361,21 +369,23 @@ The logging configuration controls logging behavior, levels, and formats.
 ```typescript
 interface LoggingConfig {
   level: 'debug' | 'info' | 'warn' | 'error'; // Logging level
-  includeTimestamps: boolean;    // Include timestamps in logs
+  includeTimestamps: boolean; // Include timestamps in logs
   includeComponentName: boolean; // Include component names
-  format: 'json' | 'text';       // Log format
-  colorize: boolean;             // Colorize log output
-  enabledComponents: string[];   // Components to enable
-  disabledComponents: string[];  // Components to disable
-  sampleRate: number;            // Sampling rate (0-1)
+  format: 'json' | 'text'; // Log format
+  colorize: boolean; // Colorize log output
+  enabledComponents: string[]; // Components to enable
+  disabledComponents: string[]; // Components to disable
+  sampleRate: number; // Sampling rate (0-1)
   enablePerformanceLogging: boolean; // Log performance metrics
   performanceThresholdMs: number; // Performance threshold
-  breadcrumbs: {                 // Breadcrumb settings
+  breadcrumbs: {
+    // Breadcrumb settings
     enabled: boolean;
     maxItems: number;
-    logAdditions: boolean;       // Log each breadcrumb addition
+    logAdditions: boolean; // Log each breadcrumb addition
   };
-  pino: {                        // Pino logger settings
+  pino: {
+    // Pino logger settings
     level: 'debug' | 'info' | 'warn' | 'error';
     browser?: {
       asObject: boolean;
@@ -399,34 +409,34 @@ The storage configuration controls origin storage settings and authentication.
 interface StorageConfig {
   // Storage priority order
   priority: Array<'r2' | 'remote' | 'fallback'>;
-  
+
   // R2 storage configuration
   r2: {
     enabled: boolean;
     bucketBinding: string;
   };
-  
+
   // Remote storage configuration
   remoteUrl?: string;
   remoteAuth?: AuthConfig;
-  
+
   // Fallback storage configuration
   fallbackUrl?: string;
   fallbackAuth?: AuthConfig;
-  
+
   // General storage auth configuration
   auth?: {
     useOriginAuth: boolean;
     securityLevel: 'strict' | 'permissive';
     cacheTtl?: number;
   };
-  
+
   // Fetch options for remote requests
   fetchOptions: {
     userAgent: string;
     headers?: Record<string, string>;
   };
-  
+
   // Path transformations
   pathTransforms?: Record<string, any>;
 }
@@ -436,35 +446,35 @@ interface StorageConfig {
 
 Environment variables provide a way to override configuration settings. Key variables related to caching:
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CACHE_DEBUG` | boolean | Enable cache debug logging |
-| `CACHE_DEFAULT_TTL` | number | Default TTL for cached content |
-| `CACHE_RESPECT_ORIGIN` | boolean | Respect origin Cache-Control headers |
-| `CACHE_EVERYTHING` | boolean | Cache all status codes |
-| `CACHE_ENABLE_TAGS` | boolean | Enable Cache-Tag headers |
-| `CACHE_PURGE_ON_UPDATE` | boolean | Purge cache on config update |
-| `CACHE_BYPASS_PARAMS` | string | Comma-separated list of cache bypass parameters |
-| `CACHE_ENABLE_KV` | boolean | Enable KV cache storage |
-| `CACHE_STORE_INDEFINITELY` | boolean | Store KV items without expiration |
-| `CACHE_KV_TTL_OK` | number | TTL for successful responses |
-| `CACHE_KV_TTL_REDIRECTS` | number | TTL for redirect responses |
-| `CACHE_KV_TTL_CLIENT_ERROR` | number | TTL for client error responses |
-| `CACHE_KV_TTL_SERVER_ERROR` | number | TTL for server error responses |
+| Variable                    | Type    | Description                                     |
+| --------------------------- | ------- | ----------------------------------------------- |
+| `CACHE_DEBUG`               | boolean | Enable cache debug logging                      |
+| `CACHE_DEFAULT_TTL`         | number  | Default TTL for cached content                  |
+| `CACHE_RESPECT_ORIGIN`      | boolean | Respect origin Cache-Control headers            |
+| `CACHE_EVERYTHING`          | boolean | Cache all status codes                          |
+| `CACHE_ENABLE_TAGS`         | boolean | Enable Cache-Tag headers                        |
+| `CACHE_PURGE_ON_UPDATE`     | boolean | Purge cache on config update                    |
+| `CACHE_BYPASS_PARAMS`       | string  | Comma-separated list of cache bypass parameters |
+| `CACHE_ENABLE_KV`           | boolean | Enable KV cache storage                         |
+| `CACHE_STORE_INDEFINITELY`  | boolean | Store KV items without expiration               |
+| `CACHE_KV_TTL_OK`           | number  | TTL for successful responses                    |
+| `CACHE_KV_TTL_REDIRECTS`    | number  | TTL for redirect responses                      |
+| `CACHE_KV_TTL_CLIENT_ERROR` | number  | TTL for client error responses                  |
+| `CACHE_KV_TTL_SERVER_ERROR` | number  | TTL for server error responses                  |
 
 **KV Chunking Environment Variables:**
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CACHE_KV_CHUNKING_ENABLED` | boolean | Enable KV chunking for large videos |
-| `CACHE_KV_CHUNK_SIZE` | number | Size of each chunk in bytes |
-| `CACHE_KV_SIZE_THRESHOLD` | number | Size threshold for chunking in bytes |
-| `CACHE_KV_CHUNK_TIMEOUT_MS` | number | Timeout for chunk operations in milliseconds |
-| `CACHE_KV_MAX_CHUNKS` | number | Maximum allowed chunks |
-| `CACHE_KV_PARALLEL_FETCHES` | number | Maximum parallel chunk fetches |
-| `CACHE_KV_LOG_OPERATIONS` | boolean | Log detailed chunk operations |
-| `CACHE_KV_USE_EDGE_CACHE` | boolean | Use edge cache for KV reads |
-| `CACHE_KV_EDGE_CACHE_TTL` | number | Edge cache TTL in seconds |
+| Variable                    | Type    | Description                                  |
+| --------------------------- | ------- | -------------------------------------------- |
+| `CACHE_KV_CHUNKING_ENABLED` | boolean | Enable KV chunking for large videos          |
+| `CACHE_KV_CHUNK_SIZE`       | number  | Size of each chunk in bytes                  |
+| `CACHE_KV_SIZE_THRESHOLD`   | number  | Size threshold for chunking in bytes         |
+| `CACHE_KV_CHUNK_TIMEOUT_MS` | number  | Timeout for chunk operations in milliseconds |
+| `CACHE_KV_MAX_CHUNKS`       | number  | Maximum allowed chunks                       |
+| `CACHE_KV_PARALLEL_FETCHES` | number  | Maximum parallel chunk fetches               |
+| `CACHE_KV_LOG_OPERATIONS`   | boolean | Log detailed chunk operations                |
+| `CACHE_KV_USE_EDGE_CACHE`   | boolean | Use edge cache for KV reads                  |
+| `CACHE_KV_EDGE_CACHE_TTL`   | number  | Edge cache TTL in seconds                    |
 
 ## Configuration Example
 

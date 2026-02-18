@@ -1,6 +1,6 @@
 # Video Resizer Documentation
 
-*Last Updated: December 9, 2025*
+_Last Updated: February 18, 2026_
 
 Welcome to the Video Resizer documentation. This comprehensive guide provides detailed information about the video-resizer project, its architecture, configuration, features, and usage.
 
@@ -22,6 +22,7 @@ Documentation for users of the video-resizer system:
   - [Video Mode](./features/video-mode.md)
   - [Frame Mode](./features/frame-mode.md)
   - [Spritesheet Mode](./features/spritesheet-mode.md)
+  - [Audio Mode](./features/audio-mode.md)
   - [Range Request Support](./features/range-request-support.md)
   - [Client Detection](./features/client-detection.md)
   - [Origins System](./architecture/origins-system.md)
@@ -78,7 +79,7 @@ Documentation for developers working on the codebase:
 
 The Video Resizer is a Cloudflare Worker for transforming and resizing video content on the edge. It provides:
 
-- Video, frame, and spritesheet transformations via Cloudflare Media endpoints
+- Video, frame, spritesheet, and audio transformations via Cloudflare Media endpoints
 - KV-backed caching with chunking for large objects (5 MiB chunks; 20 MiB single-entry threshold)
 - Range request handling that reconstructs responses from KV chunks
 - Origins-based storage resolution with multi-origin fallback and optional legacy path patterns
@@ -97,8 +98,9 @@ New to the Video Resizer? Start here:
 
 ## Recent Updates
 
-| Date | Update |
-|------|--------|
-| December 9, 2025 | Cleaned and aligned docs with current code (KV-only caching, origin system) |
-| May 15, 2025 | Multi-origin fallback enabled by default in `worker-config.json` |
-| January 21, 2025 | Chunk locking added to prevent KV chunk size mismatches |
+| Date              | Update                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| February 18, 2026 | Phase 6-8 refactoring: unified logging, decomposed god classes, CF error codes, static imports |
+| December 9, 2025  | Cleaned and aligned docs with current code (KV-only caching, origin system)                    |
+| May 15, 2025      | Multi-origin fallback enabled by default in `worker-config.json`                               |
+| January 21, 2025  | Chunk locking added to prevent KV chunk size mismatches                                        |

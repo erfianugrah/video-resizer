@@ -1,6 +1,6 @@
 # Transformation Error Handling
 
-*Last Updated: May 15, 2025*
+_Last Updated: February 18, 2026_
 
 ## Overview
 
@@ -80,10 +80,9 @@ The system now uses a single, consolidated approach for handling transformation 
 ```typescript
 // In TransformVideoCommand.executeWithOrigins()
 if (response.status === 404) {
-  const { retryWithAlternativeOrigins } = await import(
-    '../../services/transformation/retryWithAlternativeOrigins'
-  );
-  
+  const { retryWithAlternativeOrigins } =
+    await import('../../services/transformation/retryWithAlternativeOrigins');
+
   return await retryWithAlternativeOrigins({
     originalRequest: request,
     transformOptions: options,
@@ -93,7 +92,7 @@ if (response.status === 404) {
     env: env,
     requestContext: this.requestContext,
     pathPatterns: this.context.pathPatterns,
-    debugInfo: this.context.debugInfo
+    debugInfo: this.context.debugInfo,
   });
 }
 ```
@@ -114,16 +113,15 @@ export interface FetchOptions {
 for (const { origin, match: originMatch } of matchingOrigins) {
   // Apply source exclusions
   let sources = [...origin.sources].sort((a, b) => a.priority - b.priority);
-  
+
   if (options?.excludeSources) {
-    sources = sources.filter(source => {
-      return !options.excludeSources!.some(excluded => 
-        excluded.originName === origin.name &&
-        excluded.sourceType === source.type
+    sources = sources.filter((source) => {
+      return !options.excludeSources!.some(
+        (excluded) => excluded.originName === origin.name && excluded.sourceType === source.type
       );
     });
   }
-  
+
   // Try each source in the origin
   for (const source of sources) {
     const result = await fetchFromSource(source);
@@ -141,7 +139,7 @@ The system still initiates background caching for fallback content in `handleTra
 if (fallbackResponse.body) {
   const responseForCaching = fallbackResponse.clone();
   await initiateBackgroundCaching(context.env, path, responseForCaching, requestContext, {
-    isLargeVideo: is256MiBSizeError
+    isLargeVideo: is256MiBSizeError,
   });
 }
 ```
@@ -154,50 +152,65 @@ The system has specific triggers that initiate different types of failover:
 
 These errors from the `cdn-cgi/media` proxy trigger the complete multi-origin fallback:
 
-| Error Type | Status Code | Trigger Condition | Fallback Action |
-|------------|-------------|-------------------|-----------------|
-| Not Found | 404 | Source video not found by transformation service | Handled by retryWithAlternativeOrigins → Multi-origin retry with source exclusion |
-| Bad Request | 400 | Invalid transformation parameters | Multi-origin fallback with original parameters |
-| Payload Too Large | 413 | Video exceeds 256MiB limit | Direct fetch with range support (bypasses transformation) |
-| Unsupported Media | 415 | Format not supported for transformation | Multi-origin fallback for original file |
-| Rate Limited | 429 | Too many transformation requests | Multi-origin fallback with exponential backoff |
-| Server Error | 5xx | Transformation service internal error | Multi-origin fallback with immediate retry |
+| Error Type        | Status Code | Trigger Condition                                | Fallback Action                                                                   |
+| ----------------- | ----------- | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Not Found         | 404         | Source video not found by transformation service | Handled by retryWithAlternativeOrigins → Multi-origin retry with source exclusion |
+| Bad Request       | 400         | Invalid transformation parameters                | Multi-origin fallback with original parameters                                    |
+| Payload Too Large | 413         | Video exceeds 256MiB limit                       | Direct fetch with range support (bypasses transformation)                         |
+| Unsupported Media | 415         | Format not supported for transformation          | Multi-origin fallback for original file                                           |
+| Rate Limited      | 429         | Too many transformation requests                 | Multi-origin fallback with exponential backoff                                    |
+| Server Error      | 5xx         | Transformation service internal error            | Multi-origin fallback with immediate retry                                        |
 
 ### Origin Storage Failover Triggers
 
 These errors from origin sources trigger failover to the next source:
 
-| Error Type | Trigger Condition | Failover Action |
-|------------|-------------------|-----------------|
-| R2 Not Found | Object doesn't exist in R2 bucket | Try next source (remote/fallback) |
-| Remote 404 | Remote URL returns 404 | Try next source in priority order |
-| Auth Failure | Authentication fails (non-permissive mode) | Skip to next source |
-| Network Error | Connection timeout or DNS failure | Try next source with retry |
+| Error Type    | Trigger Condition                          | Failover Action                   |
+| ------------- | ------------------------------------------ | --------------------------------- |
+| R2 Not Found  | Object doesn't exist in R2 bucket          | Try next source (remote/fallback) |
+| Remote 404    | Remote URL returns 404                     | Try next source in priority order |
+| Auth Failure  | Authentication fails (non-permissive mode) | Skip to next source               |
+| Network Error | Connection timeout or DNS failure          | Try next source with retry        |
 
 ### Special Case: Range Requests
 
 When a range request encounters an error:
+
 1. If transformation fails with range headers → Fallback attempts preserve range headers
 2. If origin doesn't support ranges → System returns full content with adjusted headers
+
+## CF Error Code Extraction
+
+When the Cloudflare transformation service returns an error, the system extracts detailed error codes from the `Cf-Resized` response header. The header uses the format `err=XXXX` where `XXXX` is a numeric Cloudflare error code.
+
+The `extractCfErrorCode()` function (from `src/errors/cfErrorCodes.ts`) parses this header and maps it to a known `CfErrorCode` enum value. Each code includes metadata about the corresponding HTTP status, human-readable description, and whether the error is retryable.
+
+When a CF error code is detected:
+
+- The `X-CF-Error-Code` response header is set with the numeric code
+- The error code and description are included in structured JSON error responses
+- Retryability information is used to determine whether fallback strategies should be attempted
 
 ## Diagnostic Headers
 
 When a fallback is applied, the system adds diagnostic headers:
 
-| Header | Description |
-|--------|-------------|
-| `X-Fallback-Applied` | Set to "true" when any fallback is applied |
-| `X-Pattern-Fallback-Applied` | Set to "true" when a pattern-specific fallback is used |
-| `X-Pattern-Name` | The name of the pattern that provided the content |
-| `X-Pattern-Fallback-Index` | Which pattern in the sequence was successful (1-based) |
-| `X-Pattern-Fallback-Total` | Total number of matching patterns that were considered |
-| `X-Fallback-Reason` | Reason for the fallback (e.g., file size limit, transformation error) |
+| Header                       | Description                                                             |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `X-Fallback-Applied`         | Set to "true" when any fallback is applied                              |
+| `X-Pattern-Fallback-Applied` | Set to "true" when a pattern-specific fallback is used                  |
+| `X-Pattern-Name`             | The name of the pattern that provided the content                       |
+| `X-Pattern-Fallback-Index`   | Which pattern in the sequence was successful (1-based)                  |
+| `X-Pattern-Fallback-Total`   | Total number of matching patterns that were considered                  |
+| `X-Fallback-Reason`          | Reason for the fallback (e.g., file size limit, transformation error)   |
+| `X-CF-Error-Code`            | Cloudflare error code extracted from `Cf-Resized` header (when present) |
 
 ## Special Cases
 
 ### Large File Handling (>256MiB)
 
 For files exceeding the 256MiB transformation limit:
+
 1. Direct fetch with range request support
 2. Background chunking for KV storage
 3. Special headers to indicate the file size issue
@@ -205,6 +218,7 @@ For files exceeding the 256MiB transformation limit:
 ### Duration Limit Retries
 
 For duration limit errors:
+
 1. Extract the maximum allowed duration from the error message
 2. Retry with adjusted duration parameter
 3. Store the limit for future use
@@ -212,6 +226,7 @@ For duration limit errors:
 ## Error Isolation
 
 The system implements thorough error isolation:
+
 1. Pattern-specific fetch errors don't prevent trying other patterns
 2. Background storage errors don't affect the user response
 3. Detailed error logging for troubleshooting

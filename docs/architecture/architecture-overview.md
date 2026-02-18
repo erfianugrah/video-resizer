@@ -1,6 +1,6 @@
 # Video Resizer Architecture Overview
 
-*Last Updated: May 15, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -57,7 +57,7 @@ flowchart TB
         T --> R
         R --> Z[Client Response]
     end
-    
+
     subgraph Configuration
         CM1[VideoConfigurationManager]
         CM2[CacheConfigurationManager]
@@ -66,7 +66,7 @@ flowchart TB
         CM5[OriginConfigurationManager]
         CM1 & CM2 & CM3 & CM4 & CM5 --> |Provides| CONFIG[Runtime Configuration]
     end
-    
+
     subgraph Services
         SVC1[VideoTransformationService]
         SVC2[CacheManagementService]
@@ -74,7 +74,7 @@ flowchart TB
         SVC4[VideoStorageService]
         SVC5[ErrorHandlerService]
     end
-    
+
     D --> SVC1
     D --> SVC2
     Q --> SVC2
@@ -82,7 +82,7 @@ flowchart TB
     D --> SVC3
     D --> SVC4
     D --> SVC5
-    
+
     CONFIG --> D
     CONFIG --> OR
     CONFIG --> SVC1
@@ -106,23 +106,23 @@ Each manager is a singleton class that handles a specific area of configuration:
 export class VideoConfigurationManager {
   private static instance: VideoConfigurationManager | null = null;
   private config: VideoConfig;
-  
+
   public static getInstance(): VideoConfigurationManager {
     if (!VideoConfigurationManager.instance) {
       VideoConfigurationManager.instance = new VideoConfigurationManager();
     }
     return VideoConfigurationManager.instance;
   }
-  
+
   // Configuration access methods
   public getDerivative(name: string): VideoDerivative | null {
     return this.config.derivatives[name] || null;
   }
-  
+
   public isValidOption(param: string, value: string): boolean {
     // Validation implementation
   }
-  
+
   // Configuration update methods
   public updateConfigFromKV(kvConfig: Partial<VideoConfig>): void {
     // Validation and update logic
@@ -135,7 +135,7 @@ export class VideoConfigurationManager {
 Configuration is loaded from multiple sources with clear precedence:
 
 1. **Default Values**: Hardcoded in manager classes
-2. **Wrangler Config**: From `wrangler.jsonc` 
+2. **Wrangler Config**: From `wrangler.jsonc`
 3. **Environment Variables**: Override during runtime
 4. **KV Storage**: Dynamic updates without redeployment
 
@@ -152,11 +152,11 @@ export class TransformVideoCommand {
   private transformationService: VideoTransformationService;
   private cacheService: CacheManagementService;
   private debugService: DebugService;
-  
+
   constructor(services: ServiceDependencies) {
     // Initialize services
   }
-  
+
   public async execute(request: Request): Promise<Response> {
     // Command execution logic:
     // 1. Parse request
@@ -171,7 +171,7 @@ export class TransformVideoCommand {
 
 #### Strategy Pattern
 
-The strategy pattern handles different transformation modes (video, frame, spritesheet) in a maintainable and extensible way. Each mode has its own strategy implementation that encapsulates the mode-specific logic and validation.
+The strategy pattern handles different transformation modes (video, frame, spritesheet, audio) in a maintainable and extensible way. Each mode has its own strategy implementation that encapsulates the mode-specific logic and validation.
 
 ```typescript
 // Strategy interface
@@ -182,17 +182,51 @@ interface TransformationStrategy {
 }
 
 // Concrete strategies
-class VideoStrategy implements TransformationStrategy { /* implementation */ }
-class FrameStrategy implements TransformationStrategy { /* implementation */ }
-class SpritesheetStrategy implements TransformationStrategy { /* implementation */ }
+class VideoStrategy implements TransformationStrategy {
+  /* implementation */
+}
+class FrameStrategy implements TransformationStrategy {
+  /* implementation */
+}
+class SpritesheetStrategy implements TransformationStrategy {
+  /* implementation */
+}
+class AudioStrategy implements TransformationStrategy {
+  /* implementation */
+}
 
 // Strategy factory
 class StrategyFactory {
   static createStrategy(mode: string): TransformationStrategy {
     switch (mode) {
-      case 'frame': return new FrameStrategy();
-      case 'spritesheet': return new SpritesheetStrategy();
-      default: return new VideoStrategy();
+      case 'frame':
+        return new FrameStrategy();
+      case 'spritesheet':
+        return new SpritesheetStrategy();
+      case 'audio':
+        return new AudioStrategy();
+      default:
+        return new VideoStrategy();
+    }
+  }
+}
+class FrameStrategy implements TransformationStrategy {
+  /* implementation */
+}
+class SpritesheetStrategy implements TransformationStrategy {
+  /* implementation */
+}
+
+// Strategy factory
+class StrategyFactory {
+  static createStrategy(mode: string): TransformationStrategy {
+    switch (mode) {
+      case 'frame':
+        return new FrameStrategy();
+      case 'spritesheet':
+        return new SpritesheetStrategy();
+      default:
+        return new VideoStrategy();
     }
   }
 }
@@ -210,11 +244,8 @@ export class VideoTransformationService {
   public buildTransformUrl(params: TransformParams): string {
     // Create Cloudflare Media Transformation URL
   }
-  
-  public async transformVideo(
-    request: Request, 
-    options: VideoTransformOptions
-  ): Promise<Response> {
+
+  public async transformVideo(request: Request, options: VideoTransformOptions): Promise<Response> {
     // Transformation implementation
   }
 }
@@ -224,11 +255,8 @@ export class CacheManagementService {
   public async getCachedResponse(request: Request): Promise<Response | null> {
     // Cache retrieval implementation
   }
-  
-  public async cacheResponse(
-    request: Request, 
-    response: Response
-  ): Promise<Response> {
+
+  public async cacheResponse(request: Request, response: Response): Promise<Response> {
     // Cache storage implementation
   }
 }
@@ -244,7 +272,7 @@ export class VideoTransformError extends Error {
   public readonly statusCode: number;
   public readonly errorType: string;
   public readonly details: Record<string, any>;
-  
+
   constructor(message: string, options: ErrorOptions) {
     super(message);
     // Initialize error properties
@@ -252,10 +280,18 @@ export class VideoTransformError extends Error {
 }
 
 // Specialized error classes
-export class ValidationError extends VideoTransformError { /* ... */ }
-export class ProcessingError extends VideoTransformError { /* ... */ }
-export class ConfigurationError extends VideoTransformError { /* ... */ }
-export class NotFoundError extends VideoTransformError { /* ... */ }
+export class ValidationError extends VideoTransformError {
+  /* ... */
+}
+export class ProcessingError extends VideoTransformError {
+  /* ... */
+}
+export class ConfigurationError extends VideoTransformError {
+  /* ... */
+}
+export class NotFoundError extends VideoTransformError {
+  /* ... */
+}
 ```
 
 ### 4. Utilities Layer
@@ -265,7 +301,7 @@ Reusable utility functions organized by domain:
 - **pathUtils.ts**: URL and path handling
 - **cacheUtils.ts**: Caching utilities
 - **transformationUtils.ts**: Shared transformation functions
-- **loggerUtils.ts**: Structured logging utilities
+- **logger.ts**: Unified logging facade (Pino-based)
 - **errorHandlingUtils.ts**: Error processing and formatting
 
 ### 5. Handler Layer
@@ -282,7 +318,7 @@ export async function videoHandler(
   try {
     // Initialize services
     const services = await initializeServices(env);
-    
+
     // Create and execute command
     const command = new TransformVideoCommand(services);
     return await command.execute(request);
@@ -320,11 +356,11 @@ export class GifStrategy implements TransformationStrategy {
   prepareTransformParams(context: TransformationContext): TransformParams {
     // Prepare GIF-specific parameters
   }
-  
+
   validateOptions(options: VideoTransformOptions): void {
     // Validate GIF-specific options
   }
-  
+
   updateDiagnostics(context: TransformationContext): void {
     // Update diagnostics with GIF-specific information
   }
@@ -381,7 +417,7 @@ The request flow through the system follows these steps:
    - Path transformation using capture groups
 3. **Legacy Path Matching**: As a fallback, URL is matched against configured path patterns
 4. **Parameter Extraction**: URL parameters and path captures are processed
-5. **Strategy Selection**: Based on mode (video, frame, spritesheet)
+5. **Strategy Selection**: Based on mode (video, frame, spritesheet, audio)
 6. **Cache Check**: Check if transformed response is already cached
 7. **Transformation**: If needed, transform video using Cloudflare Media API
 8. **Caching**: Cache the response for future requests
@@ -396,16 +432,16 @@ flowchart TD
     A[Client Request] --> B{KV Cache?}
     B -->|Yes| C[KV Lookup]
     B -->|No| D{CF Cache?}
-    
+
     C -->|Hit| E[Return KV Response]
     C -->|Miss| D
-    
+
     D -->|Hit| F[Return CF Response]
     D -->|Miss| G[Transform Video]
-    
+
     G --> H[Cache Response]
     H --> I[Return Response]
-    
+
     E & F & I --> J[Client Response]
 ```
 
@@ -415,12 +451,10 @@ flowchart TD
    - Configurable TTL for different status codes
    - Global namespace with key structure: `url:options:hash`
    - Best for high-reuse transformations
-   
 2. **Cloudflare Cache**: Built-in HTTP caching
    - Configured through Cache-Control headers
    - Content-based caching using ETag and If-None-Match
    - Automatic edge distribution
-   
 3. **Browser Cache**: Client-side caching
    - Controlled through Cache-Control headers
    - Suitable for static transformations
@@ -436,10 +470,10 @@ flowchart LR
     A[Client Request with\ndebug parameter] --> B[Debug Mode Activated]
     B --> C[Collect Diagnostics]
     C --> D{View Mode?}
-    
+
     D -->|Yes| E[Debug UI]
     D -->|No| F[Debug Headers]
-    
+
     E & F --> G[Client Response\nwith Debug Info]
 ```
 
@@ -458,34 +492,34 @@ The system supports multiple storage backends for video content:
 ```mermaid
 flowchart TD
     A[Content Request] --> B[fetchVideoWithOrigins]
-    
+
     B --> C[OriginResolver]
     C --> D{Match Origins}
-    
+
     D -->|Origin 1| E[Sources by Priority]
     D -->|Origin 2| F[Sources by Priority]
     D -->|No Match| G[404 Error]
-    
+
     E --> H{Try Sources}
     F --> H
-    
+
     H -->|R2| I[r2Storage.ts]
     H -->|Remote| J[remoteStorage.ts]
     H -->|Fallback| K[fallbackStorage.ts]
-    
+
     I & J & K --> L{Found?}
     L -->|Yes| M[Return Content]
     L -->|No| N[Try Next Source]
-    
+
     N --> H
     N -->|All Failed| O{From CDN-CGI?}
-    
+
     O -->|Yes| P[retryWithAlternativeOrigins]
     O -->|No| G
-    
+
     P --> Q[Exclude Failed Sources]
     Q --> B
-    
+
     M & G --> R[Response]
 ```
 
@@ -514,7 +548,7 @@ async function initializeServices(env: Env): Promise<ServiceDependencies> {
     cacheService: new CacheManagementService(env),
     debugService: new DebugService(env),
     videoStorageService: new VideoStorageService(env),
-    errorHandlerService: new ErrorHandlerService(env)
+    errorHandlerService: new ErrorHandlerService(env),
   };
 }
 ```
@@ -534,40 +568,43 @@ The architecture has evolved through several phases:
 ### Phase 1: Initial Implementation
 
 - Basic functionality with minimal structure
-- Simple transform options
-- Limited error handling
 
 ### Phase 2: Service Architecture
 
-- Introduced command pattern
-- Added service layer
-- Improved configuration system
+- Command pattern, service layer, configuration system
 
-### Phase 3: Current Architecture
+### Phase 3: Strategy & Storage
 
-- Full strategy pattern implementation
-- Advanced configuration with Zod
-- Comprehensive error handling
-- Cache optimization
-- Storage abstraction
-- Debug UI integration
+- Full strategy pattern, Zod configuration, cache optimization, storage abstraction, debug UI
 
-### Phase 4: Current Evolution
+### Phase 4: Origins System
 
-- Origins system implementation
-  - Priority-based source selection
-  - Pattern matching with capture groups
-  - Flexible path template transformations
-  - Compatibility with legacy path patterns
-- Enhanced error handling for source resolution
-- Improved diagnostic information
+- Priority-based source selection, pattern matching with capture groups, legacy path pattern compatibility
 
-### Phase 5: Future Direction
+### Phase 5: Decomposition & Import Cleanup
 
-- Further dependency inversion
-- Expanded transform options
-- Enhanced metrics and observability
-- Complete migration from path patterns to Origins
+- Converted ~42 unnecessary dynamic imports to static
+- Fixed unbounded in-flight maps and performance arrays
+
+### Phase 6: CF Error Codes
+
+- `CfErrorCode` enum and `CF_ERROR_MAP` for classifying Cloudflare Media Transformation errors
+- Error extraction from `Cf-Resized` response header
+- `X-CF-Error-Code` response header for diagnostics
+
+### Phase 7: Global State & Test Types
+
+- Replaced `globalThis.WORKER_CONFIG` with `OriginConfigurationManager.setWorkerConfig()`
+- Added `clearCurrentContext()` in finally blocks to prevent context leaks
+- Fixed all 360 test TypeScript errors
+
+### Phase 8: Final Cleanup
+
+- Converted remaining console calls to structured logger
+- Converted ~20 more dynamic imports to static (total remaining ~19, all genuinely necessary)
+- Added `resetInstance()` to ConfigProvider
+- Implemented chunk cleanup on failure (`cleanupStoredChunks`)
+- Decomposed VideoConfigurationManager (1038 → 625 lines, -40%)
 
 ## Conclusion
 

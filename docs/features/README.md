@@ -1,6 +1,6 @@
 # Video Resizer Features
 
-*Last Updated: May 15, 2025*
+_Last Updated: February 18, 2026_
 
 This section provides comprehensive documentation on the features available in the Video Resizer service.
 
@@ -37,21 +37,26 @@ This section provides comprehensive documentation on the features available in t
 
 ## Feature Compatibility Matrix
 
-| Feature | Video Mode | Frame Mode | Spritesheet Mode |
-|---------|------------|------------|------------------|
-| **Loop/Autoplay** | ✅ | ❌ | ❌ |
-| **Quality Settings** | ✅ | ✅ | ❌ |
-| **Format Selection** | ✅ | ✅ | ❌ (JPEG only) |
-| **Compression** | ✅ | ✅ | ❌ |
-| **Responsive Sizing** | ✅ | ✅ | ✅ |
-| **IMQuery** | ✅ | ✅ | ❌ |
-| **Client Detection** | ✅ | ✅ | ❌ |
-| **KV Caching** | ✅ | ✅ | ✅ |
-| **KV Chunking** | ✅ | ❌ | ❌ |
-| **Debug UI Support** | ✅ | ✅ | ✅ |
-| **Derivatives** | ✅ | ✅ | ❌ |
-| **Range Requests** | ✅ | ❌ | ❌ |
-| **Non-Blocking Cache** | ✅ | ✅ | ✅ |
-| **Multi-Origin Fallback** | ✅ | ✅ | ✅ |
+| Feature                   | Video Mode | Frame Mode | Spritesheet Mode | Audio Mode |
+| ------------------------- | ---------- | ---------- | ---------------- | ---------- |
+| **Loop/Autoplay**         | ✅         | ❌         | ❌               | ❌         |
+| **Quality Settings**      | ✅         | ✅         | ❌               | ❌         |
+| **Format Selection**      | ✅         | ✅         | ❌ (JPEG only)   | ❌         |
+| **Compression**           | ✅         | ✅         | ❌               | ❌         |
+| **Responsive Sizing**     | ✅         | ✅         | ✅               | ❌         |
+| **Width/Height**          | ✅         | ✅         | ✅               | ❌         |
+| **Time Parameter**        | ✅         | ✅         | ❌               | ❌         |
+| **Duration**              | ✅         | ❌         | ❌               | ✅         |
+| **Audio Extraction**      | ❌         | ❌         | ❌               | ✅         |
+| **Fit**                   | ✅         | ✅         | ✅               | ❌         |
+| **IMQuery**               | ✅         | ✅         | ❌               | ❌         |
+| **Client Detection**      | ✅         | ✅         | ❌               | ❌         |
+| **KV Caching**            | ✅         | ✅         | ✅               | ✅         |
+| **KV Chunking**           | ✅         | ❌         | ❌               | ❌         |
+| **Debug UI Support**      | ✅         | ✅         | ✅               | ✅         |
+| **Derivatives**           | ✅         | ✅         | ❌               | ❌         |
+| **Range Requests**        | ✅         | ❌         | ❌               | ❌         |
+| **Non-Blocking Cache**    | ✅         | ✅         | ✅               | ✅         |
+| **Multi-Origin Fallback** | ✅         | ✅         | ✅               | ✅         |
 
 See the specific feature documentation for detailed information on usage and configuration.

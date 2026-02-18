@@ -1,13 +1,13 @@
 # Video Resizer Deployment
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 This section provides documentation on deploying and managing the Video Resizer in production environments.
 
 ## Core Deployment Documents
 
-- [Environment Setup](./environment-setup.md) - Setting up environments
-- [Authentication Setup](./auth-setup.md) - Setting up authentication for storage access
+- Environment Setup (planned) - Setting up environments
+- Authentication Setup (planned) - Setting up authentication for storage access
 
 ## Deployment Overview
 
@@ -28,4 +28,4 @@ The deployment process includes:
 3. Uploading the worker code to Cloudflare
 4. Configuring bindings and routes
 
-See the [Environment Setup](./environment-setup.md) document for detailed deployment instructions.
+See the Environment Setup document (planned) for detailed deployment instructions.

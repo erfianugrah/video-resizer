@@ -1,5 +1,7 @@
 # Error Handling in Video Resizer
 
+_Last Updated: February 18, 2026_
+
 This document outlines the error handling approach in the Video Resizer service, particularly for Cloudflare's Media Transformation API.
 
 ## Recent Updates
@@ -13,44 +15,49 @@ This document outlines the error handling approach in the Video Resizer service,
 The error handling system identifies and handles the following categories of errors:
 
 ### 1. Resource Not Found Errors
+
 - Pattern: `video not found`, `unable to read video`, `404 not found`, `resource not found`, `source does not exist`
 - Status Code: 404
 - Error Type: `video_not_readable`
 
 ### 2. Parameter Validation Errors
+
 - Pattern: `invalid parameter`, `invalid value`, `invalid format`
 - Status Code: 400
 - Error Type: `invalid_parameter_error`
 
 ### 3. Mode Compatibility Errors
+
 - Pattern: `invalid mode`, `invalid combination`
 - Status Code: 400
 - Error Type: `invalid_mode_error`
 
 ### 4. Time-Related Errors
+
 - **Seek Time Errors**
   - Pattern: `seek time exceeds video duration`
   - Error Type: `seek_time_error`
-  
 - **Time Format Errors**
   - Pattern: `invalid time format`, `time format not recognized`, `malformed time`
   - Error Type: `time_format_error`
-  
 - **Duration Limit Errors**
   - Pattern: `duration: attribute must be between X and Y`
   - Error Type: `duration_limit`
 
 ### 5. Format and Codec Errors
+
 - Pattern: `unsupported codec`, `unsupported format`, `codec not supported`, `format not supported`
 - Status Code: 415
 - Error Type: `codec_error`
 
 ### 6. Size Limitations
+
 - Pattern: `Input video must be less than X bytes`
 - Status Code: 413
 - Error Type: `file_size_limit`
 
 ### 7. Service Resource Limitations
+
 - Pattern: `resource limit exceeded`, `rate limit exceeded`, `too many requests`
 - Status Code: 429
 - Error Type: `resource_limit_error`
@@ -88,6 +95,23 @@ When errors occur, the system attempts fallbacks in the following order:
 3. **Direct Source Fetch**: Attempts direct fetch from source URL.
 
 4. **Storage Service Fallback**: Uses storage service as a last resort.
+
+## Cloudflare Media Transformation Error Codes
+
+The system extracts and classifies error codes from Cloudflare's Media Transformation API via the `Cf-Resized` response header.
+
+### Error Code System (`src/errors/cfErrorCodes.ts`)
+
+- **`CfErrorCode` enum**: Defines known CF error codes (9401 input video too large, 9402 could not fetch input video, 9403 input duration too long, 9406 invalid input video, 9407 input video too wide/tall, 9409 request timeout, 9413 input too large, 9415 unsupported media type, 9422 unprocessable, 9429 rate limited, 9500 internal error, 9503 service unavailable, 9523 origin unreachable)
+- **`CF_ERROR_MAP`**: Maps each code to a human-readable description, HTTP status, and whether it's retryable
+- **`extractCfErrorCode()`**: Extracts the error code from the `Cf-Resized` header (format: `err=XXXX`)
+
+### Response Headers
+
+When a CF error is detected, the response includes:
+
+- `X-CF-Error-Code: <code>` — the numeric Cloudflare error code
+- The error code and description are included in structured JSON error responses
 
 ## Debugging Support
 

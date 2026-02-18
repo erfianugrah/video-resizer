@@ -1,6 +1,6 @@
 # Debug UI
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -22,6 +22,7 @@
 The Debug UI is a comprehensive diagnostic tool in the Video Resizer that provides detailed insights into request processing, transformation decisions, and system behavior. It offers two primary interfaces: a visual HTML dashboard (Debug View Mode) and informative HTTP headers (Debug Headers Mode).
 
 The Debug UI helps developers and operators:
+
 - Understand how requests are processed
 - View transformation parameters and decisions
 - Diagnose issues with path pattern matching
@@ -85,7 +86,7 @@ The Debug UI is organized into several information panels:
 
 ### 3. Video Transformation
 
-- Selected transformation mode (video, frame, spritesheet)
+- Selected transformation mode (video, frame, spritesheet, audio)
 - Applied parameters (width, height, quality, etc.)
 - Derivative selection (if applicable)
 - Generated CDN-CGI transformation URL
@@ -126,23 +127,24 @@ The Debug UI is organized into several information panels:
 
 When Debug Headers mode is enabled, the following HTTP headers are added to the response:
 
-| Header | Description | Example |
-|--------|-------------|---------|
-| `X-Video-Resizer-Debug` | Indicates debug mode is enabled | `view` or `headers` |
-| `X-Processing-Time-Ms` | Total processing time in milliseconds | `127.35` |
-| `X-Transform-Source` | Source of the transformed content | `origin` or `cache` |
-| `X-Transform-Mode` | Transformation mode used | `video`, `frame`, or `spritesheet` |
-| `X-Device-Type` | Detected device type | `mobile`, `tablet`, or `desktop` |
-| `X-Network-Quality` | Estimated network quality | `high`, `medium`, or `low` |
-| `X-Cache-Enabled` | Whether caching was enabled | `true` or `false` |
-| `X-Cache-TTL` | Applied cache TTL in seconds | `86400` |
-| `X-Cache-Key` | Simplified cache key used | `video:sample.mp4:derivative=mobile` |
-| `X-Cache-Result` | Cache operation result | `hit`, `miss`, or `bypass` |
-| `X-Pattern-Matched` | Path pattern that matched | `standard` |
-| `X-Pattern-Origin` | Origin URL pattern used | `https://videos.example.com/{0}` |
-| `X-Derivative-Applied` | Derivative used (if any) | `mobile` |
-| `X-URL-Params-Processed` | Count of URL parameters processed | `4` |
-| `X-Debug-ID` | Unique ID for this debug session | `dbg_1234567890abcdef` |
+| Header                   | Description                                  | Example                                     |
+| ------------------------ | -------------------------------------------- | ------------------------------------------- |
+| `X-Video-Resizer-Debug`  | Indicates debug mode is enabled              | `view` or `headers`                         |
+| `X-Processing-Time-Ms`   | Total processing time in milliseconds        | `127.35`                                    |
+| `X-Transform-Source`     | Source of the transformed content            | `origin` or `cache`                         |
+| `X-Transform-Mode`       | Transformation mode used                     | `video`, `frame`, `spritesheet`, or `audio` |
+| `X-CF-Error-Code`        | Cloudflare error code from Cf-Resized header | `9401`, `9402`, etc.                        |
+| `X-Device-Type`          | Detected device type                         | `mobile`, `tablet`, or `desktop`            |
+| `X-Network-Quality`      | Estimated network quality                    | `high`, `medium`, or `low`                  |
+| `X-Cache-Enabled`        | Whether caching was enabled                  | `true` or `false`                           |
+| `X-Cache-TTL`            | Applied cache TTL in seconds                 | `86400`                                     |
+| `X-Cache-Key`            | Simplified cache key used                    | `video:sample.mp4:derivative=mobile`        |
+| `X-Cache-Result`         | Cache operation result                       | `hit`, `miss`, or `bypass`                  |
+| `X-Pattern-Matched`      | Path pattern that matched                    | `standard`                                  |
+| `X-Pattern-Origin`       | Origin URL pattern used                      | `https://videos.example.com/{0}`            |
+| `X-Derivative-Applied`   | Derivative used (if any)                     | `mobile`                                    |
+| `X-URL-Params-Processed` | Count of URL parameters processed            | `4`                                         |
+| `X-Debug-ID`             | Unique ID for this debug session             | `dbg_1234567890abcdef`                      |
 
 For security reasons, some detailed information is omitted from headers and only available in the HTML view.
 
@@ -160,6 +162,7 @@ Debug View Mode renders a comprehensive HTML dashboard with all diagnostic infor
 ### Information Cards
 
 Each component has a dedicated card with:
+
 - Collapsible sections
 - Syntax-highlighted JSON data
 - Visual indicators for important information
@@ -186,24 +189,25 @@ Debug UI behavior can be configured in the `debug` section of the configuration:
 ```json
 {
   "debug": {
-    "enabled": false,               // Enable debug globally
-    "verbose": false,               // Enable verbose debug output
-    "includeHeaders": true,         // Include headers in debug info
-    "includePerformance": true,     // Include performance metrics
-    "dashboardMode": true,          // Enable debug dashboard
-    "viewMode": true,               // Enable debug view
-    "headerMode": true,             // Enable debug headers
-    "debugQueryParam": "debug",     // Query parameter to enable debug
-    "debugViewParam": "view",       // Value for debug view parameter
-    "preserveDebugParams": false,   // Preserve debug parameters in transformed URLs
-    "debugHeaders": [               // Headers that enable debugging
+    "enabled": false, // Enable debug globally
+    "verbose": false, // Enable verbose debug output
+    "includeHeaders": true, // Include headers in debug info
+    "includePerformance": true, // Include performance metrics
+    "dashboardMode": true, // Enable debug dashboard
+    "viewMode": true, // Enable debug view
+    "headerMode": true, // Enable debug headers
+    "debugQueryParam": "debug", // Query parameter to enable debug
+    "debugViewParam": "view", // Value for debug view parameter
+    "preserveDebugParams": false, // Preserve debug parameters in transformed URLs
+    "debugHeaders": [
+      // Headers that enable debugging
       "X-Video-Resizer-Debug"
     ],
-    "renderStaticHtml": true,       // Render static HTML for debug views
-    "includeStackTrace": false,     // Include stack traces in debug info
-    "maxContentLength": 50000,      // Maximum debug content length
-    "allowedIps": [],               // IPs allowed to see debug info
-    "excludedPaths": []             // Paths excluded from debugging
+    "renderStaticHtml": true, // Render static HTML for debug views
+    "includeStackTrace": false, // Include stack traces in debug info
+    "maxContentLength": 50000, // Maximum debug content length
+    "allowedIps": [], // IPs allowed to see debug info
+    "excludedPaths": [] // Paths excluded from debugging
   }
 }
 ```
@@ -219,10 +223,7 @@ Limit debug access to specific IP addresses:
 ```json
 {
   "debug": {
-    "allowedIps": [
-      "192.168.1.100",
-      "10.0.0.0/24"
-    ]
+    "allowedIps": ["192.168.1.100", "10.0.0.0/24"]
   }
 }
 ```
@@ -236,10 +237,7 @@ Exclude sensitive paths from debugging:
 ```json
 {
   "debug": {
-    "excludedPaths": [
-      "^/admin/.*",
-      "^/private/.*"
-    ]
+    "excludedPaths": ["^/admin/.*", "^/private/.*"]
   }
 }
 ```
@@ -249,6 +247,7 @@ This prevents debug information from being exposed for sensitive content.
 ### 3. Sanitized Information
 
 The Debug UI automatically sanitizes sensitive information:
+
 - Authentication tokens are redacted
 - API keys are partially masked
 - Origin credentials are hidden
@@ -257,6 +256,7 @@ The Debug UI automatically sanitizes sensitive information:
 ### 4. Production Safety
 
 For production environments:
+
 - Set `debug.enabled` to `false` to require explicit debug parameters
 - Enable IP restrictions with `allowedIps`
 - Disable stack traces with `includeStackTrace: false`
@@ -267,6 +267,7 @@ For production environments:
 ### 1. Path Matching Issues
 
 If URLs aren't being processed as expected:
+
 1. Add `?debug=view` to the URL
 2. Check the "Path Matching" section to see:
    - Which pattern matched (or why none matched)
@@ -276,6 +277,7 @@ If URLs aren't being processed as expected:
 ### 2. Transformation Problems
 
 For issues with video appearance:
+
 1. Enable debug mode
 2. Check the "Video Transformation" section to see:
    - Applied transformation parameters
@@ -286,6 +288,7 @@ For issues with video appearance:
 ### 3. Cache Behavior
 
 For caching issues:
+
 1. Enable debug mode
 2. Check the "Cache Information" section to see:
    - Cache hit/miss status
@@ -296,6 +299,7 @@ For caching issues:
 ### 4. Client Detection
 
 For device-specific problems:
+
 1. Enable debug mode
 2. Check the "Client Detection" section to see:
    - Detected device type
@@ -306,6 +310,7 @@ For device-specific problems:
 ### 5. Performance Analysis
 
 For performance concerns:
+
 1. Enable debug mode with headers: `?debug=headers`
 2. Check the `X-Processing-Time-Ms` header for overall performance
 3. For detailed breakdowns, use view mode and check the "Performance Metrics" section
@@ -319,17 +324,16 @@ Advanced users can access debug information programmatically:
 Make a request with debug headers enabled:
 
 ```javascript
-fetch('https://cdn.example.com/videos/sample.mp4?debug=headers')
-  .then(response => {
-    // Extract debug headers
-    const processingTime = response.headers.get('X-Processing-Time-Ms');
-    const cacheResult = response.headers.get('X-Cache-Result');
-    const deviceType = response.headers.get('X-Device-Type');
-    
-    console.log(`Processing time: ${processingTime}ms`);
-    console.log(`Cache result: ${cacheResult}`);
-    console.log(`Device type: ${deviceType}`);
-  });
+fetch('https://cdn.example.com/videos/sample.mp4?debug=headers').then((response) => {
+  // Extract debug headers
+  const processingTime = response.headers.get('X-Processing-Time-Ms');
+  const cacheResult = response.headers.get('X-Cache-Result');
+  const deviceType = response.headers.get('X-Device-Type');
+
+  console.log(`Processing time: ${processingTime}ms`);
+  console.log(`Cache result: ${cacheResult}`);
+  console.log(`Device type: ${deviceType}`);
+});
 ```
 
 ### JSON Debug Format
@@ -344,8 +348,8 @@ This returns a JSON object with all debug information:
 
 ```javascript
 fetch('https://cdn.example.com/videos/sample.mp4?debug=json')
-  .then(response => response.json())
-  .then(debugInfo => {
+  .then((response) => response.json())
+  .then((debugInfo) => {
     console.log('Path pattern:', debugInfo.pathPattern.name);
     console.log('Cache status:', debugInfo.cache.result);
     console.log('Processing time:', debugInfo.performance.totalTime);
@@ -377,8 +381,8 @@ context.diagnosticsInfo.customData = {
   specialProcessing: true,
   businessLogic: {
     rule: 'premium-content',
-    applied: true
-  }
+    applied: true,
+  },
 };
 ```
 
@@ -403,7 +407,7 @@ The Debug UI styles can be customized through configuration:
 {
   "debug": {
     "uiOptions": {
-      "theme": "dark",     // 'dark' or 'light'
+      "theme": "dark", // 'dark' or 'light'
       "accentColor": "#5D8AA8",
       "fontFamily": "'Roboto Mono', monospace",
       "compactMode": false

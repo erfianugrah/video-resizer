@@ -1,5 +1,7 @@
 # Video Resizer Logging System Documentation
 
+_Last Updated: February 18, 2026_
+
 ## Overview
 
 The video-resizer uses a centralized logging system built on top of Pino for high-performance structured logging. This document consolidates all logging-related documentation.
@@ -20,16 +22,14 @@ The video-resizer uses a centralized logging system built on top of Pino for hig
    - Structured logging with consistent format
    - Automatic breadcrumb integration
 
-3. **Legacy Adapter** (`src/utils/legacyLoggerAdapter.ts`)
-   - Maintains backward compatibility
-   - Routes legacy logging calls through Pino
-   - Preserves existing API surface
-
-4. **Request Context** (`src/utils/requestContext.ts`)
+3. **Request Context** (`src/utils/requestContext.ts`)
    - Request-scoped context management
    - Breadcrumb tracking
    - Performance timing
    - Diagnostic information collection
+   - `clearCurrentContext()` for context leak prevention in finally blocks
+
+The unified 3-file system: `logger.ts` (facade) → `pinoLogger.ts` (Pino engine) → `requestContext.ts` (context).
 
 ## Usage Guide
 
@@ -60,18 +60,20 @@ logger.error('Processing failed', { error: 'Out of memory' });
 ### Advanced Features
 
 #### Log Enrichment
+
 ```typescript
 logInfo('Component', 'Message', data, {
   enrich: {
     includeMemoryUsage: true,
     includeRequestMetadata: true,
     includeTiming: true,
-    includeEnvironment: true
-  }
+    includeEnvironment: true,
+  },
 });
 ```
 
 #### Performance Tracking
+
 ```typescript
 const logger = createCategoryLogger('API');
 
@@ -81,6 +83,7 @@ logger.endTimer('operation', 'Operation completed');
 ```
 
 #### Component Filtering
+
 ```typescript
 // In configuration
 {
@@ -93,12 +96,14 @@ logger.endTimer('operation', 'Operation completed');
 ## Configuration
 
 ### Environment Variables
+
 - `LOG_LEVEL`: Set the minimum log level (debug, info, warn, error)
 - `LOG_FORMAT`: Output format (json, pretty)
 - `DEBUG_ENABLED`: Enable debug mode
 - `VERBOSE_ENABLED`: Enable verbose logging
 
 ### Configuration Manager
+
 The `LoggingConfigurationManager` handles all logging configuration:
 
 ```typescript
@@ -107,7 +112,7 @@ config.updateFromKV({
   level: 'info',
   enableBreadcrumbs: true,
   maxBreadcrumbs: 50,
-  disabledComponents: ['NoisyComponent']
+  disabledComponents: ['NoisyComponent'],
 });
 ```
 
@@ -115,16 +120,14 @@ config.updateFromKV({
 
 ### From Legacy Logging
 
-```typescript
-// Old way
-import { debug, info, error } from '../utils/loggerUtils';
-debug('Component', 'Message', data);
+The `loggerUtils.ts` module has been fully removed. All logging now goes through `logger.ts`:
 
-// New way (Option 1 - Direct)
+```typescript
+// Option 1 - Direct
 import { logDebug } from '../utils/logger';
 logDebug('Component', 'Message', data);
 
-// New way (Option 2 - Category Logger)
+// Option 2 - Category Logger
 import { createCategoryLogger } from '../utils/logger';
 const logger = createCategoryLogger('Component');
 logger.debug('Message', data);
@@ -146,10 +149,11 @@ logError('VideoProcessor', 'Failed', { error: error.message });
 ## Best Practices
 
 1. **Use Structured Data**
+
    ```typescript
    // Good
    logInfo('API', 'Request received', { method: 'GET', path: '/video', userId: 123 });
-   
+
    // Avoid
    logInfo('API', `Request received: GET /video for user 123`);
    ```
@@ -161,18 +165,20 @@ logError('VideoProcessor', 'Failed', { error: error.message });
    - `error`: Error conditions that need immediate attention
 
 3. **Use Category Loggers for Components**
+
    ```typescript
    const logger = createCategoryLogger('VideoTransformation');
    // All logs from this logger will be tagged with the category
    ```
 
 4. **Include Relevant Context**
+
    ```typescript
    logError('Database', 'Query failed', {
      query: 'SELECT * FROM videos',
      error: err.message,
      stack: err.stack,
-     retryCount: 3
+     retryCount: 3,
    });
    ```
 
@@ -217,20 +223,22 @@ logError('VideoProcessor', 'Failed', { error: error.message });
 ## Implementation Status
 
 ### Completed
+
 - ✅ Centralized logging system
 - ✅ Pino integration
-- ✅ Legacy adapter
 - ✅ Category-based loggers
 - ✅ Performance tracking
 - ✅ Configuration management
 - ✅ Request context integration
-
-### In Progress
-- 🔄 Legacy log call reduction (phasing out `loggerUtils` usages)
+- ✅ `loggerUtils` phaseout (COMPLETE — module deleted)
+- ✅ `legacyLoggerAdapter` removal (COMPLETE — module deleted)
+- ✅ `clearCurrentContext()` for context leak prevention
 
 ### Planned
+
 - 📋 External log sink integration
 - 📋 Runtime log-level toggles via KV
 
 ### Defaults and limits
+
 - Breadcrumbs default to `maxItems=25` when config is not yet loaded; the configured limit is pulled from `LoggingConfigurationManager` (`logging.breadcrumbs.maxItems`).
