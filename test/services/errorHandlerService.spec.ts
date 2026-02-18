@@ -89,7 +89,7 @@ beforeEach(async () => {
 describe('Error Handler Service', () => {
   describe('normalizeError', () => {
     it('should pass through VideoTransformError', () => {
-      const originalError = new VideoTransformError('Test error', ErrorType.INVALID_URL);
+      const originalError = new VideoTransformError('Test error', ErrorType.INVALID_PARAMETER);
       const normalizedError = normalizeError(originalError);
 
       expect(normalizedError).toBe(originalError);

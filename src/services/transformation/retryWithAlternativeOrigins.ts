@@ -23,6 +23,33 @@ import { cacheResponse } from '../cacheManagementService';
 import { storeInKVCache, TransformOptions } from '../../utils/kvCacheUtils';
 import { getCacheKV } from '../../utils/flexibleBindings';
 import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
+import { extractCfErrorCode, getCfErrorInfo } from '../../errors/cfErrorCodes';
+
+/**
+ * Build a structured JSON error response for retry chain failures.
+ * Ensures all error responses from the retry system are machine-parseable
+ * rather than raw text strings.
+ */
+function buildRetryErrorResponse(
+  status: number,
+  error: string,
+  details: Record<string, unknown>,
+  extraHeaders?: Record<string, string>
+): Response {
+  const body = JSON.stringify({
+    error,
+    status,
+    ...details,
+  });
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    ...extraHeaders,
+  };
+
+  return new Response(body, { status, headers });
+}
 
 export interface RetryOptions {
   originalRequest: Request;
@@ -93,15 +120,20 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       exhaustedSources: failedOrigin.sources.map((s) => s.type),
     });
 
-    return new Response('No alternative sources available', {
-      status: 404,
-      headers: {
-        'Cache-Control': 'no-store',
+    return buildRetryErrorResponse(
+      404,
+      'No alternative sources available',
+      {
+        failedOrigin: failedOrigin.name,
+        exhaustedSources: failedOrigin.sources.map((s) => s.type),
+        path,
+      },
+      {
         'X-All-Origins-Failed': 'true',
         'X-Failed-Origin': failedOrigin.name,
         'X-Exhausted-Sources': failedOrigin.sources.map((s) => s.type).join(','),
-      },
-    });
+      }
+    );
   }
 
   // Build the new origin URL
@@ -128,14 +160,18 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
         source: JSON.stringify(nextSource),
       });
 
-      return new Response('Cannot determine alternative origin URL', {
-        status: 500,
-        headers: {
-          'Cache-Control': 'no-store',
+      return buildRetryErrorResponse(
+        500,
+        'Cannot determine alternative origin URL',
+        {
+          sourceType: nextSource.type,
+          hasUrl: !!nextSource.url,
+        },
+        {
           'X-Error': 'InvalidAlternativeSource',
           'X-Source-Type': nextSource.type,
-        },
-      });
+        }
+      );
     }
   } catch (error) {
     logDebug('retryWithAlternativeOrigins', 'Error building alternative origin URL', {
@@ -149,14 +185,18 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       sourceType: nextSource.type,
     });
 
-    return new Response('Failed to construct alternative origin URL', {
-      status: 500,
-      headers: {
-        'Cache-Control': 'no-store',
+    return buildRetryErrorResponse(
+      500,
+      'Failed to construct alternative origin URL',
+      {
+        sourceType: nextSource.type,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      },
+      {
         'X-Error': 'URLConstructionFailed',
         'X-Error-Message': error instanceof Error ? error.message : String(error),
-      },
-    });
+      }
+    );
   }
 
   // Build new CDN-CGI URL with ALL the original transform parameters
@@ -199,15 +239,19 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       sourceType: nextSource.type,
     });
 
-    return new Response('Failed to fetch from alternative source', {
-      status: 502,
-      headers: {
-        'Cache-Control': 'no-store',
+    return buildRetryErrorResponse(
+      502,
+      'Failed to fetch from alternative source',
+      {
+        sourceType: nextSource.type,
+        errorMessage: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      },
+      {
         'X-Error': 'AlternativeFetchFailed',
         'X-Alternative-Source': nextSource.type,
         'X-Error-Message': fetchError instanceof Error ? fetchError.message : String(fetchError),
-      },
-    });
+      }
+    );
   }
 
   logDebug('retryWithAlternativeOrigins', 'Alternative source response received', {
@@ -274,23 +318,73 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
     return finalResponse;
   }
 
-  // Alternative source also returned an error
+  // Alternative source also returned an error — extract CF error code if present
+  const cfErrorCode = extractCfErrorCode(response);
+  const cfErrorInfo = cfErrorCode !== null ? getCfErrorInfo(cfErrorCode) : undefined;
+
+  // Read the raw body for diagnostic inclusion (truncated)
+  let rawBody = '';
+  try {
+    rawBody = await response.clone().text();
+  } catch {
+    // Body read failure is fine
+  }
+
   addBreadcrumb(requestContext, 'Retry', 'Alternative source failed', {
     sourceType: nextSource.type,
     status: response.status,
     statusText: response.statusText,
+    cfErrorCode: cfErrorCode ?? undefined,
   });
 
-  // Add headers to indicate what was attempted
-  const enhancedHeaders = new Headers(response.headers);
-  enhancedHeaders.set('X-Retry-Attempted', 'true');
-  enhancedHeaders.set('X-Alternative-Source', nextSource.type);
-  enhancedHeaders.set('X-Failed-Source', failedSource.type);
-  enhancedHeaders.set('X-Failed-Origin', failedOrigin.name);
-
-  return new Response(response.body, {
+  logDebug('retryWithAlternativeOrigins', 'Alternative source returned error', {
     status: response.status,
-    statusText: response.statusText,
-    headers: enhancedHeaders,
+    sourceType: nextSource.type,
+    cfErrorCode,
+    cfErrorLabel: cfErrorInfo?.label,
   });
+
+  // Build structured JSON error response instead of passing through raw body
+  const errorDetails: Record<string, unknown> = {
+    sourceType: nextSource.type,
+    failedSource: failedSource.type,
+    failedOrigin: failedOrigin.name,
+    upstreamStatus: response.status,
+    path,
+  };
+
+  if (cfErrorCode !== null) {
+    errorDetails.cfErrorCode = cfErrorCode;
+    if (cfErrorInfo) {
+      errorDetails.cfError = {
+        code: cfErrorCode,
+        label: cfErrorInfo.label,
+        description: cfErrorInfo.description,
+        retryable: cfErrorInfo.retryable,
+        shouldFallback: cfErrorInfo.shouldFallback,
+      };
+    }
+  }
+
+  if (rawBody) {
+    errorDetails.rawErrorText = rawBody.substring(0, 500);
+  }
+
+  const extraHeaders: Record<string, string> = {
+    'X-Retry-Attempted': 'true',
+    'X-Alternative-Source': nextSource.type,
+    'X-Failed-Source': failedSource.type,
+    'X-Failed-Origin': failedOrigin.name,
+  };
+
+  if (cfErrorCode !== null) {
+    extraHeaders['X-CF-Error-Code'] = String(cfErrorCode);
+  }
+
+  return buildRetryErrorResponse(
+    response.status,
+    cfErrorInfo?.description || `Alternative source returned HTTP ${response.status}`,
+    errorDetails,
+    extraHeaders
+  );
 }

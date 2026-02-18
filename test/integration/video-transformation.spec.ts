@@ -78,7 +78,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       // 1. Response should be successful
@@ -123,7 +123,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -147,7 +147,7 @@ describe('Video Transformation Integration', () => {
       mockFetch('Already transformed video');
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -180,7 +180,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -203,6 +203,9 @@ describe('Video Transformation Integration', () => {
           enabled: true,
           verbose: true,
           includeHeaders: true,
+          includePerformance: false,
+          allowedIps: [],
+          excludedPaths: [],
         },
       });
 
@@ -219,7 +222,7 @@ describe('Video Transformation Integration', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -242,6 +245,9 @@ describe('Video Transformation Integration', () => {
           enabled: true,
           verbose: true,
           includeHeaders: true,
+          includePerformance: false,
+          allowedIps: [],
+          excludedPaths: [],
         },
       });
 
@@ -280,7 +286,7 @@ describe('Video Transformation Integration', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -316,7 +322,7 @@ describe('Video Transformation Integration', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(500);
@@ -354,7 +360,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -391,7 +397,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -429,7 +435,7 @@ describe('Video Transformation Integration', () => {
       vi.mocked(transformVideo).mockResolvedValueOnce(mockResponse);
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);

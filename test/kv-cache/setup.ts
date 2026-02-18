@@ -65,12 +65,15 @@ vi.mock('../../src/utils/pinoLogger', () => {
 });
 
 // Mock KV namespace
-class MockKVNamespace implements KVNamespace {
+class MockKVNamespace {
   private store: Map<string, ArrayBuffer> = new Map();
   private metadata: Map<string, any> = new Map();
 
   async put(key: string, value: ArrayBuffer | string, options?: any): Promise<void> {
-    const buffer = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+    const buffer =
+      typeof value === 'string'
+        ? (new TextEncoder().encode(value).buffer as ArrayBuffer)
+        : (value as ArrayBuffer);
 
     this.store.set(key, buffer);
 
@@ -110,9 +113,7 @@ class MockKVNamespace implements KVNamespace {
     this.metadata.delete(key);
   }
 
-  async list(
-    options?: any
-  ): Promise<{
+  async list(options?: any): Promise<{
     keys: { name: string; expiration?: number; metadata?: any }[];
     list_complete: boolean;
     cursor: string;

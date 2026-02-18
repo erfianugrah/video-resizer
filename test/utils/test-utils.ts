@@ -16,8 +16,8 @@ import { DebugInfo } from '../../src/utils/debugHeadersUtils';
  * @returns A Request object
  */
 export function createMockRequest(
-  url: string, 
-  method = 'GET', 
+  url: string,
+  method = 'GET',
   headers: Record<string, string> = {},
   body?: string | ReadableStream | Blob | FormData | URLSearchParams | null
 ): Request {
@@ -26,7 +26,7 @@ export function createMockRequest(
     headers,
     body,
   };
-  
+
   return new Request(url, requestInit);
 }
 
@@ -38,6 +38,7 @@ export function createMockRequest(
 export function createMockConfig(options?: Partial<EnvironmentConfig>): EnvironmentConfig {
   return {
     mode: 'development',
+    version: '1.0.0',
     isProduction: false,
     isStaging: false,
     isDevelopment: true,
@@ -45,24 +46,29 @@ export function createMockConfig(options?: Partial<EnvironmentConfig>): Environm
       enabled: true,
       verbose: true,
       includeHeaders: true,
+      includePerformance: false,
+      allowedIps: [],
+      excludedPaths: [],
     },
     cache: {
-      method: 'cf',
       debug: false,
       defaultTtl: 86400,
+      respectOrigin: false,
       cacheEverything: true,
       enableTags: true,
+      purgeOnUpdate: false,
+      bypassParams: [],
       enableKVCache: true,
       kvTtl: {
         ok: 86400,
         redirects: 3600,
         clientError: 60,
-        serverError: 10
-      }
+        serverError: 10,
+      },
     },
     pathPatterns: createMockPathPatterns(),
-    ...options
-  };
+    ...options,
+  } as EnvironmentConfig;
 }
 
 /**
@@ -109,7 +115,7 @@ export function createMockPathPatterns(): PathPattern[] {
       originUrl: 'https://videos.example.com/special',
       quality: 'high',
       cacheTtl: 3600,
-    }
+    },
   ];
 }
 
@@ -124,7 +130,7 @@ export function createMockDebugInfo(options?: Partial<DebugInfo>): DebugInfo {
     isVerbose: true,
     includeHeaders: true,
     includePerformance: true,
-    ...options
+    ...options,
   };
 }
 
@@ -133,14 +139,16 @@ export function createMockDebugInfo(options?: Partial<DebugInfo>): DebugInfo {
  * @param options Optional options to override defaults
  * @returns Video transform options
  */
-export function createMockVideoOptions(options?: Partial<VideoTransformOptions>): VideoTransformOptions {
+export function createMockVideoOptions(
+  options?: Partial<VideoTransformOptions>
+): VideoTransformOptions {
   return {
     width: 854,
     height: 480,
     mode: 'video',
     fit: 'contain',
     audio: true,
-    ...options
+    ...options,
   };
 }
 
@@ -181,30 +189,30 @@ export function getLastFetchedUrl(fetchSpy: unknown): string {
   if (!fetchSpy || typeof fetchSpy !== 'function' || !('mock' in fetchSpy)) {
     return '';
   }
-  
+
   const mockFn = fetchSpy as { mock: { calls: Array<Array<unknown>> } };
   if (!mockFn.mock || !mockFn.mock.calls || !mockFn.mock.calls.length) {
     return '';
   }
-  
+
   const lastCall = mockFn.mock.calls[mockFn.mock.calls.length - 1];
   if (!lastCall || !lastCall.length) {
     return '';
   }
-  
+
   const firstArg = lastCall[0];
   if (typeof firstArg === 'string') {
     return firstArg;
   }
-  
+
   if (firstArg instanceof Request) {
     return firstArg.url;
   }
-  
+
   if (firstArg && typeof firstArg === 'object' && 'toString' in firstArg) {
     return String(firstArg);
   }
-  
+
   return '';
 }
 
@@ -219,16 +227,17 @@ export function mockFetch(
   responseBody: string = 'Mock response',
   status = 200,
   headers: Record<string, string> = { 'Content-Type': 'text/plain' }
-): ReturnType<typeof vi.fn> {
+): any {
   // Create a mock response with the given parameters
   return vi.spyOn(global, 'fetch').mockImplementation((input) => {
     // Store the input URL for assertions in tests
-    const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-    
+    const url =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+
     // Add debugging info to the response
     const allHeaders = { ...headers, 'X-Requested-URL': url };
     const debugResponse = createMockResponse(responseBody, status, allHeaders);
-    
+
     return Promise.resolve(debugResponse);
   });
 }
@@ -271,12 +280,16 @@ export function generateTestCases<T extends Record<string, unknown>>(
   variations: Record<string, unknown[]>
 ): Array<T & { name: string }> {
   const result: Array<T & { name: string }> = [];
-  
+
   // Get all fields that have variations
   const fields = Object.keys(variations);
-  
+
   // Helper function to generate combinations recursively
-  function generateCombinations(current: Record<string, unknown>, depth: number, name: string[]): void {
+  function generateCombinations(
+    current: Record<string, unknown>,
+    depth: number,
+    name: string[]
+  ): void {
     if (depth === fields.length) {
       // We've assigned values to all fields with variations
       result.push({
@@ -286,18 +299,18 @@ export function generateTestCases<T extends Record<string, unknown>>(
       });
       return;
     }
-    
+
     // For the current field, try each variation
     const field = fields[depth];
     const values = variations[field];
-    
+
     for (const value of values) {
       const newCurrent = { ...current, [field]: value };
       const label = `${field}=${String(value)}`;
       generateCombinations(newCurrent, depth + 1, [...name, label]);
     }
   }
-  
+
   // Start the recursion
   generateCombinations({}, 0, []);
   return result;
@@ -308,20 +321,20 @@ export function generateTestCases<T extends Record<string, unknown>>(
  */
 export class MockCache {
   private store = new Map<string, Response>();
-  
+
   async put(request: Request | string, response: Response): Promise<void> {
     const key = typeof request === 'string' ? request : request.url;
     // We need to clone the response since it can only be used once
     const clonedResponse = response.clone();
     this.store.set(key, clonedResponse);
   }
-  
+
   async match(request: Request | string): Promise<Response | undefined> {
     const key = typeof request === 'string' ? request : request.url;
     const response = this.store.get(key);
     return response ? response.clone() : undefined;
   }
-  
+
   async delete(request: Request | string): Promise<boolean> {
     const key = typeof request === 'string' ? request : request.url;
     return this.store.delete(key);
@@ -334,7 +347,7 @@ export class MockCache {
  */
 export function setupMockCf() {
   const mockCache = new MockCache();
-  
+
   // Create a mock CF object
   const mockCf = {
     caches: {
@@ -343,9 +356,9 @@ export function setupMockCf() {
     env: {} as Record<string, unknown>,
     waitUntil: vi.fn(),
   };
-  
+
   // Make the CF object available globally
-  global.caches = mockCf.caches as unknown as CacheStorage;
-  
+  (global as any).caches = mockCf.caches as unknown as CacheStorage;
+
   return mockCf;
 }

@@ -37,7 +37,7 @@ describe('VideoTransformError', () => {
   it('should convert to JSON representation', () => {
     const error = new VideoTransformError('Test error', ErrorType.INVALID_PARAMETER, {
       test: 'value',
-    });
+    } as any);
     const json = error.toJSON();
 
     expect(json).toEqual({

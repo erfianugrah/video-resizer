@@ -21,10 +21,10 @@ describe('ConfigurationService', () => {
   // Mock environment with KV namespace
   const mockEnv = {
     VIDEO_CONFIGURATION_STORE: mockKV,
-  };
+  } as any;
 
-  // Sample configuration
-  const sampleConfig: WorkerConfiguration = {
+  // Sample configuration (partial mock, typed as any to bypass strict checks)
+  const sampleConfig = {
     version: '1.0.0',
     lastUpdated: new Date().toISOString(),
     video: {
@@ -205,7 +205,7 @@ describe('ConfigurationService', () => {
       expect(config).toBeDefined();
       expect(config?.version).toBe('1.0.0');
       expect(config?.video.derivatives).toHaveProperty('high');
-      expect(config?.cache.method).toBe('kv');
+      expect((config?.cache as any).method).toBe('kv');
     });
 
     it('should return cached configuration when available', async () => {
@@ -255,7 +255,7 @@ describe('ConfigurationService', () => {
   describe('storeConfiguration', () => {
     it('should store configuration in KV', async () => {
       const service = ConfigurationService.getInstance();
-      const result = await service.storeConfiguration(mockEnv, sampleConfig);
+      const result = await service.storeConfiguration(mockEnv, sampleConfig as any);
 
       expect(result).toBe(true);
       // The new storeToKV no longer passes expirationTtl and updates lastUpdated
@@ -270,7 +270,7 @@ describe('ConfigurationService', () => {
 
     it('should handle missing KV namespace', async () => {
       const service = ConfigurationService.getInstance();
-      const result = await service.storeConfiguration({}, sampleConfig);
+      const result = await service.storeConfiguration({}, sampleConfig as any);
 
       expect(result).toBe(false);
     });
@@ -388,7 +388,7 @@ describe('ConfigurationService', () => {
     vi.spyOn(WorkerConfigurationSchema, 'parse').mockReturnValue(configWithoutTimestamp as any);
 
     // Store configuration
-    await service.storeConfiguration(mockEnvWithStore, configWithoutTimestamp as any);
+    await service.storeConfiguration(mockEnvWithStore as any, configWithoutTimestamp as any);
 
     // Verify the mock was called
     expect(mockStoreImpl).toHaveBeenCalled();

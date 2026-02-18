@@ -11,7 +11,12 @@ import { withCaching } from '../utils/cacheOrchestrator';
 import { transformVideo } from '../services/videoTransformationService';
 import { getVideoPathPatterns } from '../config';
 import { createCategoryLogger } from '../utils/logger';
-import { getCurrentContext, addBreadcrumb } from '../utils/requestContext';
+import {
+  getCurrentContext,
+  addBreadcrumb,
+  createRequestContext,
+  setCurrentContext,
+} from '../utils/requestContext';
 
 const cacheLogger = createCategoryLogger('VideoHandlerWithCache');
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
@@ -74,12 +79,7 @@ export const handleRequestWithCaching = withErrorHandling<
         : undefined,
     };
 
-    // Import dynamically to avoid circular references
     try {
-      // Use dynamic import to access the context modules
-      const { createRequestContext, setCurrentContext, addBreadcrumb, getCurrentContext } =
-        await import('../utils/requestContext');
-
       // Create a request context if one doesn't exist
       let requestContext = getCurrentContext();
 

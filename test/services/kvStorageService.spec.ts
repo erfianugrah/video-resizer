@@ -7,7 +7,7 @@ import {
 } from '../../src/services/kvStorageService';
 
 // Mock TransformStream for tests
-global.TransformStream = class TransformStreamMock {
+(global as any).TransformStream = class TransformStreamMock {
   readable: ReadableStream;
   writable: WritableStream;
 
@@ -32,7 +32,7 @@ global.TransformStream = class TransformStreamMock {
 };
 
 // Mock the KV namespace
-class MockKVNamespace implements KVNamespace {
+class MockKVNamespace {
   private store: Map<string, ArrayBuffer> = new Map();
   private metadata: Map<string, any> = new Map();
 
@@ -176,7 +176,7 @@ vi.mock('../../src/services/videoStorageService', () => ({
 // Mock the VideoConfigurationManager
 // Mock for Response.clone to avoid streaming issues
 vi.mock('undici', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = (await importOriginal()) as any;
   return {
     ...actual,
     Response: class MockResponse extends actual.Response {
@@ -187,9 +187,9 @@ vi.mock('undici', async (importOriginal) => {
       clone() {
         // Return a new response with the same properties
         return new MockResponse('test data', {
-          status: this.status,
-          statusText: this.statusText,
-          headers: this.headers,
+          status: (this as any).status,
+          statusText: (this as any).statusText,
+          headers: (this as any).headers,
         });
       }
 
@@ -330,10 +330,12 @@ describe('KV Storage Service', () => {
       mockKV.put = mockPut;
 
       const result = await storeTransformedVideo(
-        mockKV,
+        mockKV as any,
         '/videos/test.mp4',
         mockResponse as any,
-        options
+        options,
+        undefined,
+        undefined
       );
 
       expect(result).toBe(true);
@@ -367,11 +369,12 @@ describe('KV Storage Service', () => {
       mockKV.put = mockPut;
 
       const result = await storeTransformedVideo(
-        mockKV,
+        mockKV as any,
         '/videos/test.mp4',
         mockResponse as any,
         options,
-        ttl
+        ttl,
+        undefined
       );
 
       expect(result).toBe(true);
@@ -406,11 +409,12 @@ describe('KV Storage Service', () => {
       mockKV.put = mockPut;
 
       const result = await storeTransformedVideo(
-        mockKV,
+        mockKV as any,
         '/videos/test.mp4',
         mockResponse as any,
         options,
-        ttl
+        ttl,
+        undefined
       );
 
       expect(result).toBe(true);
@@ -435,7 +439,9 @@ describe('KV Storage Service', () => {
         mockKVWithError,
         '/videos/test.mp4',
         response,
-        options
+        options,
+        undefined,
+        undefined
       );
 
       expect(result).toBe(false);
@@ -474,7 +480,12 @@ describe('KV Storage Service', () => {
       } as unknown as KVNamespace;
 
       // Now retrieve using our mock
-      const result = await getTransformedVideo(mockKVCustom, '/videos/test.mp4', options);
+      const result = await getTransformedVideo(
+        mockKVCustom,
+        '/videos/test.mp4',
+        options,
+        undefined
+      );
 
       expect(result).not.toBeNull();
       expect(result?.metadata).toEqual(metadata);
@@ -490,7 +501,12 @@ describe('KV Storage Service', () => {
 
     it('should return null if video not found', async () => {
       const options = { derivative: 'mobile' };
-      const result = await getTransformedVideo(mockKV, '/videos/not-found.mp4', options);
+      const result = await getTransformedVideo(
+        mockKV as any,
+        '/videos/not-found.mp4',
+        options,
+        undefined
+      );
 
       expect(result).toBeNull();
     });
@@ -523,7 +539,12 @@ describe('KV Storage Service', () => {
       await mockKV.put(key, videoData, { metadata });
 
       // Now retrieve
-      const result = await getTransformedVideo(mockKV, '/videos/test.mp4', options);
+      const result = await getTransformedVideo(
+        mockKV as any,
+        '/videos/test.mp4',
+        options,
+        undefined
+      );
 
       expect(result).not.toBeNull();
 
@@ -548,7 +569,12 @@ describe('KV Storage Service', () => {
       } as unknown as KVNamespace;
 
       const options = { derivative: 'mobile' };
-      const result = await getTransformedVideo(mockKVWithError, '/videos/test.mp4', options);
+      const result = await getTransformedVideo(
+        mockKVWithError,
+        '/videos/test.mp4',
+        options,
+        undefined
+      );
 
       expect(result).toBeNull();
     });
@@ -582,7 +608,7 @@ describe('KV Storage Service', () => {
       });
 
       // List variants for the test.mp4 video
-      const variants = await listVariants(mockKV, sourcePath);
+      const variants = await listVariants(mockKV as any, sourcePath);
 
       // Should find 3 variants for test.mp4
       expect(variants.length).toBe(3);
@@ -601,7 +627,7 @@ describe('KV Storage Service', () => {
     });
 
     it('should return an empty array if no variants found', async () => {
-      const variants = await listVariants(mockKV, '/videos/not-found.mp4');
+      const variants = await listVariants(mockKV as any, '/videos/not-found.mp4');
       expect(variants).toEqual([]);
     });
 

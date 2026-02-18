@@ -101,7 +101,7 @@ describe('Cache Orchestrator', () => {
 
       vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValue(kvResponse);
 
-      const response = await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      const response = await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // withCaching no longer uses getCachedResponse (CF Cache API)
       expect(cacheManagementService.getCachedResponse).not.toHaveBeenCalled();
@@ -130,7 +130,7 @@ describe('Cache Orchestrator', () => {
       // Mock KV cache miss
       vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValue(null);
 
-      const response = await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      const response = await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // withCaching no longer uses getCachedResponse (CF Cache API)
       expect(cacheManagementService.getCachedResponse).not.toHaveBeenCalled();
@@ -158,7 +158,7 @@ describe('Cache Orchestrator', () => {
       // Mock KV cache miss
       vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValue(null);
 
-      const response = await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      const response = await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // withCaching no longer uses getCachedResponse (CF Cache API)
       expect(cacheManagementService.getCachedResponse).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('Cache Orchestrator', () => {
       vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValue(null);
 
       // Call the function under test
-      await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify getFromKVCache was called with the new 4-arg signature
       expect(kvCacheUtils.getFromKVCache).toHaveBeenCalledWith(
@@ -210,7 +210,7 @@ describe('Cache Orchestrator', () => {
         method: 'POST',
       });
 
-      await withCaching(postRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(postRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify caches were not checked
       expect(cacheManagementService.getCachedResponse).not.toHaveBeenCalled();
@@ -227,7 +227,7 @@ describe('Cache Orchestrator', () => {
       // This would normally be done in the cached utility but we need to mock explicitly for the test
       vi.mocked(kvCacheUtils.getFromKVCache).mockResolvedValueOnce(null);
 
-      await withCaching(debugRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(debugRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Skip this check since our implementation may check both caches
       // expect(kvCacheUtils.getFromKVCache).not.toHaveBeenCalled();
@@ -244,7 +244,7 @@ describe('Cache Orchestrator', () => {
         new Error('Cache API error')
       );
 
-      await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify handler was called as fallback
       expect(mockHandler).toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe('Cache Orchestrator', () => {
       // Mock KV cache error
       vi.mocked(kvCacheUtils.getFromKVCache).mockRejectedValue(new Error('KV cache error'));
 
-      await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify handler was called as fallback
       expect(mockHandler).toHaveBeenCalled();
@@ -286,7 +286,7 @@ describe('Cache Orchestrator', () => {
       );
 
       // Call the function - should handle the KV cache error gracefully
-      const response = await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      const response = await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify we still got a valid response despite KV errors
       expect(response).toBeDefined();
@@ -313,7 +313,7 @@ describe('Cache Orchestrator', () => {
       mockWaitUntil.mockReset();
 
       // Call the function with mockEnvWithCtx which has the execution context
-      await withCaching(mockRequest, mockEnvWithCtx, mockHandler, mockOptions);
+      await withCaching(mockRequest, mockEnvWithCtx as any, mockHandler, mockOptions);
 
       // Verify waitUntil was called
       expect(mockWaitUntil).toHaveBeenCalled();
@@ -335,7 +335,7 @@ describe('Cache Orchestrator', () => {
       vi.mocked(kvCacheUtils.storeInKVCache).mockResolvedValue(true);
 
       // Call the function with mockEnv which has no execution context
-      await withCaching(mockRequest, mockEnv, mockHandler, mockOptions);
+      await withCaching(mockRequest, mockEnv as any, mockHandler, mockOptions);
 
       // Verify storeInKVCache was called directly
       expect(kvCacheUtils.storeInKVCache).toHaveBeenCalled();

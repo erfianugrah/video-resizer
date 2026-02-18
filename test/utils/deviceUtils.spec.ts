@@ -31,8 +31,8 @@ vi.mock('../../src/utils/userAgentUtils', () => ({
     if (userAgent.includes('iPad')) return 'tablet';
     return 'desktop';
   }),
-  getVideoSizeForDeviceType: vi.fn((deviceType) => {
-    const sizes = {
+  getVideoSizeForDeviceType: vi.fn((deviceType: any) => {
+    const sizes: any = {
       mobile: { width: 640, height: 360, source: 'ua-mobile' },
       tablet: { width: 1280, height: 720, source: 'ua-tablet' },
       desktop: { width: 1920, height: 1080, source: 'ua-desktop' },

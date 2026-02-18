@@ -74,7 +74,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
     });
 
     // The streamFallbackToKV function should properly stream this to KV
-    await streamFallbackToKV(mockEnv, 'videos/large-test.mp4', largeVideoResponse, {
+    await streamFallbackToKV(mockEnv as any, 'videos/large-test.mp4', largeVideoResponse, {
       cache: { ttl: { ok: 3600 } },
     });
 
@@ -133,7 +133,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
     });
 
     // Call the function - it should handle the error without throwing
-    await streamFallbackToKV(mockEnv, 'videos/error-test.mp4', response, {
+    await streamFallbackToKV(mockEnv as any, 'videos/error-test.mp4', response, {
       cache: { ttl: { ok: 3600 } },
     });
 
@@ -159,7 +159,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
     const noBodyResponse = new Response(null, { status: 200 });
 
     // Call the function with the response
-    await streamFallbackToKV(mockEnv, 'videos/no-body.mp4', noBodyResponse, {
+    await streamFallbackToKV(mockEnv as any, 'videos/no-body.mp4', noBodyResponse, {
       cache: { ttl: { ok: 3600 } },
     });
 
@@ -177,7 +177,7 @@ describe('streamFallbackToKV Streams API Implementation', () => {
     const errorResponse = new Response('Error', { status: 404 });
 
     // Call the function with the response
-    await streamFallbackToKV(mockEnv, 'videos/not-found.mp4', errorResponse, {
+    await streamFallbackToKV(mockEnv as any, 'videos/not-found.mp4', errorResponse, {
       cache: { ttl: { ok: 3600 } },
     });
 

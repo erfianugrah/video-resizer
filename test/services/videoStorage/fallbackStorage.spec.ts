@@ -84,20 +84,22 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       },
     });
 
-    await streamFallbackToKV(mockEnv, 'videos/test.mp4', videoResponse, mockConfig);
+    await streamFallbackToKV(mockEnv as any, 'videos/test.mp4', videoResponse, mockConfig as any);
 
     // Verify storeTransformedVideo was called with correct parameters
     const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
     expect(storeTransformedVideo).toHaveBeenCalledTimes(1);
 
     // Verify first parameter is the KV namespace
-    expect(storeTransformedVideo.mock.calls[0][0]).toBe(mockEnv.VIDEO_TRANSFORMATIONS_CACHE);
+    expect(vi.mocked(storeTransformedVideo).mock.calls[0][0]).toBe(
+      mockEnv.VIDEO_TRANSFORMATIONS_CACHE
+    );
 
     // Verify second parameter is the path
-    expect(storeTransformedVideo.mock.calls[0][1]).toBe('videos/test.mp4');
+    expect(vi.mocked(storeTransformedVideo).mock.calls[0][1]).toBe('videos/test.mp4');
 
     // Verify TTL was passed correctly
-    expect(storeTransformedVideo.mock.calls[0][4]).toBe(3600);
+    expect(vi.mocked(storeTransformedVideo).mock.calls[0][4]).toBe(3600);
 
     // Verify logging
     expect(mockLoggerDebug).toHaveBeenCalledWith(
@@ -138,14 +140,19 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     // Mock storeTransformedVideo implementation
     const { storeTransformedVideo: storeTransformedVideoMock } =
       await import('../../../src/services/kvStorage/storeVideo');
-    vi.mocked(storeTransformedVideoMock).mockImplementation(
-      async (namespace, path, response, options, ttl) => {
+    (vi.mocked(storeTransformedVideoMock) as any).mockImplementation(
+      async (namespace: any, path: any, response: any, options: any, ttl: any) => {
         // Simulate successful storage
         return true;
       }
     );
 
-    await streamFallbackToKV(mockEnv, 'videos/large-test.mp4', largeVideoResponse, mockConfig);
+    await streamFallbackToKV(
+      mockEnv as any,
+      'videos/large-test.mp4',
+      largeVideoResponse,
+      mockConfig as any
+    );
 
     // Verify storeTransformedVideo was called with correct parameters
     const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
@@ -193,7 +200,12 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       await import('../../../src/services/kvStorage/storeVideo');
     vi.mocked(storeTransformedVideoMock).mockRejectedValue(new Error('KV storage error'));
 
-    await streamFallbackToKV(mockEnv, 'videos/error-test.mp4', videoResponse, mockConfig);
+    await streamFallbackToKV(
+      mockEnv as any,
+      'videos/error-test.mp4',
+      videoResponse,
+      mockConfig as any
+    );
 
     // Verify error handling
     const { logErrorWithContext } = await import('../../../src/utils/errorHandlingUtils');
@@ -211,10 +223,10 @@ describe('Fallback Storage - streamFallbackToKV', () => {
   it('should not proceed if KV namespace or response is missing', async () => {
     // Test with missing KV namespace
     await streamFallbackToKV(
-      { ...mockEnv, VIDEO_TRANSFORMATIONS_CACHE: undefined },
+      { ...mockEnv, VIDEO_TRANSFORMATIONS_CACHE: undefined } as any,
       'videos/test.mp4',
       new Response('test'),
-      mockConfig
+      mockConfig as any
     );
 
     // Verify storeTransformedVideo was not called
@@ -225,7 +237,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
     const emptyResponse = new Response(null);
     Object.defineProperty(emptyResponse, 'body', { value: null });
 
-    await streamFallbackToKV(mockEnv, 'videos/test.mp4', emptyResponse, mockConfig);
+    await streamFallbackToKV(mockEnv as any, 'videos/test.mp4', emptyResponse, mockConfig as any);
 
     // Verify storeTransformedVideo was still not called
     expect(storeTransformedVideo).not.toHaveBeenCalled();
@@ -240,7 +252,12 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       },
     });
 
-    await streamFallbackToKV(mockEnv, 'videos/not-found.mp4', failedResponse, mockConfig);
+    await streamFallbackToKV(
+      mockEnv as any,
+      'videos/not-found.mp4',
+      failedResponse,
+      mockConfig as any
+    );
 
     // Verify storeTransformedVideo was not called for non-ok responses
     const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
@@ -262,7 +279,12 @@ describe('Fallback Storage - streamFallbackToKV', () => {
       await import('../../../src/services/videoStorage/pathTransform');
     vi.mocked(applyPathTransformation).mockReturnValue('transformed/test.mp4');
 
-    await streamFallbackToKV(mockEnv, 'videos/original-test.mp4', videoResponse, mockConfig);
+    await streamFallbackToKV(
+      mockEnv as any,
+      'videos/original-test.mp4',
+      videoResponse,
+      mockConfig as any
+    );
 
     // Verify transformation was applied
     expect(applyPathTransformation).toHaveBeenCalledWith(
@@ -273,7 +295,7 @@ describe('Fallback Storage - streamFallbackToKV', () => {
 
     // Verify storeTransformedVideo was called with transformed path
     const { storeTransformedVideo } = await import('../../../src/services/kvStorage/storeVideo');
-    expect(storeTransformedVideo.mock.calls[0][1]).toBe('transformed/test.mp4');
+    expect(vi.mocked(storeTransformedVideo).mock.calls[0][1]).toBe('transformed/test.mp4');
   });
 
   // This test verifies integration with the KV storage system for files
@@ -298,25 +320,27 @@ describe('Fallback Storage - streamFallbackToKV', () => {
 
     const { storeTransformedVideo: storeTransformedVideoMock } =
       await import('../../../src/services/kvStorage/storeVideo');
-    vi.mocked(storeTransformedVideoMock).mockImplementation(
-      async (namespace, path, response, options, ttl) => {
+    (vi.mocked(storeTransformedVideoMock) as any).mockImplementation(
+      async (namespace: any, path: any, response: any, options: any, ttl: any) => {
         capturedResponse = response;
         capturedOptions = options;
         return true;
       }
     );
 
-    await streamFallbackToKV(mockEnv, 'videos/chunked-test.mp4', videoResponse, {
+    await streamFallbackToKV(mockEnv as any, 'videos/chunked-test.mp4', videoResponse, {
       ...mockConfig,
       width: 1280,
       height: 720,
       format: 'mp4',
-    });
+    } as any);
 
     // Verify response was passed with correct headers
     expect(capturedResponse).not.toBeNull();
-    expect(capturedResponse?.headers.get('Content-Type')).toBe('video/mp4');
-    expect(capturedResponse?.headers.get('Content-Length')).toBe(contentLength.toString());
+    expect((capturedResponse as Response | null)?.headers.get('Content-Type')).toBe('video/mp4');
+    expect((capturedResponse as Response | null)?.headers.get('Content-Length')).toBe(
+      contentLength.toString()
+    );
 
     // Verify options were passed correctly including transformation parameters
     expect(capturedOptions).toEqual(

@@ -14,26 +14,26 @@ import { createCategoryLogger } from '../utils/logger';
 const logger = createCategoryLogger('OriginConfigurationManager');
 
 /**
- * Extend the globalThis interface to include WORKER_CONFIG
+ * Shape of the worker config object that provides origins configuration.
+ * Previously stored on globalThis.WORKER_CONFIG; now passed explicitly
+ * via `OriginConfigurationManager.setWorkerConfig()`.
  */
-declare global {
-  var WORKER_CONFIG: {
-    video?: {
-      origins?:
-        | Origin[]
-        | {
+export interface WorkerConfigShape {
+  video?: {
+    origins?:
+      | Origin[]
+      | {
+          enabled?: boolean;
+          useLegacyPathPatterns?: boolean;
+          convertPathPatternsToOrigins?: boolean;
+          fallbackHandling?: {
             enabled?: boolean;
-            useLegacyPathPatterns?: boolean;
-            convertPathPatternsToOrigins?: boolean;
-            fallbackHandling?: {
-              enabled?: boolean;
-              maxRetries?: number;
-            };
-            items?: Origin[];
+            maxRetries?: number;
           };
-    };
-    [key: string]: unknown;
+          items?: Origin[];
+        };
   };
+  [key: string]: unknown;
 }
 
 /**
@@ -41,6 +41,7 @@ declare global {
  */
 export class OriginConfigurationManager {
   private static instance: OriginConfigurationManager;
+  private static workerConfig: WorkerConfigShape | undefined;
   private origins: Origin[] = [];
   private originMap: Map<string, Origin> = new Map();
   private videoConfig: VideoConfigurationManager;
@@ -62,6 +63,16 @@ export class OriginConfigurationManager {
       OriginConfigurationManager.instance = new OriginConfigurationManager();
     }
     return OriginConfigurationManager.instance;
+  }
+
+  /**
+   * Provide the worker config (from worker-config.json) so that origins
+   * can be resolved without relying on globalThis.
+   * Must be called before getInstance() for the config to take effect on
+   * first initialization. If called after, call reset() to re-initialize.
+   */
+  public static setWorkerConfig(config: WorkerConfigShape): void {
+    OriginConfigurationManager.workerConfig = config;
   }
 
   /**
@@ -133,52 +144,44 @@ export class OriginConfigurationManager {
       });
     }
 
-    // If we have a direct origins configuration from WORKER_CONFIG, use that
-    if (originsEnabled && typeof globalThis.WORKER_CONFIG !== 'undefined') {
-      const workerConfig = globalThis.WORKER_CONFIG;
-
+    // If we have a worker config (from worker-config.json), use its origins
+    const wc = OriginConfigurationManager.workerConfig;
+    if (originsEnabled && wc) {
       // Debug the worker config structure
-      logger.debug('Checking WORKER_CONFIG structure', {
-        hasVideoConfig: !!workerConfig.video,
-        hasVideoOrigins: !!workerConfig.video?.origins,
-        videoOriginsType: workerConfig.video?.origins
-          ? typeof workerConfig.video.origins
-          : 'undefined',
+      logger.debug('Checking workerConfig structure', {
+        hasVideoConfig: !!wc.video,
+        hasVideoOrigins: !!wc.video?.origins,
+        videoOriginsType: wc.video?.origins ? typeof wc.video.origins : 'undefined',
       });
 
-      // Check for origins configuration in video config
-
-      // Check WORKER_CONFIG.video.origins (as array)
-      if (workerConfig.video && Array.isArray(workerConfig.video.origins)) {
-        this.origins = [...workerConfig.video.origins];
-        logger.info('Loaded origins array from WORKER_CONFIG.video.origins', {
+      // Check workerConfig.video.origins (as array)
+      if (wc.video && Array.isArray(wc.video.origins)) {
+        this.origins = [...wc.video.origins];
+        logger.info('Loaded origins array from workerConfig.video.origins', {
           count: this.origins.length,
           names: this.origins.map((o) => o.name).join(', '),
         });
       }
-      // Check WORKER_CONFIG.video.origins as object with items array
+      // Check workerConfig.video.origins as object with items array
       else if (
-        workerConfig.video &&
-        workerConfig.video.origins &&
-        typeof workerConfig.video.origins === 'object' &&
-        'items' in workerConfig.video.origins &&
-        Array.isArray((workerConfig.video.origins as any).items)
+        wc.video &&
+        wc.video.origins &&
+        typeof wc.video.origins === 'object' &&
+        'items' in wc.video.origins &&
+        Array.isArray((wc.video.origins as any).items)
       ) {
-        this.origins = [...(workerConfig.video.origins as any).items];
-        logger.info('Loaded origins from WORKER_CONFIG.video.origins.items', {
+        this.origins = [...(wc.video.origins as any).items];
+        logger.info('Loaded origins from workerConfig.video.origins.items', {
           count: this.origins.length,
           names: this.origins.map((o) => o.name).join(', '),
         });
       }
-      // Log if no origins were found in WORKER_CONFIG
+      // Log if no origins were found in workerConfig
       else {
-        logger.warn('No origins found in WORKER_CONFIG', {
-          hasWorkerConfig: !!workerConfig,
-          hasVideoConfig: !!workerConfig.video,
-          hasVideoOrigins: !!workerConfig.video?.origins,
-          videoOriginsType: workerConfig.video?.origins
-            ? typeof workerConfig.video.origins
-            : 'undefined',
+        logger.warn('No origins found in workerConfig', {
+          hasVideoConfig: !!wc.video,
+          hasVideoOrigins: !!wc.video?.origins,
+          videoOriginsType: wc.video?.origins ? typeof wc.video.origins : 'undefined',
         });
       }
     }

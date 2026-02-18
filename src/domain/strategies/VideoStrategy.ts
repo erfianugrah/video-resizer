@@ -16,6 +16,7 @@ import {
   haveDurationLimits,
   getTransformationLimit,
   storeTransformationLimit,
+  parseTimeString,
 } from '../../utils/transformationUtils';
 import { createCategoryLogger } from '../../utils/logger';
 
@@ -379,9 +380,6 @@ export class VideoStrategy implements TransformationStrategy {
 
     // Validate and adjust duration parameter
     if (options.duration !== null && options.duration !== undefined) {
-      const { parseTimeString, isValidDuration, adjustDuration } =
-        await import('../../utils/transformationUtils');
-
       // Check if the format is valid (not checking limits)
       const seconds = parseTimeString(options.duration);
       if (seconds === null) {

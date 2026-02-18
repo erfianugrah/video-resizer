@@ -11,8 +11,13 @@
 import { handleVideoRequest } from './handlers/videoHandler';
 import { handleConfigGet, handleConfigUpload } from './handlers/configHandler';
 import { EnvironmentConfig, EnvVariables, getEnvironmentConfig } from './config/environmentConfig';
-import { initializeConfiguration } from './config';
-import { createRequestContext, updateBreadcrumbConfig } from './utils/requestContext';
+import { initializeConfiguration, updateAllConfigFromKV } from './config';
+import {
+  addBreadcrumb,
+  createRequestContext,
+  clearCurrentContext,
+  updateBreadcrumbConfig,
+} from './utils/requestContext';
 import { initializeLegacyLogger, createCategoryLogger } from './utils/logger';
 import { LoggingConfigurationManager } from './config/LoggingConfigurationManager';
 import { getKVNamespace } from './utils/flexibleBindings';
@@ -140,8 +145,6 @@ export default Sentry.withSentry<EnvVariables>(
 
                   // Apply KV configuration to all config managers
                   try {
-                    const { updateAllConfigFromKV } = await import('./config');
-
                     // Log configuration details before applying
                     logInfo(context, 'About to apply KV configuration', {
                       hasVideoConfig: !!kvConfig.video,
@@ -156,7 +159,6 @@ export default Sentry.withSentry<EnvVariables>(
 
                     // Add breadcrumb for debugging
                     if (context) {
-                      const { addBreadcrumb } = await import('./utils/requestContext');
                       addBreadcrumb(context, 'Configuration', 'Applying KV configuration', {
                         hasVideoConfig: !!kvConfig.video,
                         hasPassthrough: !!kvConfig.video?.passthrough,
@@ -201,7 +203,6 @@ export default Sentry.withSentry<EnvVariables>(
 
                       // Add breadcrumb for path patterns
                       if (context) {
-                        const { addBreadcrumb } = await import('./utils/requestContext');
                         addBreadcrumb(context, 'Configuration', 'Loaded path patterns from KV', {
                           patternCount: pathPatterns.length,
                           // Include just names for breadcrumb to keep it lightweight
@@ -324,7 +325,6 @@ export default Sentry.withSentry<EnvVariables>(
 
           // Add breadcrumb for file detection
           if (context) {
-            const { addBreadcrumb } = await import('./utils/requestContext');
             addBreadcrumb(context, 'Passthrough', 'Detected file extension', {
               path: requestUrl.pathname,
               extension: pathExtension || 'none',
@@ -350,7 +350,6 @@ export default Sentry.withSentry<EnvVariables>(
 
             // Add breadcrumb for config retrieval
             if (context) {
-              const { addBreadcrumb } = await import('./utils/requestContext');
               addBreadcrumb(context, 'Passthrough', 'Retrieved passthrough configuration', {
                 enabled: passthroughConfig.enabled,
                 whitelistedFormatsCount: passthroughConfig.whitelistedFormats.length,
@@ -384,7 +383,6 @@ export default Sentry.withSentry<EnvVariables>(
 
               // Add breadcrumb for passthrough decision
               if (context) {
-                const { addBreadcrumb } = await import('./utils/requestContext');
                 addBreadcrumb(context, 'Passthrough', 'Bypassing video processing', {
                   path: requestUrl.pathname,
                   extension: pathExtension,
@@ -415,7 +413,6 @@ export default Sentry.withSentry<EnvVariables>(
 
           // Add breadcrumb for error
           if (context) {
-            const { addBreadcrumb } = await import('./utils/requestContext');
             addBreadcrumb(context, 'Passthrough', 'Error in passthrough check', {
               error: err instanceof Error ? err.message : String(err),
               path: requestUrl.pathname,
@@ -439,7 +436,6 @@ export default Sentry.withSentry<EnvVariables>(
 
         // Add breadcrumb for worker-level error
         if (context) {
-          const { addBreadcrumb } = await import('./utils/requestContext');
           addBreadcrumb(context, 'Error', 'Unexpected worker error', {
             error: errorMessage,
             url: request.url,
@@ -478,6 +474,9 @@ export default Sentry.withSentry<EnvVariables>(
           status: 500,
           headers: { 'Content-Type': 'text/plain' },
         });
+      } finally {
+        // Clean up request context to prevent leaking between requests
+        clearCurrentContext();
       }
     },
   }

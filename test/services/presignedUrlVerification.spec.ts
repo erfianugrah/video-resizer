@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { verifyPresignedUrl, refreshPresignedUrl } from '../../src/services/presignedUrlCacheService';
+import {
+  verifyPresignedUrl,
+  refreshPresignedUrl,
+} from '../../src/services/presignedUrlCacheService';
 
 describe('Presigned URL Verification', () => {
   // Mock fetch
   global.fetch = vi.fn();
-  const mockFetch = global.fetch as jest.Mock;
+  const mockFetch = global.fetch as any;
 
   beforeEach(() => {
     mockFetch.mockClear();
@@ -19,16 +22,16 @@ describe('Presigned URL Verification', () => {
       // Mock a successful fetch response
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        status: 200
+        status: 200,
       });
 
       const url = 'https://test-bucket.s3.amazonaws.com/videos/test.mp4?X-Amz-Signature=abc123';
       const result = await verifyPresignedUrl(url);
-      
+
       expect(result).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(url, {
         method: 'HEAD',
-        redirect: 'manual'
+        redirect: 'manual',
       });
     });
 
@@ -36,12 +39,12 @@ describe('Presigned URL Verification', () => {
       // Mock a redirect response
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 302
+        status: 302,
       });
 
       const url = 'https://test-bucket.s3.amazonaws.com/videos/test.mp4?X-Amz-Signature=abc123';
       const result = await verifyPresignedUrl(url);
-      
+
       expect(result).toBe(true);
     });
 
@@ -49,12 +52,12 @@ describe('Presigned URL Verification', () => {
       // Mock an error response
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 403
+        status: 403,
       });
 
       const url = 'https://test-bucket.s3.amazonaws.com/videos/test.mp4?X-Amz-Signature=abc123';
       const result = await verifyPresignedUrl(url);
-      
+
       expect(result).toBe(false);
     });
 
@@ -64,42 +67,44 @@ describe('Presigned URL Verification', () => {
 
       const url = 'https://test-bucket.s3.amazonaws.com/videos/test.mp4?X-Amz-Signature=abc123';
       const result = await verifyPresignedUrl(url);
-      
+
       expect(result).toBe(false);
     });
   });
 
   describe('refreshPresignedUrl with verification', () => {
-    let mockEnv;
-    let mockKV;
-    
+    let mockEnv: any;
+    let mockKV: any;
+
     beforeEach(() => {
       // Mock environment
       mockEnv = {
         VIDEO_CACHE_KEY_VERSIONS: {
           get: vi.fn().mockResolvedValue('1'),
-          put: vi.fn().mockResolvedValue(undefined)
+          put: vi.fn().mockResolvedValue(undefined),
         },
         executionCtx: {
-          waitUntil: vi.fn()
-        }
+          waitUntil: vi.fn(),
+        },
       };
-      
+
       // Create a more complete KV mock
       mockKV = {
         get: vi.fn().mockResolvedValue(null),
         put: vi.fn().mockResolvedValue(undefined),
-        getWithMetadata: vi.fn().mockResolvedValue({ 
-          value: '', 
-          metadata: null 
+        getWithMetadata: vi.fn().mockResolvedValue({
+          value: '',
+          metadata: null,
         }),
         delete: vi.fn().mockResolvedValue(undefined),
-        list: vi.fn().mockResolvedValue({ keys: [] })
+        list: vi.fn().mockResolvedValue({ keys: [] }),
       } as unknown as KVNamespace;
     });
 
     // Mock generateUrlFn
-    const generateUrlFn = vi.fn().mockResolvedValue('https://new-url.com/signed?X-Amz-Signature=new123');
+    const generateUrlFn = vi
+      .fn()
+      .mockResolvedValue('https://new-url.com/signed?X-Amz-Signature=new123');
 
     // Skipping this test because it's hard to mock properly
     it.skip('should detect invalid URLs and try to refresh', async () => {
@@ -113,19 +118,19 @@ describe('Presigned URL Verification', () => {
         storageType: 'remote',
         authType: 'aws-s3-presigned-url',
         region: 'us-east-1',
-        service: 's3'
+        service: 's3',
       };
 
       // Make URL seem expired by overriding isUrlExpiring behavior
       const originalIsUrlExpiring = vi.spyOn(
-        await import('../../src/services/presignedUrlCacheService'), 
+        await import('../../src/services/presignedUrlCacheService'),
         'isUrlExpiring'
       );
       originalIsUrlExpiring.mockReturnValue(true);
 
       // Mock the store function to succeed
       const originalStorePresignedUrl = vi.spyOn(
-        await import('../../src/services/presignedUrlCacheService'), 
+        await import('../../src/services/presignedUrlCacheService'),
         'storePresignedUrl'
       );
       originalStorePresignedUrl.mockResolvedValue(true);
@@ -134,7 +139,7 @@ describe('Presigned URL Verification', () => {
       const result = await refreshPresignedUrl(mockKV, entry, {
         env: mockEnv,
         generateUrlFn,
-        verifyUrl: false // Skip verification for test simplicity
+        verifyUrl: false, // Skip verification for test simplicity
       });
 
       expect(result).toBe(true);

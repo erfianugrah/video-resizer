@@ -210,9 +210,9 @@ describe('404 Failover - KV Storage Test', () => {
     const response = await retryWithAlternativeOrigins({
       originalRequest: mockRequest,
       transformOptions: { width: 1920, version: 2, derivative: 'test-derivative' },
-      failedOrigin: mockOrigin,
-      failedSource: mockFailedSource,
-      context: mockContext,
+      failedOrigin: mockOrigin as any,
+      failedSource: mockFailedSource as any,
+      context: mockContext as any,
       env: envWithContext,
       requestContext: mockRequestContext,
       pathPatterns: [],
@@ -292,14 +292,14 @@ describe('404 Failover - KV Storage Test', () => {
     const response = await retryWithAlternativeOrigins({
       originalRequest: mockRequest,
       transformOptions: { width: 1920 },
-      failedOrigin: mockOrigin,
-      failedSource: mockOrigin.sources[0],
+      failedOrigin: mockOrigin as any,
+      failedSource: mockOrigin.sources[0] as any,
       context: {
         request: mockRequest,
         options: { width: 1920 },
         origin: mockOrigin,
         env: { VIDEO_ASSETS: {} },
-      },
+      } as any,
       env: { VIDEO_ASSETS: {} } as any,
       requestContext: {
         requestId: 'test-123',

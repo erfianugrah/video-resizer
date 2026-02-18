@@ -54,11 +54,11 @@ vi.mock('aws4fetch', () => ({
 // Mock logging to avoid cluttering test output
 vi.mock('../../../src/utils/errorHandlingUtils', async () => {
   return {
-    withErrorHandling: (fn, options, context) => fn,
+    withErrorHandling: (fn: any, options: any, context: any) => fn,
     logErrorWithContext: vi.fn(),
     tryOrDefault:
-      (fn, defaultValue) =>
-      (...args) => {
+      (fn: any, defaultValue: any) =>
+      (...args: any[]) => {
         try {
           return fn(...args);
         } catch (error) {
@@ -145,7 +145,7 @@ describe('Origin Authentication', () => {
       const request = new Request(`https://example.com${path}`);
 
       // Call the function
-      await fetchVideoWithOrigins(path, config, mockEnv, request);
+      await fetchVideoWithOrigins(path, config, mockEnv as any, request, undefined);
 
       // Check if fetch was called with the right args
       expect(global.fetch).toHaveBeenCalled();
@@ -200,7 +200,7 @@ describe('Origin Authentication', () => {
       const request = new Request(`https://example.com${path}`);
 
       // Call the function
-      await fetchVideoWithOrigins(path, config, mockEnv, request);
+      await fetchVideoWithOrigins(path, config, mockEnv as any, request, undefined);
 
       // Check if fetch was called with the right args
       expect(global.fetch).toHaveBeenCalled();
@@ -256,7 +256,7 @@ describe('Origin Authentication', () => {
       const request = new Request(`https://example.com${path}`);
 
       // Call the function
-      await fetchVideoWithOrigins(path, config, mockEnv, request);
+      await fetchVideoWithOrigins(path, config, mockEnv as any, request, undefined);
 
       // Check if fetch was called with the right args
       expect(global.fetch).toHaveBeenCalled();
@@ -313,7 +313,7 @@ describe('Origin Authentication', () => {
       const request = new Request(`https://example.com${path}`);
 
       // Call the function
-      await fetchVideoWithOrigins(path, config, mockEnv, request);
+      await fetchVideoWithOrigins(path, config, mockEnv as any, request, undefined);
 
       // Check if fetch was called with the right args
       expect(global.fetch).toHaveBeenCalled();
@@ -388,7 +388,7 @@ describe('Origin Authentication', () => {
       const request = new Request(`https://example.com${path}`);
 
       // Call the function
-      await fetchVideoWithOrigins(path, config, mockEnv, request);
+      await fetchVideoWithOrigins(path, config, mockEnv as any, request, undefined);
 
       // Check if fetch was called with the right args
       expect(global.fetch).toHaveBeenCalled();

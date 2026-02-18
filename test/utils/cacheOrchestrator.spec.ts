@@ -69,7 +69,7 @@ describe.skip('Cache Orchestrator', () => {
   });
 
   const mockRequest = new Request('https://example.com/videos/test.mp4');
-  const mockEnv = {
+  const mockEnv: any = {
     VIDEO_TRANSFORMATIONS_CACHE: {
       get: vi.fn(),
       put: vi.fn(),
@@ -96,8 +96,8 @@ describe.skip('Cache Orchestrator', () => {
   );
 
   // Mock waitUntil for Cloudflare Worker execution context
-  const mockWaitUntil = vi.fn((promise) => promise);
-  const mockEnvWithCtx = {
+  const mockWaitUntil = vi.fn((promise: any) => promise);
+  const mockEnvWithCtx: any = {
     ...mockEnv,
     executionCtx: {
       waitUntil: mockWaitUntil,
@@ -120,7 +120,7 @@ describe.skip('Cache Orchestrator', () => {
       });
 
       // CF will resolve after 100ms
-      vi.mocked(cacheManagementService.getCachedResponse).mockImplementation(async () => {
+      (vi.mocked(cacheManagementService.getCachedResponse) as any).mockImplementation(async () => {
         await delay(100);
         return cachedResponse;
       });
@@ -358,7 +358,7 @@ describe('KV Cache Orchestrator', () => {
   });
 
   const mockRequest = new Request('https://example.com/videos/test.mp4');
-  const mockEnv = {
+  const mockEnv: any = {
     VIDEO_TRANSFORMATIONS_CACHE: {
       get: vi.fn(),
       put: vi.fn(),

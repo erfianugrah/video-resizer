@@ -140,7 +140,7 @@ describe('IMQuery Utils', () => {
         { 'im-density': '2' },
       ];
 
-      paramSets.forEach((params) => {
+      paramSets.forEach((params: any) => {
         expect(hasIMQueryParams(new URLSearchParams(params))).toBe(true);
       });
     });

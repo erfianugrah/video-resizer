@@ -63,7 +63,7 @@ describe('Cache Behavior and Edge Cases', () => {
       const config = createMockConfig();
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -96,7 +96,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -124,7 +124,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(500);
@@ -163,7 +163,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -198,7 +198,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -237,7 +237,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);
@@ -269,7 +269,7 @@ describe('Cache Behavior and Edge Cases', () => {
       });
 
       // Act
-      const response = await handleVideoRequest(request, config);
+      const response = await handleVideoRequest(request, config, undefined, undefined);
 
       // Assert
       expect(response.status).toBe(200);

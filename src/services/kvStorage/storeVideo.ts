@@ -474,7 +474,6 @@ export const storeTransformedVideo = withErrorHandling<
     try {
       // CRITICAL: Never cache partial/range responses
       if (response.status === 206 || response.headers.get('Content-Range')) {
-        const { logDebug } = await import('./logging');
         logDebug('Refusing to cache partial content response', {
           path: sourcePath,
           component: 'KVStorageService',
@@ -491,8 +490,6 @@ export const storeTransformedVideo = withErrorHandling<
 
       // Safety check: Skip storing files larger than 128MB to avoid memory issues
       if (contentLength > 128 * 1024 * 1024) {
-        // Log the skipped storage
-        const { logDebug } = await import('./logging');
         logDebug('Skipping KV storage for large file', {
           path: sourcePath,
           component: 'KVStorageService',

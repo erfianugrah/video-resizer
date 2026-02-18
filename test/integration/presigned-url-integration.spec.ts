@@ -20,6 +20,7 @@ vi.mock('../../src/utils/presignedUrlUtils', () => ({
 vi.mock('aws4fetch', () => {
   return {
     AwsClient: class MockAwsClient {
+      config: any;
       constructor(config: any) {
         // Store config for validation
         this.config = config;

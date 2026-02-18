@@ -295,7 +295,7 @@ describe('pathUtils', () => {
         mode: 'video',
         fit: undefined,
         audio: null,
-      };
+      } as any;
       const videoUrl = 'https://example.com/videos/sample.mp4';
 
       // Act
@@ -457,7 +457,7 @@ describe('pathUtils', () => {
         mode: 'video',
         fit: undefined,
         audio: null,
-      };
+      } as any;
       const videoUrl = 'https://example.com/videos/sample.mp4';
 
       // Act

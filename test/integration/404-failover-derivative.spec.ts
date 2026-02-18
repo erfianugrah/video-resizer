@@ -191,8 +191,8 @@ describe('404 Failover - Derivative Handling', () => {
         height: 1080,
         derivative: 'desktop', // This should be preserved
       },
-      failedOrigin: mockOrigin,
-      failedSource: mockFailedSource,
+      failedOrigin: mockOrigin as any,
+      failedSource: mockFailedSource as any,
       context: mockContext as any,
       env: mockContext.env as any,
       requestContext: mockRequestContext,
@@ -257,8 +257,8 @@ describe('404 Failover - Derivative Handling', () => {
         width: 1280,
         // No derivative
       },
-      failedOrigin: mockOrigin,
-      failedSource: mockOrigin.sources[0],
+      failedOrigin: mockOrigin as any,
+      failedSource: mockOrigin.sources[0] as any,
       context: {
         request: mockRequest,
         env: {
@@ -324,8 +324,8 @@ describe('404 Failover - Derivative Handling', () => {
         transformOptions: {
           derivative: derivative,
         },
-        failedOrigin: mockOrigin,
-        failedSource: mockOrigin.sources[0],
+        failedOrigin: mockOrigin as any,
+        failedSource: mockOrigin.sources[0] as any,
         context: {
           request: mockRequest,
           env: { VIDEO_ASSETS: {} },
@@ -370,8 +370,8 @@ describe('404 Failover - Derivative Handling', () => {
         width: 1920,
         derivative: 'desktop',
       },
-      failedOrigin: mockOrigin,
-      failedSource: mockOrigin.sources[0],
+      failedOrigin: mockOrigin as any,
+      failedSource: mockOrigin.sources[0] as any,
       context: {
         request: mockRequest,
         env: {

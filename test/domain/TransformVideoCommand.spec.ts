@@ -33,7 +33,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act
@@ -62,7 +62,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act
@@ -90,7 +90,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act
@@ -121,7 +121,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act
@@ -155,7 +155,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act - the command should not throw even with out-of-range options
@@ -212,7 +212,7 @@ describe('TransformVideoCommand', () => {
       request,
       options,
       pathPatterns,
-      debugInfo: {},
+      debugInfo: {} as any,
     });
 
     // Act

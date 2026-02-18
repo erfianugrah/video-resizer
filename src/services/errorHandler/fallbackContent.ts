@@ -263,9 +263,6 @@ async function fetchOriginalContentFallbackImpl(
     }
   });
 
-  // Import error parsing utility
-  const { parseErrorMessage } = await import('../../utils/transformationUtils');
-
   // Check if the error message is from Cloudflare's API
   const parsedError = parseErrorMessage(error.message);
   const fallbackReason = parsedError.specificError || error.message;

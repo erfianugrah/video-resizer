@@ -205,9 +205,9 @@ describe('404 Failover - Simple Test', () => {
     const response = await retryWithAlternativeOrigins({
       originalRequest: mockRequest,
       transformOptions: { width: 1920 },
-      failedOrigin: mockOrigin,
-      failedSource: mockFailedSource,
-      context: mockContext,
+      failedOrigin: mockOrigin as any,
+      failedSource: mockFailedSource as any,
+      context: mockContext as any,
       env: { VIDEO_ASSETS: {} } as any,
       requestContext: mockRequestContext,
       pathPatterns: [],

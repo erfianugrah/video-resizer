@@ -150,10 +150,14 @@ describe('VideoConfigurationManager', () => {
       expect(Object.keys(cacheConfig).sort()).toEqual(Object.keys(videoConfig.cache).sort());
 
       // Check essential properties of each cache profile, allowing for default properties
-      Object.keys(cacheConfig).forEach((key) => {
-        expect(cacheConfig[key].cacheability).toEqual(videoConfig.cache[key].cacheability);
-        expect(cacheConfig[key].videoCompression).toEqual(videoConfig.cache[key].videoCompression);
-        expect(cacheConfig[key].ttl).toEqual(videoConfig.cache[key].ttl);
+      Object.keys(cacheConfig).forEach((key: string) => {
+        expect((cacheConfig as any)[key].cacheability).toEqual(
+          (videoConfig.cache as any)[key].cacheability
+        );
+        expect((cacheConfig as any)[key].videoCompression).toEqual(
+          (videoConfig.cache as any)[key].videoCompression
+        );
+        expect((cacheConfig as any)[key].ttl).toEqual((videoConfig.cache as any)[key].ttl);
       });
     });
 
@@ -180,6 +184,7 @@ describe('VideoConfigurationManager', () => {
       const newPattern = {
         name: 'testPattern',
         matcher: '\\/test\\/([^\\/]+)',
+        useTtlByStatus: true,
         processPath: true,
         baseUrl: null,
         originUrl: 'https://example.com/videos',
@@ -239,6 +244,7 @@ describe('VideoConfigurationManager', () => {
       const legacyPattern = {
         name: 'legacyPattern',
         matcher: '\\/legacy\\/([^\\/]+)',
+        useTtlByStatus: true,
         processPath: true,
         baseUrl: null,
         originUrl: 'https://example.com/videos',
@@ -378,8 +384,8 @@ describe('VideoConfigurationManager', () => {
       const addedOrigin = manager.addOrigin(newOrigin);
 
       expect(manager.getOrigins().length).toBe(initialOriginCount + 1);
-      expect(addedOrigin.name).toBe('new-origin');
-      expect(addedOrigin.sources[0].type).toBe('remote');
+      expect(addedOrigin!.name).toBe('new-origin');
+      expect(addedOrigin!.sources[0].type).toBe('remote');
     });
 
     it('should generate origins diagnostics', () => {

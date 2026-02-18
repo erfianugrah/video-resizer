@@ -11,21 +11,21 @@ describe('Cache Tags Generation', () => {
         getInstance: vi.fn().mockReturnValue({
           getConfig: vi.fn().mockReturnValue({
             enableCacheTags: true,
-            cacheTagPrefix: 'vp-'
-          })
-        })
-      }
+            cacheTagPrefix: 'vp-',
+          }),
+        }),
+      },
     }));
   });
 
   it('should generate basic cache tags for a video path', () => {
     const videoPath = '/test-video.mp4';
     const options: VideoOptions = {
-      mode: 'video'
+      mode: 'video',
     };
 
-    const tags = generateCacheTags(videoPath, options);
-    
+    const tags = generateCacheTags(videoPath, options, undefined);
+
     // Should contain shortened path tag (last 2 segments)
     expect(tags).toContain('vp-p-test-video.mp4');
   });
@@ -34,11 +34,11 @@ describe('Cache Tags Generation', () => {
     const videoPath = '/test-video.mp4';
     const options: VideoOptions = {
       mode: 'video',
-      derivative: 'mobile'
+      derivative: 'mobile',
     };
 
-    const tags = generateCacheTags(videoPath, options);
-    
+    const tags = generateCacheTags(videoPath, options, undefined);
+
     // Should contain path tag, path+derivative tag, and derivative tag
     expect(tags).toContain('vp-p-test-video.mp4');
     expect(tags).toContain('vp-p-test-video.mp4-mobile');
@@ -49,11 +49,11 @@ describe('Cache Tags Generation', () => {
     const videoPath = '/test-video.mp4';
     const options: VideoOptions = {
       mode: 'video',
-      format: 'webm'
+      format: 'webm',
     };
 
-    const tags = generateCacheTags(videoPath, options);
-    
+    const tags = generateCacheTags(videoPath, options, undefined);
+
     // Should contain format tag for migration scenarios
     expect(tags).toContain('vp-f-webm');
   });
@@ -63,24 +63,24 @@ describe('Cache Tags Generation', () => {
     const nestedVideoPath = '/videos/category/nested-video.mp4';
     const tabletOptions: VideoOptions = {
       mode: 'video',
-      derivative: 'tablet'
+      derivative: 'tablet',
     };
 
-    const nestedTags = generateCacheTags(nestedVideoPath, tabletOptions);
-    
+    const nestedTags = generateCacheTags(nestedVideoPath, tabletOptions, undefined);
+
     // Should use last 2 segments: category-nested-video.mp4
     expect(nestedTags).toContain('vp-p-category-nested-video.mp4');
     expect(nestedTags).toContain('vp-p-category-nested-video.mp4-tablet');
     expect(nestedTags).toContain('vp-d-tablet');
-    
+
     // Test with desktop derivative
     const desktopOptions: VideoOptions = {
       mode: 'video',
-      derivative: 'desktop'
+      derivative: 'desktop',
     };
-    
-    const desktopTags = generateCacheTags(nestedVideoPath, desktopOptions);
-    
+
+    const desktopTags = generateCacheTags(nestedVideoPath, desktopOptions, undefined);
+
     // Should use same path segments but different derivative
     expect(desktopTags).toContain('vp-p-category-nested-video.mp4');
     expect(desktopTags).toContain('vp-p-category-nested-video.mp4-desktop');
@@ -89,26 +89,26 @@ describe('Cache Tags Generation', () => {
 
   it('should generate mode-specific tags for non-video modes', () => {
     const videoPath = '/test-video.mp4';
-    
+
     // Test frame mode
     const frameOptions: VideoOptions = {
       mode: 'frame',
-      time: '5s'
+      time: '5s',
     };
-    
-    const frameTags = generateCacheTags(videoPath, frameOptions);
+
+    const frameTags = generateCacheTags(videoPath, frameOptions, undefined);
     expect(frameTags).toContain('vp-m-frame');
     expect(frameTags).toContain('vp-t-5');
-    
+
     // Test spritesheet mode
     const spritesheetOptions: VideoOptions = {
       mode: 'spritesheet',
       columns: 4,
       rows: 4,
-      interval: '2s'
+      interval: '2s',
     };
-    
-    const spriteTags = generateCacheTags(videoPath, spritesheetOptions);
+
+    const spriteTags = generateCacheTags(videoPath, spritesheetOptions, undefined);
     expect(spriteTags).toContain('vp-m-spritesheet');
     expect(spriteTags).toContain('vp-c-4');
     expect(spriteTags).toContain('vp-r-4');

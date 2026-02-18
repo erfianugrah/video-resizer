@@ -21,18 +21,18 @@ vi.mock('../../src/utils/requestContext', () => ({
     startTime: Date.now(),
     headers: new Headers(),
     executionContext: {
-      waitUntil: vi.fn((promise) => promise),
+      waitUntil: vi.fn((promise: any) => promise),
     },
   })),
   addBreadcrumb: vi.fn(),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = (await importOriginal()) as any;
   return {
     ...actual,
     logErrorWithContext: vi.fn(),
-    withErrorHandling: vi.fn((fn, _, __) => fn),
+    withErrorHandling: vi.fn((fn: any, _: any, __: any) => fn),
   };
 });
 
@@ -86,21 +86,22 @@ vi.mock('../../src/utils/httpUtils', async () => ({
 
 describe('KV Chunking Functionality', () => {
   // Create mock KV namespace
-  const mockKV: KVNamespace = {
+  const mockKV = {
     get: vi.fn(),
     getWithMetadata: vi.fn(),
     put: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue({ keys: [] }),
-  };
+    deleteBulk: vi.fn(),
+  } as any;
 
   // Create mock env variables
   const mockEnv = {
     VIDEO_CACHE_KEY_VERSIONS: {} as KVNamespace,
     executionCtx: {
-      waitUntil: vi.fn((promise) => promise),
+      waitUntil: vi.fn((promise: any) => promise),
     },
-  };
+  } as any;
 
   // Create a reusable mock request for all tests
   const mockRequest = new Request('https://example.com/videos/test.mp4');
@@ -136,7 +137,8 @@ describe('KV Chunking Functionality', () => {
           version: 1,
           env: mockEnv,
         },
-        300 // TTL in seconds
+        300, // TTL in seconds
+        undefined
       );
 
       expect(result).toBe(true);
@@ -176,7 +178,8 @@ describe('KV Chunking Functionality', () => {
           version: 1,
           env: mockEnv,
         },
-        300 // TTL in seconds
+        300, // TTL in seconds
+        undefined
       );
 
       expect(result).toBe(true);
@@ -234,7 +237,8 @@ describe('KV Chunking Functionality', () => {
           version: 1,
           env: mockEnv,
         },
-        300 // TTL in seconds
+        300, // TTL in seconds
+        undefined
       );
 
       expect(result).toBe(true);
@@ -283,7 +287,8 @@ describe('KV Chunking Functionality', () => {
           version: 1,
           env: mockEnv,
         },
-        300
+        300,
+        undefined
       );
 
       expect(result).toBe(false);
@@ -323,14 +328,19 @@ describe('KV Chunking Functionality', () => {
       // Mock KV get for retrieving actual data
       mockKV.get.mockResolvedValue(videoData.buffer);
 
-      const result = await getTransformedVideo(mockKV as KVNamespace, 'videos/test.mp4', {
-        mode: 'video',
-        width: 640,
-        height: 480,
-        format: 'mp4',
-        version: 1,
-        env: mockEnv,
-      });
+      const result = await getTransformedVideo(
+        mockKV as KVNamespace,
+        'videos/test.mp4',
+        {
+          mode: 'video',
+          width: 640,
+          height: 480,
+          format: 'mp4',
+          version: 1,
+          env: mockEnv,
+        },
+        undefined
+      );
 
       expect(result).not.toBeNull();
       expect(result?.metadata).toEqual(metadata);
@@ -389,14 +399,19 @@ describe('KV Chunking Functionality', () => {
         return Promise.resolve(null);
       });
 
-      const result = await getTransformedVideo(mockKV as KVNamespace, 'videos/large-test.mp4', {
-        mode: 'video',
-        width: 1280,
-        height: 720,
-        format: 'mp4',
-        version: 1,
-        env: mockEnv,
-      });
+      const result = await getTransformedVideo(
+        mockKV as KVNamespace,
+        'videos/large-test.mp4',
+        {
+          mode: 'video',
+          width: 1280,
+          height: 720,
+          format: 'mp4',
+          version: 1,
+          env: mockEnv,
+        },
+        undefined
+      );
 
       expect(result).not.toBeNull();
       expect(result?.metadata).toEqual(metadata);
@@ -611,14 +626,19 @@ describe('KV Chunking Functionality', () => {
         metadata: null,
       });
 
-      const result = await getTransformedVideo(mockKV as KVNamespace, 'videos/missing.mp4', {
-        mode: 'video',
-        width: 640,
-        height: 480,
-        format: 'mp4',
-        version: 1,
-        env: mockEnv,
-      });
+      const result = await getTransformedVideo(
+        mockKV as KVNamespace,
+        'videos/missing.mp4',
+        {
+          mode: 'video',
+          width: 640,
+          height: 480,
+          format: 'mp4',
+          version: 1,
+          env: mockEnv,
+        },
+        undefined
+      );
 
       expect(result).toBeNull();
     });
@@ -652,14 +672,19 @@ describe('KV Chunking Functionality', () => {
       // Mock KV get for retrieving actual data
       mockKV.get.mockResolvedValue(videoData.buffer);
 
-      const result = await getTransformedVideo(mockKV as KVNamespace, 'videos/test.mp4', {
-        mode: 'video',
-        width: 640,
-        height: 480,
-        format: 'mp4',
-        version: 1,
-        env: mockEnv,
-      });
+      const result = await getTransformedVideo(
+        mockKV as KVNamespace,
+        'videos/test.mp4',
+        {
+          mode: 'video',
+          width: 640,
+          height: 480,
+          format: 'mp4',
+          version: 1,
+          env: mockEnv,
+        },
+        undefined
+      );
 
       // Should return null due to size mismatch
       expect(result).toBeNull();

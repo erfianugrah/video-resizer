@@ -134,7 +134,7 @@ describe('Configuration Handler', () => {
 
       const response = await handleConfigUpload(req, mockEnv);
       expect(response.status).toBe(200);
-      const responseBody = await response.json();
+      const responseBody: any = await response.json();
       expect(responseBody.success).toBe(true);
       expect(mockConfigService.storeConfiguration).toHaveBeenCalledWith(mockEnv, sampleConfig);
     });
@@ -153,7 +153,7 @@ describe('Configuration Handler', () => {
 
       const response = await handleConfigUpload(req, mockEnv);
       expect(response.status).toBe(500);
-      const responseBody = await response.json();
+      const responseBody: any = await response.json();
       expect(responseBody.success).toBe(false);
     });
 
@@ -226,7 +226,7 @@ describe('Configuration Handler', () => {
 
       const response = await handleConfigGet(req, mockEnv);
       expect(response.status).toBe(200);
-      const responseBody = await response.json();
+      const responseBody: any = await response.json();
 
       // Verify that the response contains the sample config data
       expect(responseBody.version).toEqual(sampleConfig.version);
@@ -255,7 +255,7 @@ describe('Configuration Handler', () => {
 
       const response = await handleConfigGet(req, mockEnv);
       expect(response.status).toBe(404);
-      const responseBody = await response.json();
+      const responseBody: any = await response.json();
       expect(responseBody.success).toBe(false);
     });
 

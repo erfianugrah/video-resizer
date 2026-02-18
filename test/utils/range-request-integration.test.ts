@@ -56,7 +56,7 @@ describe('Range Request Integration', () => {
 
     // Restore the mocks with default implementation
     (streamUtils.handleRangeRequest as any).mockImplementation(
-      async (response, rangeHeader, options) => {
+      async (response: any, rangeHeader: any, options: any) => {
         if (rangeHeader) {
           return new Response('partial content', {
             status: 206,
@@ -98,9 +98,9 @@ describe('Range Request Integration', () => {
       // Call the handler
       const response = await handleVideoRequest(
         request,
-        { mode: 'development', isProduction: false, pathPatterns: [] },
+        { mode: 'development', isProduction: false, pathPatterns: [] } as any,
         {},
-        { waitUntil: vi.fn() }
+        { waitUntil: vi.fn() } as any
       );
 
       // Verify streamUtils.handleRangeRequest was called

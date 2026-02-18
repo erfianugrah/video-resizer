@@ -8,7 +8,7 @@ import {
   TransformParams,
 } from './TransformationStrategy';
 import { VideoConfigurationManager } from '../../config';
-import { isValidTime, isValidDuration } from '../../utils/transformationUtils';
+import { isValidTime, isValidDuration, parseTimeString } from '../../utils/transformationUtils';
 import { createCategoryLogger } from '../../utils/logger';
 
 const logger = createCategoryLogger('SpritesheetStrategy');
@@ -150,8 +150,6 @@ export class SpritesheetStrategy implements TransformationStrategy {
 
     // Validate duration parameter format and range
     if (options.duration !== null && options.duration !== undefined) {
-      const { parseTimeString, isValidDuration } = await import('../../utils/transformationUtils');
-
       // Check if the format is valid
       const seconds = parseTimeString(options.duration);
       if (seconds === null) {

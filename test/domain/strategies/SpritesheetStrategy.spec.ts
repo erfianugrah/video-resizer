@@ -6,26 +6,26 @@ import { VideoTransformOptions } from '../../../src/domain/commands/TransformVid
 // Mock the ValidationError module first (due to hoisting)
 vi.mock('../../../src/errors/ValidationError', () => {
   class MockValidationError extends Error {
-    constructor(message) {
+    constructor(message: any) {
       super(message);
       this.name = 'ValidationError';
     }
 
-    static missingRequiredParameter(param) {
+    static missingRequiredParameter(param: any) {
       return new MockValidationError(`Missing required parameter: ${param}`);
     }
 
-    static invalidDimension(param, value, min, max) {
+    static invalidDimension(param: any, value: any, min: any, max: any) {
       return new MockValidationError(
         `Invalid ${param}: ${value}. Must be between ${min} and ${max}.`
       );
     }
 
-    static invalidTimeValue(param, value) {
+    static invalidTimeValue(param: any, value: any) {
       return new MockValidationError(`Invalid ${param}: ${value}. Must be a valid time value.`);
     }
 
-    static invalidOptionCombination(message) {
+    static invalidOptionCombination(message: any) {
       return new MockValidationError(message);
     }
   }
@@ -137,7 +137,7 @@ describe('SpritesheetStrategy', () => {
       muted: null,
       preload: null,
       derivative: null,
-      source: null,
+      source: undefined,
     };
 
     context = {
@@ -150,8 +150,7 @@ describe('SpritesheetStrategy', () => {
         baseUrl: null,
         originUrl: 'https://origin.example.com',
         ttl: { ok: 86400, redirects: 3600, clientError: 60, serverError: 10 },
-        useTtlByStatus: true,
-      },
+      } as any,
       diagnosticsInfo: {
         url: 'https://example.com/video.mp4',
         transformationType: '',
@@ -162,7 +161,7 @@ describe('SpritesheetStrategy', () => {
         cacheability: true,
         ttl: 86400,
       },
-    };
+    } as any;
   });
 
   describe('prepareTransformParams', () => {

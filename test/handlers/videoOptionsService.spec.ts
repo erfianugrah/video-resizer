@@ -99,9 +99,9 @@ vi.mock('../../src/config/VideoConfigurationManager', () => {
       getInstance: vi.fn().mockReturnValue({
         getConfig: vi.fn().mockReturnValue(mockConfig),
         getDefaults: vi.fn().mockReturnValue(mockConfig.defaults),
-        getValidOptions: vi.fn((param) => mockConfig.validOptions[param] || []),
-        isValidOption: vi.fn((param, value) => {
-          const options = mockConfig.validOptions[param];
+        getValidOptions: vi.fn((param: any) => (mockConfig.validOptions as any)[param] || []),
+        isValidOption: vi.fn((param: any, value: any) => {
+          const options = (mockConfig.validOptions as any)[param];
           return options ? options.includes(value) : false;
         }),
       }),
@@ -117,8 +117,8 @@ describe('VideoOptionsService', () => {
     vi.mocked(imqueryUtils.hasIMQueryParams).mockReturnValue(false);
     vi.mocked(requestContext.getCurrentContext).mockReturnValue({
       requestId: 'test-123',
-      diagnosticsInfo: {},
-    });
+      diagnostics: {},
+    } as any);
   });
 
   it('should determine basic video options from parameters', () => {
@@ -137,6 +137,7 @@ describe('VideoOptionsService', () => {
     vi.mocked(responsiveWidthUtils.getResponsiveVideoSize).mockReturnValueOnce({
       width: 720,
       height: 480,
+      quality: 'auto',
       method: 'responsive',
       usingClientHints: false,
       deviceType: 'desktop',
@@ -246,10 +247,10 @@ describe('VideoOptionsService', () => {
         },
       },
     };
-    vi.mocked(requestContext.getCurrentContext).mockReturnValue(mockContext);
+    vi.mocked(requestContext.getCurrentContext).mockReturnValue(mockContext as any);
 
     // Mock options for direct manipulation
-    let capturedOptions = null;
+    let capturedOptions: any = null;
 
     // Create a spy on Object.assign
     const assignSpy = vi.spyOn(Object, 'assign');
@@ -306,6 +307,7 @@ describe('VideoOptionsService', () => {
     vi.mocked(responsiveWidthUtils.getResponsiveVideoSize).mockReturnValueOnce({
       width: 2000,
       height: 1500,
+      quality: 'auto',
       method: 'responsive',
       usingClientHints: false,
       deviceType: 'desktop',
@@ -320,7 +322,7 @@ describe('VideoOptionsService', () => {
       requestId: 'test-123',
       diagnostics: { usingIMQuery: true },
     };
-    vi.mocked(requestContext.getCurrentContext).mockReturnValue(mockContext);
+    vi.mocked(requestContext.getCurrentContext).mockReturnValue(mockContext as any);
 
     // Call the service
     const options = determineVideoOptions(request, params, '/videos/test.mp4');

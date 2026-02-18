@@ -39,7 +39,7 @@ describe('PinoLogger', () => {
     };
 
     // Use debug method with our mocked logger
-    pinoLoggerModule.debug(context, mockedLogger, 'TestComponent', 'Debug message', {
+    pinoLoggerModule.debug(context, mockedLogger as any, 'TestComponent', 'Debug message', {
       key: 'value',
     });
 

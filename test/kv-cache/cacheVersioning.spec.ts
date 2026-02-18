@@ -173,8 +173,8 @@ describe('Cache Versioning Integration', () => {
 
     it('should not automatically increment version without explicit cache miss', async () => {
       // Reset mocks to implement fixed behavior
-      vi.mocked(getNextCacheKeyVersion).mockImplementation(
-        async (env, key, forceIncrement = false) => {
+      (vi.mocked(getNextCacheKeyVersion) as any).mockImplementation(
+        async (env: any, key: any, forceIncrement = false) => {
           const currentVersion = 2; // Simulate existing version
           const shouldIncrement = forceIncrement; // Only increment on explicit cache miss
           return shouldIncrement ? currentVersion + 1 : currentVersion;
@@ -196,13 +196,13 @@ describe('Cache Versioning Integration', () => {
 
     it('should handle subsequent requests correctly with versioning', async () => {
       // Mock implementation for full test case with fixed behavior
-      vi.mocked(getCacheKeyVersion).mockImplementation(async (env, key) => {
+      (vi.mocked(getCacheKeyVersion) as any).mockImplementation(async (env: any, key: any) => {
         // Simulate a key with version 2
         return 2;
       });
 
-      vi.mocked(getNextCacheKeyVersion).mockImplementation(
-        async (env, key, forceIncrement = false) => {
+      (vi.mocked(getNextCacheKeyVersion) as any).mockImplementation(
+        async (env: any, key: any, forceIncrement = false) => {
           const currentVersion = 2; // Existing version
           // Only increment if explicitly requested
           return forceIncrement ? currentVersion + 1 : currentVersion;

@@ -240,7 +240,7 @@ describe('Transformation Error Handler - Background Fallback', () => {
     global.fetch = mockFetchImplementation;
 
     // For TransformStream
-    global.TransformStream = vi.fn().mockImplementation(() => {
+    (global as any).TransformStream = vi.fn().mockImplementation(() => {
       const readers: any[] = [];
       const writers: any[] = [];
 
@@ -369,7 +369,7 @@ describe('Transformation Error Handler - Background Fallback', () => {
     expect(mockStreamFallbackToKV).not.toHaveBeenCalled();
 
     // Check that the response is a proper JSON error response
-    const body = await response.json();
+    const body: any = await response.json();
     expect(body.error).toBe('not_found'); // Updated to match the actual error type
     expect(body.statusCode).toBe(404);
   });

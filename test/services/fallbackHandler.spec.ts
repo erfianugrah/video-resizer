@@ -97,7 +97,7 @@ describe('Fallback Handler', () => {
           badRequestOnly: true,
         },
       }),
-    });
+    } as any);
 
     const originalUrl = 'https://example.com/original-video.mp4';
     const error = new VideoTransformError('Invalid width', ErrorType.INVALID_DIMENSION);

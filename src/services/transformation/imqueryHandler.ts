@@ -7,7 +7,7 @@
  */
 import { VideoTransformOptions } from '../../domain/commands/TransformVideoCommand';
 import { DiagnosticsInfo } from '../../utils/debugHeadersUtils';
-import { PathPattern } from '../../utils/pathUtils';
+import { PathPattern, buildCdnCgiMediaUrlAsync } from '../../utils/pathUtils';
 import { TransformParams } from '../../domain/strategies/TransformationStrategy';
 import { RequestContext, addBreadcrumb } from '../../utils/requestContext';
 import { CacheConfig } from '../../utils/cacheUtils';
@@ -123,9 +123,7 @@ export async function handleIMQueryDerivative(
     });
   }
 
-  // Rebuild the CDN-CGI media URL with the derivative's dimensions using async function
-  const { buildCdnCgiMediaUrlAsync } = await import('../../utils/pathUtils');
-
+  // Rebuild the CDN-CGI media URL with the derivative's dimensions
   // Pass the environment variables and path pattern for presigning
   let updatedCdnCgiUrl = await buildCdnCgiMediaUrlAsync(
     cdnParams,

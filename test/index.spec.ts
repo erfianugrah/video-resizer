@@ -51,7 +51,7 @@ describe('Video Resizer Worker', () => {
     const ctx = createExecutionContext();
 
     // Act
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch!(request, env, ctx);
 
     // Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
     await waitOnExecutionContext(ctx);

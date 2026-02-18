@@ -10,7 +10,7 @@
  */
 import { VideoTransformOptions } from '../domain/commands/TransformVideoCommand';
 import { DebugInfo, DiagnosticsInfo } from '../utils/debugHeadersUtils';
-import { PathPattern, extractVideoId } from '../utils/pathUtils';
+import { PathPattern, extractVideoId, buildCdnCgiMediaUrlAsync } from '../utils/pathUtils';
 import { addBreadcrumb, RequestContext, getCurrentContext } from '../utils/requestContext';
 import { determineCacheConfig, CacheConfig } from '../utils/cacheUtils';
 import { logErrorWithContext, withErrorHandling } from '../utils/errorHandlingUtils';
@@ -310,9 +310,6 @@ export const prepareVideoTransformation = withErrorHandling<
     }
 
     diagnosticsInfo.videoId = extractedVideoId || undefined;
-
-    // Import path utils module to get buildCdnCgiMediaUrlAsync
-    const { buildCdnCgiMediaUrlAsync } = await import('../utils/pathUtils');
 
     // CRITICAL: Add version to the video URL for CDN cache busting BEFORE building CDN-CGI URL
     // This ensures that when cache version increments (v=1 to v=2), the CDN sees it as a different URL

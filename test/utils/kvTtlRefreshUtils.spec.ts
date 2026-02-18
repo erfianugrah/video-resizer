@@ -138,7 +138,7 @@ describe('kvTtlRefreshUtils', () => {
 
       // Mock setTimeout to avoid waiting
       const originalSetTimeout = global.setTimeout;
-      global.setTimeout = vi.fn().mockImplementation((fn) => {
+      (global as any).setTimeout = vi.fn().mockImplementation((fn: any) => {
         if (typeof fn === 'function') fn();
         return 1;
       });
@@ -202,7 +202,7 @@ describe('kvTtlRefreshUtils', () => {
       };
 
       // Mock put to succeed and verify TTL value
-      mockNamespace.put.mockImplementationOnce((_key, _value, options) => {
+      mockNamespace.put.mockImplementationOnce((_key: any, _value: any, options: any) => {
         // Expect TTL to be default value from config (300)
         expect(options.expirationTtl).toBe(300);
         return Promise.resolve();
@@ -226,7 +226,7 @@ describe('kvTtlRefreshUtils', () => {
         'test-key',
         mockMetadata,
         undefined,
-        mockExecutionCtx
+        mockExecutionCtx as any
       );
 
       expect(result).toBe(true);

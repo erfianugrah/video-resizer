@@ -8,7 +8,7 @@ vi.mock('../../src/services/presignedUrlCacheService', () => {
     getPresignedUrl: vi.fn(),
     storePresignedUrl: vi.fn().mockResolvedValue(true),
     isUrlExpiring: vi.fn().mockReturnValue(false),
-    refreshPresignedUrl: vi.fn().mockResolvedValue(true)
+    refreshPresignedUrl: vi.fn().mockResolvedValue(true),
   };
 });
 
@@ -16,18 +16,19 @@ vi.mock('../../src/services/presignedUrlCacheService', () => {
 vi.mock('aws4fetch', () => {
   return {
     AwsClient: class MockAwsClient {
-      constructor(options) {
-        this.options = options;
+      constructor(options: any) {
+        (this as any).options = options;
       }
-      
-      async sign(request, options) {
+
+      async sign(request: any, options: any) {
         // Return a mock signed request with a presigned URL
         return new Request(
-          request.url + '?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test&X-Amz-Signature=test',
+          request.url +
+            '?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test&X-Amz-Signature=test',
           request
         );
       }
-    }
+    },
   };
 });
 
@@ -41,24 +42,26 @@ describe('VideoStorageService AWS S3 Presigned URL Integration', () => {
       put: vi.fn(),
       getWithMetadata: vi.fn(),
       delete: vi.fn(),
-      list: vi.fn()
+      list: vi.fn(),
     },
     executionCtx: {
-      waitUntil: vi.fn()
-    }
+      waitUntil: vi.fn(),
+    },
   };
 
   beforeEach(() => {
     vi.resetAllMocks();
-    
+
     // Mock successful fetch response
-    (global.fetch as any).mockResolvedValue(new Response('test', {
-      status: 200,
-      headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Length': '1024'
-      }
-    }));
+    (global.fetch as any).mockResolvedValue(
+      new Response('test', {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': '1024',
+        },
+      })
+    );
   });
 
   it('should use cached presigned URL when available', async () => {
@@ -70,11 +73,11 @@ describe('VideoStorageService AWS S3 Presigned URL Integration', () => {
       expiresAt: Date.now() + 3600 * 1000,
       path: 'video.mp4',
       storageType: 'remote',
-      authType: 'aws-s3-presigned-url'
+      authType: 'aws-s3-presigned-url',
     };
-    
+
     (presignedUrlCacheService.getPresignedUrl as any).mockResolvedValue(mockCachedEntry);
-    
+
     // Create config with presigned URL enabled
     const config = {
       storage: {
@@ -85,21 +88,26 @@ describe('VideoStorageService AWS S3 Presigned URL Integration', () => {
           accessKeyVar: 'AWS_ACCESS_KEY',
           secretKeyVar: 'AWS_SECRET_KEY',
           region: 'us-east-1',
-          expiresInSeconds: 3600
-        }
-      }
+          expiresInSeconds: 3600,
+        },
+      },
     };
-    
+
     // Set AWS credentials in env
     const env = {
       ...mockEnv,
       AWS_ACCESS_KEY: 'test-access-key',
-      AWS_SECRET_KEY: 'test-secret-key'
+      AWS_SECRET_KEY: 'test-secret-key',
     };
-    
+
     // Call fetchFromRemote
-    const result = await fetchFromRemote('video.mp4', 'https://test-bucket.s3.amazonaws.com', config, env);
-    
+    const result = await fetchFromRemote(
+      'video.mp4',
+      'https://test-bucket.s3.amazonaws.com',
+      config as any,
+      env as any
+    );
+
     // Verify it used the cached URL
     expect(presignedUrlCacheService.getPresignedUrl).toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledWith(mockCachedEntry.url, expect.anything());
@@ -110,7 +118,7 @@ describe('VideoStorageService AWS S3 Presigned URL Integration', () => {
   it('should generate and cache new presigned URL when no cached URL exists', async () => {
     // Set up mock for no cached URL
     (presignedUrlCacheService.getPresignedUrl as any).mockResolvedValue(null);
-    
+
     // Create config with presigned URL enabled
     const config = {
       storage: {
@@ -121,21 +129,26 @@ describe('VideoStorageService AWS S3 Presigned URL Integration', () => {
           accessKeyVar: 'AWS_ACCESS_KEY',
           secretKeyVar: 'AWS_SECRET_KEY',
           region: 'us-east-1',
-          expiresInSeconds: 3600
-        }
-      }
+          expiresInSeconds: 3600,
+        },
+      },
     };
-    
+
     // Set AWS credentials in env
     const env = {
       ...mockEnv,
       AWS_ACCESS_KEY: 'test-access-key',
-      AWS_SECRET_KEY: 'test-secret-key'
+      AWS_SECRET_KEY: 'test-secret-key',
     };
-    
+
     // Call fetchFromRemote
-    const result = await fetchFromRemote('video.mp4', 'https://test-bucket.s3.amazonaws.com', config, env);
-    
+    const result = await fetchFromRemote(
+      'video.mp4',
+      'https://test-bucket.s3.amazonaws.com',
+      config as any,
+      env as any
+    );
+
     // Verify it generated a new URL
     expect(presignedUrlCacheService.getPresignedUrl).toHaveBeenCalled();
     expect(presignedUrlCacheService.storePresignedUrl).toHaveBeenCalled();
