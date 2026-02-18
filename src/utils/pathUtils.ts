@@ -3,15 +3,13 @@
  * This is a compatibility layer that uses OriginResolver internally
  */
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
-import {
-  TransformParams,
-  TransformParamValue,
-} from '../domain/strategies/TransformationStrategy';
-import {
-  OriginMatchResult,
-  OriginResolver,
-} from '../services/origins/OriginResolver';
+import { TransformParams, TransformParamValue } from '../domain/strategies/TransformationStrategy';
+import { OriginMatchResult, OriginResolver } from '../services/origins/OriginResolver';
 import { Origin, Source } from '../services/videoStorage/interfaces';
+import { createCategoryLogger } from './logger';
+import * as presignedUrlUtils from './presignedUrlUtils';
+
+const pathLogger = createCategoryLogger('PathUtils');
 
 /**
  * Path pattern interface with extended configuration
@@ -24,7 +22,8 @@ export interface PathPattern {
   originUrl: string | null;
   quality?: string; // Optional quality preset for this path pattern
   cacheTtl?: number; // Legacy custom cache TTL for this path pattern (for backward compatibility)
-  ttl?: { // Modern TTL configuration structure
+  ttl?: {
+    // Modern TTL configuration structure
     ok: number;
     redirects: number;
     clientError: number;
@@ -33,7 +32,8 @@ export interface PathPattern {
   priority?: number; // Optional priority for pattern matching (higher values checked first)
   transformationOverrides?: Record<string, unknown>; // Optional parameter overrides for this path
   captureGroups?: string[]; // Names for regex capture groups
-  auth?: { // Auth configuration for this path pattern
+  auth?: {
+    // Auth configuration for this path pattern
     type: string;
     enabled?: boolean;
     accessKeyVar?: string;
@@ -63,9 +63,7 @@ function originToPathPattern(origin: Origin): PathPattern {
 
   if (origin.sources && origin.sources.length > 0) {
     // Sort by priority (lower number is higher)
-    const sortedSources = [...origin.sources].sort((a, b) =>
-      a.priority - b.priority
-    );
+    const sortedSources = [...origin.sources].sort((a, b) => a.priority - b.priority);
     source = sortedSources[0];
 
     // Set originUrl if available from source
@@ -87,23 +85,21 @@ function originToPathPattern(origin: Origin): PathPattern {
     captureGroups: origin.captureGroups,
     auth: source?.auth
       ? {
-        type: source.auth.type,
-        enabled: source.auth.enabled,
-        accessKeyVar: source.auth.accessKeyVar,
-        secretKeyVar: source.auth.secretKeyVar,
-        region: source.auth.region,
-        service: source.auth.service,
-        expiresInSeconds: source.auth.expiresInSeconds,
-        sessionTokenVar: source.auth.sessionTokenVar,
-      }
+          type: source.auth.type,
+          enabled: source.auth.enabled,
+          accessKeyVar: source.auth.accessKeyVar,
+          secretKeyVar: source.auth.secretKeyVar,
+          region: source.auth.region,
+          service: source.auth.service,
+          expiresInSeconds: source.auth.expiresInSeconds,
+          sessionTokenVar: source.auth.sessionTokenVar,
+        }
       : undefined,
   };
 }
 
 // Helper function to convert OriginMatchResult to PathMatchResult
-function originMatchToPathMatch(
-  originMatch: OriginMatchResult,
-): PathMatchResult {
+function originMatchToPathMatch(originMatch: OriginMatchResult): PathMatchResult {
   return {
     pattern: originToPathPattern(originMatch.origin),
     matched: originMatch.matched,
@@ -129,25 +125,11 @@ export function isCdnCgiMediaPath(path: string): boolean {
  * @param patterns Array of path patterns to check against (ignored, uses Origins from config)
  * @returns The matching pattern or null if none match
  */
-export function findMatchingPathPattern(
-  path: string,
-  patterns: PathPattern[],
-): PathPattern | null {
-  // Import logger utilities in case they're available
-  let logDebug: (message: string, data?: Record<string, unknown>) => void;
-  const console_debug = console.debug;
-
-  try {
-    // Define a fallback debug function to capture debug info during execution
-    // since we might not have access to the proper logging system
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils-Compat] ${message}`, data || {});
-    };
-  } catch (err) {
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils-Compat] ${message}`, data || {});
-    };
-  }
+export function findMatchingPathPattern(path: string, patterns: PathPattern[]): PathPattern | null {
+  // Use structured logger for debug output
+  const logDebug = (message: string, data?: Record<string, unknown>) => {
+    pathLogger.debug(message, data || {});
+  };
 
   // Log that we're using the new OriginResolver-based implementation
   logDebug('Using OriginResolver for path pattern matching', { path });
@@ -216,9 +198,7 @@ export function findMatchingPathPattern(
           return pattern;
         }
       } catch (err) {
-        const errorMessage = err instanceof Error
-          ? err.message
-          : 'Unknown error';
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
         logDebug(`Error testing legacy pattern #${i}: ${pattern.name}`, {
           matcher: pattern.matcher,
           error: errorMessage,
@@ -240,7 +220,7 @@ export function findMatchingPathPattern(
  */
 export function matchPathWithCaptures(
   path: string,
-  patterns: PathPattern[],
+  patterns: PathPattern[]
 ): PathMatchResult | null {
   // Get the config and initialize the resolver
   const configManager = VideoConfigurationManager.getInstance();
@@ -255,13 +235,10 @@ export function matchPathWithCaptures(
       return originMatchToPathMatch(originMatch);
     }
   } catch (err) {
-    console.debug(
-      '[PathUtils-Compat] Error finding matching origin with captures',
-      {
-        error: err instanceof Error ? err.message : String(err),
-        path,
-      },
-    );
+    pathLogger.debug('Error finding matching origin with captures', {
+      error: err instanceof Error ? err.message : String(err),
+      path,
+    });
   }
 
   // If no match found through Origins, and we have legacy patterns, use those as fallback
@@ -312,10 +289,7 @@ export function matchPathWithCaptures(
  * @param pattern The path pattern to use
  * @returns The extracted video ID or null if no match
  */
-export function extractVideoId(
-  path: string,
-  pattern: PathPattern,
-): string | null {
+export function extractVideoId(path: string, pattern: PathPattern): string | null {
   const result = matchPathWithCaptures(path, [pattern]);
   if (!result) return null;
 
@@ -342,9 +316,7 @@ export function normalizeVideoPath(path: string): string {
   const normalizedPath = path.replace(/([^:])\/\//g, '$1/');
 
   // Remove trailing slash if present
-  return normalizedPath.endsWith('/')
-    ? normalizedPath.slice(0, -1)
-    : normalizedPath;
+  return normalizedPath.endsWith('/') ? normalizedPath.slice(0, -1) : normalizedPath;
 }
 
 /**
@@ -353,10 +325,7 @@ export function normalizeVideoPath(path: string): string {
  * @param quality The quality to use (e.g., 720p, 1080p)
  * @returns The path with quality indicator
  */
-export function createQualityPath(
-  originalPath: string,
-  quality: string,
-): string {
+export function createQualityPath(originalPath: string, quality: string): string {
   // Don't modify paths that already contain quality indicators
   if (originalPath.includes('/quality/')) {
     return originalPath;
@@ -403,16 +372,14 @@ export function createQualityPath(
 export function buildCdnCgiMediaUrl(
   options: TransformParams,
   originUrl: string,
-  requestUrl?: string,
+  requestUrl?: string
 ): string {
   const result = buildCdnCgiMediaUrlImpl(options, originUrl, requestUrl, false);
   // Ensure we're returning a string, not a Promise
   if (typeof result === 'string') {
     return result;
   }
-  throw new Error(
-    'Unexpected Promise returned from synchronous buildCdnCgiMediaUrl',
-  );
+  throw new Error('Unexpected Promise returned from synchronous buildCdnCgiMediaUrl');
 }
 
 /**
@@ -429,16 +396,9 @@ export async function buildCdnCgiMediaUrlAsync(
   originUrl: string,
   requestUrl?: string,
   env?: any,
-  matchedPattern?: PathPattern | null,
+  matchedPattern?: PathPattern | null
 ): Promise<string> {
-  return buildCdnCgiMediaUrlImpl(
-    options,
-    originUrl,
-    requestUrl,
-    true,
-    env,
-    matchedPattern,
-  );
+  return buildCdnCgiMediaUrlImpl(options, originUrl, requestUrl, true, env, matchedPattern);
 }
 
 /**
@@ -457,21 +417,19 @@ function buildCdnCgiMediaUrlImpl(
   requestUrl?: string,
   waitForPresigning: boolean = false,
   environment?: any,
-  matchedPattern?: PathPattern | null,
+  matchedPattern?: PathPattern | null
 ): string | Promise<string> {
   const configManager = VideoConfigurationManager.getInstance();
   const { basePath } = configManager.getCdnCgiConfig();
 
-  // Initialize with a default fallback logger
-  let logDebug: (message: string, data?: Record<string, unknown>) => void = (
-    message,
-    data,
-  ) => {
-    console.debug(`[PathUtils-Compat] ${message}`, data || {});
+  // Initialize with the structured logger
+  let logDebug: (message: string, data?: Record<string, unknown>) => void = (message, data) => {
+    pathLogger.debug(message, data || {});
   };
 
   // Quick check for URLs that likely need presigning (without importing presignedUrlUtils)
-  const likelyNeedsPresigning = originUrl.includes('s3.') ||
+  const likelyNeedsPresigning =
+    originUrl.includes('s3.') ||
     originUrl.includes('amazonaws.com') ||
     originUrl.includes('prod-eu-west-1-mcdc-media') ||
     originUrl.includes('blob.core.windows.net') ||
@@ -482,13 +440,15 @@ function buildCdnCgiMediaUrlImpl(
 
   // Try to use the proper logger if possible
   try {
-    // We'll directly use the debug utility from loggerUtils
-    import('./loggerUtils').then(({ debug }) => {
-      // Update the logDebug function with the proper logger
-      logDebug = (message, data) => debug('PathUtils-Compat', message, data);
-    }).catch(() => {
-      // If import fails, we'll keep using the fallback logger
-    });
+    import('./logger')
+      .then(({ createCategoryLogger }) => {
+        const pathLogger = createCategoryLogger('PathUtils-Compat');
+        // Update the logDebug function with the proper logger
+        logDebug = (message, data) => pathLogger.debug(message, data);
+      })
+      .catch(() => {
+        // If import fails, we'll keep using the fallback logger
+      });
   } catch (err) {
     // Already using fallback logger, so no action needed
   }
@@ -501,7 +461,7 @@ function buildCdnCgiMediaUrlImpl(
         obj[key] = value;
         return obj;
       },
-      {} as Record<string, TransformParamValue>,
+      {} as Record<string, TransformParamValue>
     );
 
   // Format options as a comma-separated string
@@ -553,46 +513,41 @@ function buildCdnCgiMediaUrlImpl(
   const addBreadcrumbForUrl = (url: string, finalUrl: string) => {
     try {
       // Using dynamic import to avoid circular dependencies
-      import('../utils/requestContext').then(
-        ({ getCurrentContext, addBreadcrumb }) => {
+      import('../utils/requestContext')
+        .then(({ getCurrentContext, addBreadcrumb }) => {
           const context = getCurrentContext();
           if (context) {
-            addBreadcrumb(
-              context,
-              'CDN-CGI',
-              'Built media transformation URL',
-              {
-                // Include the full parameters for debugging
-                params: validOptions,
-                paramCount: Object.keys(validOptions).length,
-                // Include key parameters individually for easier filtering
-                width: validOptions.width,
-                height: validOptions.height,
-                format: validOptions.format,
-                quality: validOptions.quality,
-                mode: validOptions.mode,
-                fit: validOptions.fit,
-                compression: validOptions.compression,
-                duration: validOptions.duration,
-                time: validOptions.time,
-                hasDuration: 'duration' in validOptions,
-                // Include URL details
-                basePath,
-                baseUrl,
-                // Include source and transformation URLs
-                originalOriginUrl: originUrl,
-                finalOriginUrl: url,
-                requestUrl: requestUrl || 'not provided',
-                baseUrlSource: baseUrlSource,
-                // Include the complete URL for debugging
-                completeUrl: finalUrl,
-              },
-            );
+            addBreadcrumb(context, 'CDN-CGI', 'Built media transformation URL', {
+              // Include the full parameters for debugging
+              params: validOptions,
+              paramCount: Object.keys(validOptions).length,
+              // Include key parameters individually for easier filtering
+              width: validOptions.width,
+              height: validOptions.height,
+              format: validOptions.format,
+              quality: validOptions.quality,
+              mode: validOptions.mode,
+              fit: validOptions.fit,
+              compression: validOptions.compression,
+              duration: validOptions.duration,
+              time: validOptions.time,
+              hasDuration: 'duration' in validOptions,
+              // Include URL details
+              basePath,
+              baseUrl,
+              // Include source and transformation URLs
+              originalOriginUrl: originUrl,
+              finalOriginUrl: url,
+              requestUrl: requestUrl || 'not provided',
+              baseUrlSource: baseUrlSource,
+              // Include the complete URL for debugging
+              completeUrl: finalUrl,
+            });
           }
-        },
-      ).catch(() => {
-        // Silent fail if we can't add the breadcrumb
-      });
+        })
+        .catch(() => {
+          // Silent fail if we can't add the breadcrumb
+        });
     } catch (err) {
       // Silent fail if requestContext isn't available
     }
@@ -613,9 +568,6 @@ function buildCdnCgiMediaUrlImpl(
               likelyNeedsPresigning,
             });
 
-            // Dynamically import the presignedUrlUtils module
-            const presignedUrlUtils = await import('./presignedUrlUtils');
-
             // Get video config containing storage configuration
             const videoConfig = configManager.getConfig().storage;
 
@@ -624,11 +576,11 @@ function buildCdnCgiMediaUrlImpl(
               hasVideoConfig: !!videoConfig,
               storageInfo: videoConfig
                 ? {
-                  remoteUrl: videoConfig.remoteUrl,
-                  fallbackUrl: videoConfig.fallbackUrl,
-                  hasRemoteAuth: !!videoConfig.remoteAuth,
-                  hasFallbackAuth: !!videoConfig.fallbackAuth,
-                }
+                    remoteUrl: videoConfig.remoteUrl,
+                    fallbackUrl: videoConfig.fallbackUrl,
+                    hasRemoteAuth: !!videoConfig.remoteAuth,
+                    hasFallbackAuth: !!videoConfig.fallbackAuth,
+                  }
                 : 'none',
             });
 
@@ -648,56 +600,50 @@ function buildCdnCgiMediaUrlImpl(
             };
 
             // Prepare pattern context for presigning
-            const patternContextForPresigning: PresigningPatternContext | null =
-              matchedPattern
-                ? {
+            const patternContextForPresigning: PresigningPatternContext | null = matchedPattern
+              ? {
                   originUrl: matchedPattern.originUrl,
                   auth: matchedPattern.auth || null, // Pass pattern's auth config
                   name: matchedPattern.name,
                 }
-                : null;
+              : null;
 
             // Check if presigning is needed using the specific pattern context if available
             const needsSigning = matchedPattern
               ? presignedUrlUtils.needsPresigning(
-                originUrl,
-                videoConfig,
-                patternContextForPresigning,
-              ) // Pass context here too
+                  originUrl,
+                  videoConfig,
+                  patternContextForPresigning
+                ) // Pass context here too
               : presignedUrlUtils.needsPresigning(originUrl, videoConfig); // Fallback if no pattern
 
             if (videoConfig && needsSigning) {
               try {
                 // Generate the presigned URL first, passing the pattern context
-                const presignedUrl = await presignedUrlUtils
-                  .getOrGeneratePresignedUrl(
-                    env,
-                    originUrl, // Pass the constructed origin URL
-                    videoConfig,
-                    patternContextForPresigning, // <-- Pass the specific pattern context
-                  );
+                const presignedUrl = await presignedUrlUtils.getOrGeneratePresignedUrl(
+                  env,
+                  originUrl, // Pass the constructed origin URL
+                  videoConfig,
+                  patternContextForPresigning // <-- Pass the specific pattern context
+                );
 
                 if (presignedUrl && presignedUrl !== originUrl) {
                   // We need to properly encode the presigned URL for use in the CDN-CGI URL
                   // The CDN-CGI service needs the proper encoding to correctly access the content
 
                   // Call the encodePresignedUrl utility to handle proper encoding
-                  const encodedPresignedUrl = presignedUrlUtils
-                    .encodePresignedUrl(presignedUrl);
+                  const encodedPresignedUrl = presignedUrlUtils.encodePresignedUrl(presignedUrl);
 
-                  logDebug(
-                    'Using encoded presigned URL for CDN-CGI transformation',
-                    {
-                      hasPresignedUrl: true,
-                      originalUrlLength: originUrl.length,
-                      presignedUrlLength: presignedUrl.length,
-                      encodedUrlLength: encodedPresignedUrl.length,
-                      signaturePresent:
-                        presignedUrl.includes('X-Amz-Signature') ||
-                        presignedUrl.includes('Signature='),
-                      useEncoding: presignedUrl !== encodedPresignedUrl
-                    },
-                  );
+                  logDebug('Using encoded presigned URL for CDN-CGI transformation', {
+                    hasPresignedUrl: true,
+                    originalUrlLength: originUrl.length,
+                    presignedUrlLength: presignedUrl.length,
+                    encodedUrlLength: encodedPresignedUrl.length,
+                    signaturePresent:
+                      presignedUrl.includes('X-Amz-Signature') ||
+                      presignedUrl.includes('Signature='),
+                    useEncoding: presignedUrl !== encodedPresignedUrl,
+                  });
 
                   // Build the CDN-CGI URL with the encoded presigned URL
                   const finalUrl = buildFinalUrl(encodedPresignedUrl);
@@ -705,13 +651,10 @@ function buildCdnCgiMediaUrlImpl(
                   return finalUrl;
                 }
               } catch (err) {
-                logDebug(
-                  'Error generating presigned URL for Media Transformation',
-                  {
-                    error: err instanceof Error ? err.message : String(err),
-                    url: originUrl,
-                  },
-                );
+                logDebug('Error generating presigned URL for Media Transformation', {
+                  error: err instanceof Error ? err.message : String(err),
+                  url: originUrl,
+                });
               }
             } else {
               logDebug('URL does not need presigning', {

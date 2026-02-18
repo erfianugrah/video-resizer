@@ -9,9 +9,14 @@ import { loadFromKV, getFromKVWithCache } from './loaders';
 import { storeToKV, createUpdatedConfiguration } from './storage';
 import { getVideoConfig, getCacheConfig, getLoggingConfig, getDebugConfig } from './accessors';
 import { convertJsonToConfig, validateConfig } from './validation';
-import { createLogger, debug as pinoDebug, error as pinoError } from '../../utils/pinoLogger';
-import { getCurrentContext } from '../../utils/legacyLoggerAdapter';
+import { createCategoryLogger } from '../../utils/logger';
 import { logErrorWithContext, withErrorHandling } from '../../utils/errorHandlingUtils';
+import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
+import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
+import { LoggingConfigurationManager } from '../../config/LoggingConfigurationManager';
+import { DebugConfigurationManager } from '../../config/DebugConfigurationManager';
+
+const cfgLogger = createCategoryLogger('ConfigurationService');
 
 // Constants
 const CONFIG_KEY = 'worker-config';
@@ -19,7 +24,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes memory cache
 
 /**
  * Configuration Service class for dynamic worker configuration
- * 
+ *
  * Features:
  * - Non-blocking initialization for faster cold starts
  * - Memory caching with TTL to reduce KV operations
@@ -31,21 +36,19 @@ export class ConfigurationService {
    * Get performance metrics for the service
    */
   public getPerformanceMetrics(): Record<string, number | string> {
-    // Return formatted metrics 
+    // Return formatted metrics
     return getFormattedMetrics({
       ...this.metrics,
       isUpdating: this.isUpdating,
       initTimeSinceMs: Date.now() - this.initTimestamp,
-      timeSinceLastFetchMs: this.lastFetchTimestamp > 0 
-        ? Date.now() - this.lastFetchTimestamp 
-        : 0,
+      timeSinceLastFetchMs: this.lastFetchTimestamp > 0 ? Date.now() - this.lastFetchTimestamp : 0,
       cacheSize: this.memoryCache.size,
       configExists: this.config !== null,
       configVersion: this.config?.version || 'none',
-      configLastUpdated: this.config?.lastUpdated || 'none'
+      configLastUpdated: this.config?.lastUpdated || 'none',
     });
   }
-  
+
   // Singleton instance
   private static instance: ConfigurationService;
   private config: WorkerConfiguration | null = null;
@@ -56,17 +59,17 @@ export class ConfigurationService {
   private kvUpdatePromise: Promise<void> | null = null;
   private isUpdating = false;
   private initTimestamp: number = Date.now();
-  
+
   // Metrics for performance tracking
   private metrics = createMetrics();
-  
+
   /**
    * Private constructor for singleton pattern
    */
   private constructor() {
     this.memoryCache = new ConfigurationCache(this.CACHE_TTL_MS);
   }
-  
+
   /**
    * Get the singleton instance of the ConfigurationService
    */
@@ -76,14 +79,14 @@ export class ConfigurationService {
     }
     return ConfigurationService.instance;
   }
-  
+
   /**
    * Reset the singleton instance (for testing)
    */
   public static resetInstance(): void {
     ConfigurationService.instance = new ConfigurationService();
   }
-  
+
   /**
    * Check if configuration should be refreshed from KV
    */
@@ -92,35 +95,30 @@ export class ConfigurationService {
       // No configuration loaded yet, should refresh
       return true;
     }
-    
+
     if (this.lastFetchTimestamp === 0) {
       // Never fetched from KV before, should refresh
       return true;
     }
-    
+
     // Check if TTL has expired
     const elapsed = Date.now() - this.lastFetchTimestamp;
     return elapsed > this.CACHE_TTL_MS;
   }
-  
+
   /**
    * Initialize the configuration service
    * This method is non-blocking for faster cold starts
    */
   public initialize(env: ConfigEnvironment): void {
-    const requestContext = getCurrentContext();
-    const logger = requestContext ? createLogger(requestContext) : null;
-    
-    if (logger && requestContext) {
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Initializing configuration service', {
-        environment: env.ENVIRONMENT || 'unknown',
-        initTimestamp: this.initTimestamp
-      });
-    }
-    
+    cfgLogger.debug('Initializing configuration service', {
+      environment: env.ENVIRONMENT || 'unknown',
+      initTimestamp: this.initTimestamp,
+    });
+
     // Track metrics for initialization
     this.metrics.lastInitTimestamp = Date.now();
-    
+
     // Start KV configuration loading
     // Configuration will only come from KV - no fallback
     this.kvUpdatePromise = this.loadAndDistributeKVConfiguration(env)
@@ -128,228 +126,175 @@ export class ConfigurationService {
         // Update initialization metrics
         this.metrics.initDurationMs = Date.now() - this.metrics.lastInitTimestamp;
         this.metrics.isInitialized = true;
-        
-        if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration service initialized', {
-            durationMs: this.metrics.initDurationMs
-          });
-        }
+
+        cfgLogger.debug('Configuration service initialized', {
+          durationMs: this.metrics.initDurationMs,
+        });
       })
-      .catch(error => {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'Error initializing configuration service', {
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
+      .catch((error) => {
+        cfgLogger.error('Error initializing configuration service', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error; // Re-throw to ensure we know configuration failed
       });
   }
-  
-  
+
   /**
    * Trigger an update from KV storage
    * This can be used to force a refresh of the configuration
    */
   public async triggerKVUpdate(env: ConfigEnvironment): Promise<void> {
-    const requestContext = getCurrentContext();
-    const logger = requestContext ? createLogger(requestContext) : null;
-    
     if (this.isUpdating) {
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'KV update already in progress, skipping');
-      }
+      cfgLogger.debug('KV update already in progress, skipping');
       return;
     }
-    
+
     this.isUpdating = true;
-    
+
     try {
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'Triggering KV configuration update');
-      }
-      
+      cfgLogger.debug('Triggering KV configuration update');
+
       await this.loadAndDistributeKVConfiguration(env);
-      
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'KV configuration updated successfully');
-      }
+
+      cfgLogger.debug('KV configuration updated successfully');
     } catch (error) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Error updating KV configuration', {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
+      cfgLogger.error('Error updating KV configuration', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       this.isUpdating = false;
     }
   }
-  
+
   /**
    * Load configuration from KV and distribute to other services
    */
   private async loadAndDistributeKVConfiguration(env: ConfigEnvironment): Promise<void> {
-    const requestContext = getCurrentContext();
-    const logger = requestContext ? createLogger(requestContext) : null;
-    
     // Check if we should refresh from KV
     if (!this.shouldRefreshFromKV()) {
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration is still fresh, skipping KV fetch', {
-          timeSinceLastFetchMs: Date.now() - this.lastFetchTimestamp,
-          ttlMs: this.CACHE_TTL_MS
-        });
-      }
+      cfgLogger.debug('Configuration is still fresh, skipping KV fetch', {
+        timeSinceLastFetchMs: Date.now() - this.lastFetchTimestamp,
+        ttlMs: this.CACHE_TTL_MS,
+      });
       return;
     }
-    
-    if (logger && requestContext) {
-      pinoDebug(requestContext, logger, 'ConfigurationService', 'Loading configuration from KV');
-    }
-    
+
+    cfgLogger.debug('Loading configuration from KV');
+
     try {
       // Attempt to load from KV
       const kvConfig = await getFromKVWithCache(env, this.memoryCache, this.metrics);
-      
+
       // Update last fetch timestamp
       this.lastFetchTimestamp = Date.now();
-      
+
       if (!kvConfig) {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'No configuration found in KV');
-        }
+        cfgLogger.error('No configuration found in KV');
         throw new ConfigurationError('No configuration available in KV storage');
       }
-      
+
       // Update our configuration
       this.config = kvConfig;
-      
+
       // Distribute the configuration to other services
       await this.distributeConfiguration(kvConfig);
-      
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration loaded and distributed', {
-          version: kvConfig.version,
-          lastUpdated: kvConfig.lastUpdated
-        });
-      }
+
+      cfgLogger.debug('Configuration loaded and distributed', {
+        version: kvConfig.version,
+        lastUpdated: kvConfig.lastUpdated,
+      });
     } catch (error) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Error loading configuration from KV', {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
+      cfgLogger.error('Error loading configuration from KV', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }
-  
+
   /**
    * Distribute configuration to other services
    * This method is responsible for any specific distribution logic
    */
   private async distributeConfiguration(config: WorkerConfiguration): Promise<void> {
-    const requestContext = getCurrentContext();
-    const logger = requestContext ? createLogger(requestContext) : null;
-    
     try {
-      // Import other configuration managers that need updates
-      const { VideoConfigurationManager } = await import('../../config/VideoConfigurationManager');
-      const { CacheConfigurationManager } = await import('../../config/CacheConfigurationManager');
-      const { LoggingConfigurationManager } = await import('../../config/LoggingConfigurationManager');
-      const { DebugConfigurationManager } = await import('../../config/DebugConfigurationManager');
-      
       // Update video configuration
       try {
         VideoConfigurationManager.getInstance().updateConfig(config.video);
       } catch (videoError) {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'Error updating video configuration', {
-            error: videoError instanceof Error ? videoError.message : String(videoError)
-          });
-        }
+        cfgLogger.error('Error updating video configuration', {
+          error: videoError instanceof Error ? videoError.message : String(videoError),
+        });
         this.metrics.distributionErrorCount = (this.metrics.distributionErrorCount as number) + 1;
       }
-      
+
       // Update cache configuration
       try {
         CacheConfigurationManager.getInstance().updateConfig(config.cache);
       } catch (cacheError) {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'Error updating cache configuration', {
-            error: cacheError instanceof Error ? cacheError.message : String(cacheError)
-          });
-        }
+        cfgLogger.error('Error updating cache configuration', {
+          error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+        });
         this.metrics.distributionErrorCount = (this.metrics.distributionErrorCount as number) + 1;
       }
-      
+
       // Update logging configuration
       try {
         LoggingConfigurationManager.getInstance().updateConfig(config.logging);
       } catch (loggingError) {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'Error updating logging configuration', {
-            error: loggingError instanceof Error ? loggingError.message : String(loggingError)
-          });
-        }
+        cfgLogger.error('Error updating logging configuration', {
+          error: loggingError instanceof Error ? loggingError.message : String(loggingError),
+        });
         this.metrics.distributionErrorCount = (this.metrics.distributionErrorCount as number) + 1;
       }
-      
+
       // Update debug configuration
       try {
         DebugConfigurationManager.getInstance().updateConfig(config.debug);
       } catch (debugError) {
-        if (logger && requestContext) {
-          pinoError(requestContext, logger, 'ConfigurationService', 'Error updating debug configuration', {
-            error: debugError instanceof Error ? debugError.message : String(debugError)
-          });
-        }
+        cfgLogger.error('Error updating debug configuration', {
+          error: debugError instanceof Error ? debugError.message : String(debugError),
+        });
         this.metrics.distributionErrorCount = (this.metrics.distributionErrorCount as number) + 1;
       }
-      
+
       // Update metrics
       this.metrics.configDistributionCount = (this.metrics.configDistributionCount as number) + 1;
-      
-      if (logger && requestContext) {
-        pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration distributed to all services', {
-          version: config.version
-        });
-      }
+
+      cfgLogger.debug('Configuration distributed to all services', {
+        version: config.version,
+      });
     } catch (error) {
-      if (logger && requestContext) {
-        pinoError(requestContext, logger, 'ConfigurationService', 'Error distributing configuration', {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
+      cfgLogger.error('Error distributing configuration', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.metrics.distributionErrorCount = (this.metrics.distributionErrorCount as number) + 1;
       throw error;
     }
   }
-  
+
   /**
    * Load configuration with error handling
    * This is a wrapper for loadAndDistributeKVConfiguration with error handling
    */
-  public loadConfiguration = withErrorHandling<
-    [ConfigEnvironment],
-    WorkerConfiguration | null
-  >(
+  public loadConfiguration = withErrorHandling<[ConfigEnvironment], WorkerConfiguration | null>(
     async (env: ConfigEnvironment): Promise<WorkerConfiguration | null> => {
       if (this.kvUpdatePromise) {
         // Wait for any pending updates to complete
         await this.kvUpdatePromise;
       }
-      
+
       // Trigger a KV update if needed
       await this.loadAndDistributeKVConfiguration(env);
-      
+
       return this.config;
     },
     {
       functionName: 'loadConfiguration',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
-  
+
   /**
    * Store configuration to KV with error handling
    * This validates and stores the configuration to KV
@@ -359,144 +304,118 @@ export class ConfigurationService {
     boolean
   >(
     async (env: ConfigEnvironment, updates: Partial<WorkerConfiguration>): Promise<boolean> => {
-      const requestContext = getCurrentContext();
-      const logger = requestContext ? createLogger(requestContext) : null;
-      
       let configToStore: WorkerConfiguration;
-      
+
       // Check if we're storing a complete configuration or just updates
-      const isCompleteConfig = 
-        'version' in updates && 
-        'video' in updates && 
-        'cache' in updates && 
-        'logging' in updates;
-      
+      const isCompleteConfig =
+        'version' in updates && 'video' in updates && 'cache' in updates && 'logging' in updates;
+
       // If it's a complete configuration, use it directly
       if (isCompleteConfig) {
-        if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'Storing complete configuration', {
-            version: (updates as WorkerConfiguration).version
-          });
-        }
-        
+        cfgLogger.debug('Storing complete configuration', {
+          version: (updates as WorkerConfiguration).version,
+        });
+
         // Validate the configuration
         validateConfig(updates as WorkerConfiguration);
         configToStore = updates as WorkerConfiguration;
       } else {
         // Ensure we have a base configuration for updates
         if (!this.config) {
-          if (logger && requestContext) {
-            pinoError(requestContext, logger, 'ConfigurationService', 'No base configuration available for update');
-          }
-          
+          cfgLogger.error('No base configuration available for update');
+
           throw new ConfigurationError('No base configuration available for update');
         }
-        
+
         // Create updated configuration
         configToStore = createUpdatedConfiguration(this.config, updates);
-        
+
         // Validate the updated configuration
         validateConfig(configToStore);
-        
-        if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'Storing updated configuration', {
-            version: configToStore.version,
-            previousVersion: this.config.version
-          });
-        }
+
+        cfgLogger.debug('Storing updated configuration', {
+          version: configToStore.version,
+          previousVersion: this.config.version,
+        });
       }
-      
+
       // Store to KV
       const success = await storeToKV(env, configToStore, this.memoryCache, this.metrics);
-      
+
       if (success) {
         // Update local configuration
         this.config = configToStore;
-        
+
         // Distribute updated configuration
         await this.distributeConfiguration(configToStore);
-        
-        if (logger && requestContext) {
-          pinoDebug(requestContext, logger, 'ConfigurationService', 'Configuration stored and distributed', {
-            version: configToStore.version
-          });
-        }
+
+        cfgLogger.debug('Configuration stored and distributed', {
+          version: configToStore.version,
+        });
       }
-      
+
       return success;
     },
     {
       functionName: 'storeConfiguration',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
-  
+
   /**
    * Get video configuration
    */
-  public getVideoConfig = withErrorHandling<
-    [],
-    any | null
-  >(
+  public getVideoConfig = withErrorHandling<[], any | null>(
     (): any | null => {
       return getVideoConfig(this.config);
     },
     {
       functionName: 'getVideoConfig',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
-  
+
   /**
    * Get cache configuration
    */
-  public getCacheConfig = withErrorHandling<
-    [],
-    any | null
-  >(
+  public getCacheConfig = withErrorHandling<[], any | null>(
     (): any | null => {
       return getCacheConfig(this.config);
     },
     {
       functionName: 'getCacheConfig',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
-  
+
   /**
    * Get logging configuration
    */
-  public getLoggingConfig = withErrorHandling<
-    [],
-    any | null
-  >(
+  public getLoggingConfig = withErrorHandling<[], any | null>(
     (): any | null => {
       return getLoggingConfig(this.config);
     },
     {
       functionName: 'getLoggingConfig',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
-  
+
   /**
    * Get debug configuration
    */
-  public getDebugConfig = withErrorHandling<
-    [],
-    any | null
-  >(
+  public getDebugConfig = withErrorHandling<[], any | null>(
     (): any | null => {
       return getDebugConfig(this.config);
     },
     {
       functionName: 'getDebugConfig',
       component: 'ConfigurationService',
-      logErrors: true
+      logErrors: true,
     }
   );
 }

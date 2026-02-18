@@ -3,7 +3,7 @@
  * This version eliminates the redundant "profiles" section in the configuration
  */
 
-import { getCurrentContext } from './legacyLoggerAdapter';
+import { getCurrentContext } from './requestContext';
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { createCategoryLogger } from './logger';
 
@@ -15,7 +15,7 @@ const { debug: logDebug } = logger;
  * Determine the TTL for a cached response using a simplified approach
  * This function only looks at path patterns in the video config, eliminating
  * redundancy and confusion with the separate profiles system
- * 
+ *
  * @param response - The response to cache
  * @param config - Global cache configuration
  * @returns TTL in seconds
@@ -24,25 +24,25 @@ export function determineTTL(response: Response, config: any): number {
   // Get status and category
   const status = response.status;
   const statusCategory = Math.floor(status / 100);
-  
+
   // Get request context to access URL path
   const requestContext = getCurrentContext();
   const url = requestContext?.url ? new URL(requestContext.url) : null;
   const path = url?.pathname || '';
-  
+
   // Initialize ttlConfig as null
   let ttlConfig = null;
-  
+
   // Try to match against path patterns
   try {
     const videoConfig = VideoConfigurationManager.getInstance().getConfig();
-    
+
     if (videoConfig?.pathPatterns && Array.isArray(videoConfig.pathPatterns)) {
       // First look for specific path pattern matches
       for (const pattern of videoConfig.pathPatterns) {
         // Skip the default pattern, we'll use it as fallback
         if (pattern.name === 'default') continue;
-        
+
         if (pattern.matcher && pattern.ttl) {
           try {
             const regex = new RegExp(pattern.matcher);
@@ -52,7 +52,7 @@ export function determineTTL(response: Response, config: any): number {
                 path,
                 patternName: pattern.name || 'unnamed',
                 ttl: ttlConfig,
-                source: 'path-pattern'
+                source: 'path-pattern',
               });
               break;
             }
@@ -61,21 +61,21 @@ export function determineTTL(response: Response, config: any): number {
             logDebug('Invalid regex in path pattern', {
               patternName: pattern.name || 'unnamed',
               matcher: pattern.matcher,
-              error: err instanceof Error ? err.message : String(err)
+              error: err instanceof Error ? err.message : String(err),
             });
           }
         }
       }
-      
+
       // If no specific pattern matched, look for the default pattern
       if (!ttlConfig) {
-        const defaultPattern = videoConfig.pathPatterns.find(p => p.name === 'default');
+        const defaultPattern = videoConfig.pathPatterns.find((p) => p.name === 'default');
         if (defaultPattern?.ttl) {
           ttlConfig = defaultPattern.ttl;
           logDebug('Using default path pattern TTL', {
             path,
             ttl: ttlConfig,
-            source: 'default-path-pattern'
+            source: 'default-path-pattern',
           });
         }
       }
@@ -84,30 +84,30 @@ export function determineTTL(response: Response, config: any): number {
     // Handle any errors in path pattern matching
     logDebug('Error matching path patterns for TTL', {
       path,
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
     });
   }
-  
+
   // Fallback to global cache settings if no path pattern matched
   // Default TTLs from configuration or hardcoded values
   let defaultTTLs = {
-    ok: 300,         // 5 minutes
-    redirects: 300,  // 5 minutes
+    ok: 300, // 5 minutes
+    redirects: 300, // 5 minutes
     clientError: 60, // 1 minute
-    serverError: 10  // 10 seconds
+    serverError: 10, // 10 seconds
   };
-  
+
   // Try to use global TTL from config if available
   if (config.ttl) {
     defaultTTLs = { ...defaultTTLs, ...config.ttl };
     if (!ttlConfig) {
       logDebug('Using global cache TTL settings', {
         ttl: config.ttl,
-        source: 'global-config'
+        source: 'global-config',
       });
     }
   }
-  
+
   // Determine TTL based on status code using the found configuration
   switch (statusCategory) {
     case 2: // Success

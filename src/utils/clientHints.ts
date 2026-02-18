@@ -2,7 +2,9 @@
  * Client Hints detection utilities for video requests
  * Enhanced with standardized error handling for robustness
  */
-import { debug } from './loggerUtils';
+import { createCategoryLogger } from './logger';
+
+const logger = createCategoryLogger('ClientHints');
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { tryOrDefault, tryOrNull, logErrorWithContext } from './errorHandlingUtils';
 
@@ -37,12 +39,15 @@ function hasClientHintsImpl(request: Request): boolean {
   ];
 
   // Log all client hints headers for debugging
-  const hintsDebug = clientHintHeaders.reduce((result, header) => {
-    result[header] = request.headers.get(header);
-    return result;
-  }, {} as Record<string, string | null>);
+  const hintsDebug = clientHintHeaders.reduce(
+    (result, header) => {
+      result[header] = request.headers.get(header);
+      return result;
+    },
+    {} as Record<string, string | null>
+  );
 
-  debug('ClientHints', 'Client Hints Headers', hintsDebug);
+  logger.debug('Client Hints Headers', hintsDebug);
 
   // Check if any of the headers have a non-empty value
   return clientHintHeaders.some((header) => {
@@ -54,7 +59,7 @@ function hasClientHintsImpl(request: Request): boolean {
 /**
  * Check if client hints headers are present in the request
  * Uses tryOrDefault for safe client hints detection with proper error handling
- * 
+ *
  * @param request - The incoming request
  * @returns True if client hints are available, false on error
  */
@@ -63,7 +68,7 @@ export const hasClientHints = tryOrDefault<[Request], boolean>(
   {
     functionName: 'hasClientHints',
     component: 'ClientHints',
-    logErrors: true
+    logErrors: true,
   },
   false // Safe default is false if detection fails
 );
@@ -88,7 +93,7 @@ function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
   const actualViewportWidth = viewportWidth || viewportWithLegacy;
   const actualDpr = dpr || '1';
 
-  debug('ClientHints', 'Client Hints Values', {
+  logger.debug('Client Hints Values', {
     viewportWidth,
     dpr,
     width,
@@ -96,27 +101,27 @@ function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
     prefersReducedMotion,
     saveData,
     ect,
-    downlink
+    downlink,
   });
 
   // Calculate specific dimensions based on viewport size
   if (actualViewportWidth) {
     const vw = parseInt(actualViewportWidth);
-    
+
     // Get configuration manager instance
     const configManager = VideoConfigurationManager.getInstance();
-    
+
     // Get sorted breakpoints
-    const breakpointValues = Object.values(configManager.getResponsiveConfig().breakpoints).sort((a, b) => a - b);
-    
+    const breakpointValues = Object.values(configManager.getResponsiveConfig().breakpoints).sort(
+      (a, b) => a - b
+    );
+
     // Build breakpoints array dynamically
     const breakpoints = [];
     for (let i = 0; i < breakpointValues.length; i++) {
       const currentWidth = breakpointValues[i];
-      const maxWidth = i < breakpointValues.length - 1 
-        ? breakpointValues[i + 1] - 1 
-        : Infinity;
-      
+      const maxWidth = i < breakpointValues.length - 1 ? breakpointValues[i + 1] - 1 : Infinity;
+
       breakpoints.push({
         maxWidth,
         width: currentWidth,
@@ -129,8 +134,8 @@ function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
     }
 
     // Find appropriate width based on viewport
-    const breakpoint = breakpoints.find((bp) => vw <= bp.maxWidth) || 
-      breakpoints[breakpoints.length - 1];
+    const breakpoint =
+      breakpoints.find((bp) => vw <= bp.maxWidth) || breakpoints[breakpoints.length - 1];
     let optimizedWidth = breakpoint.width;
 
     // Apply DPR adjustment for high-DPI screens
@@ -156,14 +161,14 @@ function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
     }
 
     // Calculate height to maintain 16:9 aspect ratio
-    const optimizedHeight = Math.round(optimizedWidth * 9 / 16);
+    const optimizedHeight = Math.round((optimizedWidth * 9) / 16);
 
     return {
       width: optimizedWidth,
       height: optimizedHeight,
       source: `client-hints-${optimizedWidth}p`,
       viewportWidth: vw,
-      dpr: actualDpr ? parseFloat(actualDpr) : 1.0
+      dpr: actualDpr ? parseFloat(actualDpr) : 1.0,
     };
   }
 
@@ -178,7 +183,7 @@ function getVideoSizeFromClientHintsImpl(request: Request): VideoSize {
 /**
  * Get responsive video size based on client hints headers
  * Uses tryOrDefault for safe size detection with proper error handling
- * 
+ *
  * @param request - The incoming request
  * @returns Video size settings based on client hints, or default values on error
  */
@@ -187,13 +192,13 @@ export const getVideoSizeFromClientHints = tryOrDefault<[Request], VideoSize>(
   {
     functionName: 'getVideoSizeFromClientHints',
     component: 'ClientHints',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default values if client hints processing fails
     width: 854,
     height: 480,
-    source: 'client-hints-error-fallback'
+    source: 'client-hints-error-fallback',
   }
 );
 
@@ -215,7 +220,7 @@ export interface NetworkQualityInfo {
  * Analyzes connection quality based on client hints
  * This is a progressive enhancement that uses network hints when available,
  * but provides reasonable defaults when they're not.
- * 
+ *
  * @param request - The incoming request
  * @returns Network quality information object
  */
@@ -225,33 +230,33 @@ function getNetworkQualityImpl(request: Request): NetworkQualityInfo {
   const rtt = request.headers.get('RTT'); // Round Trip Time in ms
   const saveDataHeader = request.headers.get('Sec-CH-Save-Data');
   const saveData = saveDataHeader === 'on';
-  
+
   // Log available network metrics for debugging
-  debug('ClientHints', 'Network Quality Metrics', { 
-    ect, 
-    downlink, 
-    rtt, 
+  logger.debug('Network Quality Metrics', {
+    ect,
+    downlink,
+    rtt,
     saveData,
-    hasNetworkHints: !!(ect || downlink || rtt)
+    hasNetworkHints: !!(ect || downlink || rtt),
   });
-  
+
   // Default result with medium quality
   const result: NetworkQualityInfo = {
     quality: 'medium',
     source: 'default',
-    supportsHints: false
+    supportsHints: false,
   };
-  
+
   // Check if device provides any network hints
   if (ect || downlink || rtt) {
     result.supportsHints = true;
-    
+
     // Store raw values for reference
     if (ect) result.ect = ect;
     if (downlink) result.downlink = parseFloat(downlink);
     if (rtt) result.rtt = parseFloat(rtt);
     if (saveDataHeader) result.saveData = saveData;
-    
+
     // Determine quality based on ECT
     if (ect) {
       if (ect === 'slow-2g' || ect === '2g') {
@@ -268,7 +273,7 @@ function getNetworkQualityImpl(request: Request): NetworkQualityInfo {
         return result;
       }
     }
-    
+
     // If no ECT but we have downlink information
     if (downlink) {
       const bandwidth = parseFloat(downlink);
@@ -309,7 +314,7 @@ function getNetworkQualityImpl(request: Request): NetworkQualityInfo {
  * Uses tryOrDefault for safe network quality detection with proper error handling
  * This is a progressive enhancement that uses network hints when available,
  * but provides reasonable defaults when they're not.
- * 
+ *
  * @param request - The incoming request
  * @returns Network quality information object, or safe defaults on error
  */
@@ -318,12 +323,12 @@ export const getNetworkQuality = tryOrDefault<[Request], NetworkQualityInfo>(
   {
     functionName: 'getNetworkQuality',
     component: 'ClientHints',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default values for network quality if detection fails
     quality: 'medium',
     source: 'error-fallback',
-    supportsHints: false
+    supportsHints: false,
   }
 );

@@ -1,6 +1,6 @@
 # Video Resizer API Reference
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 This document provides a comprehensive reference of public APIs, interfaces, and important types in the Video Resizer.
 
@@ -26,9 +26,9 @@ These are the main entry points for the Video Resizer.
 
 ```typescript
 handleVideoRequest(
-  request: Request, 
-  config: EnvironmentConfig, 
-  env?: EnvVariables, 
+  request: Request,
+  config: EnvironmentConfig,
+  env?: EnvVariables,
   ctx?: ExecutionContext
 ): Promise<Response>
 ```
@@ -36,6 +36,7 @@ handleVideoRequest(
 Main handler for processing video transformation requests.
 
 **Parameters:**
+
 - `request`: Cloudflare Workers Request object
 - `config`: Environment configuration
 - `env`: Cloudflare environment bindings (optional)
@@ -44,12 +45,13 @@ Main handler for processing video transformation requests.
 **Returns:** Promise resolving to a Response object
 
 **Example:**
+
 ```typescript
 // In your worker.js or index.ts
 export default {
   async fetch(request, env, ctx) {
     return handleVideoRequest(request, getConfig(), env, ctx);
-  }
+  },
 };
 ```
 
@@ -57,7 +59,7 @@ export default {
 
 ```typescript
 handleConfigUpload(
-  request: Request, 
+  request: Request,
   env: EnvVariables
 ): Promise<Response>
 ```
@@ -65,6 +67,7 @@ handleConfigUpload(
 Handles uploading new configuration to KV store.
 
 **Parameters:**
+
 - `request`: Request containing configuration data
 - `env`: Environment variables with KV bindings
 
@@ -74,7 +77,7 @@ Handles uploading new configuration to KV store.
 
 ```typescript
 handleConfigGet(
-  request: Request, 
+  request: Request,
   env: EnvVariables
 ): Promise<Response>
 ```
@@ -82,6 +85,7 @@ handleConfigGet(
 Retrieves current configuration from KV store.
 
 **Parameters:**
+
 - `request`: Request with query parameters
 - `env`: Environment variables with KV bindings
 
@@ -124,14 +128,16 @@ VideoConfigurationManager.getDerivative(name: string): VideoDerivative | null
 Gets a video derivative configuration by name.
 
 **Parameters:**
+
 - `name`: Name of the derivative (e.g., "high", "medium", "low", "mobile")
 
 **Returns:** VideoDerivative if found, null otherwise
 
 **Example:**
+
 ```typescript
 const videoConfig = VideoConfigurationManager.getInstance();
-const mobileDerivative = videoConfig.getDerivative("mobile");
+const mobileDerivative = videoConfig.getDerivative('mobile');
 if (mobileDerivative) {
   console.log(`Mobile derivative width: ${mobileDerivative.width}`);
 }
@@ -170,6 +176,7 @@ CacheConfigurationManager.shouldBypassCache(url: URL): boolean
 Determines if caching should be bypassed for the given URL.
 
 **Parameters:**
+
 - `url`: URL to check
 
 **Returns:** true if cache should be bypassed, false otherwise
@@ -207,6 +214,7 @@ DebugConfigurationManager.shouldEnableForRequest(request: Request): boolean
 Determines if debug should be enabled for a specific request.
 
 **Parameters:**
+
 - `request`: Request to check
 
 **Returns:** true if debug should be enabled, false otherwise
@@ -224,6 +232,7 @@ new TransformVideoCommand(context: VideoTransformContext)
 Creates a new command for transforming video.
 
 **Parameters:**
+
 - `context`: Context containing request information and options
 
 ```typescript
@@ -235,10 +244,11 @@ Executes the video transformation command.
 **Returns:** Promise resolving to a Response with transformed video
 
 **Example:**
+
 ```typescript
 const context = {
   request,
-  options: { width: 720, height: 480, quality: "high" },
+  options: { width: 720, height: 480, quality: 'high' },
   url: new URL(request.url),
   environment: env,
   // other required context properties
@@ -252,10 +262,10 @@ const response = await command.execute();
 
 ```typescript
 transformVideo(
-  request: Request, 
-  options: VideoTransformOptions, 
-  pathPatterns: PathPattern[], 
-  debugInfo?: DebugInfo, 
+  request: Request,
+  options: VideoTransformOptions,
+  pathPatterns: PathPattern[],
+  debugInfo?: DebugInfo,
   env?: EnvWithAssets
 ): Promise<Response>
 ```
@@ -263,6 +273,7 @@ transformVideo(
 Main service function for video transformation.
 
 **Parameters:**
+
 - `request`: Incoming request
 - `options`: Transformation options
 - `pathPatterns`: Available path patterns
@@ -278,14 +289,15 @@ getBestVideoFormat(request: Request): string
 Determines optimal video format based on Accept headers.
 
 **Parameters:**
+
 - `request`: Incoming request
 
 **Returns:** Best video format (e.g., "mp4", "webm")
 
 ```typescript
 estimateOptimalBitrate(
-  width: number, 
-  height: number, 
+  width: number,
+  height: number,
   networkQuality: string
 ): number
 ```
@@ -293,6 +305,7 @@ estimateOptimalBitrate(
 Estimates optimal bitrate based on resolution and network conditions.
 
 **Parameters:**
+
 - `width`: Video width
 - `height`: Video height
 - `networkQuality`: Network quality identifier (e.g., "4g", "3g", "2g")
@@ -310,6 +323,7 @@ prepareVideoTransformation(
 Prepares transformation parameters for a video request.
 
 **Parameters:**
+
 - `context`: Transformation context
 
 **Returns:** Promise resolving to prepared transformation parameters
@@ -323,6 +337,7 @@ executeTransformation(
 Executes the video transformation using the appropriate strategy.
 
 **Parameters:**
+
 - `params`: Execution parameters
 
 **Returns:** Promise resolving to transformation result
@@ -346,13 +361,15 @@ StrategyFactory.createStrategy(mode: string): TransformationStrategy
 Creates a strategy based on transformation mode.
 
 **Parameters:**
-- `mode`: Transformation mode ("video", "frame", or "spritesheet")
+
+- `mode`: Transformation mode ("video", "frame", "spritesheet", or "audio")
 
 **Returns:** Appropriate transformation strategy
 
 **Example:**
+
 ```typescript
-const strategy = StrategyFactory.createStrategy("frame");
+const strategy = StrategyFactory.createStrategy('frame');
 const params = strategy.prepareTransformParams(context);
 await strategy.validateOptions(context.options);
 ```
@@ -365,7 +382,7 @@ These APIs handle caching and storage operations.
 
 ```typescript
 VideoStorageService.fetchVideo(
-  url: string, 
+  url: string,
   options?: FetchOptions
 ): Promise<Response>
 ```
@@ -373,6 +390,7 @@ VideoStorageService.fetchVideo(
 Fetches a video from the specified URL.
 
 **Parameters:**
+
 - `url`: URL of the video
 - `options`: Optional fetch options
 
@@ -380,7 +398,7 @@ Fetches a video from the specified URL.
 
 ```typescript
 VideoStorageService.getVideoFromOrigin(
-  url: string, 
+  url: string,
   options?: FetchOptions
 ): Promise<Response>
 ```
@@ -388,6 +406,7 @@ VideoStorageService.getVideoFromOrigin(
 Gets a video directly from origin.
 
 **Parameters:**
+
 - `url`: URL of the video
 - `options`: Optional fetch options
 
@@ -395,8 +414,8 @@ Gets a video directly from origin.
 
 ```typescript
 VideoStorageService.generateCacheTags(
-  path: string, 
-  options: Record<string, any>, 
+  path: string,
+  options: Record<string, any>,
   headers: Headers
 ): string[]
 ```
@@ -404,6 +423,7 @@ VideoStorageService.generateCacheTags(
 Generates cache tags for a video.
 
 **Parameters:**
+
 - `path`: Video path
 - `options`: Transformation options
 - `headers`: Response headers
@@ -414,7 +434,7 @@ Generates cache tags for a video.
 
 ```typescript
 cacheManagementService.getCachedResponse(
-  request: Request, 
+  request: Request,
   env: EnvVariables
 ): Promise<Response | null>
 ```
@@ -422,6 +442,7 @@ cacheManagementService.getCachedResponse(
 Gets a cached response for a request.
 
 **Parameters:**
+
 - `request`: The request to get a cached response for
 - `env`: Environment variables with cache bindings
 
@@ -429,8 +450,8 @@ Gets a cached response for a request.
 
 ```typescript
 cacheManagementService.cacheResponse(
-  request: Request, 
-  response: Response, 
+  request: Request,
+  response: Response,
   env: EnvVariables
 ): Promise<Response>
 ```
@@ -438,6 +459,7 @@ cacheManagementService.cacheResponse(
 Caches a response for a request.
 
 **Parameters:**
+
 - `request`: The request to cache
 - `response`: The response to cache
 - `env`: Environment variables with cache bindings
@@ -461,11 +483,12 @@ KVStorageService.initialize(env: EnvVariables): void
 Initializes the KV storage service.
 
 **Parameters:**
+
 - `env`: Environment variables with KV bindings
 
 ```typescript
 KVStorageService.getItem(
-  key: string, 
+  key: string,
   namespace: string
 ): Promise<any | null>
 ```
@@ -473,6 +496,7 @@ KVStorageService.getItem(
 Gets an item from KV storage.
 
 **Parameters:**
+
 - `key`: Key of the item
 - `namespace`: KV namespace
 
@@ -480,9 +504,9 @@ Gets an item from KV storage.
 
 ```typescript
 KVStorageService.setItem(
-  key: string, 
-  value: any, 
-  namespace: string, 
+  key: string,
+  value: any,
+  namespace: string,
   ttl?: number
 ): Promise<boolean>
 ```
@@ -490,6 +514,7 @@ KVStorageService.setItem(
 Sets an item in KV storage.
 
 **Parameters:**
+
 - `key`: Key of the item
 - `value`: Value to store
 - `namespace`: KV namespace
@@ -501,7 +526,7 @@ Sets an item in KV storage.
 
 ```typescript
 presignedUrlCacheService.getPresignedUrl(
-  originalUrl: string, 
+  originalUrl: string,
   env: EnvVariables
 ): Promise<string | null>
 ```
@@ -509,6 +534,7 @@ presignedUrlCacheService.getPresignedUrl(
 Gets a presigned URL from the cache.
 
 **Parameters:**
+
 - `originalUrl`: Original URL
 - `env`: Environment variables with KV bindings
 
@@ -516,9 +542,9 @@ Gets a presigned URL from the cache.
 
 ```typescript
 presignedUrlCacheService.storePresignedUrl(
-  originalUrl: string, 
-  presignedUrl: string, 
-  env: EnvVariables, 
+  originalUrl: string,
+  presignedUrl: string,
+  env: EnvVariables,
   ttl?: number
 ): Promise<boolean>
 ```
@@ -526,6 +552,7 @@ presignedUrlCacheService.storePresignedUrl(
 Stores a presigned URL in the cache.
 
 **Parameters:**
+
 - `originalUrl`: Original URL
 - `presignedUrl`: Presigned URL
 - `env`: Environment variables with KV bindings
@@ -541,7 +568,7 @@ These are utility functions for working with the Video Resizer.
 
 ```typescript
 pathUtils.findMatchingPathPattern(
-  path: string, 
+  path: string,
   patterns: PathPattern[]
 ): PathPattern | null
 ```
@@ -549,6 +576,7 @@ pathUtils.findMatchingPathPattern(
 Finds a matching path pattern for a path.
 
 **Parameters:**
+
 - `path`: Path to match
 - `patterns`: Array of path patterns
 
@@ -561,6 +589,7 @@ pathUtils.isCdnCgiMediaPath(path: string): boolean
 Determines if a path is a Cloudflare Media path.
 
 **Parameters:**
+
 - `path`: Path to check
 
 **Returns:** true if path is a Cloudflare Media path, false otherwise
@@ -572,6 +601,7 @@ pathUtils.normalizePath(path: string): string
 Normalizes a path.
 
 **Parameters:**
+
 - `path`: Path to normalize
 
 **Returns:** Normalized path
@@ -580,8 +610,8 @@ Normalizes a path.
 
 ```typescript
 urlTransformUtils.transformUrl(
-  url: URL, 
-  cdnParams: Record<string, string>, 
+  url: URL,
+  cdnParams: Record<string, string>,
   cdnCgiBasePath: string
 ): string
 ```
@@ -589,6 +619,7 @@ urlTransformUtils.transformUrl(
 Transforms a URL for Cloudflare Media.
 
 **Parameters:**
+
 - `url`: URL to transform
 - `cdnParams`: Cloudflare Media parameters
 - `cdnCgiBasePath`: Base path for Cloudflare Media
@@ -604,6 +635,7 @@ urlTransformUtils.buildCdnCgiUrl(
 Builds a Cloudflare Media URL.
 
 **Parameters:**
+
 - `params`: Parameters for building the URL
 
 **Returns:** Built URL string
@@ -612,9 +644,9 @@ Builds a Cloudflare Media URL.
 
 ```typescript
 cacheUtils.addCacheHeaders(
-  response: Response, 
-  status: number, 
-  config: CacheConfig, 
+  response: Response,
+  status: number,
+  config: CacheConfig,
   source: string
 ): Response
 ```
@@ -622,6 +654,7 @@ cacheUtils.addCacheHeaders(
 Adds cache headers to a response.
 
 **Parameters:**
+
 - `response`: Response to add headers to
 - `status`: Response status
 - `config`: Cache configuration
@@ -636,13 +669,14 @@ cacheUtils.shouldCacheStatus(status: number): boolean
 Determines if a status should be cached.
 
 **Parameters:**
+
 - `status`: HTTP status code
 
 **Returns:** true if status should be cached, false otherwise
 
 ```typescript
 cacheUtils.getCacheTtl(
-  status: number, 
+  status: number,
   config: CacheConfig
 ): number
 ```
@@ -650,6 +684,7 @@ cacheUtils.getCacheTtl(
 Gets the TTL for a status.
 
 **Parameters:**
+
 - `status`: HTTP status code
 - `config`: Cache configuration
 
@@ -659,7 +694,7 @@ Gets the TTL for a status.
 
 ```typescript
 debugHeadersUtils.addDebugHeaders(
-  response: Response, 
+  response: Response,
   diagnostics: DiagnosticsInfo
 ): Response
 ```
@@ -667,6 +702,7 @@ debugHeadersUtils.addDebugHeaders(
 Adds debug headers to a response.
 
 **Parameters:**
+
 - `response`: Response to add headers to
 - `diagnostics`: Diagnostic information
 
@@ -681,6 +717,7 @@ debugHeadersUtils.extractRequestHeaders(
 Extracts headers from a request.
 
 **Parameters:**
+
 - `request`: Request to extract headers from
 
 **Returns:** Extracted headers as a RequestHeaders object
@@ -694,16 +731,17 @@ pinoLogger.createLogger(context: any): Logger
 Creates a logger.
 
 **Parameters:**
+
 - `context`: Logger context
 
 **Returns:** Logger instance
 
 ```typescript
 pinoLogger.debug(
-  context: any, 
-  logger: Logger, 
-  component: string, 
-  message: string, 
+  context: any,
+  logger: Logger,
+  component: string,
+  message: string,
   data?: Record<string, unknown>
 ): void
 ```
@@ -711,6 +749,7 @@ pinoLogger.debug(
 Logs a debug message.
 
 **Parameters:**
+
 - `context`: Log context
 - `logger`: Logger instance
 - `component`: Component name
@@ -719,10 +758,10 @@ Logs a debug message.
 
 ```typescript
 pinoLogger.info(
-  context: any, 
-  logger: Logger, 
-  component: string, 
-  message: string, 
+  context: any,
+  logger: Logger,
+  component: string,
+  message: string,
   data?: Record<string, unknown>
 ): void
 ```
@@ -730,6 +769,7 @@ pinoLogger.info(
 Logs an info message.
 
 **Parameters:**
+
 - `context`: Log context
 - `logger`: Logger instance
 - `component`: Component name
@@ -738,10 +778,10 @@ Logs an info message.
 
 ```typescript
 pinoLogger.warn(
-  context: any, 
-  logger: Logger, 
-  component: string, 
-  message: string, 
+  context: any,
+  logger: Logger,
+  component: string,
+  message: string,
   data?: Record<string, unknown>
 ): void
 ```
@@ -749,6 +789,7 @@ pinoLogger.warn(
 Logs a warning message.
 
 **Parameters:**
+
 - `context`: Log context
 - `logger`: Logger instance
 - `component`: Component name
@@ -757,10 +798,10 @@ Logs a warning message.
 
 ```typescript
 pinoLogger.error(
-  context: any, 
-  logger: Logger, 
-  component: string, 
-  message: string, 
+  context: any,
+  logger: Logger,
+  component: string,
+  message: string,
   data?: Record<string, unknown>
 ): void
 ```
@@ -768,6 +809,7 @@ pinoLogger.error(
 Logs an error message.
 
 **Parameters:**
+
 - `context`: Log context
 - `logger`: Logger instance
 - `component`: Component name
@@ -778,7 +820,7 @@ Logs an error message.
 
 ```typescript
 requestContext.createRequestContext(
-  request: Request, 
+  request: Request,
   ctx?: ExecutionContext
 ): RequestContext
 ```
@@ -786,6 +828,7 @@ requestContext.createRequestContext(
 Creates a request context.
 
 **Parameters:**
+
 - `request`: Request
 - `ctx`: Optional execution context
 
@@ -801,9 +844,9 @@ Gets the current request context.
 
 ```typescript
 requestContext.addBreadcrumb(
-  context: RequestContext, 
-  category: string, 
-  message: string, 
+  context: RequestContext,
+  category: string,
+  message: string,
   data?: Record<string, unknown>
 ): void
 ```
@@ -811,6 +854,7 @@ requestContext.addBreadcrumb(
 Adds a breadcrumb to a request context.
 
 **Parameters:**
+
 - `context`: Request context
 - `category`: Breadcrumb category
 - `message`: Breadcrumb message
@@ -825,6 +869,7 @@ requestContext.getClientDiagnostics(
 Gets client diagnostics from a request.
 
 **Parameters:**
+
 - `request`: Request to get diagnostics from
 
 **Returns:** ClientDiagnostics object
@@ -838,6 +883,7 @@ new ResponseBuilder(response: Response, context: RequestContext)
 Creates a new response builder.
 
 **Parameters:**
+
 - `response`: Base response
 - `context`: Request context
 
@@ -850,15 +896,16 @@ ResponseBuilder.withDebugInfo(
 Adds debug information to a response.
 
 **Parameters:**
+
 - `debugInfo`: Debug information to add
 
 **Returns:** ResponseBuilder for chaining
 
 ```typescript
 ResponseBuilder.withCaching(
-  status: number, 
-  cacheConfig?: Record<string, unknown>, 
-  source?: string, 
+  status: number,
+  cacheConfig?: Record<string, unknown>,
+  source?: string,
   derivative?: string
 ): ResponseBuilder
 ```
@@ -866,6 +913,7 @@ ResponseBuilder.withCaching(
 Adds caching to a response.
 
 **Parameters:**
+
 - `status`: Response status
 - `cacheConfig`: Optional cache configuration
 - `source`: Optional cache source
@@ -882,11 +930,12 @@ Builds the response.
 **Returns:** Promise resolving to the built Response
 
 **Example:**
+
 ```typescript
 const builder = new ResponseBuilder(baseResponse, context);
 const finalResponse = await builder
   .withDebugInfo(debugInfo)
-  .withCaching(200, cacheConfig, "edge")
+  .withCaching(200, cacheConfig, 'edge')
   .build();
 ```
 
@@ -928,9 +977,10 @@ interface VideoTransformOptions {
 Options for video transformation.
 
 **Properties:**
+
 - `width`: Width in pixels
 - `height`: Height in pixels
-- `mode`: Transformation mode ("video", "frame", "spritesheet")
+- `mode`: Transformation mode ("video", "frame", "spritesheet", "audio")
 - `fit`: Fit mode ("cover", "contain", "crop", "scale-down")
 - `audio`: Whether to include audio
 - `format`: Output format (mp4, webm, etc.)
@@ -979,6 +1029,7 @@ interface PathPattern {
 Pattern for matching URL paths.
 
 **Properties:**
+
 - `name`: Pattern name
 - `matcher`: Regex pattern for matching paths
 - `processPath`: Whether to process the path
@@ -1084,10 +1135,10 @@ interface TransformationContext {
   url: URL;
   path: string;
   diagnosticsInfo: DiagnosticsInfo;
-  env?: { 
-    ASSETS?: { 
-      fetch: (request: Request) => Promise<Response> 
-    } 
+  env?: {
+    ASSETS?: {
+      fetch: (request: Request) => Promise<Response>;
+    };
   };
 }
 ```
@@ -1155,6 +1206,39 @@ interface DiagnosticsInfo {
 
 Diagnostic information for debugging.
 
+## Response Headers
+
+### X-CF-Error-Code
+
+When a Cloudflare Media Transformation error occurs, the `X-CF-Error-Code` response header is set with the numeric error code extracted from the `Cf-Resized` response header. This header is useful for programmatic error handling and diagnostics.
+
+**Example:**
+
+```
+X-CF-Error-Code: 9402
+```
+
+### CfErrorCode Values
+
+The `CfErrorCode` enum defines known Cloudflare Media Transformation error codes (range 9401–9523). These are used internally for error classification, retry decisions, and mapping to appropriate HTTP status codes.
+
+| Code | Description                 | HTTP Status | Retryable |
+| ---- | --------------------------- | ----------- | --------- |
+| 9401 | Input video too large       | 413         | No        |
+| 9402 | Could not fetch input video | 502         | Yes       |
+| 9403 | Input duration too long     | 413         | No        |
+| 9406 | Invalid input video         | 400         | No        |
+| 9407 | Input video too wide/tall   | 413         | No        |
+| 9409 | Request timeout             | 504         | Yes       |
+| 9413 | Input too large (POST body) | 413         | No        |
+| 9415 | Unsupported media type      | 415         | No        |
+| 9429 | Rate limited                | 429         | Yes       |
+| 9500 | Internal Cloudflare error   | 500         | Yes       |
+| 9503 | Service unavailable         | 503         | Yes       |
+| 9523 | Origin unreachable          | 502         | Yes       |
+
+The `CF_ERROR_MAP` constant provides the full mapping of each `CfErrorCode` to its human-readable description, HTTP status code, and retryability flag.
+
 ## Error Types
 
 The Video Resizer defines several error types for specific error scenarios.
@@ -1194,7 +1278,11 @@ class ConfigurationError extends VideoTransformError {
   );
 
   static missingProperty(property: string, context?: ErrorContext): ConfigurationError;
-  static invalidConfiguration(property: string, value: any, context?: ErrorContext): ConfigurationError;
+  static invalidConfiguration(
+    property: string,
+    value: any,
+    context?: ErrorContext
+  ): ConfigurationError;
 }
 ```
 
@@ -1229,8 +1317,17 @@ class ProcessingError extends VideoTransformError {
     originalError?: Error
   );
 
-  static transformationFailed(reason: string, context?: ErrorContext, originalError?: Error): ProcessingError;
-  static fetchFailed(url: string, status: number, context?: ErrorContext, originalError?: Error): ProcessingError;
+  static transformationFailed(
+    reason: string,
+    context?: ErrorContext,
+    originalError?: Error
+  ): ProcessingError;
+  static fetchFailed(
+    url: string,
+    status: number,
+    context?: ErrorContext,
+    originalError?: Error
+  ): ProcessingError;
 }
 ```
 

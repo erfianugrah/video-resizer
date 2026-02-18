@@ -1,12 +1,13 @@
 /**
  * Configuration management system
- * 
+ *
  * Provides a centralized way to access all configuration managers.
  */
 import { VideoConfigurationManager, PathPatternSchema } from './VideoConfigurationManager';
 import { LoggingConfigurationManager } from './LoggingConfigurationManager';
 import { CacheConfigurationManager } from './CacheConfigurationManager';
 import { DebugConfigurationManager } from './DebugConfigurationManager';
+import { OriginConfigurationManager } from './OriginConfigurationManager';
 import { EnvVariables, getEnvironmentConfig } from './environmentConfig';
 import { z } from 'zod';
 import workerConfig from '../../config/worker-config.json';
@@ -36,46 +37,47 @@ export function initializeConfiguration(env?: EnvVariables): ConfigurationSystem
   if (env) {
     applyEnvironmentVariables(env);
   }
-  
-  // Import and set worker config globally to ensure Origins configuration is available
-  // This is critical for the OriginConfigurationManager to access the origins configuration
+
+  // Pass worker config to OriginConfigurationManager so it can access origins configuration
+  // without relying on globalThis
   try {
     if (workerConfig && typeof workerConfig === 'object') {
-      // Set the worker config globally so it can be accessed by OriginConfigurationManager
-      if (typeof globalThis !== 'undefined') {
-        globalThis.WORKER_CONFIG = workerConfig as any;
-        
-        // Check for origins configuration in the video section
-        const videoOrigins = workerConfig.video?.origins;
-        const originsItems = typeof videoOrigins === 'object' && !Array.isArray(videoOrigins) 
-          ? videoOrigins.items 
+      OriginConfigurationManager.setWorkerConfig(workerConfig as any);
+
+      // Check for origins configuration in the video section
+      const videoOrigins = workerConfig.video?.origins;
+      const originsItems =
+        typeof videoOrigins === 'object' && !Array.isArray(videoOrigins)
+          ? videoOrigins.items
           : null;
-        
-        const originsCount = Array.isArray(originsItems) 
-          ? originsItems.length 
-          : (Array.isArray(videoOrigins) ? videoOrigins.length : 0);
-        
-        // Log success
-        logInfo('Loaded worker-config.json into globalThis.WORKER_CONFIG', {
-          version: workerConfig.version,
-          hasVideoConfig: !!workerConfig.video,
-          hasOrigins: !!videoOrigins,
-          originsType: typeof videoOrigins,
-          originsCount: originsCount,
-          originsEnabled: typeof videoOrigins === 'object' && !Array.isArray(videoOrigins) 
+
+      const originsCount = Array.isArray(originsItems)
+        ? originsItems.length
+        : Array.isArray(videoOrigins)
+          ? videoOrigins.length
+          : 0;
+
+      // Log success
+      logInfo('Loaded worker-config.json into OriginConfigurationManager', {
+        version: workerConfig.version,
+        hasVideoConfig: !!workerConfig.video,
+        hasOrigins: !!videoOrigins,
+        originsType: typeof videoOrigins,
+        originsCount: originsCount,
+        originsEnabled:
+          typeof videoOrigins === 'object' && !Array.isArray(videoOrigins)
             ? videoOrigins.enabled !== false
-            : true
-        });
-      }
+            : true,
+      });
     }
   } catch (err) {
     // Log error but continue with environment defaults
     logError('Failed to load worker-config.json', {
       error: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined
+      stack: err instanceof Error ? err.stack : undefined,
     });
   }
-  
+
   // Return the configuration system with existing instances
   return {
     videoConfig: VideoConfigurationManager.getInstance(),
@@ -91,7 +93,7 @@ export function initializeConfiguration(env?: EnvVariables): ConfigurationSystem
 function applyEnvironmentVariables(env: EnvVariables): void {
   // Get the environment configuration
   const envConfig = getEnvironmentConfig(env);
-  
+
   // Debug configuration from environment
   DebugConfigurationManager.getInstance().updateConfig({
     enabled: envConfig.debug.enabled,
@@ -101,7 +103,7 @@ function applyEnvironmentVariables(env: EnvVariables): void {
     allowedIps: envConfig.debug.allowedIps,
     excludedPaths: envConfig.debug.excludedPaths,
   });
-  
+
   // Cache configuration from environment
   CacheConfigurationManager.getInstance().updateConfig({
     debug: envConfig.cache.debug,
@@ -114,7 +116,7 @@ function applyEnvironmentVariables(env: EnvVariables): void {
     // We'll handle KV cache configuration separately
     // as it's not part of the CacheConfigSchema
   });
-  
+
   // Logging configuration from environment
   LoggingConfigurationManager.getInstance().updateConfig({
     level: envConfig.logging.level,
@@ -128,10 +130,10 @@ function applyEnvironmentVariables(env: EnvVariables): void {
     enablePerformanceLogging: envConfig.logging.performance,
     performanceThresholdMs: envConfig.logging.performanceThreshold,
   });
-  
+
   // Video configuration from environment
   const videoConfig = VideoConfigurationManager.getInstance();
-  
+
   // Update default values
   videoConfig.updateConfig({
     defaults: {
@@ -145,23 +147,23 @@ function applyEnvironmentVariables(env: EnvVariables): void {
       basePath: envConfig.cdnCgi.basePath,
     },
   });
-  
+
   // Parse JSON configuration from environment if available
   if (env.PATH_PATTERNS) {
     try {
       // Parse string PATH_PATTERNS or use directly if it's already an array
       let pathPatterns: Record<string, unknown>[];
-      
+
       if (typeof env.PATH_PATTERNS === 'string') {
         pathPatterns = JSON.parse(env.PATH_PATTERNS);
       } else {
         pathPatterns = env.PATH_PATTERNS as unknown as Record<string, unknown>[];
       }
-      
+
       // Add each path pattern to video configuration
       if (Array.isArray(pathPatterns)) {
         const videoConfig = VideoConfigurationManager.getInstance();
-        
+
         for (const pattern of pathPatterns) {
           // Only apply valid path patterns
           if (pattern && typeof pattern === 'object' && pattern.name && pattern.matcher) {
@@ -171,9 +173,9 @@ function applyEnvironmentVariables(env: EnvVariables): void {
               // Log error but continue with other patterns
               const errMessage = error instanceof Error ? error.message : String(error);
               const errStack = error instanceof Error ? error.stack : undefined;
-              logError(`Failed to add path pattern ${pattern.name}`, { 
-                error: errMessage, 
-                stack: errStack 
+              logError(`Failed to add path pattern ${pattern.name}`, {
+                error: errMessage,
+                stack: errStack,
               });
             }
           }
@@ -183,34 +185,25 @@ function applyEnvironmentVariables(env: EnvVariables): void {
       // Log error but continue
       const errMessage = error instanceof Error ? error.message : String(error);
       const errStack = error instanceof Error ? error.stack : undefined;
-      logError('Failed to process PATH_PATTERNS environment variable', { 
-        error: errMessage, 
-        stack: errStack 
+      logError('Failed to process PATH_PATTERNS environment variable', {
+        error: errMessage,
+        stack: errStack,
       });
     }
   }
 }
 
 // Re-export individual configuration managers for convenience
-export { 
+export {
   VideoConfigurationManager,
-  configManager as videoConfig
+  configManager as videoConfig,
 } from './VideoConfigurationManager';
 
-export { 
-  LoggingConfigurationManager,
-  loggingConfig
-} from './LoggingConfigurationManager';
+export { LoggingConfigurationManager, loggingConfig } from './LoggingConfigurationManager';
 
-export { 
-  CacheConfigurationManager,
-  cacheConfig
-} from './CacheConfigurationManager';
+export { CacheConfigurationManager, cacheConfig } from './CacheConfigurationManager';
 
-export { 
-  DebugConfigurationManager,
-  debugConfig
-} from './DebugConfigurationManager';
+export { DebugConfigurationManager, debugConfig } from './DebugConfigurationManager';
 
 // Export video path patterns getter
 export function getVideoPathPatterns() {
@@ -229,7 +222,7 @@ export function updateAllConfigFromKV(kvConfig: any) {
     logWarn('No KV configuration provided to updateAllConfigFromKV');
     return;
   }
-  
+
   // Log the overall KV configuration structure for debugging
   logInfo('Processing KV configuration update', {
     hasVideoConfig: !!kvConfig.video,
@@ -238,9 +231,9 @@ export function updateAllConfigFromKV(kvConfig: any) {
     hasDebugConfig: !!kvConfig.debug,
     hasStorageConfig: !!kvConfig.storage,
     configVersion: kvConfig.version,
-    lastUpdated: kvConfig.lastUpdated
+    lastUpdated: kvConfig.lastUpdated,
   });
-  
+
   // Update video configuration if available
   if (kvConfig.video) {
     try {
@@ -250,30 +243,35 @@ export function updateAllConfigFromKV(kvConfig: any) {
         passthroughEnabled: kvConfig.video.passthrough?.enabled,
         hasDerivatives: !!kvConfig.video.derivatives,
         hasCdnCgi: !!kvConfig.video.cdnCgi,
-        hasPathPatterns: Array.isArray(kvConfig.video.pathPatterns) ? kvConfig.video.pathPatterns.length : 0,
-        defaultDuration: kvConfig.video.defaults?.duration || 'not set'
+        hasPathPatterns: Array.isArray(kvConfig.video.pathPatterns)
+          ? kvConfig.video.pathPatterns.length
+          : 0,
+        defaultDuration: kvConfig.video.defaults?.duration || 'not set',
       });
-      
+
       // Log details about derivatives if available
       if (kvConfig.video.derivatives) {
         const derivativeNames = Object.keys(kvConfig.video.derivatives);
-        const durations = derivativeNames.reduce((acc, name) => {
-          const derivative = kvConfig.video.derivatives[name];
-          if (derivative && derivative.duration) {
-            acc[name] = derivative.duration;
-          }
-          return acc;
-        }, {} as Record<string, string>);
-        
-        logInfo('Derivative durations from KV', { 
+        const durations = derivativeNames.reduce(
+          (acc, name) => {
+            const derivative = kvConfig.video.derivatives[name];
+            if (derivative && derivative.duration) {
+              acc[name] = derivative.duration;
+            }
+            return acc;
+          },
+          {} as Record<string, string>
+        );
+
+        logInfo('Derivative durations from KV', {
           derivatives: derivativeNames,
-          durations 
+          durations,
         });
       }
-      
+
       const videoManager = VideoConfigurationManager.getInstance();
       videoManager.updateConfig(kvConfig.video);
-      
+
       // Verify the update was successful and check critical values
       const updatedConfig = videoManager.getConfig();
       logInfo('Updated video configuration from KV', {
@@ -282,18 +280,18 @@ export function updateAllConfigFromKV(kvConfig: any) {
         whitelistedFormats: updatedConfig.passthrough?.whitelistedFormats?.length || 0,
         defaultDuration: updatedConfig.defaults.duration,
         hasDerivatives: !!updatedConfig.derivatives,
-        derivativeCount: Object.keys(updatedConfig.derivatives || {}).length
+        derivativeCount: Object.keys(updatedConfig.derivatives || {}).length,
       });
     } catch (err) {
       logError('Failed to update video configuration from KV', {
         error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
   } else {
     logWarn('No video configuration in KV data');
   }
-  
+
   // Update cache configuration if available
   if (kvConfig.cache) {
     try {
@@ -303,20 +301,20 @@ export function updateAllConfigFromKV(kvConfig: any) {
         debug: kvConfig.cache.debug,
         hasFallback: !!kvConfig.cache.fallback,
         profileCount: Object.keys(kvConfig.cache.profiles || {}).length,
-        hasMimeTypes: !!kvConfig.cache.mimeTypes
+        hasMimeTypes: !!kvConfig.cache.mimeTypes,
       });
-      
+
       const cacheManager = CacheConfigurationManager.getInstance();
       cacheManager.updateConfig(kvConfig.cache);
       logInfo('Updated cache configuration from KV');
     } catch (err) {
       logError('Failed to update cache configuration from KV', {
         error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
   }
-  
+
   // Update logging configuration if available
   if (kvConfig.logging) {
     try {
@@ -324,16 +322,16 @@ export function updateAllConfigFromKV(kvConfig: any) {
       loggingManager.updateConfig(kvConfig.logging);
       logInfo('Updated logging configuration from KV', {
         level: kvConfig.logging.level,
-        format: kvConfig.logging.format
+        format: kvConfig.logging.format,
       });
     } catch (err) {
       logError('Failed to update logging configuration from KV', {
         error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
   }
-  
+
   // Update debug configuration if available
   if (kvConfig.debug) {
     try {
@@ -341,22 +339,22 @@ export function updateAllConfigFromKV(kvConfig: any) {
       debugManager.updateConfig(kvConfig.debug);
       logInfo('Updated debug configuration from KV', {
         enabled: kvConfig.debug.enabled,
-        verbose: kvConfig.debug.verbose
+        verbose: kvConfig.debug.verbose,
       });
     } catch (err) {
       logError('Failed to update debug configuration from KV', {
         error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
   }
-  
+
   // Log completion of configuration update
   logInfo('Completed KV configuration update', {
     hasVideoConfig: !!kvConfig.video,
     hasCacheConfig: !!kvConfig.cache,
     hasLoggingConfig: !!kvConfig.logging,
-    hasDebugConfig: !!kvConfig.debug
+    hasDebugConfig: !!kvConfig.debug,
   });
 }
 
@@ -373,6 +371,13 @@ export class ConfigProvider {
   private static instance: ConfigurationSystem;
 
   /**
+   * Reset the singleton instance (primarily for testing)
+   */
+  static resetInstance(): void {
+    ConfigProvider.instance = undefined as unknown as ConfigurationSystem;
+  }
+
+  /**
    * Get the singleton instance of the ConfigProvider
    * @param env Optional environment variables
    * @returns Configuration system instance
@@ -380,11 +385,11 @@ export class ConfigProvider {
   static getInstance(env?: EnvVariables): ConfigurationSystem {
     if (!ConfigProvider.instance) {
       ConfigProvider.instance = initializeConfiguration(env);
-      
+
       // Log detailed configuration information
       const videoConfig = VideoConfigurationManager.getInstance();
       const defaults = videoConfig.getDefaults();
-      
+
       logInfo('Video configuration initialized with defaults', {
         width: defaults.width,
         height: defaults.height,
@@ -393,22 +398,22 @@ export class ConfigProvider {
         audio: defaults.audio,
         duration: defaults.duration, // Important - check if this has the 5m value
         quality: defaults.quality,
-        compression: defaults.compression
+        compression: defaults.compression,
       });
-      
+
       // Log derivatives information
       try {
         const derivatives = Object.keys(videoConfig.getConfig().derivatives || {});
-        logInfo('Available video derivatives', { 
+        logInfo('Available video derivatives', {
           count: derivatives.length,
-          names: derivatives 
+          names: derivatives,
         });
       } catch (err) {
-        logWarn('Error accessing derivatives', { 
-          error: err instanceof Error ? err.message : String(err) 
+        logWarn('Error accessing derivatives', {
+          error: err instanceof Error ? err.message : String(err),
         });
       }
-      
+
       logDebug('Created ConfigProvider singleton instance');
     } else if (env) {
       // Update with new environment variables if provided
@@ -427,36 +432,36 @@ export class ConfigProvider {
 export function getCacheConfig(envVars?: EnvVariables) {
   // Get environment config
   const envConfig = getEnvironmentConfig(envVars);
-  
+
   // Log when getCacheConfig is called to debug environment issues
   logDebug('getCacheConfig called', {
     hasEnvVars: !!envVars,
     envVarsENVIRONMENT: envVars?.ENVIRONMENT || 'not provided',
     determinedMode: envConfig.mode,
-    isProduction: envConfig.isProduction
+    isProduction: envConfig.isProduction,
   });
-  
+
   // Get the actual cache configuration from CacheConfigurationManager
   const cacheManager = CacheConfigurationManager.getInstance();
   const fullConfig = cacheManager.getConfig();
-  
+
   // Log the KV cache configuration details for debugging
-  logDebug('KV cache configuration from environment and cache config', { 
+  logDebug('KV cache configuration from environment and cache config', {
     enableKVCache: envConfig.cache.enableKVCache,
     envTtl: envConfig.cache.kvTtl,
     configTtl: fullConfig.profiles?.default?.ttl || {},
     hasProfiles: !!fullConfig.profiles,
     profileCount: Object.keys(fullConfig.profiles || {}).length,
     isProduction: envConfig.isProduction,
-    mode: envConfig.mode
+    mode: envConfig.mode,
   });
-  
+
   // Create a properly formatted return object with typed TTL
   const ttlConfig = fullConfig.profiles?.default?.ttl || envConfig.cache.kvTtl;
-  
+
   return {
     enableKVCache: envConfig.cache.enableKVCache,
     ttl: ttlConfig,
-    profiles: fullConfig.profiles
+    profiles: fullConfig.profiles,
   };
 }

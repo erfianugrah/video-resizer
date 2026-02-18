@@ -1,6 +1,6 @@
 # Video Resizer Architecture
 
-_Last Updated: December 9, 2025_
+_Last Updated: February 18, 2026_
 
 This section documents the architecture that is currently implemented in the codebase.
 
@@ -25,7 +25,7 @@ The Video Resizer follows a service-oriented architecture with clearly defined l
 
 The architecture uses several design patterns:
 
-- **Strategy Pattern**: For different transformation modes (video, frame, spritesheet)
+- **Strategy Pattern**: For different transformation modes (video, frame, spritesheet, audio)
 - **Command Pattern**: To encapsulate transformation operations
 - **Singleton Pattern**: For configuration managers
 - **Factory Pattern**: For creating appropriate strategy instances
@@ -50,4 +50,4 @@ The architecture uses several design patterns:
 - Cache version writes and TTL refreshes run via `waitUntil` when available.
 - Background KV storage retries are bounded (3 attempts) and logged with breadcrumbs.
 
-See the [Architecgure Overview](./architecture-overview.md) for the end-to-end flow and component boundaries.
+See the [Architecture Overview](./architecture-overview.md) for the end-to-end flow and component boundaries.

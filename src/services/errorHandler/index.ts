@@ -3,9 +3,6 @@
  * Re-exports all functionality to maintain backward compatibility
  */
 
-// Export the logging utilities
-export { logDebug, logError } from './logging';
-
 // Export the error normalization functions
 export { normalizeError } from './normalizeError';
 

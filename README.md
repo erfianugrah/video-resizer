@@ -5,7 +5,7 @@ A Cloudflare Worker for transforming and resizing video content on the edge.
 ## Features
 
 - Video transformation and optimization
-- Multiple transformation strategies (video, frame, spritesheet)
+- Multiple transformation strategies (video, frame, spritesheet, audio)
 - Caching with KV store integration and efficient TTL refresh
 - KV chunking for large videos with concurrency-safe chunk locking
 - Background fallback caching with streaming for large videos
@@ -68,7 +68,7 @@ flowchart TB
 
     %% Request handling
     A([HTTP Request]) --> B[Worker Entry Point]
-    B --> C[Video Handler with Origins]
+    B --> C[Video Handler]
     C --> D{Cache Hit?}
 
     %% Response paths
@@ -100,6 +100,7 @@ flowchart TB
     class E,G response
     class L,M,N,O,P config
 ```
+
 </details>
 
 <details>
@@ -111,61 +112,63 @@ flowchart TD
     Client([Client Request]) --> Fetch[src/index.ts]
     Fetch --> ReqCtx[Request Context]
     ReqCtx --> Router{URL Pattern}
-    
+
     %% Route branching
     Router -->|"/admin/config"| Config[configHandler.ts]
     Router -->|"Non-MP4"| Pass[Direct Passthrough]
-    Router -->|"Video Request"| Video[videoHandlerWithOrigins.ts]
-    
+    Router -->|"Video Request"| Video[videoHandler.ts]
+
     %% Config flow
     Config --> ConfigSvc[configurationService.ts]
     ConfigSvc --> KVStore[KV Configuration Storage]
     KVStore --> ConfigResp[Configuration Response]
-    
+
     %% Video processing flow
     Video --> ClientDet[clientHints.ts]
     ClientDet --> DeviceUtil[deviceUtils.ts]
     DeviceUtil --> CacheChk{KV Cache Check}
-    
+
     %% Cache hit/miss paths
     CacheChk -->|"Hit"| CacheHit[Serve from Cache]
     CacheChk -->|"Miss"| Coalesce{Request Coalescing}
-    
+
     %% Request coalescing
     Coalesce -->|"In-flight"| Wait[Wait for Original]
     Coalesce -->|"New Request"| Options[videoOptionsService.ts]
-    
+
     %% Options flow
     Options --> IMCheck{IMQuery Parameters?}
     IMCheck -->|"Yes"| IMProc[imqueryUtils.ts]
     IMCheck -->|"No"| StdOpt[Standard Options]
     IMProc --> Pattern[Path Pattern Matching]
     StdOpt --> Pattern
-    
+
     %% Command pattern with Origins
     Pattern --> Origins[Origins Configuration]
     Origins --> Command[TransformVideoCommand.ts]
     Command --> Mode{Transformation Mode}
-    
+
     %% Strategy pattern
     Mode -->|"video"| VideoS[VideoStrategy.ts]
     Mode -->|"frame"| FrameS[FrameStrategy.ts]
     Mode -->|"spritesheet"| SheetS[SpritesheetStrategy.ts]
-    
+    Mode -->|"audio"| AudioS[AudioStrategy.ts]
+
     %% Strategy execution
     VideoS --> Validate[validateOptions]
     FrameS --> Validate
     SheetS --> Validate
+    AudioS --> Validate
     Validate --> Prepare[prepareTransformParams]
     Prepare --> Transform[TransformationService.ts]
-    
+
     %% Transformation execution
     Transform --> CDN[Create cdn-cgi URL]
     CDN --> Execute[executeTransformation]
     Execute --> TransformErr{Transform Error?}
     TransformErr -->|No| FetchVid[fetchVideoWithOrigins.ts]
     TransformErr -->|Yes| ErrType404{404 Error?}
-    
+
     %% 404 handling flow
     ErrType404 -->|Yes| Retry404[retryWithAlternativeOrigins.ts]
     Retry404 --> NextSrc[Find Next Source by Priority]
@@ -176,12 +179,12 @@ flowchart TD
     AltSuccess -->|Yes| StoreKV[Store in KV Cache]
     AltSuccess -->|No| Return404[Return Error with Headers]
     StoreKV --> Return[Return Transformed Response]
-    
+
     %% Other error handling
     ErrType404 -->|No| ErrorHdl[transformationErrorHandler.ts]
     ErrorHdl --> HandleOther[Handle 5xx/413/etc]
     HandleOther --> Return
-    
+
     %% Origins system
     FetchVid --> Origins[OriginResolver.ts]
     Origins --> MatchOrigins{Match Origins}
@@ -189,24 +192,24 @@ flowchart TD
     TrySources -->|"R2"| R2Store[r2Storage.ts]
     TrySources -->|"Remote"| RemStore[remoteStorage.ts]
     TrySources -->|"Fallback"| FallStore[fallbackStorage.ts]
-    
+
     %% Response processing
     R2Store --> Process[Process Response]
     RemStore --> Process
     FallStore --> Process
-    
+
     %% Caching system
     Process --> StoreCache[cacheManagementService.ts]
     StoreCache --> GenKey[keyUtils.ts]
     GenKey --> Version[cacheVersionService.ts]
     Version --> SizeChk{Size > 20MB?}
-    
+
     %% Chunking implementation
     SizeChk -->|"Yes"| Chunk[storeVideo.ts: Chunked]
     SizeChk -->|"No"| Single[storeVideo.ts: Single]
     Chunk --> CacheTags[cacheTags.ts]
     Single --> CacheTags
-    
+
     %% TTL calculation
     CacheTags --> TTLCalc[determineTTL.ts]
     TTLCalc --> Profile[Match Cache Profile]
@@ -214,66 +217,66 @@ flowchart TD
     TTLType -->|"200"| OkTTL[Standard TTL]
     TTLType -->|"404"| ErrTTL[Error TTL]
     TTLType -->|"302"| RedirTTL[Redirect TTL]
-    
+
     %% Range request handling
     CacheHit --> RangeChk{Range Request?}
     RangeChk -->|"Yes"| Stream[streamingHelpers.ts]
     RangeChk -->|"No"| StdResp[Standard Response]
-    
+
     %% Streaming logic
     Stream --> ChunkChk{Chunked Storage?}
     ChunkChk -->|"Yes"| ChunkStream[streamChunkedRangeResponse]
     ChunkChk -->|"No"| StdStream[Standard Range Response]
-    
+
     %% Error handling system
     Validate -.-> Error[errorHandlerService.ts]
     FetchVid -.-> Error
     Process -.-> Error
     Error --> Normalize[normalizeError.ts]
     Normalize --> ErrType{Error Type}
-    
+
     %% Error responses
     ErrType -->|"Validation"| Err400[400 Response]
     ErrType -->|"NotFound"| Err404[404 Response]
     ErrType -->|"Processing"| Err500[500 Response]
     ErrType -->|"Size Limit"| FallResp[Fallback Content]
-    
+
     %% Debug system
     Command -.-> Debug[debugService.ts]
     Debug --> Diag[collectDiagnostics]
     Diag --> Bread[Add Breadcrumbs]
     Bread --> DebugMd{Debug Mode}
-    
+
     %% Debug outputs
     DebugMd -->|"Headers"| DebugH[Debug Headers]
     DebugMd -->|"View"| DebugV[Debug UI]
     DebugMd -->|"JSON"| DebugJ[Diagnostic JSON]
-    
+
     %% Logging system
     Fetch -.-> Logger[pinoLogger.ts]
     Video -.-> Logger
     Command -.-> Logger
     Error -.-> Logger
     Logger --> LogLvl{Log Level}
-    
+
     %% Log levels
     LogLvl -->|"Info"| InfoLog[Info Logging]
     LogLvl -->|"Error"| ErrLog[Error with Context]
     LogLvl -->|"Debug"| DbgLog[Debug Details]
-    
+
     %% Configuration system
     EnvConf[environmentConfig.ts] --> VidConf[VideoConfigurationManager.ts]
     VidConf --> CacheConf[CacheConfigurationManager.ts]
     CacheConf --> LogConf[LoggingConfigurationManager.ts]
     LogConf --> DbgConf[DebugConfigurationManager.ts]
-    
+
     %% Configuration connections
     VidConf -.-> Command
     CacheConf -.-> StoreCache
     CacheConf -.-> TTLCalc
     LogConf -.-> Logger
     DbgConf -.-> Debug
-    
+
     %% Final response paths
     ConfigResp --> Final[Finalize Response]
     Pass --> Final
@@ -284,26 +287,27 @@ flowchart TD
     Err404 --> Final
     Err500 --> Final
     FallResp --> Final
-    
+
     Final --> Client
-    
+
     %% Performance monitoring connections
     Performance[Time Tracking] -.-> Fetch
     Performance -.-> Video
     Performance -.-> Command
     Performance -.-> StoreCache
-    
+
     %% Styling for better readability within confluence
     classDef primary fill:#d0e0ff
     classDef cache fill:#ffffd0
     classDef error fill:#ffd0d0
     classDef strategy fill:#d8f9d8
-    
+
     class Command,Pattern,Transform primary
     class CacheChk,StoreCache,GenKey,Version cache
     class Error,Normalize,ErrType error
-    class VideoS,FrameS,SheetS strategy
+    class VideoS,FrameS,SheetS,AudioS strategy
 ```
+
 </details>
 
 <details>
@@ -333,6 +337,7 @@ flowchart LR
     class F,G process
     class C,E,H success
 ```
+
 </details>
 
 <details>
@@ -363,6 +368,7 @@ flowchart TB
     class B,C,D,E config
     class F,G,H,I,J settings
 ```
+
 </details>
 
 ### Video Transformation
@@ -380,7 +386,7 @@ flowchart TB
     classDef retry fill:#F3E5F5,stroke:#6A1B9A,color:#000000;
 
     %% Command flow with Origins
-    A[VideoHandlerWithOrigins] --> B[TransformVideoCommand]
+    A[VideoHandler] --> B[TransformVideoCommand]
     B --> C[Execute with Origins]
     C --> D[Prepare Transform]
     D --> E[Execute Transform]
@@ -408,6 +414,7 @@ flowchart TB
     class J,L retry
     class I success
 ```
+
 </details>
 
 <details>
@@ -425,22 +432,25 @@ flowchart TB
     A["TransformationStrategy (Interface)"] --> B[VideoStrategy]
     A --> C[FrameStrategy]
     A --> D[SpritesheetStrategy]
+    A --> E[AudioStrategy]
 
     %% Factory
-    E[StrategyFactory] --> F{Mode?}
-    F -->|video| B
-    F -->|frame| C
-    F -->|spritesheet| D
+    F[StrategyFactory] --> G{Mode?}
+    G -->|video| B
+    G -->|frame| C
+    G -->|spritesheet| D
+    G -->|audio| E
 
     %% Implementation
-    B & C & D --> G[Transform Video URL]
+    B & C & D & E --> H[Transform Video URL]
 
     %% Apply styles
     class A interface
-    class B,C,D,G concrete
-    class E factory
-    class F decision
+    class B,C,D,E,H concrete
+    class F factory
+    class G decision
 ```
+
 </details>
 
 <details>
@@ -458,26 +468,26 @@ flowchart TB
     %% Origins configuration
     A[Video Request] --> B[OriginResolver]
     B --> C{Match Origin Pattern}
-    
+
     %% Origin matching
     C -->|Match 1| D[Origin: Premium]
     C -->|Match 2| E[Origin: Standard]
     C -->|No Match| F[404 Error]
-    
+
     %% Sources within origins
     D --> G[R2 Bucket<br>Priority: 1]
     D --> H[Remote CDN<br>Priority: 2]
     D --> I[Fallback URL<br>Priority: 3]
-    
+
     E --> J[R2 Bucket<br>Priority: 1]
     E --> K[Remote CDN<br>Priority: 2]
-    
+
     %% Source resolution
     G & H & I & J & K --> L{Source Available?}
     L -->|Yes| M[Return Video]
     L -->|No| N[Try Next Source]
     N --> L
-    
+
     %% 404 retry mechanism
     L -->|All Sources Failed| O{From CDN-CGI?}
     O -->|Yes| P[retryWithAlternativeOrigins]
@@ -494,6 +504,7 @@ flowchart TB
     class F,S error
     class M origin
 ```
+
 </details>
 
 <details>
@@ -526,6 +537,7 @@ flowchart TB
     class A,C,E,F,H,J,K process
     class B,D,G,I decision
 ```
+
 </details>
 
 ### Caching System
@@ -556,6 +568,7 @@ flowchart LR
     class E cache
     class C,F response
 ```
+
 </details>
 
 <details>
@@ -590,6 +603,7 @@ flowchart TB
     class C response
     class E,F,G,H,I background
 ```
+
 </details>
 
 <details>
@@ -628,6 +642,7 @@ flowchart TB
     class K,L,M cache
     class C,J,K version
 ```
+
 </details>
 
 <details>
@@ -647,15 +662,15 @@ flowchart TB
     A([Video Response > 20MB]) --> B{Check Active Locks}
     B -->|Locked| C[Wait in Queue]
     B -->|Available| D[Acquire Chunk Locks]
-    
+
     C --> D
     D --> E[Split into 5MB Chunks]
     E --> F[Concurrent Upload Queue<br>Max 5 parallel]
-    
+
     F --> G[Store Chunk 0]
     F --> H[Store Chunk 1]
     F --> I[Store Chunk N]
-    
+
     G & H & I --> J[Create Manifest]
     J --> K[Store at Base Key]
     K --> L[Release All Locks]
@@ -679,6 +694,7 @@ flowchart TB
     class G,H,I chunk
     class M,S storage
 ```
+
 </details>
 
 ### Additional Features
@@ -714,6 +730,7 @@ flowchart TB
     class C,G,J,K response
     class E cache
 ```
+
 </details>
 
 <details>
@@ -733,17 +750,17 @@ flowchart TB
     A([Request 1]) --> B{In-flight Check}
     C([Request 2]) --> B
     D([Request 3]) --> B
-    
+
     B -->|First Request| E[Add to In-flight Map]
     E --> F[Execute Transformation]
-    
+
     B -->|Duplicate| G[Wait for Original]
     G --> H[Clone Response]
-    
+
     F --> I[Store in Cache]
     I --> J[Remove from In-flight]
     J --> K([Return Response])
-    
+
     H --> L([Return Cloned Response])
 
     %% Apply styles
@@ -753,6 +770,7 @@ flowchart TB
     class G,H wait
     class K,L response
 ```
+
 </details>
 
 <details>
@@ -790,6 +808,7 @@ flowchart TB
     class J,L response
     class E,K error
 ```
+
 </details>
 
 <details>
@@ -822,11 +841,12 @@ flowchart TB
     class I response
     class D,G error
 ```
+
 </details>
 
 ## Logging
 
-The video-resizer uses a centralized, high-performance logging system built on [Pino](https://github.com/pinojs/pino). 
+The video-resizer uses a centralized, high-performance logging system built on [Pino](https://github.com/pinojs/pino).
 
 ### Key Features
 
@@ -868,7 +888,7 @@ stop(); // Logs if operation exceeds threshold
 }
 ```
 
-For complete logging documentation, see the [Logging Guide](./docs/logging-guide.md).
+For complete logging documentation, see the [Logging Guide](./docs/features/logging.md).
 
 ## License
 

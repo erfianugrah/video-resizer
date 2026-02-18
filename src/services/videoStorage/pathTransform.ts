@@ -4,7 +4,8 @@
 
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { VideoResizerConfig } from './interfaces';
-import { logDebug } from './logging';
+import { createCategoryLogger } from '../../utils/logger';
+const logger = createCategoryLogger('VideoStorage');
 
 /**
  * Implementation of path transformation that might throw errors
@@ -18,49 +19,48 @@ function applyPathTransformationImpl(
   if (!config.pathTransforms || typeof config.pathTransforms !== 'object') {
     return path;
   }
-  
+
   // Normalize path by removing leading slash
   let normalizedPath = path.startsWith('/') ? path.substring(1) : path;
-  
+
   // Get the original path segments to check for transforms
   const segments = path.split('/').filter(Boolean);
-  
+
   // Check if any segment has a transform configuration
   for (const segment of segments) {
     const pathTransforms = config.pathTransforms;
     if (pathTransforms[segment] && typeof pathTransforms[segment] === 'object') {
       const transform = pathTransforms[segment];
-      
+
       // Check for origin-specific transforms first, fall back to generic transform
       const originSpecificTransform = transform[originType];
-      const originTransform = (
-        originSpecificTransform && typeof originSpecificTransform === 'object' 
-          ? originSpecificTransform 
-          : transform
-      );
-      
+      const originTransform =
+        originSpecificTransform && typeof originSpecificTransform === 'object'
+          ? originSpecificTransform
+          : transform;
+
       // If this segment should be removed and replaced with a prefix
       if (originTransform.removePrefix && originTransform.prefix !== undefined) {
         // Create a new path with the proper prefix and without the matched segment
         const pathWithoutSegment = segments
-          .filter(s => s !== segment) // Remove the segment
+          .filter((s) => s !== segment) // Remove the segment
           .join('/');
-          
+
         // Apply the new prefix
         normalizedPath = String(originTransform.prefix) + pathWithoutSegment;
-        
+
         // Use our helper to log with proper context handling
-        logDebug('VideoStorageService', 'Applied path transformation', {
+        logger.debug('Applied path transformation', {
           segment,
           originalPath: path,
-          transformed: normalizedPath
+          transformed: normalizedPath,
         });
-        
+
         break; // Only apply one transformation
       }
     }
   }
-  
+
   return normalizedPath;
 }
 
@@ -84,11 +84,11 @@ export function applyPathTransformation(
       {
         path,
         originType,
-        hasPathTransforms: !!config?.pathTransforms
+        hasPathTransforms: !!config?.pathTransforms,
       },
       'VideoStorageService'
     );
-    
+
     // Return original path as fallback
     return path;
   }

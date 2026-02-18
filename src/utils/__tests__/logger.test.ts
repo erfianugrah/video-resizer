@@ -13,13 +13,15 @@ import {
   flushPerformanceMetrics,
   clearPerformanceMetrics,
   type LogOptions,
-  type EnrichmentOptions
+  type EnrichmentOptions,
 } from '../logger';
 import { LoggingConfigurationManager } from '../../config/LoggingConfigurationManager';
 
 // Mock the dependencies
-vi.mock('../legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn()
+vi.mock('../requestContext', () => ({
+  getCurrentContext: vi.fn(),
+  createRequestContext: vi.fn(),
+  setCurrentContext: vi.fn(),
 }));
 
 vi.mock('../pinoLogger', () => ({
@@ -28,25 +30,25 @@ vi.mock('../pinoLogger', () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
-  updatePinoLoggerConfig: vi.fn()
+  updatePinoLoggerConfig: vi.fn(),
 }));
 
 vi.mock('../../config/LoggingConfigurationManager', () => {
   const mockInstance = {
     shouldLogComponent: vi.fn(() => true),
     shouldLogPerformance: vi.fn(() => true),
-    getPerformanceThreshold: vi.fn(() => 100)
+    getPerformanceThreshold: vi.fn(() => 100),
   };
-  
+
   return {
     LoggingConfigurationManager: {
-      getInstance: vi.fn(() => mockInstance)
-    }
+      getInstance: vi.fn(() => mockInstance),
+    },
   };
 });
 
 // Import mocked modules
-import { getCurrentContext } from '../legacyLoggerAdapter';
+import { getCurrentContext } from '../requestContext';
 import * as pinoLogger from '../pinoLogger';
 
 describe('Logger', () => {
@@ -55,7 +57,7 @@ describe('Logger', () => {
     url: 'https://example.com/test',
     startTime: 0,
     breadcrumbs: [],
-    diagnostics: {}
+    diagnostics: {},
   };
 
   beforeEach(() => {
@@ -72,9 +74,9 @@ describe('Logger', () => {
   describe('Basic Logging Functions', () => {
     it('should log debug messages', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logDebug('TestComponent', 'Debug message', { data: 'test' });
-      
+
       expect(pinoLogger.debug).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -86,9 +88,9 @@ describe('Logger', () => {
 
     it('should log info messages', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logInfo('TestComponent', 'Info message', { count: 42 });
-      
+
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -100,9 +102,9 @@ describe('Logger', () => {
 
     it('should log warning messages', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logWarn('TestComponent', 'Warning message', { warning: true });
-      
+
       expect(pinoLogger.warn).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -114,9 +116,9 @@ describe('Logger', () => {
 
     it('should log error messages', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logError('TestComponent', 'Error message', { error: 'details' });
-      
+
       expect(pinoLogger.error).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -129,9 +131,9 @@ describe('Logger', () => {
     it('should fallback to console when no context available', () => {
       (getCurrentContext as any).mockReturnValue(null);
       const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-      
+
       logInfo('TestComponent', 'Fallback message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('[TestComponent] Fallback message', {});
       expect(pinoLogger.info).not.toHaveBeenCalled();
     });
@@ -142,9 +144,9 @@ describe('Logger', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
       const loggingConfig = LoggingConfigurationManager.getInstance();
       (loggingConfig.shouldLogComponent as any).mockReturnValue(false);
-      
+
       logDebug('FilteredComponent', 'Should not log');
-      
+
       expect(pinoLogger.debug).not.toHaveBeenCalled();
     });
 
@@ -152,9 +154,9 @@ describe('Logger', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
       const loggingConfig = LoggingConfigurationManager.getInstance();
       (loggingConfig.shouldLogComponent as any).mockReturnValue(false);
-      
+
       logDebug('FilteredComponent', 'Should log anyway', {}, { force: true });
-      
+
       expect(pinoLogger.debug).toHaveBeenCalled();
     });
   });
@@ -162,15 +164,15 @@ describe('Logger', () => {
   describe('Log Enrichment', () => {
     it('should enrich logs with timing information', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const options: LogOptions = {
         enrich: {
-          includeTiming: true
-        }
+          includeTiming: true,
+        },
       };
-      
+
       logInfo('TestComponent', 'Enriched message', {}, options);
-      
+
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -180,23 +182,23 @@ describe('Logger', () => {
           timing: expect.objectContaining({
             elapsed: expect.stringMatching(/\d+ms/),
             timestamp: expect.any(String),
-            breadcrumbCount: 0
-          })
+            breadcrumbCount: 0,
+          }),
         })
       );
     });
 
     it('should enrich logs with request metadata', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const options: LogOptions = {
         enrich: {
-          includeRequestMetadata: true
-        }
+          includeRequestMetadata: true,
+        },
       };
-      
+
       logInfo('TestComponent', 'Request enriched', {}, options);
-      
+
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -206,23 +208,23 @@ describe('Logger', () => {
           request: expect.objectContaining({
             url: 'https://example.com/test',
             requestId: 'test-123',
-            breadcrumbCount: 0
-          })
+            breadcrumbCount: 0,
+          }),
         })
       );
     });
 
     it('should enrich logs with environment information', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const options: LogOptions = {
         enrich: {
-          includeEnvironment: true
-        }
+          includeEnvironment: true,
+        },
       };
-      
+
       logInfo('TestComponent', 'Environment enriched', {}, options);
-      
+
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -231,8 +233,8 @@ describe('Logger', () => {
         expect.objectContaining({
           environment: expect.objectContaining({
             runtime: expect.any(String),
-            platform: expect.any(String)
-          })
+            platform: expect.any(String),
+          }),
         })
       );
     });
@@ -241,14 +243,14 @@ describe('Logger', () => {
   describe('Category Logger', () => {
     it('should create category-specific logger', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const logger = createCategoryLogger('MyService');
-      
+
       logger.debug('Debug from category');
       logger.info('Info from category');
       logger.warn('Warn from category');
       logger.error('Error from category');
-      
+
       expect(pinoLogger.debug).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -256,7 +258,7 @@ describe('Logger', () => {
         'Debug from category',
         expect.any(Object)
       );
-      
+
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -268,12 +270,12 @@ describe('Logger', () => {
 
     it('should handle error with context in category logger', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const logger = createCategoryLogger('MyService');
       const testError = new Error('Test error');
-      
+
       logger.errorWithContext('Error occurred', testError, { additional: 'data' });
-      
+
       expect(pinoLogger.error).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -283,9 +285,9 @@ describe('Logger', () => {
           error: expect.objectContaining({
             message: 'Test error',
             name: 'Error',
-            stack: expect.any(String)
+            stack: expect.any(String),
           }),
-          additional: 'data'
+          additional: 'data',
         })
       );
     });
@@ -307,16 +309,16 @@ describe('Logger', () => {
 
     it('should measure performance and warn on slow operations', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       // Mock performance.now to simulate a slow operation
       let timeValue = 0;
       vi.spyOn(performance, 'now')
         .mockImplementationOnce(() => timeValue) // Start time
         .mockImplementationOnce(() => timeValue + 150); // End time (150ms)
-      
+
       const stopMeasurement = startPerformanceMeasurement('slowOperation', 'TestComponent');
       stopMeasurement();
-      
+
       // Should log a warning for slow operation
       expect(pinoLogger.warn).toHaveBeenCalledWith(
         mockContext,
@@ -325,27 +327,27 @@ describe('Logger', () => {
         'Slow operation detected: slowOperation',
         expect.objectContaining({
           duration: '150ms',
-          threshold: '100ms'
+          threshold: '100ms',
         })
       );
     });
 
     it('should batch performance metrics', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       // Create multiple measurements
       let timeValue = 0;
       vi.spyOn(performance, 'now').mockImplementation(() => timeValue++);
-      
+
       const stop1 = startPerformanceMeasurement('op1', 'Service1');
       const stop2 = startPerformanceMeasurement('op2', 'Service2');
-      
+
       stop1();
       stop2();
-      
+
       // Manually flush metrics instead of waiting for timer
       flushPerformanceMetrics();
-      
+
       // Should log aggregated metrics
       expect(pinoLogger.info).toHaveBeenCalledWith(
         mockContext,
@@ -358,7 +360,7 @@ describe('Logger', () => {
           minDuration: expect.any(String),
           maxDuration: expect.any(String),
           p95Duration: expect.any(String),
-          topOperations: expect.any(Array)
+          topOperations: expect.any(Array),
         })
       );
     });
@@ -367,10 +369,10 @@ describe('Logger', () => {
   describe('Error Handling', () => {
     it('should handle Error objects properly', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       const error = new Error('Test error message');
       logErrorWithContext('TestComponent', 'An error occurred', error);
-      
+
       expect(pinoLogger.error).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -380,17 +382,17 @@ describe('Logger', () => {
           error: expect.objectContaining({
             message: 'Test error message',
             name: 'Error',
-            stack: expect.any(String)
-          })
+            stack: expect.any(String),
+          }),
         })
       );
     });
 
     it('should handle non-Error objects', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logErrorWithContext('TestComponent', 'String error', 'Just a string error');
-      
+
       expect(pinoLogger.error).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -399,17 +401,17 @@ describe('Logger', () => {
         expect.objectContaining({
           error: {
             message: 'Just a string error',
-            type: 'string'
-          }
+            type: 'string',
+          },
         })
       );
     });
 
     it('should handle null/undefined errors', () => {
       (getCurrentContext as any).mockReturnValue(mockContext);
-      
+
       logErrorWithContext('TestComponent', 'Null error', null);
-      
+
       expect(pinoLogger.error).toHaveBeenCalledWith(
         mockContext,
         expect.any(Object),
@@ -418,8 +420,8 @@ describe('Logger', () => {
         expect.objectContaining({
           error: {
             message: 'Unknown error',
-            type: 'unknown'
-          }
+            type: 'unknown',
+          },
         })
       );
     });

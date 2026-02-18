@@ -1,6 +1,6 @@
 # KV Cache Implementation
 
-*Last Updated: December 9, 2025*
+_Last Updated: February 18, 2026_
 
 ## Overview
 
@@ -25,11 +25,13 @@ src/services/kvStorage/
 ```
 
 Related orchestration:
+
 - `utils/cacheOrchestrator.ts` – triggers background KV writes (with retries) and request coalescing.
 - `services/cacheVersionService.ts` – stores version metadata in KV.
 
 ## Cache keys
-- Format: `{mode}:{path}:derivative=...` (derivative-first). If no derivative, appends params for width/height/format/quality/compression (video) or time/duration/cols/rows/interval (frame/spritesheet).
+
+- Format: `{mode}:{path}:derivative=...` (derivative-first). If no derivative, appends params for width/height/format/quality/compression (video/audio) or time/duration/cols/rows/interval (frame/spritesheet).
 - Leading slashes removed; invalid characters replaced with `-` (`keyUtils.generateKVKey`).
 - Chunk keys use suffix `_<base>_chunk_{n}`.
 
@@ -44,11 +46,15 @@ export function generateKVKey(sourcePath: string, options: TransformOptions): st
   if (options.height) parts.push(`h=${options.height}`);
   if (options.format) parts.push(`f=${options.format}`);
   if (options.quality) parts.push(`q=${options.quality}`);
-  return `${mode}:${normalized}${parts.length ? ':' + parts.join(':') : ''}`.replace(/[^\w:/.=*-]/g, '-');
+  return `${mode}:${normalized}${parts.length ? ':' + parts.join(':') : ''}`.replace(
+    /[^\w:/.=*-]/g,
+    '-'
+  );
 }
 ```
 
 ## Storage
+
 - `storeVideo.ts` buffers the response once to measure size, then:
   - stores as a single KV entry when ≤20 MiB, or
   - splits into 5 MiB chunks, writing a manifest with `chunkCount`, `actualChunkSizes`, `totalSize`.
@@ -66,11 +72,14 @@ if (totalBytes <= MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY) {
     const chunk = videoArrayBuffer.slice(i * STANDARD_CHUNK_SIZE, (i + 1) * STANDARD_CHUNK_SIZE);
     await namespace.put(chunkKey, chunk, { metadata: { ...metadata, chunkIndex: i } });
   }
-  await namespace.put(key, manifestJson, { metadata: { ...metadata, chunkCount, actualChunkSizes } });
+  await namespace.put(key, manifestJson, {
+    metadata: { ...metadata, chunkCount, actualChunkSizes },
+  });
 }
 ```
 
 ## Retrieval
+
 - `getVideo.ts` fetches the base key to determine if content is single or chunked.
 - Range requests use `streamingHelpers.ts` to fetch only required chunks and stream byte slices.
 - Unsatisfiable ranges fall back to a full response instead of returning 416 to keep players working.
@@ -82,21 +91,28 @@ for (let i = 0; i < manifest.chunkCount; i++) {
   const chunkStart = currentPos;
   const chunkEnd = chunkStart + chunkSize - 1;
   if (range.end >= chunkStart && range.start <= chunkEnd) {
-    neededChunks.push({ index: i, start: Math.max(range.start - chunkStart, 0), end: Math.min(range.end - chunkStart, chunkSize - 1) });
+    neededChunks.push({
+      index: i,
+      start: Math.max(range.start - chunkStart, 0),
+      end: Math.min(range.end - chunkStart, chunkSize - 1),
+    });
   }
   currentPos += chunkSize;
 }
 ```
 
 ## Metadata, TTLs, and versions
+
 - Metadata includes content type, cache version, cache tags, size, and chunk manifest details.
 - TTLs come from `CacheConfigurationManager`; `storeIndefinitely` can be enabled but should be paired with purge tooling.
 - Version metadata is stored alongside the key (`CacheVersionService`).
 
 ## Cache tags & purging
+
 - Short tags (`vp-*`) generated in `services/videoStorage/cacheTags.ts` are attached to manifests and chunks so a tag purge removes all related entries.
 
 ## Safety & bypass
+
 - `nocache`, `bypass`, or `debug` query params skip KV.
 - Fallback storage skips KV entirely above 128 MB to avoid Worker memory pressure.
 - Chunk locks and manifest validation guard against size mismatches; monitor logs for rare `CHUNK SIZE MISMATCH` warnings.

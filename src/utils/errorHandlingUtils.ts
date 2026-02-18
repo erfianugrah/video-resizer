@@ -6,8 +6,25 @@
  */
 import { VideoTransformError, ErrorType, ProcessingError } from '../errors';
 import { getCurrentContext, addBreadcrumb } from './requestContext';
-import { createLogger, error as pinoError, debug as pinoDebug } from './pinoLogger';
+import { createCategoryLogger } from './logger';
 import * as Sentry from '@sentry/cloudflare';
+
+const errLogger = createCategoryLogger('Application');
+
+/**
+ * Create a JSON replacer that handles circular references.
+ * Returns a replacer function for use with JSON.stringify.
+ */
+export function getCircularReplacer() {
+  const seen = new WeakSet();
+  return (_key: string, value: unknown) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return '[Circular]';
+      seen.add(value);
+    }
+    return value;
+  };
+}
 
 /**
  * Safely serialize an error for console output.
@@ -24,12 +41,15 @@ export function serializeError(error: unknown): Record<string, unknown> {
       message: error.message,
       stack: error.stack,
       // Include any additional custom properties
-      ...Object.getOwnPropertyNames(error).reduce((acc, prop) => {
-        if (!['name', 'message', 'stack'].includes(prop)) {
-          acc[prop] = (error as any)[prop];
-        }
-        return acc;
-      }, {} as Record<string, any>)
+      ...Object.getOwnPropertyNames(error).reduce(
+        (acc, prop) => {
+          if (!['name', 'message', 'stack'].includes(prop)) {
+            acc[prop] = (error as any)[prop];
+          }
+          return acc;
+        },
+        {} as Record<string, any>
+      ),
     };
   }
 
@@ -50,7 +70,10 @@ export function serializeError(error: unknown): Record<string, unknown> {
  * @param context - Additional context data
  * @returns A VideoTransformError
  */
-function normalizeErrorBasic(err: unknown, context: Record<string, unknown> = {}): VideoTransformError {
+function normalizeErrorBasic(
+  err: unknown,
+  context: Record<string, unknown> = {}
+): VideoTransformError {
   // If it's already a VideoTransformError, return it
   if (err instanceof VideoTransformError) {
     return err;
@@ -86,7 +109,10 @@ function captureErrorToSentry(error: unknown, context: Record<string, unknown> =
   // Don't capture expected errors
   if (error instanceof Error) {
     // Filter out client disconnects (AbortError)
-    if (error.name === 'AbortError' || (error instanceof DOMException && error.name === 'AbortError')) {
+    if (
+      error.name === 'AbortError' ||
+      (error instanceof DOMException && error.name === 'AbortError')
+    ) {
       return;
     }
 
@@ -113,12 +139,14 @@ function captureErrorToSentry(error: unknown, context: Record<string, unknown> =
       if (context.errorType) {
         scope.setLevel(
           context.errorType === ErrorType.RESOURCE_NOT_FOUND ||
-          context.errorType === ErrorType.PATTERN_NOT_FOUND ||
-          context.errorType === ErrorType.ORIGIN_NOT_FOUND ? 'info' :
-          context.errorType === ErrorType.INVALID_PARAMETER ||
-          context.errorType === ErrorType.INVALID_MODE ||
-          context.errorType === ErrorType.INVALID_FORMAT ? 'warning' :
-          'error'
+            context.errorType === ErrorType.PATTERN_NOT_FOUND ||
+            context.errorType === ErrorType.ORIGIN_NOT_FOUND
+            ? 'info'
+            : context.errorType === ErrorType.INVALID_PARAMETER ||
+                context.errorType === ErrorType.INVALID_MODE ||
+                context.errorType === ErrorType.INVALID_FORMAT
+              ? 'warning'
+              : 'error'
         );
       }
 
@@ -160,7 +188,7 @@ export function logErrorWithContext(
     ...context,
     errorType: normalizedErr.errorType,
     errorMessage,
-    stack: errorStack
+    stack: errorStack,
   };
 
   // Try to get the request context
@@ -172,34 +200,30 @@ export function logErrorWithContext(
     addBreadcrumb(requestContext, 'Error', message, {
       category,
       errorType: normalizedErr.errorType,
-      error: errorMessage
+      error: errorMessage,
     });
 
-    // Log with pino logger
-    const logger = createLogger(requestContext);
-    pinoError(requestContext, logger, category, message, combinedContext);
+    // Log with category logger
+    const categoryLogger = createCategoryLogger(category);
+    categoryLogger.error(message, combinedContext);
   } else {
-    // Fall back to console for logging
-    console.error({
-      context: category,
-      operation: 'logErrorWithContext',
-      message,
-      ...combinedContext
-    });
+    // Fall back to module-level logger when no request context
+    const categoryLogger = createCategoryLogger(category);
+    categoryLogger.error(message, combinedContext);
   }
 
   // Capture exception to Sentry (filters out expected errors)
   captureErrorToSentry(error, {
     message,
     category,
-    ...combinedContext
+    ...combinedContext,
   });
 }
 
 /**
  * Wraps a function with standardized error handling.
  * Works with both async and sync functions, preserving their return type.
- * 
+ *
  * @param fn - Function to wrap (async or sync)
  * @param context - Error context object with component and function name
  * @param additionalContext - Optional additional context data
@@ -208,9 +232,9 @@ export function logErrorWithContext(
 export function withErrorHandling<A extends any[], R>(
   fn: (...args: A) => R | Promise<R>,
   context: {
-    functionName: string,
-    component: string,
-    logErrors?: boolean
+    functionName: string;
+    component: string;
+    logErrors?: boolean;
   },
   additionalContext: Record<string, unknown> = {}
 ): (...args: A) => Promise<R> {
@@ -223,20 +247,20 @@ export function withErrorHandling<A extends any[], R>(
       // Log the error with context if requested
       if (context.logErrors !== false) {
         // Format arguments to avoid logging sensitive data
-        const formattedArgs = args.map(arg => {
+        const formattedArgs = args.map((arg) => {
           // Handle sensitive data by not logging the full content
           if (arg instanceof Request) {
             return {
               type: 'Request',
               url: arg.url,
-              method: arg.method
+              method: arg.method,
             };
           }
           if (arg instanceof Response) {
             return {
               type: 'Response',
               status: arg.status,
-              statusText: arg.statusText
+              statusText: arg.statusText,
             };
           }
           // Return other arguments as is (add more special handling as needed)
@@ -249,12 +273,12 @@ export function withErrorHandling<A extends any[], R>(
           error,
           {
             ...additionalContext,
-            args: formattedArgs
+            args: formattedArgs,
           },
           context.component
         );
       }
-      
+
       // Rethrow for caller handling
       throw error;
     }
@@ -263,7 +287,7 @@ export function withErrorHandling<A extends any[], R>(
 
 /**
  * Try to execute a function and return null on error.
- * 
+ *
  * @param fn - Function to execute
  * @param context - Error context including category and operationName
  * @param defaultValue - Default value to return on error (defaults to null)
@@ -272,9 +296,9 @@ export function withErrorHandling<A extends any[], R>(
 export function tryOrNull<P extends any[], R>(
   fn: (...args: P) => R,
   context: {
-    functionName: string,
-    component: string,
-    logErrors?: boolean
+    functionName: string;
+    component: string;
+    logErrors?: boolean;
   },
   defaultValue: R | null = null
 ): (...args: P) => R | null {
@@ -292,7 +316,7 @@ export function tryOrNull<P extends any[], R>(
           context.component
         );
       }
-      
+
       // Return null or default value instead of propagating the error
       return defaultValue;
     }
@@ -301,7 +325,7 @@ export function tryOrNull<P extends any[], R>(
 
 /**
  * Try to execute a function and return a default value on error.
- * 
+ *
  * @param fn - Function to execute
  * @param context - Error context including category and operationName
  * @param defaultValue - Default value to return on error
@@ -310,9 +334,9 @@ export function tryOrNull<P extends any[], R>(
 export function tryOrDefault<P extends any[], R>(
   fn: (...args: P) => R,
   context: {
-    functionName: string,
-    component: string,
-    logErrors?: boolean
+    functionName: string;
+    component: string;
+    logErrors?: boolean;
   },
   defaultValue: R
 ): (...args: P) => R {
@@ -330,7 +354,7 @@ export function tryOrDefault<P extends any[], R>(
           context.component
         );
       }
-      
+
       // Return the default value instead of propagating the error
       return defaultValue;
     }
@@ -339,9 +363,9 @@ export function tryOrDefault<P extends any[], R>(
 
 /**
  * Create a VideoTransformError from any error.
- * 
+ *
  * @param error - Original error
- * @param errorType - Error type for categorization 
+ * @param errorType - Error type for categorization
  * @param context - Additional context data
  * @returns A VideoTransformError
  */

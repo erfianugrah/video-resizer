@@ -7,3 +7,4 @@ export * from './ProcessingError';
 export * from './ConfigurationError';
 export * from './NotFoundError';
 export * from './OriginError';
+export * from './cfErrorCodes';

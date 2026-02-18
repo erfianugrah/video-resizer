@@ -2,7 +2,9 @@
  * Device detection utilities for video requests
  * Enhanced with standardized error handling for robustness
  */
-import { debug } from './loggerUtils';
+import { createCategoryLogger } from './logger';
+
+const logger = createCategoryLogger('DeviceUtils');
 import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { getDeviceTypeFromUserAgent, getVideoSizeForDeviceType } from './userAgentUtils';
 import { VideoSize } from './clientHints';
@@ -29,7 +31,7 @@ export const hasCfDeviceType = tryOrDefault<[Request], boolean>(
   {
     functionName: 'hasCfDeviceType',
     component: 'DeviceUtils',
-    logErrors: true
+    logErrors: true,
   },
   false // Safe default is false if detection fails
 );
@@ -41,11 +43,11 @@ export const hasCfDeviceType = tryOrDefault<[Request], boolean>(
  */
 function getVideoSizeFromCfDeviceTypeImpl(request: Request): VideoSize {
   const cfDeviceType = request.headers.get('CF-Device-Type');
-  debug('DeviceUtils', 'CF-Device-Type detection', { cfDeviceType });
+  logger.debug('CF-Device-Type detection', { cfDeviceType });
 
   // Get configuration manager instance
   const configManager = VideoConfigurationManager.getInstance();
-  
+
   // Get device width mappings from config if available, or use defaults
   const deviceWidthMap = configManager.getResponsiveConfig().deviceWidths || {
     mobile: 480,
@@ -54,21 +56,22 @@ function getVideoSizeFromCfDeviceTypeImpl(request: Request): VideoSize {
   };
 
   // Get width for the device type or use desktop default
-  const width = deviceWidthMap[cfDeviceType as keyof typeof deviceWidthMap] || deviceWidthMap.desktop;
-  const height = Math.round(width * 9 / 16); // Maintain 16:9 aspect ratio
+  const width =
+    deviceWidthMap[cfDeviceType as keyof typeof deviceWidthMap] || deviceWidthMap.desktop;
+  const height = Math.round((width * 9) / 16); // Maintain 16:9 aspect ratio
 
   return {
     width,
     height,
     source: `cf-device-type-${cfDeviceType}`,
-    deviceType: cfDeviceType || undefined
+    deviceType: cfDeviceType || undefined,
   };
 }
 
 /**
  * Get responsive video size based on CF-Device-Type header
  * Uses tryOrDefault for safe device detection with proper error handling
- * 
+ *
  * @param request - The incoming request
  * @returns Video size settings based on CF-Device-Type, or default values on error
  */
@@ -77,14 +80,14 @@ export const getVideoSizeFromCfDeviceType = tryOrDefault<[Request], VideoSize>(
   {
     functionName: 'getVideoSizeFromCfDeviceType',
     component: 'DeviceUtils',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default values if CF-Device-Type processing fails
     width: 1080,
     height: 608,
     source: 'cf-device-type-error-fallback',
-    deviceType: 'desktop'
+    deviceType: 'desktop',
   }
 );
 
@@ -97,7 +100,7 @@ function getVideoSizeFromUserAgentImpl(request: Request): VideoSize {
   const userAgent = request.headers.get('User-Agent') || '';
   const deviceType = getDeviceTypeFromUserAgent(userAgent);
 
-  debug('DeviceUtils', 'User-Agent detection', {
+  logger.debug('User-Agent detection', {
     userAgent: userAgent.substring(0, 50),
     detectedDeviceType: deviceType,
   });
@@ -108,7 +111,7 @@ function getVideoSizeFromUserAgentImpl(request: Request): VideoSize {
 
   // Get configuration manager instance
   const configManager = VideoConfigurationManager.getInstance();
-  
+
   // Get available qualities from config
   const availableQualities = configManager.getResponsiveConfig().availableQualities;
 
@@ -119,7 +122,7 @@ function getVideoSizeFromUserAgentImpl(request: Request): VideoSize {
 /**
  * Get responsive video size based on User-Agent string
  * Uses tryOrDefault for safe user agent detection with proper error handling
- * 
+ *
  * @param request - The incoming request
  * @returns Video size settings based on User-Agent detection, or default values on error
  */
@@ -128,14 +131,14 @@ export const getVideoSizeFromUserAgent = tryOrDefault<[Request], VideoSize>(
   {
     functionName: 'getVideoSizeFromUserAgent',
     component: 'DeviceUtils',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default values if User-Agent processing fails
     width: 854,
     height: 480,
     source: 'user-agent-error-fallback',
-    deviceType: 'desktop'
+    deviceType: 'desktop',
   }
 );
 
@@ -147,34 +150,34 @@ export const getVideoSizeFromUserAgent = tryOrDefault<[Request], VideoSize>(
 function detectDeviceCapabilitiesImpl(request: Request): Record<string, unknown> {
   const userAgent = request.headers.get('User-Agent') || '';
   const deviceType = getDeviceTypeFromUserAgent(userAgent);
-  
+
   // Detect basic capabilities
   const capabilities = {
     deviceType,
     supportsHdr: false,
     supportsTouchscreen: deviceType === 'mobile' || deviceType === 'tablet',
     supportsHighFramerate: deviceType !== 'mobile',
-    maxResolution: deviceType === 'mobile' ? 720 : (deviceType === 'tablet' ? 1080 : 2160),
+    maxResolution: deviceType === 'mobile' ? 720 : deviceType === 'tablet' ? 1080 : 2160,
   };
-  
+
   // Check for HDR support based on user agent
   if (/iPhone OS 1[1-9]|iPad OS 1[1-9]|Mac OS.*Safari 1[4-9]/i.test(userAgent)) {
     capabilities.supportsHdr = true;
   }
-  
+
   if (/Chrome\/9[0-9]|Edge\/9[0-9]|Firefox\/9[0-9]/i.test(userAgent)) {
     capabilities.supportsHdr = true;
   }
-  
-  debug('DeviceUtils', 'Device capabilities', capabilities);
-  
+
+  logger.debug('Device capabilities', capabilities);
+
   return capabilities;
 }
 
 /**
  * Detect device capabilities for video playback
  * Uses tryOrDefault for safe device capability detection with proper error handling
- * 
+ *
  * @param request - The incoming request
  * @returns Object with device capabilities, or default capabilities on error
  */
@@ -183,7 +186,7 @@ export const detectDeviceCapabilities = tryOrDefault<[Request], Record<string, u
   {
     functionName: 'detectDeviceCapabilities',
     component: 'DeviceUtils',
-    logErrors: true
+    logErrors: true,
   },
   {
     // Safe default capabilities if detection fails
@@ -192,6 +195,6 @@ export const detectDeviceCapabilities = tryOrDefault<[Request], Record<string, u
     supportsTouchscreen: false,
     supportsHighFramerate: true,
     maxResolution: 1080,
-    source: 'error-fallback'
+    source: 'error-fallback',
   }
 );

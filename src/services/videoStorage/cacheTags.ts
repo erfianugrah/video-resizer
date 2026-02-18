@@ -6,7 +6,8 @@ import { tryOrDefault } from '../../utils/errorHandlingUtils';
 import { CacheConfigurationManager } from '../../config';
 import { getDerivativeDimensions } from '../../utils/imqueryUtils';
 import { VideoOptions } from './interfaces';
-import { logDebug } from './logging';
+import { createCategoryLogger } from '../../utils/logger';
+const logger = createCategoryLogger('VideoStorage');
 
 /**
  * Implementation of generateCacheTags that might throw errors
@@ -22,13 +23,13 @@ function generateCacheTagsImpl(
 ): string[] {
   // Get the cache configuration manager
   const cacheConfig = CacheConfigurationManager.getInstance();
-  
+
   // If cache tags are disabled, return empty array
   if (!cacheConfig.getConfig().enableCacheTags) {
-    logDebug('VideoStorageService', 'Cache tags are disabled');
+    logger.debug('Cache tags are disabled');
     return [];
   }
-  
+
   const startTime = Date.now();
   const tags: string[] = [];
 
@@ -43,29 +44,29 @@ function generateCacheTagsImpl(
       prefix = configuredPrefix.endsWith('-') ? configuredPrefix : configuredPrefix + '-';
     }
 
-    logDebug('VideoStorageService', 'Using cache tag prefix from configuration', {
+    logger.debug('Using cache tag prefix from configuration', {
       configuredPrefix,
       shortPrefix: prefix,
-      source: 'CacheConfigurationManager'
+      source: 'CacheConfigurationManager',
     });
   } catch (err) {
     // In case of any error with cache config, fall back to the default prefix
-    logDebug('VideoStorageService', 'Could not get prefix from config, using default prefix', {
+    logger.debug('Could not get prefix from config, using default prefix', {
       error: err instanceof Error ? err.message : String(err),
-      defaultPrefix: prefix
+      defaultPrefix: prefix,
     });
   }
 
-  logDebug('VideoStorageService', 'Generating cache tags', {
+  logger.debug('Generating cache tags', {
     videoPath,
     hasOptions: !!options,
     hasHeaders: !!headers,
-    prefix
+    prefix,
   });
 
   // Extract the last 2 segments of the path for the tag
   // e.g., /category/videos/test.mp4 -> videos-test.mp4
-  const pathSegments = videoPath.split('/').filter(s => s.length > 0);
+  const pathSegments = videoPath.split('/').filter((s) => s.length > 0);
   const last2Segments = pathSegments.slice(-2).join('-');
 
   // Normalize to create safe tags (replace special chars)
@@ -120,7 +121,7 @@ function generateCacheTagsImpl(
       }
     }
   }
-  
+
   // Add IMQuery tag if this transformation came from IMQuery parameters
   if (options.customData && typeof options.customData === 'object') {
     const customData = options.customData as Record<string, unknown>;
@@ -128,22 +129,22 @@ function generateCacheTagsImpl(
       tags.push(`${prefix}imquery`);
     }
   }
-  
+
   // Calculate processing time
   const endTime = Date.now();
-  
-  logDebug('VideoStorageService', 'Generated cache tags', {
+
+  logger.debug('Generated cache tags', {
     tagCount: tags.length,
-    generationTime: endTime - startTime
+    generationTime: endTime - startTime,
   });
-  
+
   return tags;
 }
 
 /**
  * Generate cache tags for a video resource
  * Uses standardized error handling to ensure consistent error logging and fallback behavior
- * 
+ *
  * @param videoPath - The path to the video
  * @param options - Video options (quality, format, etc.)
  * @param headers - Response headers for additional metadata
@@ -157,7 +158,7 @@ export const generateCacheTags = tryOrDefault<
   {
     functionName: 'generateCacheTags',
     component: 'VideoStorageService',
-    logErrors: true
+    logErrors: true,
   },
   [] // Default to empty array if tag generation fails
 );

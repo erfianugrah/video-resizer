@@ -1,27 +1,64 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getFromKVCache, storeInKVCache } from '../../src/utils/kvCacheUtils';
 import * as kvStorageService from '../../src/services/kvStorageService';
+
+// Create a mock KV namespace with the methods getCacheKV checks for
+const mockKVNamespace = {
+  get: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+  list: vi.fn(),
+  getWithMetadata: vi.fn(),
+} as unknown as KVNamespace;
+
+// Mock CacheConfigurationManager (cacheConfig singleton)
+const mockGetConfig = vi.fn().mockReturnValue({
+  enableKVCache: true,
+  bypassQueryParameters: ['nocache', 'bypass'],
+  mimeTypes: {
+    video: ['video/mp4', 'video/webm'],
+    image: ['image/jpeg', 'image/png'],
+  },
+});
+
+vi.mock('../../src/config/CacheConfigurationManager', () => ({
+  cacheConfig: {
+    getConfig: (...args: any[]) => mockGetConfig(...args),
+  },
+  CacheConfigurationManager: {
+    getInstance: vi.fn(() => ({
+      getConfig: (...args: any[]) => mockGetConfig(...args),
+    })),
+  },
+}));
+
+// Mock flexible bindings - getCacheKV returns our mock KV namespace
+const mockGetCacheKV = vi.fn().mockReturnValue(mockKVNamespace);
+vi.mock('../../src/utils/flexibleBindings', () => ({
+  getCacheKV: (...args: any[]) => mockGetCacheKV(...args),
+}));
+
+// Mock URL normalization to pass through
+vi.mock('../../src/utils/urlVersionUtils', () => ({
+  normalizeUrlForCaching: vi.fn((url: string) => url),
+}));
+
+// Mock determineTTL to return a known TTL
+const mockDetermineTTL = vi.fn().mockReturnValue(86400);
+vi.mock('../../src/utils/determineTTL', () => ({
+  determineTTL: (...args: any[]) => mockDetermineTTL(...args),
+}));
 
 // Mock the config module with the getCacheConfig function
 vi.mock('../../src/config', () => ({
   getCacheConfig: vi.fn(() => ({
-    enableKVCache: true,  // Default to enabled for tests
+    enableKVCache: true,
     ttl: {
       ok: 86400,
       redirects: 3600,
       clientError: 60,
-      serverError: 10
-    }
+      serverError: 10,
+    },
   })),
-  CacheConfigurationManager: {
-    getInstance: vi.fn(() => ({
-      getConfig: vi.fn(() => ({ 
-        defaultMaxAge: 86400,
-        method: 'cf',
-        enableCacheTags: true
-      }))
-    }))
-  }
 }));
 
 // Mock the required modules for requestContext
@@ -30,42 +67,41 @@ vi.mock('../../src/utils/requestContext', () => ({
     requestId: 'test-request-id',
     url: 'https://example.com/videos/test.mp4',
     startTime: Date.now(),
-    debugEnabled: false
+    debugEnabled: false,
   })),
-  addBreadcrumb: vi.fn()
+  addBreadcrumb: vi.fn(),
 }));
 
 // Mock the legacy logger adapter
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => ({
-    requestId: 'test-request-id',
-    url: 'https://example.com/videos/test.mp4',
-    startTime: Date.now(),
-    debugEnabled: false
-  }))
-}));
-
 // Mock logger
 vi.mock('../../src/utils/pinoLogger', () => ({
   createLogger: vi.fn(() => ({
     debug: vi.fn(),
     info: vi.fn(),
-    error: vi.fn()
+    error: vi.fn(),
   })),
   debug: vi.fn(),
   info: vi.fn(),
-  error: vi.fn()
+  error: vi.fn(),
+}));
+
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
 }));
 
 // Mock KV storage service with default success response
 vi.mock('../../src/services/kvStorageService', () => ({
-  // By default, return a successful response
   getTransformedVideo: vi.fn().mockResolvedValue({
     response: new Response('cached video data', {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': '16'
-      }
+        'Content-Length': '16',
+      },
     }),
     metadata: {
       sourcePath: '/videos/test.mp4',
@@ -73,80 +109,103 @@ vi.mock('../../src/services/kvStorageService', () => ({
       cacheTags: ['video-test'],
       contentType: 'video/mp4',
       contentLength: 16,
-      createdAt: Date.now()
-    }
+      createdAt: Date.now(),
+    },
   }),
   storeTransformedVideo: vi.fn().mockResolvedValue(true),
-  generateKVKey: vi.fn((sourcePath, options) => {
+  generateKVKey: vi.fn((sourcePath: string, options: any) => {
     let key = `video:${sourcePath.replace(/^\/+/, '')}`;
-    
+
     // Check for IMQuery parameters in customData
     const hasIMQuery = options.customData?.imwidth || options.customData?.imheight;
-    
+
     if (hasIMQuery) {
-      // Use IMQuery parameters for the key if they exist
       if (options.customData?.imwidth) key += `:imwidth=${options.customData.imwidth}`;
       if (options.customData?.imheight) key += `:imheight=${options.customData.imheight}`;
-      
-      // Add derivative as metadata but not as primary key
       if (options.derivative) key += `:via=${options.derivative}`;
     } else if (options.derivative) {
-      // Normal case - use derivative as key
       key += `:derivative=${options.derivative}`;
     }
-    
+
     return key;
-  })
+  }),
 }));
 
 describe('KV Cache Utils', () => {
-  beforeEach(() => {
+  let getFromKVCache: typeof import('../../src/utils/kvCacheUtils').getFromKVCache;
+  let storeInKVCache: typeof import('../../src/utils/kvCacheUtils').storeInKVCache;
+
+  beforeEach(async () => {
     vi.clearAllMocks();
+
+    // Re-setup default mock return values after clear
+    mockGetConfig.mockReturnValue({
+      enableKVCache: true,
+      bypassQueryParameters: ['nocache', 'bypass'],
+      mimeTypes: {
+        video: ['video/mp4', 'video/webm'],
+        image: ['image/jpeg', 'image/png'],
+      },
+    });
+    mockGetCacheKV.mockReturnValue(mockKVNamespace);
+    mockDetermineTTL.mockReturnValue(86400);
+
+    // Re-setup default kvStorageService mocks after clear
+    vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValue({
+      response: new Response('cached video data', {
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': '16',
+        },
+      }),
+      metadata: {
+        sourcePath: '/videos/test.mp4',
+        derivative: 'mobile',
+        cacheTags: ['video-test'],
+        contentType: 'video/mp4',
+        contentLength: 16,
+        createdAt: Date.now(),
+      },
+    } as any);
+    vi.mocked(kvStorageService.storeTransformedVideo).mockResolvedValue(true);
+
+    const mod = await import('../../src/utils/kvCacheUtils');
+    getFromKVCache = mod.getFromKVCache;
+    storeInKVCache = mod.storeInKVCache;
   });
 
   const mockEnv = {
-    VIDEO_TRANSFORMATIONS_CACHE: {} as KVNamespace,
-    VIDEO_TRANSFORMS_KV: null
+    VIDEO_TRANSFORMATIONS_CACHE: mockKVNamespace,
+    VIDEO_TRANSFORMS_KV: null,
   };
 
   const mockOptions = {
     derivative: 'mobile',
     width: 640,
-    height: 360
+    height: 360,
   };
 
   const sourcePath = '/videos/test.mp4';
 
   describe('getFromKVCache', () => {
     it('should return null when KV caching is disabled', async () => {
-      // Get access to the mock implementation
-      const { getCacheConfig } = await import('../../src/config');
-      
-      // Override the mock return value for this test
-      vi.mocked(getCacheConfig).mockImplementationOnce(() => ({
+      // Override CacheConfigurationManager to disable KV cache
+      mockGetConfig.mockReturnValue({
         enableKVCache: false,
-        ttl: {
-          ok: 86400,
-          redirects: 3600,
-          clientError: 60,
-          serverError: 10
-        }
-      }));
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+        bypassQueryParameters: ['nocache', 'bypass'],
+      });
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       expect(result).toBeNull();
       expect(kvStorageService.getTransformedVideo).not.toHaveBeenCalled();
     });
 
     it('should return null when KV namespace is not available', async () => {
-      const envWithoutKV = {
-        VIDEO_TRANSFORMATIONS_CACHE: null,
-        VIDEO_TRANSFORMS_KV: null
-      };
-      
-      const result = await getFromKVCache(envWithoutKV, sourcePath, mockOptions);
-      
+      mockGetCacheKV.mockReturnValue(null);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       expect(result).toBeNull();
       expect(kvStorageService.getTransformedVideo).not.toHaveBeenCalled();
     });
@@ -155,10 +214,10 @@ describe('KV Cache Utils', () => {
       const cachedResponse = new Response('cached video data', {
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Length': '16'
-        }
+          'Content-Length': '16',
+        },
       });
-      
+
       // Mock successful KV fetch
       vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValue({
         response: cachedResponse,
@@ -168,57 +227,53 @@ describe('KV Cache Utils', () => {
           cacheTags: ['video-test'],
           contentType: 'video/mp4',
           contentLength: 16,
-          createdAt: Date.now()
-        }
-      });
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+          createdAt: Date.now(),
+        },
+      } as any);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       expect(result).toBe(cachedResponse);
+      // Source code calls: getTransformedVideo(kvNamespace, normalizedPath, { ...options, env }, request)
       expect(kvStorageService.getTransformedVideo).toHaveBeenCalledWith(
-        mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
+        mockKVNamespace,
         sourcePath,
-        mockOptions,
+        expect.objectContaining({
+          ...mockOptions,
+          env: mockEnv,
+        }),
         undefined
       );
     });
 
     it('should return null when cached response is not found', async () => {
-      // Get access to the mock implementation
-      const { getTransformedVideo } = await import('../../src/services/kvStorageService');
-      
       // Mock KV miss
-      vi.mocked(getTransformedVideo).mockResolvedValueOnce(null);
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+      vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValueOnce(null);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       expect(result).toBeNull();
-      expect(getTransformedVideo).toHaveBeenCalledWith(
-        mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
+      expect(kvStorageService.getTransformedVideo).toHaveBeenCalledWith(
+        mockKVNamespace,
         sourcePath,
-        mockOptions,
+        expect.objectContaining({
+          ...mockOptions,
+          env: mockEnv,
+        }),
         undefined
       );
     });
 
     it('should return null when getTransformedVideo throws an error', async () => {
-      // Get access to the mock implementation
-      const { getTransformedVideo } = await import('../../src/services/kvStorageService');
-      
       // Mock error in KV fetch
-      vi.mocked(getTransformedVideo).mockRejectedValueOnce(
-        new Error('KV error')
-      );
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+      vi.mocked(kvStorageService.getTransformedVideo).mockRejectedValueOnce(new Error('KV error'));
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       expect(result).toBeNull();
     });
 
     it('should bypass KV cache when debug is enabled', async () => {
-      // Skip this test - in our new implementation, debug mode doesn't bypass KV cache
-      // just CF edge cache
-      
       // Mock success response
       vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValue({
         response: new Response('cached data'),
@@ -228,19 +283,19 @@ describe('KV Cache Utils', () => {
           cacheTags: ['video-test'],
           contentType: 'video/mp4',
           contentLength: 16,
-          createdAt: Date.now()
-        }
-      });
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+          createdAt: Date.now(),
+        },
+      } as any);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       // We should get a response from KV cache even in debug mode
       expect(result).not.toBeNull();
     });
 
     it('should not bypass KV cache when URL has bypass parameters', async () => {
       // In our new implementation, URL parameters don't bypass KV cache anymore
-      
+
       // Mock success response
       vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValue({
         response: new Response('cached data'),
@@ -250,33 +305,33 @@ describe('KV Cache Utils', () => {
           cacheTags: ['video-test'],
           contentType: 'video/mp4',
           contentLength: 16,
-          createdAt: Date.now()
-        }
-      });
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, mockOptions);
-      
+          createdAt: Date.now(),
+        },
+      } as any);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, mockOptions);
+
       // We should get a response from KV cache even with URL parameters
       expect(result).not.toBeNull();
     });
-    
+
     it('should use IMQuery parameters in customData when looking up cached content', async () => {
       // Options with IMQuery parameters
       const imQueryOptions = {
         ...mockOptions,
         customData: {
           imwidth: '800',
-          imheight: '450'
-        }
+          imheight: '450',
+        },
       };
-      
+
       // Mock successful KV lookup
       vi.mocked(kvStorageService.getTransformedVideo).mockResolvedValue({
         response: new Response('cached video data', {
           headers: {
             'Content-Type': 'video/mp4',
-            'Content-Length': '16'
-          }
+            'Content-Length': '16',
+          },
         }),
         metadata: {
           sourcePath,
@@ -284,21 +339,22 @@ describe('KV Cache Utils', () => {
           cacheTags: ['video-test', 'video-imwidth-800'],
           contentType: 'video/mp4',
           contentLength: 16,
-          createdAt: Date.now()
-        }
-      });
-      
-      const result = await getFromKVCache(mockEnv, sourcePath, imQueryOptions);
-      
+          createdAt: Date.now(),
+        },
+      } as any);
+
+      const result = await getFromKVCache(mockEnv as any, sourcePath, imQueryOptions);
+
       expect(result).not.toBeNull();
       expect(kvStorageService.getTransformedVideo).toHaveBeenCalledWith(
-        mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
+        mockKVNamespace,
         sourcePath,
         expect.objectContaining({
           customData: {
             imwidth: '800',
-            imheight: '450'
-          }
+            imheight: '450',
+          },
+          env: mockEnv,
         }),
         undefined
       );
@@ -307,36 +363,25 @@ describe('KV Cache Utils', () => {
 
   describe('storeInKVCache', () => {
     it('should return false when KV caching is disabled', async () => {
-      // Get access to the mock implementation
-      const { getCacheConfig } = await import('../../src/config');
-      
-      // Override the mock return value for this test
-      vi.mocked(getCacheConfig).mockImplementationOnce(() => ({
+      // Override CacheConfigurationManager to disable KV cache
+      mockGetConfig.mockReturnValue({
         enableKVCache: false,
-        ttl: {
-          ok: 86400,
-          redirects: 3600,
-          clientError: 60,
-          serverError: 10
-        }
-      }));
-      
+        bypassQueryParameters: ['nocache', 'bypass'],
+      });
+
       const response = new Response('video data');
-      const result = await storeInKVCache(mockEnv, sourcePath, response, mockOptions);
-      
+      const result = await storeInKVCache(mockEnv as any, sourcePath, response, mockOptions);
+
       expect(result).toBe(false);
       expect(kvStorageService.storeTransformedVideo).not.toHaveBeenCalled();
     });
 
     it('should return false when KV namespace is not available', async () => {
-      const envWithoutKV = {
-        VIDEO_TRANSFORMATIONS_CACHE: null,
-        VIDEO_TRANSFORMS_KV: null
-      };
-      
+      mockGetCacheKV.mockReturnValue(null);
+
       const response = new Response('video data');
-      const result = await storeInKVCache(envWithoutKV, sourcePath, response, mockOptions);
-      
+      const result = await storeInKVCache(mockEnv as any, sourcePath, response, mockOptions);
+
       expect(result).toBe(false);
       expect(kvStorageService.storeTransformedVideo).not.toHaveBeenCalled();
     });
@@ -346,99 +391,120 @@ describe('KV Cache Utils', () => {
         status: 200,
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Length': '10'
-        }
+          'Content-Length': '10',
+        },
       });
-      
+
       // Mock successful KV storage
       vi.mocked(kvStorageService.storeTransformedVideo).mockResolvedValue(true);
-      
-      const result = await storeInKVCache(mockEnv, sourcePath, response, mockOptions);
-      
+
+      const result = await storeInKVCache(mockEnv as any, sourcePath, response, mockOptions);
+
       expect(result).toBe(true);
+      // Source code calls: storeTransformedVideo(kvNamespace, normalizedPath, responseClone, { ...options, env }, ttl, false)
       expect(kvStorageService.storeTransformedVideo).toHaveBeenCalledWith(
-        mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
+        mockKVNamespace,
         sourcePath,
         expect.any(Response),
-        mockOptions,
-        86400 // 24 hours for OK responses
+        expect.objectContaining({
+          ...mockOptions,
+          env: mockEnv,
+        }),
+        86400, // TTL from our determineTTL mock
+        false // streaming mode flag
       );
     });
 
     it('should set different TTLs based on response status', async () => {
       // Reset mock before this test
       vi.clearAllMocks();
-      
-      // Test for redirect response
+      mockGetConfig.mockReturnValue({
+        enableKVCache: true,
+        bypassQueryParameters: ['nocache', 'bypass'],
+        mimeTypes: {
+          video: ['video/mp4', 'video/webm'],
+          image: ['image/jpeg', 'image/png'],
+        },
+      });
+      mockGetCacheKV.mockReturnValue(mockKVNamespace);
+
+      // Test for redirect response - set determineTTL to return redirect TTL
+      mockDetermineTTL.mockReturnValue(3600);
+
       const redirectResponse = new Response('', {
         status: 302,
-        headers: { 
-          'Location': 'https://example.com/redirected',
-          'Content-Type': 'video/mp4' // Important - needs to be a video type
-        }
+        headers: {
+          Location: 'https://example.com/redirected',
+          'Content-Type': 'video/mp4',
+        },
       });
-      
+
       vi.mocked(kvStorageService.storeTransformedVideo).mockResolvedValue(true);
-      
-      await storeInKVCache(mockEnv, sourcePath, redirectResponse, mockOptions);
-      
+
+      await storeInKVCache(mockEnv as any, sourcePath, redirectResponse, mockOptions);
+
       expect(kvStorageService.storeTransformedVideo).toHaveBeenCalledWith(
-        mockEnv.VIDEO_TRANSFORMATIONS_CACHE,
+        mockKVNamespace,
         sourcePath,
         expect.any(Response),
-        mockOptions,
-        3600 // 1 hour for redirects
+        expect.objectContaining({
+          ...mockOptions,
+          env: mockEnv,
+        }),
+        3600, // Redirect TTL from our determineTTL mock
+        false
       );
-      
-      // Test for client error response - skip since errors aren't cached
-      
-      // Test for server error response - skip since errors aren't cached
     });
 
     it('should handle errors when storing in KV', async () => {
-      const response = new Response('video data');
-      
-      // Get access to the mock implementation
-      const { storeTransformedVideo } = await import('../../src/services/kvStorageService');
-      
+      const response = new Response('video data', {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': '10',
+        },
+      });
+
       // Mock error in KV storage
-      vi.mocked(storeTransformedVideo).mockRejectedValueOnce(
+      vi.mocked(kvStorageService.storeTransformedVideo).mockRejectedValueOnce(
         new Error('KV storage error')
       );
-      
-      const result = await storeInKVCache(mockEnv, sourcePath, response, mockOptions);
-      
+
+      const result = await storeInKVCache(mockEnv as any, sourcePath, response, mockOptions);
+
       expect(result).toBe(false);
     });
-    
+
     it('should use generateKVKey with IMQuery parameters', async () => {
       // Reset mocks before test
       vi.clearAllMocks();
-      
+
       // Create custom mock for testing IMQuery parameters in cache key
-      const mockGenerateKVKey = vi.fn().mockReturnValue('video:videos/test.mp4:imwidth=800:imheight=450:via=mobile');
+      const mockGenerateKVKey = vi
+        .fn()
+        .mockReturnValue('video:videos/test.mp4:imwidth=800:imheight=450:via=mobile');
       vi.spyOn(kvStorageService, 'generateKVKey').mockImplementation(mockGenerateKVKey);
-      
+
       // Options with IMQuery parameters
       const imQueryOptions = {
         ...mockOptions,
         customData: {
           imwidth: '800',
-          imheight: '450'
-        }
+          imheight: '450',
+        },
       };
-      
+
       // Call the function directly to verify behavior
       const key = kvStorageService.generateKVKey(sourcePath, imQueryOptions);
-      
+
       expect(key).toBe('video:videos/test.mp4:imwidth=800:imheight=450:via=mobile');
       expect(mockGenerateKVKey).toHaveBeenCalledWith(
         sourcePath,
         expect.objectContaining({
           customData: {
             imwidth: '800',
-            imheight: '450'
-          }
+            imheight: '450',
+          },
         })
       );
     });

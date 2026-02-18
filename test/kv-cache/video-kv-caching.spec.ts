@@ -12,10 +12,10 @@ vi.mock('../../src/services/videoTransformationService', () => ({
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Length': '20',
-        'Cache-Control': 'public, max-age=86400'
-      }
+        'Cache-Control': 'public, max-age=86400',
+      },
     });
-  })
+  }),
 }));
 
 // Mock the generateKVKey function since it might not be available in the mocked service
@@ -35,7 +35,7 @@ vi.mock('../../src/services/kvStorageService', () => ({
   }),
   storeTransformedVideo: vi.fn().mockResolvedValue(true),
   getTransformedVideo: vi.fn(),
-  listVariants: vi.fn()
+  listVariants: vi.fn(),
 }));
 
 describe('Video Handler with KV Caching - Integration Test', () => {
@@ -48,25 +48,25 @@ describe('Video Handler with KV Caching - Integration Test', () => {
     CACHE_ENABLE_KV: string;
     ENVIRONMENT: string;
   };
-  
+
   beforeEach(() => {
     mockKV = new MockKVNamespace();
     mockEnv = {
       VIDEO_TRANSFORMATIONS_CACHE: mockKV,
       executionCtx: {
-        waitUntil: vi.fn((promise) => promise)
+        waitUntil: vi.fn((promise) => promise),
       },
       CACHE_ENABLE_KV: 'true',
-      ENVIRONMENT: 'testing' 
+      ENVIRONMENT: 'testing',
     };
-    
+
     vi.clearAllMocks();
   });
-  
+
   // Helper to create a request with transformation options
   function createRequest(options?: Record<string, string>) {
     const url = new URL('https://example.com/videos/test.mp4');
-    
+
     if (options) {
       for (const [key, value] of Object.entries(options)) {
         if (value !== undefined) {
@@ -74,51 +74,59 @@ describe('Video Handler with KV Caching - Integration Test', () => {
         }
       }
     }
-    
+
     return new Request(url.toString());
   }
-  
+
   it('should transform video with options from URL parameters', async () => {
     const request = createRequest({
       derivative: 'mobile',
       width: '640',
-      height: '360'
+      height: '360',
     });
-    
-    const response = await handleRequestWithCaching(request, mockEnv, mockEnv.executionCtx);
-    
+
+    const response = await handleRequestWithCaching(
+      request,
+      mockEnv as any,
+      mockEnv.executionCtx as any
+    );
+
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('transformed video data');
-    
+
     // Verify the transformation service was called with the correct options
     expect(transformVideo).toHaveBeenCalledWith(
       request,
       expect.objectContaining({
         derivative: 'mobile',
         width: 640,
-        height: 360
+        height: 360,
       }),
       expect.anything(),
       expect.anything(),
       mockEnv
     );
   });
-  
+
   it('should bypass cache when debug=true is present', async () => {
     const request = createRequest({
       derivative: 'mobile',
-      debug: 'true'
+      debug: 'true',
     });
-    
-    const response = await handleRequestWithCaching(request, mockEnv, mockEnv.executionCtx);
-    
+
+    const response = await handleRequestWithCaching(
+      request,
+      mockEnv as any,
+      mockEnv.executionCtx as any
+    );
+
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('transformed video data');
-    
+
     // Verify the transformation service was called directly
     expect(transformVideo).toHaveBeenCalled();
   });
-  
+
   it('should handle requests with multiple transformation parameters', async () => {
     const request = createRequest({
       quality: 'high',
@@ -128,13 +136,17 @@ describe('Video Handler with KV Caching - Integration Test', () => {
       format: 'mp4',
       loop: 'true',
       autoplay: 'true',
-      muted: 'true'
+      muted: 'true',
     });
-    
-    const response = await handleRequestWithCaching(request, mockEnv, mockEnv.executionCtx);
-    
+
+    const response = await handleRequestWithCaching(
+      request,
+      mockEnv as any,
+      mockEnv.executionCtx as any
+    );
+
     expect(response.status).toBe(200);
-    
+
     // Verify the transformation service was called with all parameters
     expect(transformVideo).toHaveBeenCalledWith(
       request,
@@ -146,7 +158,7 @@ describe('Video Handler with KV Caching - Integration Test', () => {
         format: 'mp4',
         loop: true,
         autoplay: true,
-        muted: true
+        muted: true,
       }),
       expect.anything(),
       expect.anything(),

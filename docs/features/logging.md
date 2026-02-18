@@ -1,6 +1,6 @@
 # Logging System
 
-*Last Updated: June 19, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -25,6 +25,7 @@
 The Video Resizer implements a comprehensive logging system that provides structured, configurable logs for monitoring, debugging, and performance analysis. The logging system is built around a centralized logging service with support for different log levels, formats, and component-specific filtering.
 
 The logging system helps developers and operators:
+
 - Monitor system behavior and performance
 - Diagnose issues and errors
 - Track request processing details
@@ -40,50 +41,48 @@ flowchart TD
     A[Application Code] --> B{Logger Type}
     B -->|Direct| C[Pino Logger]
     B -->|Category| D[Category Logger]
-    B -->|Legacy| E[Legacy Adapter]
-    
+
     D --> F[Centralized Logger]
-    E --> F
     F --> C
-    
+
     C --> G{Context Available?}
     G -->|Yes| H[Request Context]
     G -->|No| I[Console Fallback]
-    
+
     H --> J{Component Filter}
     J -->|Enabled| K[Format with Pino]
     J -->|Disabled| X[Discard Log]
-    
+
     K --> L[Add Breadcrumbs]
     L --> M[Add Performance Data]
     M --> N[JSON Output]
-    
+
     style F fill:#f9f,stroke:#333,stroke-width:2px
     style C fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 ### Key Components
 
-1. **Centralized Logger** (`logger.ts`): Main entry point with category-based logging
-2. **Pino Logger** (`pinoLogger.ts`): High-performance JSON logger
-3. **Legacy Adapter** (`legacyLoggerAdapter.ts`): Backward compatibility layer
-4. **Request Context** (`requestContext.ts`): Request-scoped context and breadcrumbs
-5. **Configuration** (`LoggingConfigurationManager`): Runtime configuration
+1. **Centralized Logger** (`logger.ts`): Facade providing the unified logging API
+2. **Pino Logger** (`pinoLogger.ts`): High-performance Pino-based JSON logger engine
+3. **Request Context** (`requestContext.ts`): Request-scoped context and breadcrumbs
+4. **Configuration** (`LoggingConfigurationManager`): Runtime configuration
 
 ## Log Levels
 
 The logging system supports four standard log levels:
 
-| Level | Priority | Function | Description | Log Volume (per 100 requests) |
-|-------|----------|----------|-------------|-------------------------------|
-| `error` | 4 | `error(context, logger, component, message, error?, data?)` | Error conditions | ~500 lines |
-| `warn` | 3 | `warn(context, logger, component, message, data?)` | Warning conditions | ~1,000 lines |
-| `info` | 2 | `info(context, logger, component, message, data?)` | General informational messages | ~4,000 lines |
-| `debug` | 1 | `debug(context, logger, component, message, data?)` | Detailed debugging information | ~20,000 lines |
+| Level   | Priority | Function                                                    | Description                    | Log Volume (per 100 requests) |
+| ------- | -------- | ----------------------------------------------------------- | ------------------------------ | ----------------------------- |
+| `error` | 4        | `error(context, logger, component, message, error?, data?)` | Error conditions               | ~500 lines                    |
+| `warn`  | 3        | `warn(context, logger, component, message, data?)`          | Warning conditions             | ~1,000 lines                  |
+| `info`  | 2        | `info(context, logger, component, message, data?)`          | General informational messages | ~4,000 lines                  |
+| `debug` | 1        | `debug(context, logger, component, message, data?)`         | Detailed debugging information | ~20,000 lines                 |
 
 The configured log level acts as a threshold—messages with a level below the threshold are not logged. For example, with `level: 'info'`, debug messages are suppressed while info, warn, and error messages are logged.
 
 **Important**: There are TWO log level settings that must match:
+
 1. `logging.level` - The main log level
 2. `logging.pino.level` - The Pino logger level (overrides the main level)
 
@@ -126,15 +125,15 @@ Machine-parsable format ideal for production and log aggregation:
 
 All logs follow a structured format with consistent fields:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `timestamp` | ISO timestamp of the log event | `2023-09-15T12:34:56.789Z` |
-| `level` | Log level | `info` |
-| `component` | Source component | `VideoHandler` |
-| `message` | Primary log message | `Processing video request` |
-| `data` | Additional structured data | `{"url": "https://example.com/video.mp4"}` |
-| `requestId` | Unique request identifier | `01HBZGRPR1DQVT5ZP13VWXNDPZ` |
-| `error` | Error information (for error logs) | `{"name": "ValidationError", "message": "Invalid width"}` |
+| Field         | Description                        | Example                                                             |
+| ------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| `timestamp`   | ISO timestamp of the log event     | `2023-09-15T12:34:56.789Z`                                          |
+| `level`       | Log level                          | `info`                                                              |
+| `component`   | Source component                   | `VideoHandler`                                                      |
+| `message`     | Primary log message                | `Processing video request`                                          |
+| `data`        | Additional structured data         | `{"url": "https://example.com/video.mp4"}`                          |
+| `requestId`   | Unique request identifier          | `01HBZGRPR1DQVT5ZP13VWXNDPZ`                                        |
+| `error`       | Error information (for error logs) | `{"name": "ValidationError", "message": "Invalid width"}`           |
 | `breadcrumbs` | Previous log events in the request | `[{"component": "PathMatcher", "message": "Matched path pattern"}]` |
 
 This structured approach enables easy filtering, searching, and analysis of logs.
@@ -144,17 +143,18 @@ This structured approach enables easy filtering, searching, and analysis of logs
 The logging system uses a component-based approach, where each log is associated with a specific component. This enables filtering and organization of logs by system area:
 
 ```typescript
-// Import the logging utilities
-import { debug, info, warn, error } from './utils/loggerUtils';
+// Import the logging utilities from the centralized logger
+import { debug, info, warn, error } from './utils/logger';
 
 // Log with component context
-info(context, logger, 'VideoHandler', 'Processing video request', { 
+info(context, logger, 'VideoHandler', 'Processing video request', {
   url: request.url,
-  options: transformOptions
+  options: transformOptions,
 });
 ```
 
 Common components include:
+
 - `VideoHandler`: Main request handling
 - `PathMatcher`: URL pattern matching
 - `TransformationService`: Video transformation
@@ -173,7 +173,7 @@ const startTime = performance.now();
 // Record the start time
 debug(context, logger, 'VideoHandler', 'Starting video transformation', {
   startTime,
-  options: transformOptions
+  options: transformOptions,
 });
 
 // Perform the operation
@@ -183,19 +183,20 @@ const result = await transformVideo(options);
 const duration = performance.now() - startTime;
 info(context, logger, 'VideoHandler', 'Completed video transformation', {
   duration,
-  options: transformOptions
+  options: transformOptions,
 });
 
 // Emit a warning if the operation was slow
 if (duration > 1000) {
   warn(context, logger, 'Performance', 'Slow video transformation', {
     duration,
-    options: transformOptions
+    options: transformOptions,
   });
 }
 ```
 
 When `includePerformance` is enabled, the system also tracks:
+
 - Detailed timing of key operations
 - Method execution time
 - Cache lookup performance
@@ -224,7 +225,7 @@ This is implemented via a deterministic hashing approach:
 function shouldSampleLog(requestId: string, sampleRate: number): boolean {
   // Hash the request ID to a value between 0-1
   const hash = hashString(requestId) / Number.MAX_SAFE_INTEGER;
-  
+
   // Sample if hash is below the sample rate
   return hash < sampleRate;
 }
@@ -266,24 +267,24 @@ Logging behavior is highly configurable through `config/worker-config.json`:
 }
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `level` | string | 'info' | Log level: 'debug', 'info', 'warn', 'error' |
-| `format` | string | 'json' | Log format: 'json' or 'text' |
-| `includeTimestamps` | boolean | true | Include timestamps in logs |
-| `includeComponentName` | boolean | true | Include component names in logs |
-| `colorize` | boolean | true | Use colors in console output |
-| `enabledComponents` | string[] | [] | Components to enable (empty = all) |
-| `disabledComponents` | string[] | [] | Components to disable |
-| `sampleRate` | number | 1 | Sampling rate for logs (0-1) |
-| `enablePerformanceLogging` | boolean | false | Enable performance metrics |
-| `performanceThresholdMs` | number | 1000 | Threshold for performance warnings |
-| `breadcrumbs.enabled` | boolean | true | Enable breadcrumb collection |
-| `breadcrumbs.maxItems` | number | 25 | Maximum breadcrumbs to track |
-| `breadcrumbs.logAdditions` | boolean | false | Log each breadcrumb addition (verbose!) |
-| `pino.level` | string | 'info' | Pino logger level (MUST match main level) |
-| `pino.browser` | object | {...} | Browser-specific Pino configuration |
-| `pino.base` | object | {...} | Base fields for all logs |
+| Option                     | Type     | Default | Description                                 |
+| -------------------------- | -------- | ------- | ------------------------------------------- |
+| `level`                    | string   | 'info'  | Log level: 'debug', 'info', 'warn', 'error' |
+| `format`                   | string   | 'json'  | Log format: 'json' or 'text'                |
+| `includeTimestamps`        | boolean  | true    | Include timestamps in logs                  |
+| `includeComponentName`     | boolean  | true    | Include component names in logs             |
+| `colorize`                 | boolean  | true    | Use colors in console output                |
+| `enabledComponents`        | string[] | []      | Components to enable (empty = all)          |
+| `disabledComponents`       | string[] | []      | Components to disable                       |
+| `sampleRate`               | number   | 1       | Sampling rate for logs (0-1)                |
+| `enablePerformanceLogging` | boolean  | false   | Enable performance metrics                  |
+| `performanceThresholdMs`   | number   | 1000    | Threshold for performance warnings          |
+| `breadcrumbs.enabled`      | boolean  | true    | Enable breadcrumb collection                |
+| `breadcrumbs.maxItems`     | number   | 25      | Maximum breadcrumbs to track                |
+| `breadcrumbs.logAdditions` | boolean  | false   | Log each breadcrumb addition (verbose!)     |
+| `pino.level`               | string   | 'info'  | Pino logger level (MUST match main level)   |
+| `pino.browser`             | object   | {...}   | Browser-specific Pino configuration         |
+| `pino.base`                | object   | {...}   | Base fields for all logs                    |
 
 ## Error Logging
 
@@ -298,15 +299,16 @@ try {
   // Log the error with context
   error(context, logger, 'VideoHandler', 'Error during video processing', err, {
     url: request.url,
-    options: transformOptions
+    options: transformOptions,
   });
-  
+
   // Return an error response
   return createErrorResponse(err);
 }
 ```
 
 The error logging function extracts error details:
+
 - Error name and message
 - Stack trace (when available and enabled)
 - Error code and status (for custom errors)
@@ -322,11 +324,12 @@ debug(context, logger, 'PathMatcher', 'Pattern matching details', {
   url: request.url,
   pattern: pathPattern.matcher,
   captures: extractedCaptures,
-  matched: isMatched
+  matched: isMatched,
 });
 ```
 
 Debug logs are only emitted when:
+
 1. The log level is set to 'debug' in the configuration, OR
 2. Debug mode is enabled for the request (via debug parameter)
 
@@ -335,11 +338,13 @@ Debug logs are only emitted when:
 You can enable debug logging for specific requests without changing the global configuration:
 
 1. **URL Parameter**: Add `?debug=true` to any request
+
    ```
    https://example.com/videos/abc123?width=720&debug=true
    ```
 
 2. **HTTP Header**: Add `X-Debug-Logging: true`
+
    ```bash
    curl -H "X-Debug-Logging: true" https://example.com/videos/abc123
    ```
@@ -370,7 +375,7 @@ function addBreadcrumb(context: RequestContext, breadcrumb: LogBreadcrumb): void
   if (!context.breadcrumbs) {
     context.breadcrumbs = [];
   }
-  
+
   // Add breadcrumb, respecting maximum count
   context.breadcrumbs.push(breadcrumb);
   if (context.breadcrumbs.length > maxBreadcrumbs) {
@@ -393,8 +398,8 @@ The breadcrumb system has been optimized to reduce log volume while maintaining 
 ```json
 {
   "breadcrumbs": {
-    "enabled": true,      // Always collect breadcrumbs
-    "maxItems": 25,       // Max breadcrumbs per request
+    "enabled": true, // Always collect breadcrumbs
+    "maxItems": 25, // Max breadcrumbs per request
     "logAdditions": false // Don't log each addition (saves ~37% log volume)
   }
 }
@@ -434,18 +439,19 @@ const context: RequestContext = {
   url: request.url,
   method: request.method,
   id: generateRequestId(),
-  startTime: performance.now()
+  startTime: performance.now(),
 };
 
 // Log with context
 info(context, logger, 'VideoHandler', 'Processing request', {
-  url: context.url
+  url: context.url,
 });
 ```
 
 ## Common Configurations
 
 ### Production (Minimal Logging)
+
 ```json
 {
   "logging": {
@@ -461,9 +467,11 @@ info(context, logger, 'VideoHandler', 'Processing request', {
   }
 }
 ```
+
 Expected: ~4,000 lines per 100 requests
 
 ### Development (Full Visibility)
+
 ```json
 {
   "logging": {
@@ -479,9 +487,11 @@ Expected: ~4,000 lines per 100 requests
   }
 }
 ```
+
 Expected: ~20,000 lines per 100 requests
 
 ### Performance Monitoring
+
 ```json
 {
   "logging": {
@@ -499,6 +509,7 @@ Expected: ~20,000 lines per 100 requests
 ## Quick Commands
 
 ### Enable Debug Logging
+
 ```bash
 # Update both log levels and enable breadcrumb logging
 sed -i 's/"level": "info"/"level": "debug"/g' config/worker-config.json
@@ -506,6 +517,7 @@ sed -i 's/"logAdditions": false/"logAdditions": true/g' config/worker-config.jso
 ```
 
 ### Disable Debug Logging
+
 ```bash
 # Revert to info level and disable breadcrumb logging
 sed -i 's/"level": "debug"/"level": "info"/g' config/worker-config.json
@@ -513,11 +525,13 @@ sed -i 's/"logAdditions": true/"logAdditions": false/g' config/worker-config.jso
 ```
 
 ### Check Current Log Level
+
 ```bash
 grep -E '"level":|"pino":' config/worker-config.json
 ```
 
 ### Deploy Configuration
+
 ```bash
 npm run deploy:config
 ```
@@ -527,6 +541,7 @@ npm run deploy:config
 ### What to Log at Each Level
 
 #### INFO Level:
+
 - Request start/complete
 - Cache misses (important for monitoring)
 - Transform completion with timing
@@ -536,6 +551,7 @@ npm run deploy:config
 - CDN-CGI URL creation
 
 #### DEBUG Level:
+
 - IMQuery detection and derivative matching
 - Cache hits (high volume)
 - Configuration loading details
@@ -544,6 +560,7 @@ npm run deploy:config
 - Transform parameter calculations
 
 #### TRACE Level (future):
+
 - Breadcrumbs (currently at debug)
 - All intermediate processing steps
 - Request header details
@@ -609,7 +626,7 @@ info(context, logger, 'VideoHandler', 'Processing video request', {
   url: request.url,
   width: options.width,
   height: options.height,
-  mode: options.mode
+  mode: options.mode,
 });
 ```
 
@@ -621,7 +638,7 @@ debug(context, logger, 'CacheService', 'Cache key generation details', {
   url: request.url,
   options: transformOptions,
   generatedKey: cacheKey,
-  strategy: 'derivative-based'
+  strategy: 'derivative-based',
 });
 ```
 
@@ -633,7 +650,7 @@ warn(context, logger, 'TransformationService', 'Using fallback transformation', 
   reason: 'Unsupported format',
   requestedFormat: options.format,
   fallingBackTo: 'mp4',
-  url: request.url
+  url: request.url,
 });
 ```
 
@@ -648,7 +665,7 @@ try {
     url: request.url,
     options: transformOptions,
     originUrl: pathPattern.originUrl,
-    duration: performance.now() - startTime
+    duration: performance.now() - startTime,
   });
 }
 ```
@@ -670,8 +687,8 @@ info(context, logger, 'Performance', 'Video transformation completed', {
   options: {
     width: options.width,
     height: options.height,
-    mode: options.mode
-  }
+    mode: options.mode,
+  },
 });
 
 // Log warning if slow
@@ -679,7 +696,7 @@ if (transformDuration > 1000) {
   warn(context, logger, 'Performance', 'Slow video transformation', {
     duration: transformDuration,
     threshold: 1000,
-    url: request.url
+    url: request.url,
   });
 }
 ```

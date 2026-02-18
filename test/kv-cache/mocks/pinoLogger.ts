@@ -1,6 +1,7 @@
 /**
  * Mock Pino Logger for testing
  */
+import { vi } from 'vitest';
 
 // Mock logger object
 const mockLogger = {
@@ -10,7 +11,7 @@ const mockLogger = {
   error: vi.fn(),
   fatal: vi.fn(),
   trace: vi.fn(),
-  child: () => mockLogger
+  child: () => mockLogger,
 };
 
 // Mock createLogger function

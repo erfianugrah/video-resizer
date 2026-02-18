@@ -2,10 +2,16 @@
  * Strategy for audio-only transformations
  */
 import { VideoTransformOptions } from '../commands/TransformVideoCommand';
-import { TransformationContext, TransformationStrategy, TransformParams } from './TransformationStrategy';
+import {
+  TransformationContext,
+  TransformationStrategy,
+  TransformParams,
+} from './TransformationStrategy';
 import { VideoConfigurationManager } from '../../config';
 import { isValidTime, isValidDuration } from '../../utils/transformationUtils';
-import { debug } from '../../utils/loggerUtils';
+import { createCategoryLogger } from '../../utils/logger';
+
+const logger = createCategoryLogger('AudioStrategy');
 import { ValidationError } from '../../errors/ValidationError';
 
 export class AudioStrategy implements TransformationStrategy {
@@ -24,7 +30,19 @@ export class AudioStrategy implements TransformationStrategy {
 
       if (optionValue !== null && optionValue !== undefined) {
         // Exclude video/frame-specific params that do not apply to audio output
-        if (!['width', 'height', 'fit', 'loop', 'autoplay', 'muted', 'preload', 'quality', 'compression'].includes(ourParam)) {
+        if (
+          ![
+            'width',
+            'height',
+            'fit',
+            'loop',
+            'autoplay',
+            'muted',
+            'preload',
+            'quality',
+            'compression',
+          ].includes(ourParam)
+        ) {
           params[cdnParam] = optionValue;
         }
       }
@@ -46,7 +64,7 @@ export class AudioStrategy implements TransformationStrategy {
       params['time'] = '0s';
     }
 
-    debug('AudioStrategy', 'Prepared audio transformation params', params);
+    logger.debug('Prepared audio transformation params', params);
     return params;
   }
 
@@ -95,7 +113,7 @@ export class AudioStrategy implements TransformationStrategy {
         loop: options.loop,
         autoplay: options.autoplay,
         muted: options.muted,
-        preload: options.preload
+        preload: options.preload,
       };
       throw ValidationError.invalidOptionCombination(
         'Playback parameters (loop, autoplay, muted, preload) cannot be used with mode=audio',
@@ -122,11 +140,7 @@ export class AudioStrategy implements TransformationStrategy {
     if (options.format) {
       const normalized = options.format.toLowerCase();
       if (normalized !== 'm4a') {
-        throw ValidationError.invalidFormat(
-          options.format,
-          ['m4a'],
-          context
-        );
+        throw ValidationError.invalidFormat(options.format, ['m4a'], context);
       }
       options.format = 'm4a';
     }

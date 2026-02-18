@@ -1,6 +1,6 @@
 # KV Chunking for Large Videos
 
-*Last Updated: January 21, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -171,7 +171,9 @@ The manifest is stored in the value of the base key and contains all necessary m
 {
   "totalSize": 52428800,
   "chunkCount": 10,
-  "actualChunkSizes": [5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880],
+  "actualChunkSizes": [
+    5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880, 5242880
+  ],
   "standardChunkSize": 5242880,
   "originalContentType": "video/mp4"
 }
@@ -215,7 +217,7 @@ async function storeChunkedVideo(namespace, baseKey, videoBuffer, contentType) {
     chunkCount: chunks.length,
     actualChunkSizes: chunkSizes,
     standardChunkSize: CHUNK_SIZE,
-    originalContentType: contentType
+    originalContentType: contentType,
   };
 
   // Store manifest at base key
@@ -224,8 +226,8 @@ async function storeChunkedVideo(namespace, baseKey, videoBuffer, contentType) {
       isChunked: true,
       cacheTags,
       contentType: 'application/json',
-      contentLength: JSON.stringify(manifest).length
-    }
+      contentLength: JSON.stringify(manifest).length,
+    },
   });
 
   // Store chunks with related metadata
@@ -236,8 +238,8 @@ async function storeChunkedVideo(namespace, baseKey, videoBuffer, contentType) {
         parentKey: baseKey,
         chunkIndex: i,
         cacheTags,
-        contentLength: chunks[i].byteLength
-      }
+        contentLength: chunks[i].byteLength,
+      },
     });
   }
 
@@ -287,8 +289,8 @@ async function getChunkedVideo(namespace, baseKey, request) {
         'Accept-Ranges': 'bytes',
         'Content-Range': `bytes ${start}-${end}/${manifest.totalSize}`,
         'Content-Length': (end - start + 1).toString(),
-        'Cache-Control': 'public, max-age=3600'
-      }
+        'Cache-Control': 'public, max-age=3600',
+      },
     });
 
     // Start async chunk fetching and streaming
@@ -308,8 +310,8 @@ async function getChunkedVideo(namespace, baseKey, request) {
         'Content-Type': manifest.originalContentType,
         'Content-Length': manifest.totalSize.toString(),
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=3600'
-      }
+        'Cache-Control': 'public, max-age=3600',
+      },
     });
 
     // Start async chunk fetching for full video
@@ -343,10 +345,10 @@ async function streamChunksForRange(writer, namespace, baseKey, neededChunks, st
       await writer.write(new Uint8Array(chunkData.slice(sliceStart, sliceEnd)));
 
       videoPosition += chunk.size;
-      processedBytes += (sliceEnd - sliceStart);
+      processedBytes += sliceEnd - sliceStart;
 
       // Check if we've fulfilled the range request
-      if (processedBytes >= (end - start + 1)) {
+      if (processedBytes >= end - start + 1) {
         break;
       }
     }
@@ -365,7 +367,7 @@ The 10MB (10,485,760 bytes) chunk size was carefully chosen for several reasons:
 - **Balance**: Provides optimal balance between minimizing chunk count and staying well below KV's 25MB limit
 - **Safety margin**: ~40% of KV's limit allows room for metadata overhead and future adjustments
 - **Performance**: Large enough to significantly reduce KV operation count and metadata overhead
-- **Technical efficiency**: As a power-of-2 multiple (10 * 2^20), it aligns well with memory operations
+- **Technical efficiency**: As a power-of-2 multiple (10 \* 2^20), it aligns well with memory operations
 - **Scalability**: 10MB chunks support videos up to several GB in size without excessive chunk counts
 - **Metadata optimization**: Reduces the number of chunks, thereby reducing metadata size
 
@@ -385,6 +387,7 @@ The KV Chunking system uses a two-level storage architecture:
 - **Metadata**: Contains chunk metadata (parent key, index) and the same `cacheTags` as the parent
 
 This architecture ensures:
+
 - Consistent cache invalidation
 - Clear relationship between chunks and parent video
 - Efficient lookup and retrieval
@@ -523,29 +526,29 @@ The KV Chunking system includes advanced range request support:
 function streamChunksForRange(writer, namespace, baseKey, neededChunks, start, end) {
   let processedBytes = 0;
   let videoPosition = 0;
-  
+
   // Process each needed chunk
   for (const chunk of neededChunks) {
     // Fetch the chunk
     const chunkKey = `${baseKey}_chunk_${chunk.index}`;
     const chunkData = await namespace.get(chunkKey, 'arrayBuffer');
-    
+
     // Calculate slice within this chunk
     const sliceStart = chunk.index === 0 ? start : 0;
     const sliceEnd = Math.min(chunk.size, end - videoPosition + 1);
-    
+
     // Write the slice to the stream
     await writer.write(new Uint8Array(chunkData.slice(sliceStart, sliceEnd)));
-    
+
     videoPosition += chunk.size;
-    processedBytes += (sliceEnd - sliceStart);
-    
+    processedBytes += sliceEnd - sliceStart;
+
     // Check if we've fulfilled the range request
-    if (processedBytes >= (end - start + 1)) {
+    if (processedBytes >= end - start + 1) {
       break;
     }
   }
-  
+
   // Close the stream
   await writer.close();
 }
@@ -573,26 +576,26 @@ flowchart TD
     A[Request to Store Chunk] --> B{Is Chunk Locked?}
     B -->|No| C[Acquire Lock]
     B -->|Yes| D[Wait for Lock Release]
-    
+
     C --> E[Store Chunk Data]
     D --> F[Previous Operation Completes]
     F --> C
-    
+
     E --> G[Verify Size Consistency]
     G --> H{Size Match?}
-    
+
     H -->|Yes| I[Release Lock]
     H -->|No| J[Log Error & Rollback]
     J --> I
-    
+
     I --> K[Operation Complete]
-    
+
     classDef request fill:#E8F5E9,stroke:#2E7D32,color:#000000;
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef lock fill:#F3E5F5,stroke:#7B1FA2,color:#000000;
     classDef error fill:#FFEBEE,stroke:#C62828,color:#000000;
-    
+
     class A request
     class B,H decision
     class C,D,F,I lock
@@ -604,7 +607,7 @@ flowchart TD
 
 To handle edge cases where chunk sizes might vary slightly due to concurrent operations:
 
-1. **Storage Validation**: 
+1. **Storage Validation**:
    - Creates a fresh copy of chunk data before storing
    - Verifies size matches expected value
    - Updates metadata with actual size
@@ -619,24 +622,24 @@ To handle edge cases where chunk sizes might vary slightly due to concurrent ope
 async function storeChunkWithLock(namespace, chunkKey, chunkData, metadata) {
   // Acquire lock for this specific chunk
   const releaseLock = await chunkLockManager.acquireLock(chunkKey);
-  
+
   try {
     // Create a fresh copy to avoid shared buffer issues
     const dataToStore = chunkData.slice().buffer;
-    
+
     // Verify size consistency
     if (dataToStore.byteLength !== metadata.size) {
       throw new Error(`Size mismatch: expected ${metadata.size}, got ${dataToStore.byteLength}`);
     }
-    
+
     // Store with verified size
     await namespace.put(chunkKey, dataToStore, {
       metadata: {
         ...metadata,
-        size: dataToStore.byteLength
-      }
+        size: dataToStore.byteLength,
+      },
     });
-    
+
     return true;
   } finally {
     // Always release the lock
@@ -647,14 +650,14 @@ async function storeChunkWithLock(namespace, chunkKey, chunkData, metadata) {
 // Example: Tolerant chunk retrieval
 async function retrieveChunkWithTolerance(namespace, chunkKey, expectedSize) {
   const chunk = await namespace.get(chunkKey, 'arrayBuffer');
-  
+
   if (!chunk) {
     throw new Error(`Chunk not found: ${chunkKey}`);
   }
-  
+
   const sizeDiff = chunk.byteLength - expectedSize;
   const percentDiff = (Math.abs(sizeDiff) / expectedSize) * 100;
-  
+
   // Allow minor differences
   if (percentDiff < 0.1 || Math.abs(sizeDiff) < 2048) {
     logger.debug('Minor chunk size difference detected', {
@@ -662,11 +665,11 @@ async function retrieveChunkWithTolerance(namespace, chunkKey, expectedSize) {
       expected: expectedSize,
       actual: chunk.byteLength,
       difference: sizeDiff,
-      percentage: percentDiff.toFixed(3) + '%'
+      percentage: percentDiff.toFixed(3) + '%',
     });
     return chunk;
   }
-  
+
   // Throw error for significant mismatches
   throw new Error(`Critical chunk size mismatch: ${sizeDiff} bytes (${percentDiff.toFixed(2)}%)`);
 }
@@ -679,29 +682,29 @@ The system uses a concurrency queue to limit parallel chunk uploads:
 ```mermaid
 flowchart TD
     A[Multiple Chunk<br>Upload Requests] --> B[Concurrency Queue<br>Max: 5 parallel]
-    
+
     B --> C{Queue Size?}
-    
+
     C -->|< 5| D[Start Upload Immediately]
     C -->|≥ 5| E[Add to Waiting Queue]
-    
+
     D --> F[Upload Chunk]
     E --> G[Wait for Slot]
-    
+
     F --> H[Complete Upload]
     H --> I[Process Next in Queue]
-    
+
     G --> J{Slot Available?}
     J -->|Yes| D
     J -->|No| G
-    
+
     I --> K[All Uploads Complete]
-    
+
     classDef queue fill:#E1BEE7,stroke:#8E24AA,color:#000000;
     classDef process fill:#E3F2FD,stroke:#1565C0,color:#000000;
     classDef decision fill:#FFF3E0,stroke:#E65100,color:#000000;
     classDef wait fill:#FFF3E0,stroke:#F57C00,color:#000000;
-    
+
     class A,B queue
     class C,J decision
     class D,F,H,I,K process
@@ -714,8 +717,8 @@ The chunk lock manager provides real-time statistics for monitoring:
 
 ```typescript
 interface LockStats {
-  activeLocks: number;      // Current number of active locks
-  oldestLockAge: number;    // Age of the oldest lock in milliseconds
+  activeLocks: number; // Current number of active locks
+  oldestLockAge: number; // Age of the oldest lock in milliseconds
 }
 
 // Usage example
@@ -724,6 +727,10 @@ if (stats.activeLocks > 100) {
   logger.warn('High number of active chunk locks', stats);
 }
 ```
+
+## Chunk Cleanup on Failure
+
+When a chunked storage operation fails partway through (e.g., one chunk fails to upload, or size integrity verification fails, or the manifest write fails), the `cleanupStoredChunks()` function automatically deletes all successfully uploaded chunks. This prevents orphaned chunk keys from accumulating in KV storage. Cleanup runs deletions in parallel using `Promise.allSettled` and logs any deletion failures without throwing.
 
 ## Error Resilience
 
@@ -834,9 +841,7 @@ async function fetchChunkWithErrorHandling(namespace, chunkKey, chunkSize, write
     // Fetch with timeout using Promise.race
     const chunkData = await Promise.race([
       namespace.get(chunkKey, 'arrayBuffer'),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Chunk fetch timeout')), 10000)
-      )
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Chunk fetch timeout')), 10000)),
     ]);
 
     // Successfully fetched chunk
@@ -850,7 +855,7 @@ async function fetchChunkWithErrorHandling(namespace, chunkKey, chunkSize, write
       chunkKey,
       error: error.message,
       errorType: error.name,
-      timeout: error.message === 'Chunk fetch timeout'
+      timeout: error.message === 'Chunk fetch timeout',
     });
 
     // Try to continue streaming if possible
@@ -869,7 +874,7 @@ async function fetchChunkWithErrorHandling(namespace, chunkKey, chunkSize, write
         streamState.isStreamAborted = true;
         logError('Stream write error', {
           reason: 'Client likely disconnected',
-          error: streamError.message
+          error: streamError.message,
         });
       }
     }
@@ -972,17 +977,17 @@ The KV Chunking behavior can be configured:
 }
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | boolean | true | Enable KV chunking |
-| `sizeThreshold` | number | 20971520 | Size threshold for chunking (20MB) |
-| `chunkSize` | number | 10485760 | Size of each chunk (10MB) |
-| `timeoutMs` | number | 10000 | Timeout for chunk operations (10s) |
-| `maxChunks` | number | 1000 | Maximum allowed chunks |
-| `parallelFetches` | number | 3 | Maximum parallel chunk fetches |
-| `logChunkOperations` | boolean | true | Log detailed chunk operations |
-| `useEdgeCache` | boolean | true | Use edge cache for KV reads |
-| `edgeCacheTtl` | number | 3600 | Edge cache TTL in seconds (60m) |
+| Option               | Type    | Default  | Description                        |
+| -------------------- | ------- | -------- | ---------------------------------- |
+| `enabled`            | boolean | true     | Enable KV chunking                 |
+| `sizeThreshold`      | number  | 20971520 | Size threshold for chunking (20MB) |
+| `chunkSize`          | number  | 10485760 | Size of each chunk (10MB)          |
+| `timeoutMs`          | number  | 10000    | Timeout for chunk operations (10s) |
+| `maxChunks`          | number  | 1000     | Maximum allowed chunks             |
+| `parallelFetches`    | number  | 3        | Maximum parallel chunk fetches     |
+| `logChunkOperations` | boolean | true     | Log detailed chunk operations      |
+| `useEdgeCache`       | boolean | true     | Use edge cache for KV reads        |
+| `edgeCacheTtl`       | number  | 3600     | Edge cache TTL in seconds (60m)    |
 
 ## Best Practices
 

@@ -9,7 +9,7 @@ describe('Chunk Size Integrity Tests', () => {
 
   beforeEach(() => {
     storedData = new Map();
-    
+
     mockNamespace = {
       put: vi.fn(async (key: string, value: any, options: any) => {
         // Simulate KV storage behavior
@@ -18,21 +18,21 @@ describe('Chunk Size Integrity Tests', () => {
           actualValue = value;
         } else if (typeof value === 'string') {
           // Handle string values (like manifest JSON)
-          actualValue = new TextEncoder().encode(value).buffer;
+          actualValue = new TextEncoder().encode(value).buffer as ArrayBuffer;
         } else if (value instanceof Uint8Array) {
-          actualValue = value.buffer;
+          actualValue = value.buffer as ArrayBuffer;
         } else {
-          actualValue = new TextEncoder().encode(String(value)).buffer;
+          actualValue = new TextEncoder().encode(String(value)).buffer as ArrayBuffer;
         }
         storedData.set(key, {
           value: actualValue,
-          metadata: options?.metadata
+          metadata: options?.metadata,
         });
       }),
       get: vi.fn(async (key: string, options: any) => {
         const stored = storedData.get(key);
         if (!stored) return null;
-        
+
         if (options?.type === 'arrayBuffer') {
           return stored.value;
         } else if (options?.type === 'text') {
@@ -43,14 +43,14 @@ describe('Chunk Size Integrity Tests', () => {
       getWithMetadata: vi.fn(async (key: string, options: any) => {
         const stored = storedData.get(key);
         if (!stored) return { value: null, metadata: null };
-        
+
         let value = stored.value;
         if (options?.type === 'text') {
           value = new TextDecoder().decode(value);
         }
-        
+
         return { value, metadata: stored.metadata };
-      })
+      }),
     };
   });
 
@@ -58,17 +58,17 @@ describe('Chunk Size Integrity Tests', () => {
     // Create a test video that will require chunking (25MB)
     const testVideoSize = 25 * 1024 * 1024;
     const testVideo = new Uint8Array(testVideoSize);
-    
+
     // Fill with test pattern
     for (let i = 0; i < testVideoSize; i++) {
       testVideo[i] = i % 256;
     }
-    
+
     const response = new Response(testVideo, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': testVideoSize.toString()
-      }
+        'Content-Length': testVideoSize.toString(),
+      },
     });
 
     const result = await storeTransformedVideo(
@@ -78,9 +78,10 @@ describe('Chunk Size Integrity Tests', () => {
       {
         width: 1920,
         height: 1080,
-        format: 'mp4'
+        format: 'mp4',
       },
-      3600
+      3600,
+      undefined
     );
 
     expect(result).toBe(true);
@@ -93,26 +94,29 @@ describe('Chunk Size Integrity Tests', () => {
     const manifestKey = 'video:test/video.mp4:w=1920:h=1080:f=mp4';
     const manifestData = storedData.get(manifestKey);
     expect(manifestData).toBeDefined();
-    
+
     // Parse manifest
     const manifest = JSON.parse(new TextDecoder().decode(manifestData!.value));
     expect(manifest.chunkCount).toBeGreaterThan(1);
     expect(manifest.totalSize).toBe(testVideoSize);
-    
+
     // Verify each chunk has the exact size specified in manifest
     for (let i = 0; i < manifest.chunkCount; i++) {
       const chunkKey = `${manifestKey}_chunk_${i}`;
       const chunkData = storedData.get(chunkKey);
-      
+
       expect(chunkData).toBeDefined();
       expect(chunkData!.value.byteLength).toBe(manifest.actualChunkSizes[i]);
-      
+
       // Verify metadata size matches actual size
       expect(chunkData!.metadata.size).toBe(manifest.actualChunkSizes[i]);
     }
-    
+
     // Verify sum of chunks equals total size
-    const sumOfChunks = manifest.actualChunkSizes.reduce((sum: number, size: number) => sum + size, 0);
+    const sumOfChunks = manifest.actualChunkSizes.reduce(
+      (sum: number, size: number) => sum + size,
+      0
+    );
     expect(sumOfChunks).toBe(testVideoSize);
   });
 
@@ -120,17 +124,17 @@ describe('Chunk Size Integrity Tests', () => {
     // First store a chunked video
     const testVideoSize = 15 * 1024 * 1024; // 15MB
     const testVideo = new Uint8Array(testVideoSize);
-    
+
     // Fill with test pattern
     for (let i = 0; i < testVideoSize; i++) {
       testVideo[i] = (i * 7) % 256; // Different pattern
     }
-    
+
     const response = new Response(testVideo, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': testVideoSize.toString()
-      }
+        'Content-Length': testVideoSize.toString(),
+      },
     });
 
     await storeTransformedVideo(
@@ -139,19 +143,21 @@ describe('Chunk Size Integrity Tests', () => {
       response,
       {
         derivative: '720p',
-        format: 'mp4'
+        format: 'mp4',
       },
-      3600
+      3600,
+      undefined
     );
-    
+
     // Now retrieve it
     const retrieveResult = await getTransformedVideo(
       mockNamespace,
       '/test/video2.mp4',
       {
         derivative: '720p',
-        format: 'mp4'
-      }
+        format: 'mp4',
+      },
+      undefined
     );
 
     expect(retrieveResult).not.toBeNull();
@@ -161,7 +167,7 @@ describe('Chunk Size Integrity Tests', () => {
     // Read the response to ensure no chunk size errors occur
     const retrievedData = await retrieveResponse.arrayBuffer();
     expect(retrievedData.byteLength).toBe(testVideoSize);
-    
+
     // Verify the data matches
     const retrievedArray = new Uint8Array(retrievedData);
     for (let i = 0; i < Math.min(1000, testVideoSize); i++) {
@@ -173,17 +179,17 @@ describe('Chunk Size Integrity Tests', () => {
     // Test with streaming mode explicitly enabled
     const testVideoSize = 30 * 1024 * 1024; // 30MB
     const testVideo = new Uint8Array(testVideoSize);
-    
+
     // Fill with test pattern
     for (let i = 0; i < testVideoSize; i++) {
       testVideo[i] = (i * 13) % 256;
     }
-    
+
     const response = new Response(testVideo, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Length': testVideoSize.toString()
-      }
+        'Content-Length': testVideoSize.toString(),
+      },
     });
 
     const result = await storeTransformedVideo(
@@ -193,7 +199,7 @@ describe('Chunk Size Integrity Tests', () => {
       {
         width: 3840,
         height: 2160,
-        format: 'mp4'
+        format: 'mp4',
       },
       3600,
       true // Enable streaming
@@ -206,14 +212,14 @@ describe('Chunk Size Integrity Tests', () => {
     const manifestData = storedData.get(manifestKey);
     expect(manifestData).toBeDefined();
     const manifest = JSON.parse(new TextDecoder().decode(manifestData!.value));
-    
+
     // Check all chunks have correct sizes
     for (let i = 0; i < manifest.chunkCount; i++) {
       const chunkKey = `${manifestKey}_chunk_${i}`;
       const chunkData = storedData.get(chunkKey);
-      
+
       expect(chunkData!.value.byteLength).toBe(manifest.actualChunkSizes[i]);
-      
+
       // For all but the last chunk, size should be close to STANDARD_CHUNK_SIZE
       if (i < manifest.chunkCount - 1) {
         expect(manifest.actualChunkSizes[i]).toBeLessThanOrEqual(STANDARD_CHUNK_SIZE);

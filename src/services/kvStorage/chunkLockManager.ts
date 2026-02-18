@@ -28,15 +28,14 @@ class ChunkLockManager {
         lock.resolve();
         logDebug('[CHUNK_LOCK] Lock evicted due to LRU/TTL', {
           key,
-          age: Date.now() - lock.acquiredAt
+          age: Date.now() - lock.acquiredAt,
         });
-      }
+      },
     });
-    
-    // Start cleanup interval to remove stale locks
-    // Note: In Cloudflare Workers, this interval will be automatically
-    // cleaned up when the worker instance is terminated
-    this.startCleanup();
+
+    // Note: Do NOT call startCleanup() here.
+    // In Cloudflare Workers, setInterval is forbidden in global scope.
+    // Cleanup is started lazily on the first acquireLock() call.
   }
 
   /**
@@ -44,14 +43,19 @@ class ChunkLockManager {
    * If the chunk is already being processed, wait for it to complete
    */
   async acquireLock(key: string): Promise<() => void> {
+    // Lazily start cleanup on first use (safe inside a handler, not global scope)
+    if (!this.cleanupInterval) {
+      this.startCleanup();
+    }
+
     const existingLock = this.locks.get(key);
-    
+
     if (existingLock) {
       logDebug('[CHUNK_LOCK] Waiting for existing lock', {
         key,
-        lockAge: Date.now() - existingLock.acquiredAt
+        lockAge: Date.now() - existingLock.acquiredAt,
       });
-      
+
       // Wait for existing operation to complete
       await existingLock.promise;
     }
@@ -66,14 +70,14 @@ class ChunkLockManager {
       promise: lockPromise,
       resolve: lockResolve!,
       acquiredAt: Date.now(),
-      key
+      key,
     };
 
     this.locks.set(key, lock);
 
     logDebug('[CHUNK_LOCK] Lock acquired', {
       key,
-      activeLocks: this.locks.size
+      activeLocks: this.locks.size,
     });
 
     // Return release function
@@ -90,11 +94,11 @@ class ChunkLockManager {
     if (lock) {
       lock.resolve();
       this.locks.delete(key);
-      
+
       logDebug('[CHUNK_LOCK] Lock released', {
         key,
         lockDuration: Date.now() - lock.acquiredAt,
-        remainingLocks: this.locks.size
+        remainingLocks: this.locks.size,
       });
     }
   }
@@ -121,10 +125,10 @@ class ChunkLockManager {
       if (staleKeys.length > 0) {
         logDebug('[CHUNK_LOCK] Cleaning up stale locks', {
           count: staleKeys.length,
-          keys: staleKeys
+          keys: staleKeys,
         });
 
-        staleKeys.forEach(key => {
+        staleKeys.forEach((key) => {
           this.releaseLock(key);
         });
       }
@@ -158,7 +162,7 @@ class ChunkLockManager {
 
     return {
       activeLocks: this.locks.size,
-      oldestLockAge
+      oldestLockAge,
     };
   }
 }

@@ -2,13 +2,13 @@
  * Parameterized tests for TransformVideoCommand
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { 
+import {
   createMockRequest,
   createMockPathPatterns,
   createMockVideoOptions,
   createMockDebugInfo,
   generateTestCases,
-  mockFetch
+  mockFetch,
 } from '../utils/test-utils';
 import { TransformVideoCommand } from '../../src/domain/commands/TransformVideoCommand';
 import { videoConfig } from '../../src/config/videoConfig';
@@ -18,24 +18,24 @@ describe('TransformVideoCommand Parameterized Tests', () => {
     vi.clearAllMocks();
     // Default mock response
     mockFetch('Video content');
-    
+
     // Mock videoStorageService
     vi.mock('../../src/services/videoStorageService', () => ({
       fetchVideo: vi.fn().mockResolvedValue({
         response: new Response('Video content', {
           status: 200,
-          headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' }
+          headers: { 'Content-Type': 'video/mp4', 'Content-Length': '1000' },
         }),
         sourceType: 'remote',
         contentType: 'video/mp4',
         size: 1000,
         originalUrl: 'https://example.com/videos/test.mp4',
-        path: 'test.mp4'
+        path: 'test.mp4',
       }),
-      generateCacheTags: vi.fn().mockReturnValue(['video-test', 'video-format-mp4'])
+      generateCacheTags: vi.fn().mockReturnValue(['video-test', 'video-format-mp4']),
     }));
   });
-  
+
   describe('Video mode variations', () => {
     // Generate test cases for different combinations of video modes and fits
     const testCases = generateTestCases(
@@ -50,13 +50,13 @@ describe('TransformVideoCommand Parameterized Tests', () => {
         fit: ['contain', 'cover', 'scale-down'],
       }
     );
-    
+
     // Run a test for each generated test case
-    testCases.forEach(testCase => {
+    testCases.forEach((testCase) => {
       it(`should handle ${testCase.name}`, async () => {
         // Arrange
         const request = createMockRequest('https://example.com/videos/test.mp4');
-        
+
         // Create command with the test case options
         const command = new TransformVideoCommand({
           request,
@@ -64,13 +64,13 @@ describe('TransformVideoCommand Parameterized Tests', () => {
           pathPatterns: createMockPathPatterns(),
           debugInfo: createMockDebugInfo(),
         });
-        
+
         // Act
         const response = await command.execute();
-        
+
         // Assert
         expect(response.status).toBe(200);
-        
+
         // Verify the correct parameters were used
         const fetchCalls = vi.mocked(fetch).mock.calls;
         const transformedUrl = fetchCalls[0][0];
@@ -78,27 +78,27 @@ describe('TransformVideoCommand Parameterized Tests', () => {
           const urlString = transformedUrl.url;
           expect(urlString).toContain(`width=${testCase.width}`);
           expect(urlString).toContain(`height=${testCase.height}`);
-          expect(urlString).toContain(`mode=${testCase.mode}`);
-          expect(urlString).toContain(`fit=${testCase.fit}`);
+          expect(urlString).toContain(`mode=${(testCase as any).mode}`);
+          expect(urlString).toContain(`fit=${(testCase as any).fit}`);
         }
       });
     });
   });
-  
+
   describe('Path pattern variations', () => {
     // Test with each of our mock path patterns
     const pathPatterns = createMockPathPatterns();
-    
-    pathPatterns.forEach(pattern => {
+
+    pathPatterns.forEach((pattern) => {
       // Skip patterns that aren't meant to be processed
       if (!pattern.processPath) {
         return;
       }
-      
+
       it(`should correctly handle ${pattern.name} path pattern`, async () => {
         // Create a URL that matches this pattern
         let testUrl: string;
-        
+
         switch (pattern.name) {
           case 'videos':
             testUrl = 'https://example.com/videos/sample.mp4';
@@ -115,37 +115,37 @@ describe('TransformVideoCommand Parameterized Tests', () => {
           default:
             testUrl = 'https://example.com/videos/sample.mp4';
         }
-        
+
         // Arrange
         const request = createMockRequest(testUrl);
-        
+
         const command = new TransformVideoCommand({
           request,
           options: createMockVideoOptions(),
           pathPatterns: [pattern], // Only use this pattern for the test
           debugInfo: createMockDebugInfo(),
         });
-        
+
         // Act
         const response = await command.execute();
-        
+
         // Assert
         expect(response.status).toBe(200);
-        
+
         // Check the URL was transformed according to the pattern
         const fetchCalls = vi.mocked(fetch).mock.calls;
         const transformedUrl = fetchCalls[0][0];
         if (transformedUrl instanceof Request) {
           const urlString = transformedUrl.url;
-          
+
           // Should contain the CDN-CGI path
           expect(urlString).toContain('/cdn-cgi/media/');
-          
+
           // If the pattern has an originUrl, it should be used
           if (pattern.originUrl) {
             expect(urlString).toContain(pattern.originUrl);
           }
-          
+
           // If the pattern has a quality preset, it should be applied
           if (pattern.quality === 'high') {
             expect(urlString).toContain('width=1280');
@@ -155,14 +155,14 @@ describe('TransformVideoCommand Parameterized Tests', () => {
       });
     });
   });
-  
+
   describe('Video derivative tests', () => {
     // Test each derivative
     Object.entries(videoConfig.derivatives).forEach(([name, settings]) => {
       it(`should apply the ${name} derivative correctly`, async () => {
         // Arrange
         const request = createMockRequest('https://example.com/videos/test.mp4');
-        
+
         const command = new TransformVideoCommand({
           request,
           options: {
@@ -173,41 +173,41 @@ describe('TransformVideoCommand Parameterized Tests', () => {
           pathPatterns: createMockPathPatterns(),
           debugInfo: createMockDebugInfo(),
         });
-        
+
         // Act
         const response = await command.execute();
-        
+
         // Assert
         expect(response.status).toBe(200);
-        
+
         // Check the derivative settings were applied
         const fetchCalls = vi.mocked(fetch).mock.calls;
         const transformedUrl = fetchCalls[0][0];
         if (transformedUrl instanceof Request) {
           const urlString = transformedUrl.url;
-          
+
           // Check width and height from derivative
           if (settings.width) {
             expect(urlString).toContain(`width=${settings.width}`);
           }
-          
+
           if (settings.height) {
             expect(urlString).toContain(`height=${settings.height}`);
           }
-          
+
           // Check mode from derivative
-          if (settings.mode) {
-            expect(urlString).toContain(`mode=${settings.mode}`);
+          if ((settings as any).mode) {
+            expect(urlString).toContain(`mode=${(settings as any).mode}`);
           }
-          
+
           // Check fit from derivative
-          if (settings.fit) {
-            expect(urlString).toContain(`fit=${settings.fit}`);
+          if ((settings as any).fit) {
+            expect(urlString).toContain(`fit=${(settings as any).fit}`);
           }
-          
+
           // Check if thumbnail has format
-          if (name === 'thumbnail' && settings.format) {
-            expect(urlString).toContain(`format=${settings.format}`);
+          if (name === 'thumbnail' && (settings as any).format) {
+            expect(urlString).toContain(`format=${(settings as any).format}`);
           }
         }
       });

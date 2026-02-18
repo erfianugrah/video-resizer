@@ -2,28 +2,23 @@
  * Integration tests for the Origins resolution workflow
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { 
-  createMockRequest, 
+import {
+  createMockRequest,
   mockFetch,
   generateRandomVideoId,
-  createMockHeaders
+  createMockHeaders,
 } from '../utils/test-utils';
 import { OriginResolver } from '../../src/services/origins/OriginResolver';
 import { Origin, Source, VideoResizerConfig } from '../../src/services/videoStorage/interfaces';
-import { ResponseBuilder } from '../../src/utils/responseBuilder';
-
-//vi.mock('../../src/utils/responseBuilder');
 
 // Mock fetch for remote sources
 vi.mock('node-fetch', () => ({
-  default: vi.fn().mockImplementation(() => 
-    Promise.resolve(new Response('Remote content'))
-  )
+  default: vi.fn().mockImplementation(() => Promise.resolve(new Response('Remote content'))),
 }));
 
 // Mock error handling utilities
 vi.mock('../../src/utils/errorHandlingUtils', () => ({
-  logErrorWithContext: vi.fn()
+  logErrorWithContext: vi.fn(),
 }));
 
 describe('Origin Resolution Integration', () => {
@@ -40,15 +35,15 @@ describe('Origin Resolution Integration', () => {
             type: 'r2',
             priority: 1,
             bucketBinding: 'VIDEOS_BUCKET',
-            path: 'videos/${videoId}.mp4'
+            path: 'videos/${videoId}.mp4',
           },
           {
             type: 'remote',
             priority: 2,
             url: 'https://videos.example.com',
-            path: '${videoId}.mp4'
-          }
-        ]
+            path: '${videoId}.mp4',
+          },
+        ],
       },
       {
         name: 'shorts',
@@ -59,13 +54,13 @@ describe('Origin Resolution Integration', () => {
             type: 'r2',
             priority: 1,
             bucketBinding: 'SHORTS_BUCKET',
-            path: 'shorts/${videoId}.mp4'
-          }
+            path: 'shorts/${videoId}.mp4',
+          },
         ],
         transformOptions: {
           videoCompression: 'medium',
-          quality: 'medium'
-        }
+          quality: 'medium',
+        },
       },
       {
         name: 'premium',
@@ -81,10 +76,10 @@ describe('Origin Resolution Integration', () => {
               enabled: true,
               type: 'token',
               tokenHeaderName: 'X-Premium-Token',
-              tokenSecret: 'SECRET_TOKEN'
-            }
-          }
-        ]
+              tokenSecret: 'SECRET_TOKEN',
+            },
+          },
+        ],
       },
       {
         name: 'default',
@@ -94,16 +89,18 @@ describe('Origin Resolution Integration', () => {
             type: 'fallback',
             priority: 1,
             url: 'https://fallback.example.com',
-            path: '${request_path}'
-          }
-        ]
-      }
-    ]
+            path: '${request_path}',
+          },
+        ],
+      },
+    ],
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('Mocked content')));
+    global.fetch = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response('Mocked content')));
   });
 
   afterEach(() => {
@@ -168,8 +165,8 @@ describe('Origin Resolution Integration', () => {
       const videoId = generateRandomVideoId();
       const path = `/videos/${videoId}`;
 
-      const result = resolver.resolvePathToSource(path, { 
-        originType: 'remote' 
+      const result = resolver.resolvePathToSource(path, {
+        originType: 'remote',
       });
 
       expect(result).not.toBeNull();
@@ -183,8 +180,8 @@ describe('Origin Resolution Integration', () => {
       const videoId = generateRandomVideoId();
       const path = `/videos/${videoId}`;
 
-      const result = resolver.resolvePathToSource(path, { 
-        originType: 'remote' 
+      const result = resolver.resolvePathToSource(path, {
+        originType: 'remote',
       });
 
       expect(result).not.toBeNull();
@@ -208,25 +205,25 @@ describe('Origin Resolution Integration', () => {
         ...testConfig,
         origins: [
           {
-            ...testConfig.origins![0],
+            ...(testConfig.origins as any)![0],
             sources: [
               // Remote first in array but priority 2
               {
                 type: 'remote',
                 priority: 2,
                 url: 'https://videos.example.com',
-                path: '${videoId}.${extension:mp4}'
+                path: '${videoId}.${extension:mp4}',
               },
               // R2 second in array but priority 1
               {
                 type: 'r2',
                 priority: 1,
                 bucketBinding: 'VIDEOS_BUCKET',
-                path: 'videos/${videoId}.${extension:mp4}'
-              }
-            ]
-          }
-        ]
+                path: 'videos/${videoId}.${extension:mp4}',
+              },
+            ],
+          },
+        ],
       };
 
       const resolver = new OriginResolver(customConfig);
@@ -238,25 +235,6 @@ describe('Origin Resolution Integration', () => {
       // Should still select R2 because it has priority 1
       expect(result).not.toBeNull();
       expect(result?.source.type).toBe('r2');
-    });
-  });
-
-  describe('Response Building', () => {
-    // Skip these tests for now as they require complex mocking and
-    // they are covered by the unit tests for ResponseBuilder
-    it.skip('should add origin information to response headers', async () => {
-      // This test would verify that ResponseBuilder.withOriginInfo correctly
-      // adds origin information headers to the response
-    });
-    
-    it.skip('should add source resolution information to headers', async () => {
-      // This test would verify that ResponseBuilder.withOriginInfo correctly
-      // adds source resolution information headers to the response
-    });
-
-    it.skip('should create proper error response for origin errors', () => {
-      // This test would verify that ResponseBuilder.createOriginErrorResponse
-      // correctly creates an error response with appropriate headers
     });
   });
 
@@ -275,13 +253,13 @@ describe('Origin Resolution Integration', () => {
                 type: 'r2',
                 priority: 1,
                 bucketBinding: 'VIDEOS_BUCKET',
-                path: 'videos/${videoId}'
-              }
-            ]
-          }
-        ]
+                path: 'videos/${videoId}',
+              },
+            ],
+          },
+        ],
       };
-      
+
       const resolver = new OriginResolver(encodedConfig);
       const videoId = 'special video+with spaces';
       const encodedVideoId = encodeURIComponent(videoId);
@@ -319,10 +297,10 @@ describe('Origin Resolution Integration', () => {
           {
             name: 'empty',
             matcher: '^/empty/.*$',
-            sources: [] // Empty sources
+            sources: [], // Empty sources
           },
-          ...testConfig.origins!
-        ]
+          ...(testConfig.origins as Origin[]),
+        ],
       };
 
       const resolver = new OriginResolver(customConfig);

@@ -1,6 +1,6 @@
 # IMQuery Integration
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -19,22 +19,22 @@
 
 ## Overview
 
-IMQuery integration enables responsive video transformations that adapt to the viewer's device and viewport. This feature allows videos to be automatically sized and optimized for different screen sizes and device capabilities, improving user experience and reducing bandwidth consumption.
+IMQuery integration enables responsive video transformations that adapt to the viewer's device and viewport. Originally designed for compatibility with Akamai Image Manager query parameters, it allows videos to be automatically sized and optimized for different screen sizes and device capabilities, improving user experience and reducing bandwidth consumption.
 
-IMQuery parameters provide context about the intended display size of videos, allowing the Video Resizer to select appropriate dimensions, quality settings, and compression levels automatically.
+IMQuery parameters (such as `imwidth`) provide context about the intended display size of videos, allowing the Video Resizer to map requests to predefined derivatives and select appropriate dimensions, quality settings, and compression levels automatically.
 
 ## IMQuery Parameters
 
 The Video Resizer supports the following IMQuery parameters:
 
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `imwidth` | number | Requested width in CSS pixels | `imwidth=400` |
-| `imheight` | number | Requested height in CSS pixels | `imheight=300` |
-| `im-viewwidth` | number | Viewport width in CSS pixels | `im-viewwidth=1200` |
-| `im-viewheight` | number | Viewport height in CSS pixels | `im-viewheight=800` |
-| `im-density` | number | Device pixel ratio (DPR) | `im-density=2` |
-| `imref` | string | Reference identifier for the image | `imref=hero-video` |
+| Parameter       | Type   | Description                        | Example             |
+| --------------- | ------ | ---------------------------------- | ------------------- |
+| `imwidth`       | number | Requested width in CSS pixels      | `imwidth=400`       |
+| `imheight`      | number | Requested height in CSS pixels     | `imheight=300`      |
+| `im-viewwidth`  | number | Viewport width in CSS pixels       | `im-viewwidth=1200` |
+| `im-viewheight` | number | Viewport height in CSS pixels      | `im-viewheight=800` |
+| `im-density`    | number | Device pixel ratio (DPR)           | `im-density=2`      |
+| `imref`         | string | Reference identifier for the image | `imref=hero-video`  |
 
 ### Primary Parameters
 
@@ -45,6 +45,7 @@ The two most commonly used parameters are:
 2. **`im-viewwidth`**: The width of the viewport or container in which the video appears. This provides important context for responsive sizing.
 
 Example URL with IMQuery parameters:
+
 ```
 https://cdn.example.com/videos/sample.mp4?imwidth=400&im-viewwidth=1200
 ```
@@ -53,15 +54,17 @@ https://cdn.example.com/videos/sample.mp4?imwidth=400&im-viewwidth=1200
 
 IMQuery enables fully responsive video delivery through several mechanisms:
 
-### 1. Relative Sizing
+### 1. Breakpoint-Based Derivative Selection
 
-When `imwidth` is provided as a percentage of `im-viewwidth`, the system calculates the intended display size:
+The `imwidth` parameter is an integer pixel value. The system maps it to a derivative using configured `responsiveBreakpoints`:
 
 ```
-https://cdn.example.com/videos/sample.mp4?imwidth=50%&im-viewwidth=1200
+https://cdn.example.com/videos/sample.mp4?imwidth=480
 ```
 
-In this example, the video width would be calculated as 600px (50% of 1200px).
+In this example, `imwidth=480` falls within the `small` breakpoint (≤854px) and maps to the `mobile` derivative.
+
+> **Note**: `imwidth` must be an integer pixel value. Percentage values (e.g., `imwidth=50%`) are not supported — `parseInt` will drop the `%` and use only the numeric portion.
 
 ### 2. Automatic Quality Adaptation
 
@@ -87,63 +90,62 @@ One of the most powerful features of IMQuery is derivative mapping, which maps r
 
 ### Mapping Process
 
-1. The system analyzes the `imwidth`, `im-viewwidth`, and other parameters
-2. It calculates the relative size of the video in the viewport
-3. It maps this to the most appropriate derivative
+1. The system receives the `imwidth` value (an integer pixel width)
+2. It compares the value against the configured `responsiveBreakpoints` ranges
+3. The matching breakpoint's derivative is selected
 4. The derivative's predefined settings are applied
 
-For example:
+The breakpoints are configured in `worker-config.json` under `responsiveBreakpoints`:
 
-| Viewport Width | Video Width | Selected Derivative |
-|----------------|-------------|---------------------|
-| >1200px | >900px | `high` (1920×1080) |
-| 768-1200px | 600-900px | `medium` (1280×720) |
-| <768px | <600px | `mobile` (640×360) |
+| Breakpoint | `imwidth` Range | Selected Derivative |
+| ---------- | --------------- | ------------------- |
+| `small`    | ≤ 854px         | `mobile`            |
+| `medium`   | 855–1280px      | `tablet`            |
+| `large`    | ≥ 1281px        | `desktop`           |
 
-This mapping is configured through the `responsiveWidthBreakpoints` setting in the configuration.
+### Breakpoint Configuration
 
-### Percentage-Based Mapping
-
-The system also supports percentage-based mapping:
+The `responsiveBreakpoints` object defines named breakpoints with `min`/`max` pixel thresholds and a `derivative` name:
 
 ```json
 {
-  "responsiveWidthMapping": {
-    "breakpoints": {
-      "small": {
-        "maxWidthPct": 30,
-        "derivative": "mobile"
-      },
-      "medium": {
-        "maxWidthPct": 60,
-        "derivative": "medium"
-      },
-      "large": {
-        "derivative": "high"
-      }
+  "responsiveBreakpoints": {
+    "small": {
+      "max": 854,
+      "derivative": "mobile"
+    },
+    "medium": {
+      "min": 855,
+      "max": 1280,
+      "derivative": "tablet"
+    },
+    "large": {
+      "min": 1281,
+      "derivative": "desktop"
     }
   }
 }
 ```
 
 With this configuration:
-- Videos taking up less than 30% of the viewport get the `mobile` derivative
-- Videos taking 30-60% of the viewport get the `medium` derivative
-- Videos taking over 60% of the viewport get the `high` derivative
+
+- `imwidth=480` → falls within `small` (≤854) → selects the `mobile` derivative
+- `imwidth=1000` → falls within `medium` (855–1280) → selects the `tablet` derivative
+- `imwidth=1500` → falls within `large` (≥1281) → selects the `desktop` derivative
 
 ## Client Hints Integration
 
 IMQuery works seamlessly with Client Hints to provide comprehensive device information:
 
-| Client Hint | Description | IMQuery Equivalent |
-|-------------|-------------|-------------------|
-| `Viewport-Width` | Width of the viewport | `im-viewwidth` |
-| `Width` | Requested resource width | `imwidth` |
-| `Device-Memory` | Device memory in GB | - |
-| `DPR` | Device pixel ratio | `im-density` |
-| `Sec-CH-Viewport-Width` | Viewport width (delegated) | `im-viewwidth` |
-| `Sec-CH-Width` | Resource width (delegated) | `imwidth` |
-| `Sec-CH-DPR` | Device pixel ratio (delegated) | `im-density` |
+| Client Hint             | Description                    | IMQuery Equivalent |
+| ----------------------- | ------------------------------ | ------------------ |
+| `Viewport-Width`        | Width of the viewport          | `im-viewwidth`     |
+| `Width`                 | Requested resource width       | `imwidth`          |
+| `Device-Memory`         | Device memory in GB            | -                  |
+| `DPR`                   | Device pixel ratio             | `im-density`       |
+| `Sec-CH-Viewport-Width` | Viewport width (delegated)     | `im-viewwidth`     |
+| `Sec-CH-Width`          | Resource width (delegated)     | `imwidth`          |
+| `Sec-CH-DPR`            | Device pixel ratio (delegated) | `im-density`       |
 
 When both IMQuery parameters and Client Hints are provided, IMQuery parameters take precedence. When neither is available, the system falls back to User-Agent analysis.
 
@@ -154,6 +156,7 @@ IMQuery has special caching behavior designed to maximize cache efficiency:
 ### 1. Derivative-Based Caching
 
 When IMQuery parameters map to a derivative, the system:
+
 - Uses the derivative name in the cache key instead of specific dimensions
 - Caches using `derivative=medium` rather than `width=1280&height=720`
 - This significantly improves cache hit rates
@@ -183,20 +186,25 @@ The system normalizes IMQuery parameters in cache keys, ensuring that equivalent
 ### Basic Responsive Video
 
 HTML:
+
 ```html
-<video width="400" src="https://cdn.example.com/videos/sample.mp4?imwidth=400&im-viewwidth=1200"></video>
+<video
+  width="400"
+  src="https://cdn.example.com/videos/sample.mp4?imwidth=400&im-viewwidth=1200"
+></video>
 ```
 
 ### Responsive Video with Media Queries
 
 HTML and CSS:
+
 ```html
 <video id="responsive-video" src="https://cdn.example.com/videos/sample.mp4"></video>
 
 <script>
   const video = document.getElementById('responsive-video');
   const viewportWidth = window.innerWidth;
-  
+
   // Set the video width based on screen size
   let videoWidth;
   if (viewportWidth >= 1200) {
@@ -206,9 +214,9 @@ HTML and CSS:
   } else {
     videoWidth = 320;
   }
-  
+
   video.width = videoWidth;
-  
+
   // Update the video src with IMQuery parameters
   const videoSrc = new URL(video.src);
   videoSrc.searchParams.set('imwidth', videoWidth);
@@ -225,15 +233,15 @@ import React, { useState, useEffect } from 'react';
 const ResponsiveVideo = ({ videoUrl }) => {
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
-    videoWidth: 0
+    videoWidth: 0,
   });
-  
+
   // Calculate video width based on viewport
   useEffect(() => {
     const handleResize = () => {
       const viewportWidth = window.innerWidth;
       let videoWidth;
-      
+
       if (viewportWidth >= 1200) {
         videoWidth = Math.min(800, viewportWidth * 0.7);
       } else if (viewportWidth >= 768) {
@@ -241,28 +249,22 @@ const ResponsiveVideo = ({ videoUrl }) => {
       } else {
         videoWidth = Math.min(320, viewportWidth * 0.9);
       }
-      
+
       setDimensions({
         width: viewportWidth,
-        videoWidth: Math.round(videoWidth)
+        videoWidth: Math.round(videoWidth),
       });
     };
-    
+
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  
+
   // Construct URL with IMQuery parameters
   const fullVideoUrl = `${videoUrl}?imwidth=${dimensions.videoWidth}&im-viewwidth=${dimensions.width}`;
-  
-  return (
-    <video 
-      width={dimensions.videoWidth} 
-      controls
-      src={fullVideoUrl}
-    />
-  );
+
+  return <video width={dimensions.videoWidth} controls src={fullVideoUrl} />;
 };
 
 export default ResponsiveVideo;
@@ -275,13 +277,14 @@ export default ResponsiveVideo;
 To fully leverage IMQuery with Client Hints:
 
 1. **Opt-in to Client Hints**:
+
    ```html
-   <meta http-equiv="Accept-CH" content="Width,Viewport-Width,DPR">
+   <meta http-equiv="Accept-CH" content="Width,Viewport-Width,DPR" />
    ```
 
 2. **Delegate to trusted origins** (recommended for Cloudflare setup):
    ```html
-   <meta http-equiv="Delegate-CH" content="Width,Viewport-Width,DPR;src=https://cdn.example.com">
+   <meta http-equiv="Delegate-CH" content="Width,Viewport-Width,DPR;src=https://cdn.example.com" />
    ```
 
 ### Dimension Calculation
@@ -399,6 +402,7 @@ The debug UI will show the derivative selection logic and parameters used.
 **Solution**: Verify derivative-based caching is working correctly
 
 Check logs for:
+
 ```
 Matched IMQuery dimensions to derivative: medium
 Applied derivative based on IMQuery dimensions
@@ -423,8 +427,8 @@ console.log(`Actual width: ${actualWidth}px, IMQuery width: ${imwidth}px`);
 
 ```html
 <!-- Ensure correct meta tags -->
-<meta http-equiv="Accept-CH" content="Width,Viewport-Width,DPR">
-<meta http-equiv="Delegate-CH" content="Width,Viewport-Width,DPR;src=https://cdn.example.com">
+<meta http-equiv="Accept-CH" content="Width,Viewport-Width,DPR" />
+<meta http-equiv="Delegate-CH" content="Width,Viewport-Width,DPR;src=https://cdn.example.com" />
 ```
 
 Also verify cross-origin setup is correct.

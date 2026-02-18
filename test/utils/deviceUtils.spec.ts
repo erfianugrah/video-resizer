@@ -2,19 +2,27 @@
  * Tests for deviceUtils
  */
 import { describe, it, expect, vi } from 'vitest';
-import { 
-  hasCfDeviceType, 
-  getVideoSizeFromCfDeviceType, 
+import {
+  hasCfDeviceType,
+  getVideoSizeFromCfDeviceType,
   getVideoSizeFromUserAgent,
-  detectDeviceCapabilities
+  detectDeviceCapabilities,
 } from '../../src/utils/deviceUtils';
 
-// Mock dependencies
-vi.mock('../../src/utils/loggerUtils', () => ({
-  debug: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
+// Mock logger
+vi.mock('../../src/utils/logger', () => ({
+  createCategoryLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    errorWithContext: vi.fn(),
+  })),
+  logDebug: vi.fn(),
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+  logErrorWithContext: vi.fn(),
 }));
 
 vi.mock('../../src/utils/userAgentUtils', () => ({
@@ -23,8 +31,8 @@ vi.mock('../../src/utils/userAgentUtils', () => ({
     if (userAgent.includes('iPad')) return 'tablet';
     return 'desktop';
   }),
-  getVideoSizeForDeviceType: vi.fn((deviceType) => {
-    const sizes = {
+  getVideoSizeForDeviceType: vi.fn((deviceType: any) => {
+    const sizes: any = {
       mobile: { width: 640, height: 360, source: 'ua-mobile' },
       tablet: { width: 1280, height: 720, source: 'ua-tablet' },
       desktop: { width: 1920, height: 1080, source: 'ua-desktop' },
@@ -116,7 +124,8 @@ describe('deviceUtils', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
         },
       });
 
@@ -131,7 +140,8 @@ describe('deviceUtils', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+          'User-Agent':
+            'Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
         },
       });
 
@@ -146,7 +156,8 @@ describe('deviceUtils', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         },
       });
 
@@ -163,7 +174,8 @@ describe('deviceUtils', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
         },
       });
 
@@ -180,7 +192,8 @@ describe('deviceUtils', () => {
       // Arrange
       const request = new Request('https://example.com/video.mp4', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         },
       });
 

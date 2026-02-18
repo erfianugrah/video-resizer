@@ -1,6 +1,6 @@
 # Design Patterns in Video Resizer
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -45,14 +45,14 @@ export interface TransformationStrategy {
    * @returns The prepared CDN parameters
    */
   prepareTransformParams(context: TransformationContext): TransformParams;
-  
+
   /**
    * Validate the options for this strategy
    * @param options The transformation options
    * @throws Error if options are invalid
    */
   validateOptions(options: VideoTransformOptions): void | Promise<void>;
-  
+
   /**
    * Update diagnostics information with strategy-specific details
    * @param context The transformation context
@@ -68,7 +68,7 @@ export interface TransformationStrategy {
 export class VideoStrategy implements TransformationStrategy {
   prepareTransformParams(context: TransformationContext): TransformParams {
     const { options } = context;
-    
+
     // Extract and prepare video-specific parameters
     const params: TransformParams = {
       mode: 'video',
@@ -79,25 +79,25 @@ export class VideoStrategy implements TransformationStrategy {
       loop: options.loop,
       autoplay: options.autoplay,
       muted: options.muted,
-      preload: options.preload
+      preload: options.preload,
     };
-    
+
     return params;
   }
-  
+
   validateOptions(options: VideoTransformOptions): void {
     // Validate video-specific options
     // e.g., check valid ranges for width/height
     // Check compatibility of playback parameters
   }
-  
+
   updateDiagnostics(context: TransformationContext): void {
     // Add video-specific diagnostic information
     context.diagnosticsInfo.mode = 'video';
     context.diagnosticsInfo.playbackFeatures = {
       loop: context.options.loop,
       autoplay: context.options.autoplay,
-      muted: context.options.muted
+      muted: context.options.muted,
     };
   }
 }
@@ -106,12 +106,12 @@ export class VideoStrategy implements TransformationStrategy {
 export class FrameStrategy implements TransformationStrategy {
   prepareTransformParams(context: TransformationContext): TransformParams {
     const { options } = context;
-    
+
     // Frame mode requires a time parameter
     if (!options.time) {
       throw new ValidationError('Time parameter is required for frame mode');
     }
-    
+
     // Extract and prepare frame-specific parameters
     const params: TransformParams = {
       mode: 'frame',
@@ -119,30 +119,30 @@ export class FrameStrategy implements TransformationStrategy {
       height: options.height || null,
       fit: options.fit || 'contain',
       time: options.time,
-      format: options.format || 'jpg'
+      format: options.format || 'jpg',
     };
-    
+
     return params;
   }
-  
+
   validateOptions(options: VideoTransformOptions): void {
     // Validate frame-specific options
     if (!options.time) {
       throw new ValidationError('Time parameter is required for frame mode');
     }
-    
+
     // Reject video-specific parameters
     if (options.loop || options.autoplay || options.muted || options.preload) {
       throw new ValidationError('Playback parameters are not compatible with frame mode');
     }
   }
-  
+
   updateDiagnostics(context: TransformationContext): void {
     // Add frame-specific diagnostic information
     context.diagnosticsInfo.mode = 'frame';
     context.diagnosticsInfo.frameDetails = {
       time: context.options.time,
-      format: context.options.format || 'jpg'
+      format: context.options.format || 'jpg',
     };
   }
 }
@@ -151,12 +151,12 @@ export class FrameStrategy implements TransformationStrategy {
 export class SpritesheetStrategy implements TransformationStrategy {
   prepareTransformParams(context: TransformationContext): TransformParams {
     const { options } = context;
-    
+
     // Spritesheet mode requires width and height
     if (!options.width || !options.height) {
       throw new ValidationError('Width and height parameters are required for spritesheet mode');
     }
-    
+
     // Extract and prepare spritesheet-specific parameters
     const params: TransformParams = {
       mode: 'spritesheet',
@@ -166,22 +166,22 @@ export class SpritesheetStrategy implements TransformationStrategy {
       time: options.time || '0s',
       duration: options.duration || '10s'
     };
-    
+
     return params;
   }
-  
+
   validateOptions(options: VideoTransformOptions): void {
     // Validate spritesheet-specific options
     if (!options.width || !options.height) {
       throw new ValidationError('Width and height parameters are required for spritesheet mode');
     }
-    
+
     // Reject video-specific parameters
     if (options.loop || options.autoplay || options.muted || options.preload) {
       throw new ValidationError('Playback parameters are not compatible with spritesheet mode');
     }
   }
-  
+
   updateDiagnostics(context: TransformationContext): void {
     // Add spritesheet-specific diagnostic information
     context.diagnosticsInfo.mode = 'spritesheet';
@@ -189,6 +189,70 @@ export class SpritesheetStrategy implements TransformationStrategy {
       time: context.options.time || '0s',
       duration: context.options.duration || '10s',
       aspectRatio: (context.options.width || 0) / (context.options.height || 1)
+    };
+  }
+}
+
+// Audio strategy implementation
+export class AudioStrategy implements TransformationStrategy {
+  prepareTransformParams(context: TransformationContext): TransformParams {
+    const { options } = context;
+
+    // Extract and prepare audio-specific parameters
+    const params: TransformParams = {
+      mode: 'audio',
+      // Audio-specific parameters
+    };
+
+    return params;
+  }
+
+  validateOptions(options: VideoTransformOptions): void {
+    // Validate audio-specific options
+    // Reject video-specific parameters
+    if (options.loop || options.autoplay || options.muted || options.preload) {
+      throw new ValidationError('Playback parameters are not compatible with audio mode');
+    }
+  }
+
+  updateDiagnostics(context: TransformationContext): void {
+    // Add audio-specific diagnostic information
+    context.diagnosticsInfo.mode = 'audio';
+  }
+}
+
+    // Extract and prepare spritesheet-specific parameters
+    const params: TransformParams = {
+      mode: 'spritesheet',
+      width: options.width,
+      height: options.height,
+      fit: options.fit || 'contain',
+      time: options.time || '0s',
+      duration: options.duration || '10s',
+    };
+
+    return params;
+  }
+
+  validateOptions(options: VideoTransformOptions): void {
+    // Validate spritesheet-specific options
+    if (!options.width || !options.height) {
+      throw new ValidationError('Width and height parameters are required for spritesheet mode');
+    }
+
+    // Reject video-specific parameters
+    if (options.loop || options.autoplay || options.muted || options.preload) {
+      throw new ValidationError('Playback parameters are not compatible with spritesheet mode');
+    }
+  }
+
+  updateDiagnostics(context: TransformationContext): void {
+    // Add spritesheet-specific diagnostic information
+    context.diagnosticsInfo.mode = 'spritesheet';
+    context.diagnosticsInfo.spritesheetDetails = {
+      time: context.options.time || '0s',
+      duration: context.options.duration || '10s',
+      aspectRatio: (context.options.width || 0) / (context.options.height || 1),
     };
   }
 }
@@ -204,10 +268,10 @@ export interface TransformationContext {
   url: URL;
   path: string;
   diagnosticsInfo: DiagnosticsInfo;
-  env?: { 
-    ASSETS?: { 
-      fetch: (request: Request) => Promise<Response> 
-    } 
+  env?: {
+    ASSETS?: {
+      fetch: (request: Request) => Promise<Response>;
+    };
   };
 }
 ```
@@ -230,7 +294,7 @@ To add a new transformation mode, such as a GIF mode:
 export class GifStrategy implements TransformationStrategy {
   prepareTransformParams(context: TransformationContext): TransformParams {
     const { options } = context;
-    
+
     // Prepare GIF-specific parameters
     const params: TransformParams = {
       mode: 'gif',
@@ -238,25 +302,25 @@ export class GifStrategy implements TransformationStrategy {
       height: options.height || null,
       fit: options.fit || 'contain',
       duration: options.duration || '3s',
-      frameRate: options.frameRate || 10
+      frameRate: options.frameRate || 10,
     };
-    
+
     return params;
   }
-  
+
   validateOptions(options: VideoTransformOptions): void {
     // Validate GIF-specific options
     if (options.duration && parseDuration(options.duration) > 10) {
       throw new ValidationError('GIF duration must be less than 10 seconds');
     }
   }
-  
+
   updateDiagnostics(context: TransformationContext): void {
     // Add GIF-specific diagnostic information
     context.diagnosticsInfo.mode = 'gif';
     context.diagnosticsInfo.gifDetails = {
       duration: context.options.duration || '3s',
-      frameRate: context.options.frameRate || 10
+      frameRate: context.options.frameRate || 10,
     };
   }
 }
@@ -273,6 +337,8 @@ export class StrategyFactory {
         return new FrameStrategy();
       case 'spritesheet':
         return new SpritesheetStrategy();
+      case 'audio':
+        return new AudioStrategy();
       case 'gif':
         return new GifStrategy();
       case 'video':
@@ -298,7 +364,7 @@ export class TransformVideoCommand {
   private readonly debugService: DebugService;
   private readonly videoStorageService: VideoStorageService;
   private readonly errorHandlerService: ErrorHandlerService;
-  
+
   constructor(services: ServiceDependencies) {
     this.transformationService = services.transformationService;
     this.cacheService = services.cacheService;
@@ -306,35 +372,35 @@ export class TransformVideoCommand {
     this.videoStorageService = services.videoStorageService;
     this.errorHandlerService = services.errorHandlerService;
   }
-  
+
   public async execute(request: Request): Promise<Response> {
     // Create diagnostic information for debugging
-    const diagnosticsInfo: DiagnosticsInfo = { 
+    const diagnosticsInfo: DiagnosticsInfo = {
       timestamp: Date.now(),
-      requestUrl: request.url
+      requestUrl: request.url,
     };
-    
+
     try {
       // 1. Parse request URL
       const url = new URL(request.url);
       const path = url.pathname;
-      
+
       // 2. Match path pattern
       const pathPattern = this.findMatchingPathPattern(path);
       if (!pathPattern || !pathPattern.processPath) {
         return this.videoStorageService.fetchOriginalVideo(request);
       }
-      
+
       // 3. Extract options from URL and query parameters
       const options = this.parseOptions(url, pathPattern);
-      
+
       // 4. Get appropriate strategy based on mode
       const mode = options.mode || 'video';
       const strategy = StrategyFactory.createStrategy(mode);
-      
+
       // 5. Validate options using the strategy
       await strategy.validateOptions(options);
-      
+
       // 6. Create transformation context
       const context: TransformationContext = {
         request,
@@ -342,34 +408,34 @@ export class TransformVideoCommand {
         pathPattern,
         url,
         path,
-        diagnosticsInfo
+        diagnosticsInfo,
       };
-      
+
       // 7. Prepare transformation parameters using strategy
       const transformParams = strategy.prepareTransformParams(context);
-      
+
       // 8. Update diagnostics information
       strategy.updateDiagnostics(context);
-      
+
       // 9. Check cache
       const cachedResponse = await this.cacheService.getCachedResponse(
-        request, 
+        request,
         options,
         transformParams
       );
-      
+
       if (cachedResponse) {
         // Add debug headers if needed
         return this.debugService.addDebugInfo(cachedResponse, diagnosticsInfo);
       }
-      
+
       // 10. Transform video
       const response = await this.transformationService.transformVideo(
         request,
         options,
         transformParams
       );
-      
+
       // 11. Cache response
       const cachedResponse = await this.cacheService.cacheResponse(
         request,
@@ -377,7 +443,7 @@ export class TransformVideoCommand {
         options,
         transformParams
       );
-      
+
       // 12. Add debug information if needed
       return this.debugService.addDebugInfo(cachedResponse, diagnosticsInfo);
     } catch (error) {
@@ -385,12 +451,12 @@ export class TransformVideoCommand {
       return this.errorHandlerService.createErrorResponse(error, diagnosticsInfo);
     }
   }
-  
+
   // Helper methods
   private findMatchingPathPattern(path: string): PathPattern | null {
     // Path pattern matching implementation
   }
-  
+
   private parseOptions(url: URL, pathPattern: PathPattern): VideoTransformOptions {
     // Options extraction implementation
   }
@@ -428,6 +494,8 @@ export class StrategyFactory {
         return new FrameStrategy();
       case 'spritesheet':
         return new SpritesheetStrategy();
+      case 'audio':
+        return new AudioStrategy();
       case 'video':
       default:
         return new VideoStrategy();
@@ -458,36 +526,36 @@ The Singleton pattern is implemented in configuration managers:
 export class VideoConfigurationManager {
   private static instance: VideoConfigurationManager | null = null;
   private config: VideoConfig;
-  
+
   private constructor() {
     // Initialize with default configuration
     this.config = DEFAULT_VIDEO_CONFIG;
-    
+
     // Load from environment variables
     this.loadFromEnvironment();
   }
-  
+
   public static getInstance(): VideoConfigurationManager {
     if (!VideoConfigurationManager.instance) {
       VideoConfigurationManager.instance = new VideoConfigurationManager();
     }
     return VideoConfigurationManager.instance;
   }
-  
+
   // Configuration access methods
   public getDerivative(name: string): VideoDerivative | null {
     return this.config.derivatives[name] || null;
   }
-  
+
   // Configuration update methods
   public updateConfigFromKV(kvConfig: Partial<VideoConfig>): void {
     // Validate and update configuration
     this.config = {
       ...this.config,
-      ...kvConfig
+      ...kvConfig,
     };
   }
-  
+
   private loadFromEnvironment(): void {
     // Load configuration from environment variables
   }
@@ -529,7 +597,7 @@ async function initializeServices(env: Env): Promise<ServiceDependencies> {
     cacheService: new CacheManagementService(env),
     debugService: new DebugService(env),
     videoStorageService: new VideoStorageService(env),
-    errorHandlerService: new ErrorHandlerService(env)
+    errorHandlerService: new ErrorHandlerService(env),
   };
 }
 
@@ -538,13 +606,13 @@ export class TransformVideoCommand {
   private readonly transformationService: VideoTransformationService;
   private readonly cacheService: CacheManagementService;
   // Other services...
-  
+
   constructor(services: ServiceDependencies) {
     this.transformationService = services.transformationService;
     this.cacheService = services.cacheService;
     // Initialize other services...
   }
-  
+
   // Command implementation...
 }
 
@@ -557,7 +625,7 @@ export async function videoHandler(
   try {
     // Initialize services
     const services = await initializeServices(env);
-    
+
     // Create and execute command with injected services
     const command = new TransformVideoCommand(services);
     return await command.execute(request);
@@ -582,7 +650,7 @@ Dependency Injection provides several benefits:
 
 The Video Resizer architecture leverages these design patterns to create a maintainable, extensible, and testable codebase. These patterns work together to provide a solid foundation for handling the complexities of video transformation while promoting good software development practices.
 
-- **Strategy Pattern**: Enables different transformation modes
+- **Strategy Pattern**: Enables different transformation modes (video, frame, spritesheet, audio)
 - **Command Pattern**: Encapsulates transformation logic
 - **Factory Pattern**: Creates appropriate strategies
 - **Singleton Pattern**: Manages configuration

@@ -1,6 +1,6 @@
 # Service Separation Pattern
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ The approach was applied to the five largest files in the codebase:
 
 1. `kvStorageService.ts` (2631 lines) → Refactored into 9 smaller files in `src/services/kvStorage/`
 2. `videoStorageService.ts` (1927 lines) → Refactored into 9 smaller files in `src/services/videoStorage/`
-3. `errorHandlerService.ts` (1426 lines) → Refactored into 6 smaller files in `src/services/errorHandler/`
+3. `errorHandlerService.ts` (1426 lines) → Refactored into 5 files in `src/services/errorHandler/`
 4. `configurationService.ts` (1045 lines) → Refactored into 8 smaller files in `src/services/configuration/`
 5. `transformationUtils.ts` (1029 lines) → Refactored into 5 smaller files in `src/utils/transformation/`
 
@@ -130,6 +130,7 @@ src/services/kvStorage/
 ```
 
 Key features include:
+
 - Standard and chunked video storage
 - Range request support
 - TTL refresh
@@ -154,6 +155,7 @@ src/services/videoStorage/
 ```
 
 Key features include:
+
 - Multiple storage backends (R2, remote, fallback)
 - Cache tag generation
 - Path transformation for different origins
@@ -164,20 +166,19 @@ The Error Handler Service provides comprehensive error handling and reporting:
 
 ```
 src/services/errorHandler/
-├── README.md                   # Documentation
-├── normalizeError.ts           # Error normalization
 ├── errorResponse.ts            # Error response creation
 ├── fallbackContent.ts          # Fallback content generation
-├── logging.ts                  # Error logging
 ├── transformationErrorHandler.ts # Specific handling for transformation errors
+├── bypassHeadersUtils.ts       # Bypass header utilities
 └── index.ts                    # Re-exports
 ```
 
 Key features include:
-- Error normalization
+
 - Custom error responses
 - Fallback content generation
-- Comprehensive logging
+- Transformation error handling
+- Bypass header utilities
 
 ### Configuration Service
 
@@ -198,6 +199,7 @@ src/services/configuration/
 ```
 
 Key features include:
+
 - Type-safe configuration validation
 - In-memory caching
 - Metrics tracking
@@ -218,6 +220,7 @@ src/utils/transformation/
 ```
 
 Key features include:
+
 - CDN parameter mapping
 - Time and duration parsing
 - Format validation
@@ -250,3 +253,13 @@ For teams considering applying the Service Separation Pattern to their own code:
 8. **Backup Strategy**: Always create backups before starting
 
 The incremental approach minimizes risk while still achieving the benefits of the pattern.
+
+## Recent Decompositions
+
+### TransformVideoCommand Decomposition
+
+TransformVideoCommand (`src/domain/commands/`) was decomposed from 1417 lines into 5 files: `TransformVideoCommand.ts` (381 lines), `originsErrorHandler.ts`, `originsExecution.ts`, `sourceResolution.ts`, `types.ts`.
+
+### VideoConfigurationManager Decomposition
+
+VideoConfigurationManager was decomposed from 1038 lines into 4 files: `VideoConfigurationManager.ts` (625 lines), `videoConfigSchemas.ts`, `videoConfigOrigins.ts`, `videoConfigStorage.ts`.

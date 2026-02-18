@@ -1,6 +1,6 @@
 # Error Handling Implementation
 
-*Last Updated: May 10, 2025*
+_Last Updated: February 18, 2026_
 
 This document describes the comprehensive error handling system implemented in the Video Resizer. It covers the error class hierarchy, utilities, context tracking mechanisms, fallback strategies, and best practices for working with errors.
 
@@ -66,8 +66,12 @@ export class VideoTransformError extends Error {
   }
 
   // Methods for JSON serialization and response creation
-  toJSON(): ErrorResponseBody { /* ... */ }
-  toResponse(): Response { /* ... */ }
+  toJSON(): ErrorResponseBody {
+    /* ... */
+  }
+  toResponse(): Response {
+    /* ... */
+  }
 }
 ```
 
@@ -93,9 +97,15 @@ export class ValidationError extends VideoTransformError {
   }
 
   // Static factory methods
-  static invalidMode(mode: string, context?: ErrorContext): ValidationError { /* ... */ }
-  static invalidDimensions(width: string, height: string, context?: ErrorContext): ValidationError { /* ... */ }
-  static patternNotFound(path: string, context?: ErrorContext): ValidationError { /* ... */ }
+  static invalidMode(mode: string, context?: ErrorContext): ValidationError {
+    /* ... */
+  }
+  static invalidDimensions(width: string, height: string, context?: ErrorContext): ValidationError {
+    /* ... */
+  }
+  static patternNotFound(path: string, context?: ErrorContext): ValidationError {
+    /* ... */
+  }
 }
 ```
 
@@ -117,8 +127,21 @@ export class ProcessingError extends VideoTransformError {
   }
 
   // Static factory methods
-  static transformationFailed(reason: string, context?: ErrorContext, originalError?: Error): ProcessingError { /* ... */ }
-  static fetchFailed(url: string, status: number, context?: ErrorContext, originalError?: Error): ProcessingError { /* ... */ }
+  static transformationFailed(
+    reason: string,
+    context?: ErrorContext,
+    originalError?: Error
+  ): ProcessingError {
+    /* ... */
+  }
+  static fetchFailed(
+    url: string,
+    status: number,
+    context?: ErrorContext,
+    originalError?: Error
+  ): ProcessingError {
+    /* ... */
+  }
 }
 ```
 
@@ -140,8 +163,16 @@ export class ConfigurationError extends VideoTransformError {
   }
 
   // Static factory methods
-  static missingProperty(property: string, context?: ErrorContext): ConfigurationError { /* ... */ }
-  static invalidConfiguration(property: string, value: any, context?: ErrorContext): ConfigurationError { /* ... */ }
+  static missingProperty(property: string, context?: ErrorContext): ConfigurationError {
+    /* ... */
+  }
+  static invalidConfiguration(
+    property: string,
+    value: any,
+    context?: ErrorContext
+  ): ConfigurationError {
+    /* ... */
+  }
 }
 ```
 
@@ -163,8 +194,12 @@ export class NotFoundError extends VideoTransformError {
   }
 
   // Static factory methods
-  static resourceNotFound(path: string, context?: ErrorContext): NotFoundError { /* ... */ }
-  static patternNotFound(path: string, context?: ErrorContext): NotFoundError { /* ... */ }
+  static resourceNotFound(path: string, context?: ErrorContext): NotFoundError {
+    /* ... */
+  }
+  static patternNotFound(path: string, context?: ErrorContext): NotFoundError {
+    /* ... */
+  }
 }
 ```
 
@@ -181,19 +216,19 @@ export enum ErrorType {
   INVALID_FORMAT = 'INVALID_FORMAT',
   INVALID_DIMENSIONS = 'INVALID_DIMENSIONS',
   PATTERN_NOT_FOUND = 'PATTERN_NOT_FOUND',
-  
+
   // Server errors (500 range)
   TRANSFORMATION_ERROR = 'TRANSFORMATION_ERROR',
   URL_CONSTRUCTION_ERROR = 'URL_CONSTRUCTION_ERROR',
   FETCH_ERROR = 'FETCH_ERROR',
   STORAGE_ERROR = 'STORAGE_ERROR',
   CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
-  
+
   // Resource not found (404)
   NOT_FOUND = 'NOT_FOUND',
-  
+
   // Unknown errors
-  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
 }
 ```
 
@@ -211,16 +246,11 @@ export function normalizeErrorBasic(error: unknown): VideoTransformError {
   if (error instanceof VideoTransformError) {
     return error;
   }
-  
+
   if (error instanceof Error) {
-    return new VideoTransformError(
-      error.message,
-      ErrorType.UNKNOWN_ERROR,
-      undefined,
-      error
-    );
+    return new VideoTransformError(error.message, ErrorType.UNKNOWN_ERROR, undefined, error);
   }
-  
+
   return new VideoTransformError(
     typeof error === 'string' ? error : 'Unknown error occurred',
     ErrorType.UNKNOWN_ERROR
@@ -239,28 +269,31 @@ export function logErrorWithContext(
   level: LogLevel = 'error'
 ): void {
   const normalizedError = normalizeErrorBasic(error);
-  
+
   // Merge contexts if both exist
   if (context && normalizedError.context) {
     normalizedError.context = {
       ...normalizedError.context,
-      ...context
+      ...context,
     };
   } else if (context) {
     normalizedError.context = context;
   }
-  
+
   // Log with appropriate level
-  logger[level]({
-    err: normalizedError,
-    type: normalizedError.type,
-    status: normalizedError.status,
-    context: normalizedError.context,
-    // Include stack trace for errors
-    stack: normalizedError.stack,
-    // Include original error if available
-    originalError: normalizedError.originalError
-  }, `Error: ${normalizedError.message}`);
+  logger[level](
+    {
+      err: normalizedError,
+      type: normalizedError.type,
+      status: normalizedError.status,
+      context: normalizedError.context,
+      // Include stack trace for errors
+      stack: normalizedError.stack,
+      // Include original error if available
+      originalError: normalizedError.originalError,
+    },
+    `Error: ${normalizedError.message}`
+  );
 }
 ```
 
@@ -275,10 +308,7 @@ export function withErrorHandling<T>(
   return fn().catch(errorHandler);
 }
 
-export async function tryOrNull<T>(
-  fn: () => Promise<T>,
-  logger?: Logger
-): Promise<T | null> {
+export async function tryOrNull<T>(fn: () => Promise<T>, logger?: Logger): Promise<T | null> {
   try {
     return await fn();
   } catch (error) {
@@ -309,20 +339,17 @@ export async function tryOrDefault<T>(
 
 ```typescript
 // src/utils/errorHandlingUtils.ts
-export function toTransformError(
-  error: unknown,
-  context?: ErrorContext
-): VideoTransformError {
+export function toTransformError(error: unknown, context?: ErrorContext): VideoTransformError {
   const transformError = normalizeErrorBasic(error);
-  
+
   // Add context if provided
   if (context) {
     transformError.context = {
       ...transformError.context,
-      ...context
+      ...context,
     };
   }
-  
+
   return transformError;
 }
 ```
@@ -379,23 +406,23 @@ export function createRequestContext(request: Request): RequestContext {
     method: request.method,
     startTime: Date.now(),
     breadcrumbs: [],
-    timedOperations: {}
+    timedOperations: {},
   };
-  
+
   // Add client information if available
   const clientIP = request.headers.get('CF-Connecting-IP');
   const country = request.headers.get('CF-IPCountry');
   const userAgent = request.headers.get('User-Agent');
-  
+
   if (clientIP || country || userAgent) {
     context.clientInfo = {
       ip: clientIP || undefined,
       country: country || undefined,
       userAgent: userAgent || undefined,
-      device: userAgent ? parseDeviceFromUserAgent(userAgent) : undefined
+      device: userAgent ? parseDeviceFromUserAgent(userAgent) : undefined,
     };
   }
-  
+
   return context;
 }
 
@@ -407,20 +434,16 @@ export function getCurrentContext(): RequestContext | null {
   return currentContext;
 }
 
-export function addBreadcrumb(
-  message: string,
-  category: string,
-  data?: Record<string, any>
-): void {
+export function addBreadcrumb(message: string, category: string, data?: Record<string, any>): void {
   if (!currentContext) {
     return;
   }
-  
+
   currentContext.breadcrumbs.push({
     message,
     category,
     timestamp: Date.now(),
-    data
+    data,
   });
 }
 ```
@@ -454,7 +477,7 @@ export function createLogger(name: string): Logger {
         };
       }
       return {};
-    }
+    },
   });
 }
 ```
@@ -474,11 +497,11 @@ try {
     {
       path: request.url,
       options,
-      mode: 'video'
+      mode: 'video',
     },
     'error'
   );
-  
+
   // Handle the error or rethrow
   throw toTransformError(error, { handler: 'videoHandler' });
 }
@@ -499,17 +522,16 @@ Handled upstream by `TransformVideoCommand` using `retryWithAlternativeOrigins`:
 ```typescript
 // In TransformVideoCommand.executeWithOrigins()
 if (response.status === 404) {
-  const { retryWithAlternativeOrigins } = await import(
-    '../../services/transformation/retryWithAlternativeOrigins'
-  );
-  
+  const { retryWithAlternativeOrigins } =
+    await import('../../services/transformation/retryWithAlternativeOrigins');
+
   return await retryWithAlternativeOrigins({
     originalRequest: request,
     transformOptions: options,
     failedOrigin: origin,
     failedSource: sourceResolution.source,
     context: this.context,
-    env: env
+    env: env,
   });
 }
 ```
@@ -519,21 +541,19 @@ if (response.status === 404) {
 ```typescript
 export async function retryWithAlternativeOrigins(options: RetryOptions): Promise<Response> {
   // 1. Create exclusion for the failed source
-  const excludeSources = [{
-    originName: failedOrigin.name,
-    sourceType: failedSource.type,
-    sourcePriority: failedSource.priority
-  }];
-  
+  const excludeSources = [
+    {
+      originName: failedOrigin.name,
+      sourceType: failedSource.type,
+      sourcePriority: failedSource.priority,
+    },
+  ];
+
   // 2. Try to fetch from alternative sources using Origins system
-  const storageResult = await fetchVideoWithOrigins(
-    path,
-    videoConfig,
-    env,
-    originalRequest,
-    { excludeSources }
-  );
-  
+  const storageResult = await fetchVideoWithOrigins(path, videoConfig, env, originalRequest, {
+    excludeSources,
+  });
+
   // 3. If successful, transform the result
   if (storageResult.sourceType !== 'error') {
     const transformResult = await prepareVideoTransformation(
@@ -543,20 +563,18 @@ export async function retryWithAlternativeOrigins(options: RetryOptions): Promis
       debugInfo,
       env
     );
-    
-    return await cacheResponse(originalRequest, async () => 
-      fetch(transformResult.cdnCgiUrl)
-    );
+
+    return await cacheResponse(originalRequest, async () => fetch(transformResult.cdnCgiUrl));
   }
-  
+
   // 4. If all sources fail, return 404
   return new Response('Video not found in any configured origin', {
     status: 404,
     headers: {
       'Content-Type': 'text/plain',
       'Cache-Control': 'no-store',
-      'X-All-Origins-Failed': 'true'
-    }
+      'X-All-Origins-Failed': 'true',
+    },
   });
 }
 ```
@@ -571,12 +589,7 @@ if (isServerError || isFileSizeError) {
   // Attempt direct fetch or use storage service
   // Background caching is initiated for successful fallbacks
   if (fallbackResponse && fallbackResponse.body) {
-    await initiateBackgroundCaching(
-      context.env,
-      path,
-      fallbackResponse.clone(),
-      requestContext
-    );
+    await initiateBackgroundCaching(context.env, path, fallbackResponse.clone(), requestContext);
   }
 }
 ```
@@ -596,24 +609,24 @@ export class ErrorHandlerService {
   // Creates standardized error responses
   createErrorResponse(error: unknown, request: Request): Response {
     const transformError = normalizeErrorBasic(error);
-    
+
     // Add debug information if enabled
     if (this.configService.isDebugMode(request)) {
       const response = transformError.toResponse();
-      
+
       // Add debug headers
       response.headers.set('X-Error-Type', transformError.type);
       response.headers.set('X-Error-Status', transformError.status.toString());
-      
+
       // Return HTML debug view for browsers requesting it
       const accept = request.headers.get('Accept') || '';
       if (accept.includes('text/html')) {
         return this.createDebugHtmlErrorResponse(transformError, request);
       }
-      
+
       return response;
     }
-    
+
     // Return standard JSON error response
     return transformError.toResponse();
   }
@@ -621,7 +634,7 @@ export class ErrorHandlerService {
   // Note: Pattern-specific fallback has been removed
   // 404 errors are now handled by retryWithAlternativeOrigins in TransformVideoCommand
   // This simplified error handler focuses on creating appropriate error responses
-  
+
   // Creates error responses with appropriate headers and diagnostics
   async createEnhancedErrorResponse(
     error: unknown,
@@ -629,7 +642,7 @@ export class ErrorHandlerService {
     context?: VideoTransformContext
   ): Promise<Response> {
     const transformError = normalizeErrorBasic(error);
-    
+
     // Build error response with diagnostic information
     const errorResponse = {
       error: transformError.type,
@@ -638,17 +651,17 @@ export class ErrorHandlerService {
       details: {
         requestId: context?.requestContext?.requestId,
         path: new URL(request.url).pathname,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     };
-    
+
     return new Response(JSON.stringify(errorResponse), {
       status: transformError.status,
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
-        'X-Error-Type': transformError.type
-      }
+        'X-Error-Type': transformError.type,
+      },
     });
   }
 
@@ -660,7 +673,7 @@ export class ErrorHandlerService {
     options: VideoTransformOptions
   ): Promise<Response> {
     const transformError = normalizeErrorBasic(error);
-    
+
     // Special handling for file size errors
     if (
       this.configService.getConfig().fileSizeErrorHandling &&
@@ -670,16 +683,13 @@ export class ErrorHandlerService {
         { err: transformError, url: originalUrl },
         'File size limit exceeded, falling back to original'
       );
-      
+
       // Fetch original without transformation
-      return this.fetchOriginalContentFallback(
-        originalUrl,
-        transformError,
-        request,
-        { badRequestOnly: false }
-      );
+      return this.fetchOriginalContentFallback(originalUrl, transformError, request, {
+        badRequestOnly: false,
+      });
     }
-    
+
     // Handle other errors
     return this.createErrorResponse(transformError, request);
   }
@@ -709,29 +719,28 @@ export async function fetchVideoWithOrigins(
 ): Promise<StorageResult> {
   // Find all matching origins for the path
   const matchingOrigins = findMatchingOrigins(path, config.origins);
-  
+
   // Try each matching origin
   for (const { origin, match } of matchingOrigins) {
     // Get sources and apply exclusions
     let sources = [...origin.sources].sort((a, b) => a.priority - b.priority);
-    
+
     if (options?.excludeSources && options.excludeSources.length > 0) {
-      sources = sources.filter(source => {
-        return !options.excludeSources!.some(excluded => 
-          excluded.originName === origin.name &&
-          excluded.sourceType === source.type
+      sources = sources.filter((source) => {
+        return !options.excludeSources!.some(
+          (excluded) => excluded.originName === origin.name && excluded.sourceType === source.type
         );
       });
     }
-    
+
     // Skip this origin if all sources are excluded
     if (sources.length === 0) {
       logDebug('VideoStorageService', 'All sources excluded for origin', {
-        originName: origin.name
+        originName: origin.name,
       });
       continue;
     }
-    
+
     // Try each source in the origin
     for (const source of sources) {
       const result = await fetchFromSource(source, path, origin, env);
@@ -740,7 +749,7 @@ export async function fetchVideoWithOrigins(
       }
     }
   }
-  
+
   // If all origins and sources fail, return error
   return {
     response: new Response('Video not found in any origin', { status: 404 }),
@@ -748,7 +757,7 @@ export async function fetchVideoWithOrigins(
     contentType: null,
     size: null,
     error: new Error('Video not found in any origin or source'),
-    path: path
+    path: path,
   };
 }
 ```
@@ -761,7 +770,7 @@ The system provides standardized error response creation:
 // From VideoTransformError.ts
 toResponse(): Response {
   const body = this.toJSON();
-  
+
   return new Response(JSON.stringify(body), {
     status: this.status,
     headers: {
@@ -793,11 +802,11 @@ The error handling system is integrated with the caching system for advanced beh
 ```typescript
 // src/services/cacheVersionService.ts
 async incrementVersionOnError(
-  error: unknown, 
+  error: unknown,
   path: string
 ): Promise<number> {
   const transformError = normalizeErrorBasic(error);
-  
+
   // Only increment version for certain error types
   if (
     transformError.type === ErrorType.FETCH_ERROR ||
@@ -808,11 +817,11 @@ async incrementVersionOnError(
     if (!pathPattern) {
       return this.currentVersion;
     }
-    
+
     // Increment version for this path pattern
     return this.incrementVersion(pathPattern);
   }
-  
+
   return this.currentVersion;
 }
 ```
@@ -821,12 +830,9 @@ async incrementVersionOnError(
 
 ```typescript
 // src/utils/cacheControlUtils.ts
-export function getCacheTtlForResponse(
-  response: Response,
-  config: CacheConfig
-): number {
+export function getCacheTtlForResponse(response: Response, config: CacheConfig): number {
   const status = response.status;
-  
+
   // Use different TTLs based on response status
   if (status >= 200 && status < 300) {
     return config.ttl.ok;
@@ -865,15 +871,11 @@ Always include relevant context with errors:
 throw new ProcessingError('Transformation failed');
 
 // Do include detailed context
-throw new ProcessingError(
-  'Transformation failed',
-  ErrorType.TRANSFORMATION_ERROR,
-  {
-    url: request.url,
-    options: transformOptions,
-    duration: operation.duration
-  }
-);
+throw new ProcessingError('Transformation failed', ErrorType.TRANSFORMATION_ERROR, {
+  url: request.url,
+  options: transformOptions,
+  duration: operation.duration,
+});
 ```
 
 ### 3. Use utility functions
@@ -919,7 +921,7 @@ Record detailed breadcrumbs for complex operations:
 // Do leave breadcrumbs for complex operations
 async function transformVideo(options: VideoTransformOptions) {
   addBreadcrumb('Starting video transformation', 'transform', { options });
-  
+
   try {
     const result = await performTransformation(options);
     addBreadcrumb('Transformation successful', 'transform', { duration: result.duration });
@@ -940,21 +942,17 @@ import { ValidationError, ErrorType, logErrorWithContext } from '../errors';
 
 export async function validateOptions(options: VideoTransformOptions): Promise<void> {
   // Check for valid mode
-  if (!['video', 'frame', 'spritesheet'].includes(options.mode)) {
+  if (!['video', 'frame', 'spritesheet', 'audio'].includes(options.mode)) {
     throw ValidationError.invalidMode(options.mode, { options });
   }
-  
+
   // Check dimensions if provided
   if (options.width && options.height) {
     const width = parseInt(options.width, 10);
     const height = parseInt(options.height, 10);
-    
+
     if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
-      throw ValidationError.invalidDimensions(
-        options.width,
-        options.height,
-        { options }
-      );
+      throw ValidationError.invalidDimensions(options.width, options.height, { options });
     }
   }
 }
@@ -971,21 +969,20 @@ export async function fetchVideo(url: string): Promise<VideoData> {
       // Risky operation
       const response = await fetch(url);
       if (!response.ok) {
-        throw new ProcessingError.fetchFailed(
-          url,
-          response.status,
-          { status: response.status, statusText: response.statusText }
-        );
+        throw new ProcessingError.fetchFailed(url, response.status, {
+          status: response.status,
+          statusText: response.statusText,
+        });
       }
       return await response.json();
     },
     async (error) => {
       // Error handler
       logErrorWithContext(logger, error, { url });
-      
+
       // Increment cache version on fetch errors
       await cacheVersionService.incrementVersionOnError(error, url);
-      
+
       // Re-throw with additional context
       throw toTransformError(error, { handler: 'fetchVideo', url });
     }
@@ -1000,41 +997,48 @@ export async function handleVideoRequest(request: Request): Promise<Response> {
   // Create and set request context
   const context = createRequestContext(request);
   setCurrentContext(context);
-  
+
   // Start timed operation
   const operationName = 'handleVideoRequest';
   startTimedOperation(operationName);
-  
+
   try {
     // Parse URL and options
     const url = new URL(request.url);
     const options = parseVideoOptions(url);
-    
+
     // Add breadcrumb
     addBreadcrumb('Processing video request', 'handler', { url: url.toString(), options });
-    
+
     // Validate options
     await validateOptions(options);
-    
+
     // Process request
     return await videoTransformationService.transformVideo(request, options);
   } catch (error) {
     // Handle error
-    return errorHandlerService.handleTransformationError(
-      error,
-      request,
-      request.url,
-      options
-    );
+    return errorHandlerService.handleTransformationError(error, request, request.url, options);
   } finally {
     // End timed operation
     endTimedOperation(operationName);
-    
+
     // Add performance metrics breadcrumb
     const metrics = getPerformanceMetrics();
     addBreadcrumb('Request completed', 'performance', { metrics });
   }
 }
 ```
+
+### CF Error Code Integration (`src/errors/cfErrorCodes.ts`)
+
+The error handling system integrates with Cloudflare's Media Transformation error codes through the `cfErrorCodes.ts` module. When a transformation response includes the `Cf-Resized` header with an error (format: `err=XXXX`), the system:
+
+1. **Extracts** the error code using `extractCfErrorCode()` from the `Cf-Resized` header
+2. **Looks up** the code in `CF_ERROR_MAP` to determine the description, HTTP status, and retryability
+3. **Sets** the `X-CF-Error-Code` response header with the numeric code
+4. **Includes** the error code and description in the structured JSON error response
+5. **Uses retryability** information to decide whether to attempt fallback strategies
+
+This integration provides fine-grained error classification for Cloudflare-specific transformation failures beyond the general `ErrorType` categories.
 
 This error handling implementation provides a robust foundation for handling failures gracefully while providing detailed diagnostic information for troubleshooting.

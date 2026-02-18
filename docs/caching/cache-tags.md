@@ -1,6 +1,6 @@
 # Cache Tags Implementation
 
-*Last Updated: January 2025*
+_Last Updated: February 18, 2026_
 
 ## Overview
 
@@ -45,14 +45,15 @@ Cache tags use a shortened prefix to optimize metadata storage:
 
 ### 5. Mode-Specific Tags (Non-Video Modes)
 
-For frame and spritesheet modes:
+For frame, spritesheet, and audio modes:
 
 - **Frame mode**: `vp-m-frame`, `vp-t-{time}` (e.g., `vp-t-5` for 5 seconds)
-- **Spritesheet mode**: 
+- **Spritesheet mode**:
   - `vp-m-spritesheet`
   - `vp-c-{columns}` (e.g., `vp-c-4`)
   - `vp-r-{rows}` (e.g., `vp-r-4`)
   - `vp-i-{interval}` (e.g., `vp-i-2` for 2-second intervals)
+- **Audio mode**: `vp-m-audio`
 
 ### 6. IMQuery Tag (`vp-imq`)
 
@@ -70,7 +71,7 @@ For frame and spritesheet modes:
 const videoPath = '/videos/sports/football/match-highlights.mp4';
 const options = {
   derivative: 'mobile',
-  format: 'mp4'
+  format: 'mp4',
 };
 
 // Generated tags:
@@ -86,11 +87,12 @@ The tag system is designed to minimize metadata size:
 
 1. **Short prefixes**: Using `vp-` instead of `video-prod-` saves ~10 bytes per tag
 2. **Path shortening**: Using only the last 2 path segments reduces tag length
-3. **Selective tagging**: Only relevant tags are applied (e.g., mode tags only for non-video modes)
+3. **Selective tagging**: Only relevant tags are applied (e.g., mode tags only for non-video modes like frame, spritesheet, and audio)
 
 ### Storage Consistency
 
 For chunked videos, the same cache tags are applied to:
+
 - The manifest (base key)
 - All chunk keys
 
@@ -164,7 +166,7 @@ The system automatically converts long prefixes to short versions to optimize st
 With the optimized tag system, typical metadata sizes are:
 
 - **Basic video**: 3-4 tags ≈ 100-150 bytes
-- **Frame extraction**: 4-5 tags ≈ 150-200 bytes  
+- **Frame extraction**: 4-5 tags ≈ 150-200 bytes
 - **Spritesheet**: 6-7 tags ≈ 200-250 bytes
 
 This leaves ample room within the 1KB metadata limit for other fields.

@@ -7,8 +7,8 @@ const mockContext = {
   diagnostics: {},
   debugEnabled: true,
   executionContext: {
-    waitUntil: vi.fn()
-  }
+    waitUntil: vi.fn(),
+  },
 };
 
 // Mock the logger and request context
@@ -17,28 +17,24 @@ vi.mock('../../src/utils/pinoLogger', () => ({
     debug: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
-    warn: vi.fn()
+    warn: vi.fn(),
   })),
   debug: vi.fn(),
   error: vi.fn(),
   info: vi.fn(),
-  warn: vi.fn()
+  warn: vi.fn(),
 }));
 
 vi.mock('../../src/utils/requestContext', () => ({
   addBreadcrumb: vi.fn(),
-  getCurrentContext: vi.fn(() => mockContext)
-}));
-
-vi.mock('../../src/utils/legacyLoggerAdapter', () => ({
-  getCurrentContext: vi.fn(() => mockContext)
+  getCurrentContext: vi.fn(() => mockContext),
 }));
 
 vi.mock('../../src/utils/errorHandlingUtils', async () => {
   const actual = await vi.importActual('../../src/utils/errorHandlingUtils');
   return {
     ...actual,
-    logErrorWithContext: vi.fn()
+    logErrorWithContext: vi.fn(),
   };
 });
 
@@ -60,21 +56,15 @@ describe('streamUtils', () => {
         headers: new Headers({
           'Content-Type': 'video/mp4',
           'Content-Length': '1000',
-          'Accept-Ranges': 'bytes'
-        })
+          'Accept-Ranges': 'bytes',
+        }),
       });
 
       // Process a range request for bytes 100-299
-      const result = await processRangeRequest(
-        mockResponse,
-        100,
-        299,
-        1000,
-        {
-          preserveHeaders: true,
-          handlerTag: 'Test-Handler'
-        }
-      );
+      const result = await processRangeRequest(mockResponse, 100, 299, 1000, {
+        preserveHeaders: true,
+        handlerTag: 'Test-Handler',
+      });
 
       // Verify the response
       expect(result.status).toBe(206);
@@ -86,10 +76,10 @@ describe('streamUtils', () => {
       // Verify the body
       const resultBody = await result.arrayBuffer();
       expect(resultBody.byteLength).toBe(200);
-      
+
       // All bytes should be 42 (our mock content)
       const resultArray = new Uint8Array(resultBody);
-      expect(resultArray.every(byte => byte === 42)).toBe(true);
+      expect(resultArray.every((byte) => byte === 42)).toBe(true);
     });
 
     it('should handle bypass flags correctly', async () => {
@@ -100,22 +90,16 @@ describe('streamUtils', () => {
         headers: new Headers({
           'Content-Type': 'video/mp4',
           'Content-Length': '1000',
-          'Accept-Ranges': 'bytes'
-        })
+          'Accept-Ranges': 'bytes',
+        }),
       });
 
       // Process a range request with bypass flags
-      const result = await processRangeRequest(
-        mockResponse,
-        0,
-        499,
-        1000,
-        {
-          bypassCacheAPI: true,
-          fallbackApplied: true,
-          preserveHeaders: true
-        }
-      );
+      const result = await processRangeRequest(mockResponse, 0, 499, 1000, {
+        bypassCacheAPI: true,
+        fallbackApplied: true,
+        preserveHeaders: true,
+      });
 
       // Verify the bypass flags
       expect(result.headers.get('X-Bypass-Cache-API')).toBe('true');
@@ -130,21 +114,16 @@ describe('streamUtils', () => {
         status: 200,
         headers: new Headers({
           'Content-Type': 'video/mp4',
-          'Content-Length': '1000'
-        })
+          'Content-Length': '1000',
+        }),
       });
-      
+
       // Create a spy to verify error handling
       const { logErrorWithContext } = await import('../../src/utils/errorHandlingUtils');
-      
+
       // Process the range request
-      const result = await processRangeRequest(
-        mockResponse,
-        0,
-        499,
-        1000
-      );
-      
+      const result = await processRangeRequest(mockResponse, 0, 499, 1000);
+
       // Should return the original response on error
       expect(result).toBe(mockResponse);
       expect(logErrorWithContext).toHaveBeenCalled();
@@ -160,27 +139,24 @@ describe('streamUtils', () => {
         headers: new Headers({
           'Content-Type': 'video/mp4',
           'Content-Length': '1000',
-          'Accept-Ranges': 'bytes'
-        })
+          'Accept-Ranges': 'bytes',
+        }),
       });
 
       // Mock parseRangeHeader directly
-      vi.spyOn(await import('../../src/utils/httpUtils'), 'parseRangeHeader')
-        .mockImplementation(() => ({ 
-          start: 200, 
-          end: 699, 
-          total: 1000 
-        }));
+      vi.spyOn(await import('../../src/utils/httpUtils'), 'parseRangeHeader').mockImplementation(
+        () => ({
+          start: 200,
+          end: 699,
+          total: 1000,
+        })
+      );
 
       // Handle a range request
-      const result = await handleRangeRequest(
-        mockResponse,
-        'bytes=200-699',
-        {
-          bypassCacheAPI: true,
-          handlerTag: 'Test-Handler'
-        }
-      );
+      const result = await handleRangeRequest(mockResponse, 'bytes=200-699', {
+        bypassCacheAPI: true,
+        handlerTag: 'Test-Handler',
+      });
 
       // Verify the response
       expect(result.status).toBe(206);
@@ -194,8 +170,8 @@ describe('streamUtils', () => {
         status: 200,
         headers: new Headers({
           'Content-Type': 'video/mp4',
-          'Content-Length': '4'
-        })
+          'Content-Length': '4',
+        }),
       });
 
       const result = await handleRangeRequest(mockResponse, null);
@@ -207,8 +183,8 @@ describe('streamUtils', () => {
         status: 200,
         headers: new Headers({
           'Content-Type': 'video/mp4',
-          'Content-Length': '4'
-        })
+          'Content-Length': '4',
+        }),
       });
 
       // Mock parseRangeHeader to return null (unsatisfiable)
@@ -216,7 +192,7 @@ describe('streamUtils', () => {
         const actual = await vi.importActual('../../src/utils/httpUtils');
         return {
           ...actual,
-          parseRangeHeader: vi.fn().mockReturnValue(null)
+          parseRangeHeader: vi.fn().mockReturnValue(null),
         };
       });
 
@@ -229,9 +205,9 @@ describe('streamUtils', () => {
       const mockResponse = new Response('test', {
         status: 200,
         headers: new Headers({
-          'Content-Type': 'video/mp4'
+          'Content-Type': 'video/mp4',
           // No Content-Length header
-        })
+        }),
       });
 
       const result = await handleRangeRequest(mockResponse, 'bytes=0-3');
