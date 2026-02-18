@@ -90,7 +90,7 @@ This glossary provides standardized definitions for terms used throughout the Vi
 
 | Term                     | Definition                                                                      |
 | ------------------------ | ------------------------------------------------------------------------------- |
-| **IMQuery**              | Responsive image query system for dimension-based transformations               |
+| **IMQuery**              | Responsive query system for dimension-based video transformations               |
 | **Client Hints**         | HTTP headers that provide client device information used for adaptive responses |
 | **Breakpoint**           | Screen width threshold used for responsive design decisions                     |
 | **Derivative Mapping**   | System that maps responsive dimensions to predefined video derivatives          |
