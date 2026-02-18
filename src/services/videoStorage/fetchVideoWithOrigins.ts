@@ -12,6 +12,7 @@ import { fetchFromR2 } from './r2Storage';
 import { fetchFromRemote } from './remoteStorage';
 import { fetchFromFallback } from './fallbackStorage';
 import { OriginResolver } from '../origins/OriginResolver';
+import { fetchVideo } from './fetchVideo';
 
 export interface FetchOptions {
   excludeSources?: Array<{
@@ -90,8 +91,6 @@ async function fetchVideoWithOriginsImpl(
       hasLegacyStorage: !!config.storage,
     });
 
-    // Import the legacy fetchVideo function dynamically to avoid circular dependencies
-    const { fetchVideo } = await import('./fetchVideo');
     return fetchVideo(path, config, env, request);
   }
 

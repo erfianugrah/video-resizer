@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { handleTransformationError } from '../../../src/services/errorHandler/transformationErrorHandler';
 
-// We'll manually define the mock implementation to properly test the integration
-// Setup mock objects
-const mockStreamFallbackToKV = vi.fn().mockResolvedValue(true);
+// Hoist mock functions so they're available to vi.mock factories
+const { mockStreamFallbackToKV } = vi.hoisted(() => ({
+  mockStreamFallbackToKV: vi.fn().mockResolvedValue(true),
+}));
 
-// Setup mocks with hoisting - mock the actual module path that's dynamically imported
+// Setup mocks with hoisting - mock the actual module path that's statically imported
 vi.mock('../../../src/services/videoStorage/fallbackStorage', async () => {
   return {
     streamFallbackToKV: mockStreamFallbackToKV,

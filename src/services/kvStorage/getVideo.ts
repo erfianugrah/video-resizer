@@ -15,6 +15,7 @@ import {
   storeCacheKeyVersion,
 } from '../cacheVersionService';
 import { addRangeDiagnostics } from './logging';
+import { parseRangeHeader } from '../../utils/httpUtils';
 
 /**
  * Implementation for retrieving a transformed video from KV storage
@@ -186,8 +187,6 @@ async function getTransformedVideoImpl(
     // Handle range request for chunked video
     if (isRangeRequest) {
       try {
-        const { parseRangeHeader, createUnsatisfiableRangeResponse } =
-          await import('../../utils/httpUtils');
         const rangeValue = rangeHeaderValue || '';
         const clientRange = parseRangeHeader(rangeValue, manifest.totalSize);
 
@@ -456,8 +455,6 @@ async function getTransformedVideoImpl(
     // Handle range request for single entry
     if (isRangeRequest) {
       try {
-        const { parseRangeHeader, createUnsatisfiableRangeResponse } =
-          await import('../../utils/httpUtils');
         const rangeValue = rangeHeaderValue || '';
         const clientRange = parseRangeHeader(rangeValue, videoArrayBuffer.byteLength);
 

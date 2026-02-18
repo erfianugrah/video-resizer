@@ -20,6 +20,9 @@ const logger = createCategoryLogger('ErrorHandler');
 import { EnvVariables } from '../../config/environmentConfig';
 import type { VideoResizerConfig } from '../videoStorage/interfaces';
 import { getCacheKV } from '../../utils/flexibleBindings';
+import { streamFallbackToKV } from '../../services/videoStorage/fallbackStorage';
+import { fetchVideoWithOrigins } from '../videoStorage/fetchVideoWithOrigins';
+import { setBypassHeaders } from '../../utils/bypassHeadersUtils';
 
 /**
  * Helper function to initiate background caching of fallback responses
@@ -115,8 +118,7 @@ async function initiateBackgroundCaching(
       });
     }
 
-    // Import the background chunking storage function
-    const { streamFallbackToKV } = await import('../../services/videoStorage/fallbackStorage');
+    // Use the background chunking storage function
 
     // Get a fresh clone for KV storage - this is separate from the response we send to the client
     const fallbackClone = fallbackResponse.clone();
@@ -530,9 +532,8 @@ export async function handleTransformationError({
     addBreadcrumb(requestContext, 'Fallback', 'Using storage service');
 
     try {
-      // Import VideoConfigurationManager and fetchVideoWithOrigins dynamically
+      // Import VideoConfigurationManager dynamically to allow for mocking in tests
       const { VideoConfigurationManager } = await import('../../config');
-      const { fetchVideoWithOrigins } = await import('../videoStorage/fetchVideoWithOrigins');
 
       const videoConfigManager = VideoConfigurationManager.getInstance();
       const videoConfig = videoConfigManager.getConfig();
@@ -629,7 +630,6 @@ export async function handleTransformationError({
     }
 
     // For ALL fallbacks, set bypass headers using the centralized utility
-    const { setBypassHeaders } = await import('../../utils/bypassHeadersUtils');
 
     // Set bypass headers with appropriate options
     setBypassHeaders(headers, {

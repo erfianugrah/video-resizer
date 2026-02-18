@@ -21,6 +21,7 @@ import {
 
 // Create a category-specific logger for PresignedUrlCacheService
 import { createCategoryLogger } from '../utils/logger';
+import { extractAuthToken } from '../utils/urlTokenUtils';
 const logger = createCategoryLogger('PresignedUrlCacheService');
 const { debug: logDebug } = logger;
 
@@ -125,9 +126,6 @@ async function storePresignedUrlImpl(
 
   const now = Date.now();
   const expiresAt = now + options.expiresInSeconds * 1000;
-
-  // Import the extractAuthToken function from the utility file
-  const { extractAuthToken } = await import('../utils/urlTokenUtils');
 
   // Extract only the authentication token/query part of the URL
   const authToken = extractAuthToken(presignedUrl);

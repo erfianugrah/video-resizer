@@ -6,6 +6,10 @@ import { VideoConfigurationManager } from '../config/VideoConfigurationManager';
 import { TransformParams, TransformParamValue } from '../domain/strategies/TransformationStrategy';
 import { OriginMatchResult, OriginResolver } from '../services/origins/OriginResolver';
 import { Origin, Source } from '../services/videoStorage/interfaces';
+import { createCategoryLogger } from './logger';
+import * as presignedUrlUtils from './presignedUrlUtils';
+
+const pathLogger = createCategoryLogger('PathUtils');
 
 /**
  * Path pattern interface with extended configuration
@@ -122,21 +126,10 @@ export function isCdnCgiMediaPath(path: string): boolean {
  * @returns The matching pattern or null if none match
  */
 export function findMatchingPathPattern(path: string, patterns: PathPattern[]): PathPattern | null {
-  // Import logger utilities in case they're available
-  let logDebug: (message: string, data?: Record<string, unknown>) => void;
-  const console_debug = console.debug;
-
-  try {
-    // Define a fallback debug function to capture debug info during execution
-    // since we might not have access to the proper logging system
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils-Compat] ${message}`, data || {});
-    };
-  } catch (err) {
-    logDebug = (message: string, data?: Record<string, unknown>) => {
-      console_debug(`[PathUtils-Compat] ${message}`, data || {});
-    };
-  }
+  // Use structured logger for debug output
+  const logDebug = (message: string, data?: Record<string, unknown>) => {
+    pathLogger.debug(message, data || {});
+  };
 
   // Log that we're using the new OriginResolver-based implementation
   logDebug('Using OriginResolver for path pattern matching', { path });
@@ -242,7 +235,7 @@ export function matchPathWithCaptures(
       return originMatchToPathMatch(originMatch);
     }
   } catch (err) {
-    console.debug('[PathUtils-Compat] Error finding matching origin with captures', {
+    pathLogger.debug('Error finding matching origin with captures', {
       error: err instanceof Error ? err.message : String(err),
       path,
     });
@@ -429,9 +422,9 @@ function buildCdnCgiMediaUrlImpl(
   const configManager = VideoConfigurationManager.getInstance();
   const { basePath } = configManager.getCdnCgiConfig();
 
-  // Initialize with a default fallback logger
+  // Initialize with the structured logger
   let logDebug: (message: string, data?: Record<string, unknown>) => void = (message, data) => {
-    console.debug(`[PathUtils-Compat] ${message}`, data || {});
+    pathLogger.debug(message, data || {});
   };
 
   // Quick check for URLs that likely need presigning (without importing presignedUrlUtils)
@@ -574,9 +567,6 @@ function buildCdnCgiMediaUrlImpl(
               originalUrl: originUrl,
               likelyNeedsPresigning,
             });
-
-            // Dynamically import the presignedUrlUtils module
-            const presignedUrlUtils = await import('./presignedUrlUtils');
 
             // Get video config containing storage configuration
             const videoConfig = configManager.getConfig().storage;

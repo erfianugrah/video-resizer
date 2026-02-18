@@ -14,6 +14,8 @@ import {
   UrlGeneratorFunction,
 } from '../presignedUrlCacheService';
 import { applyPathTransformation } from './pathTransform';
+import { storeTransformedVideoWithStreaming } from '../kvStorage/streamStorage';
+import { storeTransformedVideo } from '../../services/kvStorage/storeVideo';
 import { createCategoryLogger } from '../../utils/logger';
 const logger = createCategoryLogger('VideoStorage');
 import { getPresignedUrlKV, getCacheKV } from '../../utils/flexibleBindings';
@@ -567,8 +569,7 @@ export async function streamFallbackToKV(
         sizeMB: Math.round(contentLength / 1024 / 1024),
       });
 
-      // Import necessary functions
-      const { storeTransformedVideoWithStreaming } = await import('../kvStorage/streamStorage');
+      // Use streaming storage for large files
 
       // For extremely large files, we need to be even more careful with the stream
       // Instead of using FixedLengthStream, we'll implement our own stream-based approach
@@ -593,8 +594,6 @@ export async function streamFallbackToKV(
               const reader = fallbackResponse.body.getReader();
 
               // Process chunks directly to the KV in 10MB chunks
-              const { storeTransformedVideoWithStreaming } =
-                await import('../kvStorage/streamStorage');
 
               // We'll process chunks directly to KV, completely bypassing the Response.body approach
               let totalBytesProcessed = 0;
@@ -769,8 +768,6 @@ export async function streamFallbackToKV(
     }
 
     // For large files, use standard streaming
-    // Import the storeTransformedVideo function from the correct relative path
-    const { storeTransformedVideo } = await import('../../services/kvStorage/storeVideo');
 
     // Check if this is a large file that would benefit from streaming
     const useStreaming = contentLength > 40 * 1024 * 1024; // 40MB threshold for streaming

@@ -13,6 +13,40 @@ import {
 import { ChunkManifest, TransformationMetadata } from './interfaces';
 import { MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY, STANDARD_CHUNK_SIZE } from './constants';
 import { generateCacheTags } from '../videoStorage/cacheTags';
+import { storeTransformedVideoWithStreaming } from './streamStorage';
+
+/**
+ * Clean up already-stored chunks when a chunked storage operation fails partway through.
+ * Runs deletions in parallel and logs failures without throwing.
+ */
+async function cleanupStoredChunks(
+  namespace: KVNamespace,
+  chunkKeys: string[],
+  key: string
+): Promise<void> {
+  if (chunkKeys.length === 0) return;
+
+  logDebug('[STORE_VIDEO] Cleaning up stored chunks after failure', {
+    key,
+    chunkCount: chunkKeys.length,
+  });
+
+  const results = await Promise.allSettled(chunkKeys.map((chunkKey) => namespace.delete(chunkKey)));
+
+  const failures = results.filter((r) => r.status === 'rejected');
+  if (failures.length > 0) {
+    logDebug('[STORE_VIDEO] Some chunk cleanup deletions failed', {
+      key,
+      totalChunks: chunkKeys.length,
+      failedDeletions: failures.length,
+    });
+  } else {
+    logDebug('[STORE_VIDEO] All chunks cleaned up successfully', {
+      key,
+      deletedChunks: chunkKeys.length,
+    });
+  }
+}
 
 /**
  * Implementation of storeTransformedVideo with support for both single entry
@@ -309,7 +343,7 @@ async function storeTransformedVideoImpl(
         chunkCount: chunkKeys.length,
         error: error instanceof Error ? error.message : String(error),
       });
-      // TODO: Consider cleanup of successfully uploaded chunks
+      await cleanupStoredChunks(namespace, chunkKeys, key);
       return false;
     }
 
@@ -325,7 +359,7 @@ async function storeTransformedVideoImpl(
           actualChunkSizes,
         }
       );
-      // TODO: Consider cleanup of already written chunks
+      await cleanupStoredChunks(namespace, chunkKeys, key);
       return false;
     }
 
@@ -408,7 +442,7 @@ async function storeTransformedVideoImpl(
 
     if (!manifestSuccess) {
       logDebug('[STORE_VIDEO] Failed to store manifest', { key });
-      // TODO: Consider cleanup of stored chunks
+      await cleanupStoredChunks(namespace, chunkKeys, key);
       return false;
     }
 
@@ -510,8 +544,6 @@ export const storeTransformedVideo = withErrorHandling<
           explicitStreaming: useStreaming === true,
         });
 
-        // Dynamically import the streaming implementation to avoid circular dependencies
-        const { storeTransformedVideoWithStreaming } = await import('./streamStorage');
         return await storeTransformedVideoWithStreaming(
           namespace,
           sourcePath,

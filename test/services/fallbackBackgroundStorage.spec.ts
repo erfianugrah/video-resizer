@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { fetchFromFallback } from '../../src/services/videoStorage/fallbackStorage';
 
-// Mock for storeTransformedVideo
-const mockStoreTransformedVideo = vi.fn().mockResolvedValue(true);
+// Hoist mock functions so they're available to vi.mock factories
+const { mockStoreTransformedVideo } = vi.hoisted(() => ({
+  mockStoreTransformedVideo: vi.fn().mockResolvedValue(true),
+}));
 
 // Mock dynamic import with the correct path
 vi.mock('../../src/services/kvStorage/storeVideo', () => {

@@ -371,6 +371,13 @@ export class ConfigProvider {
   private static instance: ConfigurationSystem;
 
   /**
+   * Reset the singleton instance (primarily for testing)
+   */
+  static resetInstance(): void {
+    ConfigProvider.instance = undefined as unknown as ConfigurationSystem;
+  }
+
+  /**
    * Get the singleton instance of the ConfigProvider
    * @param env Optional environment variables
    * @returns Configuration system instance

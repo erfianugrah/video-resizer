@@ -18,6 +18,7 @@ import { Origin } from '../../services/videoStorage/interfaces';
 import { SourceResolutionResult } from '../../services/origins/OriginResolver';
 import { EnvVariables } from '../../config/environmentConfig';
 import { VideoTransformContext, VideoTransformOptions, WorkerEnvironment } from './types';
+import { retryWithAlternativeOrigins } from '../../services/transformation/retryWithAlternativeOrigins';
 import {
   extractCfErrorCode,
   getCfErrorInfo,
@@ -121,9 +122,6 @@ export async function classifyAndHandleOriginError(params: OriginErrorParams): P
       failedPriority: sourceResolution.source.priority,
       cfErrorCode,
     });
-
-    const { retryWithAlternativeOrigins } =
-      await import('../../services/transformation/retryWithAlternativeOrigins');
 
     return await retryWithAlternativeOrigins({
       originalRequest: request,

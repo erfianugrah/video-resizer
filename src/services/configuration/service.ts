@@ -11,6 +11,10 @@ import { getVideoConfig, getCacheConfig, getLoggingConfig, getDebugConfig } from
 import { convertJsonToConfig, validateConfig } from './validation';
 import { createCategoryLogger } from '../../utils/logger';
 import { logErrorWithContext, withErrorHandling } from '../../utils/errorHandlingUtils';
+import { VideoConfigurationManager } from '../../config/VideoConfigurationManager';
+import { CacheConfigurationManager } from '../../config/CacheConfigurationManager';
+import { LoggingConfigurationManager } from '../../config/LoggingConfigurationManager';
+import { DebugConfigurationManager } from '../../config/DebugConfigurationManager';
 
 const cfgLogger = createCategoryLogger('ConfigurationService');
 
@@ -213,13 +217,6 @@ export class ConfigurationService {
    */
   private async distributeConfiguration(config: WorkerConfiguration): Promise<void> {
     try {
-      // Import other configuration managers that need updates
-      const { VideoConfigurationManager } = await import('../../config/VideoConfigurationManager');
-      const { CacheConfigurationManager } = await import('../../config/CacheConfigurationManager');
-      const { LoggingConfigurationManager } =
-        await import('../../config/LoggingConfigurationManager');
-      const { DebugConfigurationManager } = await import('../../config/DebugConfigurationManager');
-
       // Update video configuration
       try {
         VideoConfigurationManager.getInstance().updateConfig(config.video);

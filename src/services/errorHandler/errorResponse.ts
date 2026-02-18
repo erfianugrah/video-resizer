@@ -9,6 +9,7 @@ import { createCategoryLogger } from '../../utils/logger';
 const logger = createCategoryLogger('ErrorHandler');
 import { normalizeError } from './normalizeError';
 import { fetchOriginalContentFallback } from './fallbackContent';
+import { addDebugHeaders } from '../debugService';
 
 /**
  * Implementation of createErrorResponse that might throw errors
@@ -150,8 +151,6 @@ async function createErrorResponseImpl(
           diagInfo.fallbackApplied = true;
           diagInfo.fallbackReason = normalizedError.message;
 
-          // Import debug service functions dynamically to avoid circular dependencies
-          const { addDebugHeaders } = await import('../debugService');
           return addDebugHeaders(fallbackResponse, debugInfo, diagInfo);
         }
 
@@ -248,8 +247,6 @@ async function createErrorResponseImpl(
 
   // Add debug headers if debug is enabled
   if (debugInfo?.isEnabled) {
-    // Import debug service functions dynamically to avoid circular dependencies
-    const { addDebugHeaders } = await import('../debugService');
     const response = normalizedError.toResponse();
     return addDebugHeaders(response, debugInfo, diagInfo);
   }

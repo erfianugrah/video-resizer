@@ -207,13 +207,9 @@ export function logErrorWithContext(
     const categoryLogger = createCategoryLogger(category);
     categoryLogger.error(message, combinedContext);
   } else {
-    // Fall back to console for logging
-    console.error({
-      context: category,
-      operation: 'logErrorWithContext',
-      message,
-      ...combinedContext,
-    });
+    // Fall back to module-level logger when no request context
+    const categoryLogger = createCategoryLogger(category);
+    categoryLogger.error(message, combinedContext);
   }
 
   // Capture exception to Sentry (filters out expected errors)

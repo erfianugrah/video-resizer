@@ -5,6 +5,8 @@ import { VideoTransformError } from '../../errors';
 import { withErrorHandling } from '../../utils/errorHandlingUtils';
 import { parseErrorMessage } from '../../utils/transformationUtils';
 import { createCategoryLogger } from '../../utils/logger';
+import { determineVideoOptions } from '../../handlers/videoOptionsService';
+import { transformVideo } from '../videoTransformationService';
 const logger = createCategoryLogger('ErrorHandler');
 
 /**
@@ -110,7 +112,6 @@ async function fetchOriginalContentFallbackImpl(
 
     try {
       // First determine video options from the request
-      const { determineVideoOptions } = await import('../../handlers/videoOptionsService');
 
       // Get URL for determining options
       const url = new URL(request.url);
@@ -124,8 +125,7 @@ async function fetchOriginalContentFallbackImpl(
       const { VideoConfigurationManager } = await import('../../config');
       const pathPatterns = VideoConfigurationManager.getInstance().getPathPatterns();
 
-      // Now import the transformation service
-      const { transformVideo } = await import('../videoTransformationService');
+      // Use the transformation service
 
       // Create debug info object
       const debugInfo = {
