@@ -1,842 +1,732 @@
 {
-	"version": "2.1.0",
-	"lastUpdated": "2025-05-15T15:45:00Z",
-	"video": {
-		"origins": {
-			"enabled": true,
-			"useLegacyPathPatterns": false,
-			"fallbackHandling": {
-				"enabled": true,
-				"maxRetries": 2,
-				"tryAllMatchingOrigins": true
-			},
-			"items": [
-				{
-					"name": "videos",
-					"matcher": "^/videos/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
-					"captureGroups": [
-						"videoId",
-						"extension"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 1,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "videos/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 0,
-							"url": "https://assets.exp.ingka.com",
-							"path": "videos/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream",
-								"X-Client-ID": "video-resizer"
-							}
-						},
-						{
-							"type": "fallback",
-							"priority": 2,
-							"url": "https://cdn.erfi.dev",
-							"path": "fallback-videos/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 3600,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "bynder",
-					"matcher": "^/m/([^/]+)/original/(.+\\.(mp4|mov))$",
-					"captureGroups": [
-						"hash",
-						"filename"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 2,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "m/${hash}/original/${filename}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 0,
-							"url": "https://ikea.getbynder.com",
-							"path": "m/${hash}/original/${filename}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream",
-								"X-Client-ID": "video-resizer"
-							}
-						},
-						{
-							"type": "fallback",
-							"priority": 1,
-							"url": "https://r2.www.ikea.com",
-							"path": "m/${hash}/original/${filename}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream",
-								"X-Client-ID": "video-resizer"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 2629800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "popular",
-					"matcher": "^/popular/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
-					"captureGroups": [
-						"videoId",
-						"extension"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "popular/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://videos.erfi.dev",
-							"path": "popular-videos/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 2,
-							"url": "https://popular.videos.erfi.dev",
-							"path": "${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 604800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "popular-alt",
-					"matcher": "^/popular/([^.]+)",
-					"captureGroups": [
-						"videoId"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "popular/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://videos.erfi.dev",
-							"path": "popular-videos/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 604800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "shorts",
-					"matcher": "^/shorts/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
-					"captureGroups": [
-						"videoId",
-						"extension"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "shorts/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://videos.erfi.dev",
-							"path": "shorts/${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 2,
-							"url": "https://shorts.videos.erfi.dev",
-							"path": "${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 172800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"quality": "medium",
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "shorts-alt",
-					"matcher": "^/shorts/([^.]+)",
-					"captureGroups": [
-						"videoId"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "shorts/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://videos.erfi.dev",
-							"path": "shorts/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 172800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"quality": "medium",
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "standard",
-					"matcher": "^/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
-					"captureGroups": [
-						"videoId",
-						"extension"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 1,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 0,
-							"url": "https://videos.erfi.dev",
-							"path": "${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 2,
-							"url": "https://fallback.videos.erfi.dev",
-							"path": "${videoId}.${extension}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 86400,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "standard-alt",
-					"matcher": "^/([^.]+)",
-					"captureGroups": [
-						"videoId"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://videos.erfi.dev",
-							"path": "${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 86400,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "authenticated-videos",
-					"matcher": "^/authenticated-videos/(.*)",
-					"captureGroups": [
-						"videoId"
-					],
-					"processPath": true,
-					"sources": [
-						{
-							"type": "r2",
-							"priority": 0,
-							"bucketBinding": "VIDEOS_BUCKET",
-							"path": "auth/${videoId}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 1,
-							"url": "https://auth.videos.erfi.dev",
-							"path": "authenticated/${videoId}",
-							"auth": {
-								"enabled": true,
-								"type": "bearer",
-								"accessKeyVar": "AUTH_VIDEO_ACCESS_KEY",
-								"secretKeyVar": "AUTH_VIDEO_SECRET_KEY"
-							},
-							"headers": {
-								"Accept": "video/*,application/octet-stream"
-							}
-						},
-						{
-							"type": "remote",
-							"priority": 2,
-							"url": "https://auth-backup.videos.erfi.dev",
-							"path": "authenticated/${videoId}",
-							"auth": {
-								"enabled": true,
-								"type": "bearer",
-								"accessKeyVar": "AUTH_VIDEO_BACKUP_ACCESS_KEY",
-								"secretKeyVar": "AUTH_VIDEO_BACKUP_SECRET_KEY"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 1800,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"quality": "high",
-					"cacheability": true,
-					"videoCompression": "auto"
-				},
-				{
-					"name": "default",
-					"matcher": ".*",
-					"processPath": false,
-					"sources": [
-						{
-							"type": "remote",
-							"priority": 0,
-							"url": "https://videos.erfi.dev",
-							"path": "${request_path}",
-							"auth": {
-								"enabled": false,
-								"type": "basic"
-							}
-						}
-					],
-					"ttl": {
-						"ok": 300,
-						"redirects": 300,
-						"clientError": 60,
-						"serverError": 10
-					},
-					"useTtlByStatus": true,
-					"cacheability": true,
-					"videoCompression": "auto"
-				}
-			]
-		},
-		"derivatives": {
-			"desktop": {
-				"width": 1920,
-				"height": 1080,
-				"mode": "video",
-				"audio": true,
-				"duration": "5m",
-				"fit": "contain",
-				"loop": true,
-				"description": "1920x1080 pixels. The video plays in high-definition."
-			},
-			"tablet": {
-				"width": 1280,
-				"height": 720,
-				"mode": "video",
-				"audio": true,
-				"fit": "contain",
-				"loop": true,
-				"duration": "5m",
-				"description": "1280x720 pixels. The video plays at medium resolution."
-			},
-			"mobile": {
-				"width": 854,
-				"height": 640,
-				"mode": "video",
-				"audio": true,
-				"fit": "contain",
-				"loop": true,
-				"duration": "5m",
-				"description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
-			},
-			"thumbnail": {
-				"width": 640,
-				"height": 360,
-				"mode": "frame",
-				"time": "2s",
-				"format": "png",
-				"fit": "cover",
-				"description": "640x360 thumbnail extracted at 2 seconds."
-			}
-		},
-		"passthrough": {
-			"enabled": true,
-			"whitelistedFormats": [
-				"mp4",
-				"webm",
-				"mov"
-			]
-		},
-			"defaults": {
-				"width": null,
-				"height": null,
-				"mode": "video",
-				"fit": null,
-				"audio": true,
-				"format": null,
-				"time": null,
-				"duration": null,
-				"quality": null,
-				"compression": null,
-				"loop": null,
-				"preload": null,
-				"autoplay": null,
-				"muted": null
-			},
-			"validOptions": {
-				"mode": [
-					"video",
-					"frame",
-					"spritesheet",
-					"audio"
-				],
-				"fit": [
-					"contain",
-					"scale-down",
-					"cover"
-				],
-				"format": [
-					"jpg",
-					"png",
-					"m4a"
-				],
-			"audio": [
-				true,
-				false
-			],
-			"quality": [
-				"low",
-				"medium",
-				"high",
-				"auto"
-			],
-			"compression": [
-				"low",
-				"medium",
-				"high",
-				"auto"
-			],
-			"preload": [
-				"none",
-				"metadata",
-				"auto"
-			],
-			"loop": [
-				true,
-				false
-			],
-			"autoplay": [
-				true,
-				false
-			],
-			"muted": [
-				true,
-				false
-			]
-		},
-		"responsive": {
-			"breakpoints": {
-				"xs": 1,
-				"sm": 640,
-				"md": 768,
-				"lg": 1024,
-				"xl": 1280,
-				"2xl": 1536
-			},
-			"availableQualities": [
-				360,
-				480,
-				720,
-				1080,
-				1440,
-				2160
-			],
-			"deviceWidths": {
-				"mobile": 640,
-				"tablet": 1024,
-				"desktop": 1920
-			},
-			"networkQuality": {
-				"slow": {
-					"maxWidth": 640,
-					"maxHeight": 360,
-					"maxBitrate": 1000000
-				},
-				"medium": {
-					"maxWidth": 1280,
-					"maxHeight": 720,
-					"maxBitrate": 2500000
-				},
-				"fast": {
-					"maxWidth": 1920,
-					"maxHeight": 1080,
-					"maxBitrate": 5000000
-				}
-			},
-			"browserCapabilities": {
-				"hevc": {
-					"patterns": [
-						"Safari/[6-9][0-9][0-9]",
-						"Version\\/1[2-9]",
-						"iPhone OS 1[1-9]",
-						"iPad OS 1[1-9]"
-					],
-					"exclusions": [
-						"Chrome"
-					]
-				},
-				"av1": {
-					"patterns": [
-						"Chrome\\/[9][0-9]",
-						"Edge\\/[9][0-9]",
-						"Firefox\\/[9][0-9]",
-						"Chrome\\/90\\."
-					]
-				},
-				"vp9": {
-					"patterns": [
-						"Chrome\\/[5-9][0-9]",
-						"Edge\\/[7-9][0-9]",
-						"Firefox\\/[6-9][0-9]",
-						"Safari\\/60[5-9]",
-						"Safari\\/[6-9][1-9][0-9]"
-					]
-				},
-				"webm": {
-					"patterns": [
-						"Chrome",
-						"Firefox",
-						"Edge",
-						"Opera"
-					]
-				}
-			}
-		},
-		"responsiveBreakpoints": {
-			"small": {
-				"max": 854,
-				"derivative": "mobile"
-			},
-			"medium": {
-				"min": 855,
-				"max": 1280,
-				"derivative": "tablet"
-			},
-			"large": {
-				"min": 1281,
-				"derivative": "desktop"
-			}
-		},
-		"paramMapping": {
-			"width": "width",
-			"height": "height",
-			"fit": "fit",
-			"format": "format",
-			"quality": "quality",
-			"time": "time",
-			"duration": "duration",
-			"compression": "compression",
-			"audio": "audio",
-			"loop": "loop",
-			"preload": "preload",
-			"autoplay": "autoplay",
-			"muted": "muted"
-		},
-		"cdnCgi": {
-			"basePath": "/cdn-cgi/media"
-		}
-	},
-	"cache": {
-		"debug": false,
-		"defaultMaxAge": 300,
-		"respectOriginHeaders": true,
-		"cacheEverything": false,
-		"enableCacheTags": true,
-		"cacheTagPrefix": "video-prod-",
-		"purgeOnUpdate": false,
-		"bypassQueryParameters": [
-			"nocache",
-			"bypass",
-			"debug"
-		],
-		"bypassHeaderValue": "no-cache",
-		"enableKVCache": true,
-		"storeIndefinitely": true,
-		"refreshIndefiniteStorage": false,
-		"enableVersioning": true,
-		"ttlRefresh": {
-			"minElapsedPercent": 10,
-			"minRemainingSeconds": 60
-		},
-		"maxSizeBytes": 26214400,
-		"fallback": {
-			"enabled": true,
-			"badRequestOnly": true,
-			"preserveHeaders": [
-				"Content-Type",
-				"Cache-Control",
-				"Etag"
-			]
-		},
-		"mimeTypes": {
-			"video": [
-				"video/mp4",
-				"video/webm",
-				"video/ogg",
-				"video/x-msvideo",
-				"video/quicktime",
-				"video/x-matroska",
-				"video/x-flv",
-				"video/3gpp",
-				"video/3gpp2",
-				"video/mpeg",
-				"application/x-mpegURL",
-				"application/dash+xml"
-			],
-			"image": [
-				"image/jpeg",
-				"image/jpg",
-				"image/png",
-				"image/webp",
-				"image/gif",
-				"image/avif"
-			],
-			"audio": [
-				"audio/mpeg",
-				"audio/mp3",
-				"audio/wav",
-				"audio/ogg",
-				"audio/aac"
-			]
-		},
-		"ttl": {
-			"ok": 86400,
-			"redirects": 300,
-			"clientError": 60,
-			"serverError": 10
-		},
-		"method": "kv"
-	},
-	"debug": {
-		"enabled": true,
-		"verbose": false,
-		"includeHeaders": true,
-		"includePerformance": true,
-		"dashboardMode": true,
-		"viewMode": true,
-		"headerMode": true,
-		"debugQueryParam": "debug",
-		"debugViewParam": "view",
-		"preserveDebugParams": false,
-		"debugHeaders": [
-			"X-Debug",
-			"X-Debug-Enabled",
-			"Debug"
-		],
-		"renderStaticHtml": true,
-		"includeStackTrace": false,
-		"maxContentLength": 50000,
-		"truncationMessage": "... [content truncated]",
-		"allowedIps": [],
-		"excludedPaths": [
-			"/favicon.ico",
-			"/robots.txt"
-		]
-	},
-	"logging": {
-		"level": "debug",
-		"format": "json",
-		"includeTimestamps": true,
-		"includeComponentName": true,
-		"colorize": true,
-		"enabledComponents": [],
-		"disabledComponents": [
-			"healthcheck"
-		],
-		"sampleRate": 1,
-		"enablePerformanceLogging": true,
-		"performanceThresholdMs": 1000,
-		"breadcrumbs": {
-			"enabled": true,
-			"maxItems": 25,
-			"logAdditions": false
-		},
-		"pino": {
-			"level": "debug",
-			"browser": {
-				"asObject": true
-			},
-			"base": {
-				"service": "video-resizer",
-				"env": "production"
-			}
-		}
-	}
+  "version": "2.1.0",
+  "lastUpdated": "2025-05-15T15:45:00Z",
+  "video": {
+    "origins": {
+      "enabled": true,
+      "useLegacyPathPatterns": false,
+      "fallbackHandling": {
+        "enabled": true,
+        "maxRetries": 2,
+        "tryAllMatchingOrigins": true
+      },
+      "items": [
+        {
+          "name": "videos",
+          "matcher": "^/videos/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+          "captureGroups": ["videoId", "extension"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream",
+                "X-Client-ID": "video-resizer"
+              }
+            },
+            {
+              "type": "fallback",
+              "priority": 2,
+              "url": "https://cdn.erfi.dev",
+              "path": "fallback-videos/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 3600,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "bynder",
+          "matcher": "^/m/([^/]+)/original/(.+\\.(mp4|mov))$",
+          "captureGroups": ["hash", "filename"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 2,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "m/${hash}/original/${filename}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 0,
+              "url": "https://ikea.getbynder.com",
+              "path": "m/${hash}/original/${filename}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream",
+                "X-Client-ID": "video-resizer"
+              }
+            },
+            {
+              "type": "fallback",
+              "priority": 1,
+              "url": "https://r2.www.ikea.com",
+              "path": "m/${hash}/original/${filename}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream",
+                "X-Client-ID": "video-resizer"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 2629800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "popular",
+          "matcher": "^/popular/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+          "captureGroups": ["videoId", "extension"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "popular/${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "popular-videos/${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 2,
+              "url": "https://popular.videos.erfi.dev",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 604800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "popular-alt",
+          "matcher": "^/popular/([^.]+)",
+          "captureGroups": ["videoId"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "popular/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "popular-videos/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 604800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "shorts",
+          "matcher": "^/shorts/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+          "captureGroups": ["videoId", "extension"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "shorts/${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "shorts/${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 2,
+              "url": "https://shorts.videos.erfi.dev",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 172800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "quality": "medium",
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "shorts-alt",
+          "matcher": "^/shorts/([^.]+)",
+          "captureGroups": ["videoId"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "shorts/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "shorts/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 172800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "quality": "medium",
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "standard",
+          "matcher": "^/([^.]+)\\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v|3gp|ogv)",
+          "captureGroups": ["videoId", "extension"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 1,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 0,
+              "url": "https://videos.erfi.dev",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 2,
+              "url": "https://fallback.videos.erfi.dev",
+              "path": "${videoId}.${extension}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 86400,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "standard-alt",
+          "matcher": "^/([^.]+)",
+          "captureGroups": ["videoId"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://videos.erfi.dev",
+              "path": "${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 86400,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "authenticated-videos",
+          "matcher": "^/authenticated-videos/(.*)",
+          "captureGroups": ["videoId"],
+          "processPath": true,
+          "sources": [
+            {
+              "type": "r2",
+              "priority": 0,
+              "bucketBinding": "VIDEOS_BUCKET",
+              "path": "auth/${videoId}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 1,
+              "url": "https://auth.videos.erfi.dev",
+              "path": "authenticated/${videoId}",
+              "auth": {
+                "enabled": true,
+                "type": "bearer",
+                "accessKeyVar": "AUTH_VIDEO_ACCESS_KEY",
+                "secretKeyVar": "AUTH_VIDEO_SECRET_KEY"
+              },
+              "headers": {
+                "Accept": "video/*,application/octet-stream"
+              }
+            },
+            {
+              "type": "remote",
+              "priority": 2,
+              "url": "https://auth-backup.videos.erfi.dev",
+              "path": "authenticated/${videoId}",
+              "auth": {
+                "enabled": true,
+                "type": "bearer",
+                "accessKeyVar": "AUTH_VIDEO_BACKUP_ACCESS_KEY",
+                "secretKeyVar": "AUTH_VIDEO_BACKUP_SECRET_KEY"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 1800,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "quality": "high",
+          "cacheability": true,
+          "videoCompression": "auto"
+        },
+        {
+          "name": "default",
+          "matcher": ".*",
+          "processPath": false,
+          "sources": [
+            {
+              "type": "remote",
+              "priority": 0,
+              "url": "https://videos.erfi.dev",
+              "path": "${request_path}",
+              "auth": {
+                "enabled": false,
+                "type": "basic"
+              }
+            }
+          ],
+          "ttl": {
+            "ok": 300,
+            "redirects": 300,
+            "clientError": 60,
+            "serverError": 10
+          },
+          "useTtlByStatus": true,
+          "cacheability": true,
+          "videoCompression": "auto"
+        }
+      ]
+    },
+    "derivatives": {
+      "desktop": {
+        "width": 1920,
+        "height": 1080,
+        "mode": "video",
+        "audio": true,
+        "duration": "5m",
+        "fit": "contain",
+        "loop": true,
+        "description": "1920x1080 pixels. The video plays in high-definition."
+      },
+      "tablet": {
+        "width": 1280,
+        "height": 720,
+        "mode": "video",
+        "audio": true,
+        "fit": "contain",
+        "loop": true,
+        "duration": "5m",
+        "description": "1280x720 pixels. The video plays at medium resolution."
+      },
+      "mobile": {
+        "width": 854,
+        "height": 640,
+        "mode": "video",
+        "audio": true,
+        "fit": "contain",
+        "loop": true,
+        "duration": "5m",
+        "description": "854x640 pixels. The video plays at the lowest resolution and is also smaller in size."
+      },
+      "thumbnail": {
+        "width": 640,
+        "height": 360,
+        "mode": "frame",
+        "time": "2s",
+        "format": "png",
+        "fit": "cover",
+        "description": "640x360 thumbnail extracted at 2 seconds."
+      }
+    },
+    "passthrough": {
+      "enabled": true,
+      "whitelistedFormats": ["mp4", "webm", "mov"]
+    },
+    "defaults": {
+      "width": null,
+      "height": null,
+      "mode": "video",
+      "fit": null,
+      "audio": true,
+      "format": null,
+      "time": null,
+      "duration": null,
+      "quality": null,
+      "compression": null,
+      "loop": null,
+      "preload": null,
+      "autoplay": null,
+      "muted": null
+    },
+    "validOptions": {
+      "mode": ["video", "frame", "spritesheet", "audio"],
+      "fit": ["contain", "scale-down", "cover"],
+      "format": ["jpg", "png", "m4a"],
+      "audio": [true, false],
+      "quality": ["low", "medium", "high", "auto"],
+      "compression": ["low", "medium", "high", "auto"],
+      "preload": ["none", "metadata", "auto"],
+      "loop": [true, false],
+      "autoplay": [true, false],
+      "muted": [true, false]
+    },
+    "responsive": {
+      "breakpoints": {
+        "xs": 1,
+        "sm": 640,
+        "md": 768,
+        "lg": 1024,
+        "xl": 1280,
+        "2xl": 1536
+      },
+      "availableQualities": [360, 480, 720, 1080, 1440, 2160],
+      "deviceWidths": {
+        "mobile": 640,
+        "tablet": 1024,
+        "desktop": 1920
+      },
+      "networkQuality": {
+        "slow": {
+          "maxWidth": 640,
+          "maxHeight": 360,
+          "maxBitrate": 1000000
+        },
+        "medium": {
+          "maxWidth": 1280,
+          "maxHeight": 720,
+          "maxBitrate": 2500000
+        },
+        "fast": {
+          "maxWidth": 1920,
+          "maxHeight": 1080,
+          "maxBitrate": 5000000
+        }
+      },
+      "browserCapabilities": {
+        "hevc": {
+          "patterns": [
+            "Safari/[6-9][0-9][0-9]",
+            "Version\\/1[2-9]",
+            "iPhone OS 1[1-9]",
+            "iPad OS 1[1-9]"
+          ],
+          "exclusions": ["Chrome"]
+        },
+        "av1": {
+          "patterns": [
+            "Chrome\\/[9][0-9]",
+            "Edge\\/[9][0-9]",
+            "Firefox\\/[9][0-9]",
+            "Chrome\\/90\\."
+          ]
+        },
+        "vp9": {
+          "patterns": [
+            "Chrome\\/[5-9][0-9]",
+            "Edge\\/[7-9][0-9]",
+            "Firefox\\/[6-9][0-9]",
+            "Safari\\/60[5-9]",
+            "Safari\\/[6-9][1-9][0-9]"
+          ]
+        },
+        "webm": {
+          "patterns": ["Chrome", "Firefox", "Edge", "Opera"]
+        }
+      }
+    },
+    "responsiveBreakpoints": {
+      "small": {
+        "max": 854,
+        "derivative": "mobile"
+      },
+      "medium": {
+        "min": 855,
+        "max": 1280,
+        "derivative": "tablet"
+      },
+      "large": {
+        "min": 1281,
+        "derivative": "desktop"
+      }
+    },
+    "paramMapping": {
+      "width": "width",
+      "height": "height",
+      "fit": "fit",
+      "format": "format",
+      "quality": "quality",
+      "time": "time",
+      "duration": "duration",
+      "compression": "compression",
+      "audio": "audio",
+      "loop": "loop",
+      "preload": "preload",
+      "autoplay": "autoplay",
+      "muted": "muted"
+    },
+    "cdnCgi": {
+      "basePath": "/cdn-cgi/media"
+    }
+  },
+  "cache": {
+    "debug": false,
+    "defaultMaxAge": 300,
+    "respectOriginHeaders": true,
+    "cacheEverything": false,
+    "enableCacheTags": true,
+    "cacheTagPrefix": "video-prod-",
+    "purgeOnUpdate": false,
+    "bypassQueryParameters": ["nocache", "bypass", "debug"],
+    "bypassHeaderValue": "no-cache",
+    "enableKVCache": true,
+    "storeIndefinitely": true,
+    "refreshIndefiniteStorage": false,
+    "enableVersioning": true,
+    "ttlRefresh": {
+      "minElapsedPercent": 10,
+      "minRemainingSeconds": 60
+    },
+    "maxSizeBytes": 26214400,
+    "fallback": {
+      "enabled": true,
+      "badRequestOnly": true,
+      "preserveHeaders": ["Content-Type", "Cache-Control", "Etag"]
+    },
+    "mimeTypes": {
+      "video": [
+        "video/mp4",
+        "video/webm",
+        "video/ogg",
+        "video/x-msvideo",
+        "video/quicktime",
+        "video/x-matroska",
+        "video/x-flv",
+        "video/3gpp",
+        "video/3gpp2",
+        "video/mpeg",
+        "application/x-mpegURL",
+        "application/dash+xml"
+      ],
+      "image": ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/avif"],
+      "audio": ["audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg", "audio/aac"]
+    },
+    "ttl": {
+      "ok": 86400,
+      "redirects": 300,
+      "clientError": 60,
+      "serverError": 10
+    },
+    "method": "kv"
+  },
+  "debug": {
+    "enabled": true,
+    "verbose": false,
+    "includeHeaders": true,
+    "includePerformance": true,
+    "dashboardMode": true,
+    "viewMode": true,
+    "headerMode": true,
+    "debugQueryParam": "debug",
+    "debugViewParam": "view",
+    "preserveDebugParams": false,
+    "debugHeaders": ["X-Debug", "X-Debug-Enabled", "Debug"],
+    "renderStaticHtml": true,
+    "includeStackTrace": false,
+    "maxContentLength": 50000,
+    "truncationMessage": "... [content truncated]",
+    "allowedIps": [],
+    "excludedPaths": ["/favicon.ico", "/robots.txt"]
+  },
+  "logging": {
+    "level": "debug",
+    "format": "json",
+    "includeTimestamps": true,
+    "includeComponentName": true,
+    "colorize": true,
+    "enabledComponents": [],
+    "disabledComponents": ["healthcheck"],
+    "sampleRate": 1,
+    "enablePerformanceLogging": true,
+    "performanceThresholdMs": 1000,
+    "breadcrumbs": {
+      "enabled": true,
+      "maxItems": 25,
+      "logAdditions": false
+    },
+    "pino": {
+      "level": "debug",
+      "browser": {
+        "asObject": true
+      },
+      "base": {
+        "service": "video-resizer",
+        "env": "production"
+      }
+    }
+  }
 }
