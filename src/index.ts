@@ -339,7 +339,46 @@ export default Sentry.withSentry<EnvVariables>(
               },
             });
           } else {
-            // GET request — return full body
+            // GET request — return full body or partial content for range requests
+            const rangeHeader = request.headers.get('Range');
+
+            if (rangeHeader) {
+              // Parse range header for R2 (e.g., "bytes=0-0", "bytes=0-1023")
+              const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+              if (rangeMatch) {
+                const rangeStart = parseInt(rangeMatch[1], 10);
+                const rangeEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : undefined;
+
+                const r2Object = await r2Bucket.get(r2Key, {
+                  range: {
+                    offset: rangeStart,
+                    length: rangeEnd !== undefined ? rangeEnd - rangeStart + 1 : undefined,
+                  },
+                });
+                if (!r2Object) {
+                  return new Response(null, { status: 404 });
+                }
+
+                // Calculate actual range end for Content-Range header
+                const r2Range = r2Object.range as { offset: number; length: number } | undefined;
+                const actualLength = r2Range?.length ?? r2Object.size;
+                const actualEnd = rangeStart + actualLength - 1;
+
+                return new Response(r2Object.body, {
+                  status: 206,
+                  headers: {
+                    'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
+                    'Content-Length': actualLength.toString(),
+                    'Content-Range': `bytes ${rangeStart}-${actualEnd}/${r2Object.size}`,
+                    'Last-Modified': r2Object.uploaded.toUTCString(),
+                    ETag: r2Object.httpEtag || `"${r2Object.size}"`,
+                    'Accept-Ranges': 'bytes',
+                  },
+                });
+              }
+            }
+
+            // Full GET request (no Range header or unparseable range)
             const r2Object = await r2Bucket.get(r2Key);
             if (!r2Object) {
               return new Response(null, { status: 404 });
@@ -499,16 +538,37 @@ export default Sentry.withSentry<EnvVariables>(
         });
 
         // Capture exception to Sentry (skip AbortErrors)
-        if (err instanceof Error && err.name !== 'AbortError') {
-          Sentry.captureException(err, {
+        if (err instanceof Error) {
+          if (err.name !== 'AbortError') {
+            Sentry.captureException(err, {
+              tags: {
+                handler: 'worker',
+                url: request.url,
+              },
+              contexts: {
+                request: {
+                  url: request.url,
+                  method: request.method,
+                },
+              },
+            });
+          }
+        } else {
+          // Capture non-Error exceptions (e.g., numeric codes from CDN-CGI pipeline)
+          Sentry.captureException(new Error(`Non-Error exception thrown: ${String(err)}`), {
             tags: {
               handler: 'worker',
               url: request.url,
+              non_error_type: typeof err,
             },
             contexts: {
               request: {
                 url: request.url,
                 method: request.method,
+              },
+              original_value: {
+                type: typeof err,
+                value: String(err),
               },
             },
           });

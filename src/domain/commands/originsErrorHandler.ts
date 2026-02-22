@@ -355,30 +355,10 @@ async function buildEnhancedErrorResponse(
   sourceResolution: SourceResolutionResult,
   diagnosticsInfo: DiagnosticsInfo
 ): Promise<Response> {
-  const enhancedResponse = new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
-
-  const enhancedHeaders = new Headers(enhancedResponse.headers);
-
-  // Add generic error headers
-  enhancedHeaders.set('X-Error-Status', String(response.status));
-
-  // Phase 6: Add CF error code header when available
-  if (diagnosticsInfo.cfErrorCode) {
-    enhancedHeaders.set('X-CF-Error-Code', String(diagnosticsInfo.cfErrorCode));
-  }
-  if (
-    diagnosticsInfo.cfErrorInfo &&
-    typeof diagnosticsInfo.cfErrorInfo === 'object' &&
-    'label' in diagnosticsInfo.cfErrorInfo
-  ) {
-    enhancedHeaders.set('X-CF-Error-Label', String(diagnosticsInfo.cfErrorInfo.label));
-  }
-
-  // Use the error body text from diagnostics if available, otherwise try to read it
+  // IMPORTANT: Read the body text FIRST before consuming the response stream.
+  // Previously, passing `response.body` to a new Response locked the ReadableStream,
+  // causing "This ReadableStream is currently locked to a reader" errors when
+  // later code tried to clone or read the original response.
   let errorResponseBody = '';
 
   if (diagnosticsInfo.rawErrorText && typeof diagnosticsInfo.rawErrorText === 'string') {
@@ -395,6 +375,23 @@ async function buildEnhancedErrorResponse(
         'TransformVideoCommand.executeWithOrigins'
       );
     }
+  }
+
+  const enhancedHeaders = new Headers(response.headers);
+
+  // Add generic error headers
+  enhancedHeaders.set('X-Error-Status', String(response.status));
+
+  // Phase 6: Add CF error code header when available
+  if (diagnosticsInfo.cfErrorCode) {
+    enhancedHeaders.set('X-CF-Error-Code', String(diagnosticsInfo.cfErrorCode));
+  }
+  if (
+    diagnosticsInfo.cfErrorInfo &&
+    typeof diagnosticsInfo.cfErrorInfo === 'object' &&
+    'label' in diagnosticsInfo.cfErrorInfo
+  ) {
+    enhancedHeaders.set('X-CF-Error-Label', String(diagnosticsInfo.cfErrorInfo.label));
   }
 
   // Add specific error headers based on status code
@@ -434,8 +431,8 @@ async function buildEnhancedErrorResponse(
 
   // Create a new response with enhanced headers and the original error text
   return new Response(errorResponseBody, {
-    status: enhancedResponse.status,
-    statusText: enhancedResponse.statusText,
+    status: response.status,
+    statusText: response.statusText,
     headers: enhancedHeaders,
   });
 }

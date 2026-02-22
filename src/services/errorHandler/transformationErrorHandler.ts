@@ -223,9 +223,12 @@ export async function handleTransformationError({
   const cfIsRetryable = cfErrorInfo?.retryable === true;
 
   // Log the initial error - pass errorText directly as the error
+  const cfSuffix = cfErrorCode
+    ? ` (CF error ${cfErrorCode}${cfErrorInfo?.label ? `: ${cfErrorInfo.label}` : ''})`
+    : '';
   logErrorWithContext(
-    `Transformation proxy returned ${status}`,
-    errorText || `HTTP ${status} error from transformation proxy`,
+    `Transformation proxy returned ${status}${cfSuffix}`,
+    errorText || `HTTP ${status} error from transformation proxy${cfSuffix}`,
     {
       requestId: requestContext.requestId,
       url: cdnCgiUrl,
