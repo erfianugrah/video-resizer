@@ -165,7 +165,7 @@ function enrichLogData(
   if (enrichOptions.includeTiming) {
     const now = performance.now();
     enrichedData.timing = {
-      elapsed: Math.round(now - context.startTime) + 'ms',
+      elapsed: Math.round(now - (context.startTime ?? 0)) + 'ms',
       timestamp: new Date().toISOString(),
       breadcrumbCount: context.breadcrumbs.length,
     };

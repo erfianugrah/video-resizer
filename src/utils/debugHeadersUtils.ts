@@ -91,7 +91,7 @@ export function addDebugHeaders(
   // Add processing time if available
   if (diagnosticsInfo.processingTimeMs !== undefined) {
     headers.set('X-Processing-Time-Ms', diagnosticsInfo.processingTimeMs.toString());
-  } else if (requestContext) {
+  } else if (requestContext?.startTime !== undefined) {
     // If no explicit processing time is provided, calculate it from the context
     const endTime = performance.now();
     const processingTimeMs = Math.round(endTime - requestContext.startTime);
@@ -421,7 +421,7 @@ export async function createDebugReport(
         const cleanDiagnostics = { ...diagnosticsInfo };
 
         // Make sure critical timing information is included
-        if (requestContext) {
+        if (requestContext?.startTime !== undefined) {
           // Always calculate and set processingTimeMs to ensure it's accurate when displayed
           const endTime = performance.now();
           const processingTimeMs = Math.round(endTime - requestContext.startTime);

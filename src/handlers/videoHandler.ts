@@ -221,7 +221,9 @@ export const handleVideoRequest = withErrorHandling<
       }
 
       // ── 9. Post-transformation processing (shared) ────────────────
-      context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
+      context.diagnostics.processingTimeMs = Math.round(
+        performance.now() - (context.startTime ?? 0)
+      );
 
       // Clone for KV caching BEFORE any range handling
       const responseForCache = response.clone();
@@ -581,7 +583,9 @@ async function handleOriginsPath(
 
         endTimedOperation(context, 'direct-fetch-large-video');
 
-        context.diagnostics.processingTimeMs = Math.round(performance.now() - context.startTime);
+        context.diagnostics.processingTimeMs = Math.round(
+          performance.now() - (context.startTime ?? 0)
+        );
 
         const responseBuilder = new ResponseBuilder(finalResponse, context);
         return await responseBuilder.withDebugInfo().build();

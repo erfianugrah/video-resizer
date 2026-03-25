@@ -198,7 +198,8 @@ export class ResponseBuilder {
 
     // Add processing time
     const endTime = performance.now();
-    const processingTimeMs = Math.round(endTime - this.context.startTime);
+    const startTime = this.context?.startTime ?? endTime;
+    const processingTimeMs = Math.round(endTime - startTime);
     this.headers.set('X-Processing-Time-Ms', processingTimeMs.toString());
     this.context.diagnostics.processingTimeMs = processingTimeMs;
 
