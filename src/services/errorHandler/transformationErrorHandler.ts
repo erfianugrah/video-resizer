@@ -479,14 +479,26 @@ export async function handleTransformationError({
             }
           }
 
+          // Build clean response headers — this is a successful transformation,
+          // NOT a fallback/error, so we skip the error handler's finalization
+          // which would add Cache-Control: no-store and bypass headers.
           const containerHeaders = new Headers(containerResponse.headers);
           containerHeaders.set('X-Transform-Source', 'container-ffmpeg');
           containerHeaders.set('X-Container-Instance', instanceKey);
+          containerHeaders.set('Accept-Ranges', 'bytes');
           if (containerResult.durationMs) {
             containerHeaders.set('X-Container-Duration-Ms', String(containerResult.durationMs));
           }
+          // Signal to the main handler that KV storage was already handled
+          // by the tee above — prevents double-store via storeInKVCacheAsync.
+          containerHeaders.set('X-KV-Store-Handled', 'true');
+          // No cache-control max-age — prevents the main handler's KV store
+          // check at videoHandler.ts:246 from triggering a duplicate store.
+          // Subsequent requests hit KV cache with proper Cache-Control.
 
-          fallbackResponse = new Response(clientBody, {
+          // Return directly — bypass the error handler's fallback finalization
+          // which would set no-store, X-Fallback-Applied, etc.
+          return new Response(clientBody, {
             status: 200,
             headers: containerHeaders,
           });
