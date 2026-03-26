@@ -522,25 +522,31 @@ export const storeTransformedVideo = withErrorHandling<
       const contentLengthHeader = response.headers.get('Content-Length');
       const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
 
-      // Safety check: Skip storing files larger than 128MB to avoid memory issues
-      if (contentLength > 128 * 1024 * 1024) {
-        logDebug('Skipping KV storage for large file', {
+      // Determine if we should use streaming mode:
+      // - Explicitly requested (e.g., container-produced outputs)
+      // - File exceeds 2× single KV entry size (> 40 MiB)
+      const shouldUseStreaming =
+        useStreaming === true || contentLength > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY * 2;
+
+      // Safety check for the BUFFER path only: skip files > 128 MB to avoid
+      // Worker memory exhaustion (arrayBuffer() loads the entire response).
+      // The streaming path has bounded memory usage (~10 MiB) regardless of
+      // file size, so it has no upper limit.
+      if (!shouldUseStreaming && contentLength > 128 * 1024 * 1024) {
+        logDebug('Skipping KV storage for large file (buffer mode)', {
           path: sourcePath,
           component: 'KVStorageService',
           size: Math.round(contentLength / 1024 / 1024) + 'MB',
-          reason: 'Exceeds 128MB safety limit',
+          reason: 'Exceeds 128MB buffer-mode safety limit',
         });
         return false;
       }
 
-      // Check if we should use streaming mode (either explicitly requested or very large file)
-      const shouldUseStreaming =
-        useStreaming === true || contentLength > MAX_VIDEO_SIZE_FOR_SINGLE_KV_ENTRY * 2;
-
       if (shouldUseStreaming) {
-        logDebug('Using streaming mode for large file', {
+        logDebug('Using streaming mode for KV storage', {
           sourcePath,
           contentLength,
+          contentLengthMB: contentLength ? Math.round(contentLength / 1024 / 1024) : 'unknown',
           explicitStreaming: useStreaming === true,
         });
 

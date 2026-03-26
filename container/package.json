@@ -1,0 +1,11 @@
+{
+  "name": "video-resizer-ffmpeg-container",
+  "version": "1.0.0",
+  "description": "FFmpeg container for transforming oversized videos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {}
+}

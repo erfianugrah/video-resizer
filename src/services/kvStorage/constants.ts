@@ -10,3 +10,8 @@ export const STANDARD_CHUNK_SIZE = 5 * 1024 * 1024;
 // Minimum is 30 seconds per CF docs (reduced from 60s on Jan 30, 2026)
 // Prefer reading from CacheConfigurationManager.kvReadCacheTtl at runtime
 export const DEFAULT_KV_READ_CACHE_TTL = 30;
+// Maximum container-produced output size to cache in KV (cost safety valve).
+// Outputs exceeding this are still served to the client but not cached —
+// the next request will re-trigger the container. In practice, a 6 GiB
+// source resized to 1280x720 at CRF 23 typically produces well under 500 MB.
+export const MAX_CONTAINER_OUTPUT_FOR_KV = 2 * 1024 * 1024 * 1024; // 2 GiB

@@ -85,6 +85,61 @@ const ResponsiveBreakpointSchema = z.object({
   derivative: z.string(),
 });
 
+// Container FFmpeg quality preset schema
+const ContainerQualityPresetSchema = z.object({
+  crf: z.number().int().min(0).max(51),
+  preset: z.enum([
+    'ultrafast',
+    'superfast',
+    'veryfast',
+    'faster',
+    'fast',
+    'medium',
+    'slow',
+    'slower',
+    'veryslow',
+  ]),
+});
+
+// Container FFmpeg fallback configuration schema
+export const ContainerConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    maxInputSize: z
+      .number()
+      .positive()
+      .default(6 * 1024 * 1024 * 1024), // 6 GiB
+    maxOutputForKV: z
+      .number()
+      .positive()
+      .default(2 * 1024 * 1024 * 1024), // 2 GiB
+    timeoutMs: z.number().positive().default(600000), // 10 minutes
+    quality: z.record(ContainerQualityPresetSchema).default({
+      low: { crf: 28, preset: 'fast' },
+      medium: { crf: 23, preset: 'medium' },
+      high: { crf: 18, preset: 'medium' },
+    }),
+    sleepAfter: z.string().default('5m'),
+    maxInstances: z.number().int().positive().default(5),
+    fallbackToDirectStream: z.boolean().default(true),
+  })
+  .default({
+    enabled: false,
+    maxInputSize: 6 * 1024 * 1024 * 1024,
+    maxOutputForKV: 2 * 1024 * 1024 * 1024,
+    timeoutMs: 600000,
+    quality: {
+      low: { crf: 28, preset: 'fast' },
+      medium: { crf: 23, preset: 'medium' },
+      high: { crf: 18, preset: 'medium' },
+    },
+    sleepAfter: '5m',
+    maxInstances: 5,
+    fallbackToDirectStream: true,
+  });
+
+export type ContainerConfiguration = z.infer<typeof ContainerConfigSchema>;
+
 // Complete Video Configuration Schema
 export const VideoConfigSchema = z
   .object({
@@ -170,6 +225,8 @@ export const VideoConfigSchema = z
     cache: z.record(CacheConfigSchema).optional(), // Make cache optional
     // Include storage configuration
     storage: StorageConfigSchema.optional(),
+    // Container FFmpeg fallback configuration
+    container: ContainerConfigSchema.optional(),
   })
   // Add refinement to require either pathPatterns or origins
   .refine(

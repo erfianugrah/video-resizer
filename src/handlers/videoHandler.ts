@@ -38,6 +38,13 @@ import { transformVideo } from '../services/videoTransformationService';
 import { TransformVideoCommand } from '../domain/commands/TransformVideoCommand';
 import type { WorkerEnvironment } from '../domain/commands/TransformVideoCommand';
 import { handleTransformationError } from '../services/errorHandlerService';
+import {
+  transformViaContainer,
+  buildContainerInstanceKey,
+} from '../services/containerTransformService';
+import type { ContainerNamespace } from '../types/cloudflare';
+import { storeTransformedVideoWithStreaming } from '../services/kvStorage/streamStorage';
+import { getCacheKV } from '../utils/flexibleBindings';
 
 import {
   setupHandlerContext,
@@ -492,7 +499,7 @@ async function handleOriginsPath(
       if (exceedsTransformationLimit(videoSizeInBytes)) {
         shouldBypassTransformation = true;
 
-        vhLogger.warn('Video exceeds CDN-CGI size limit, bypassing transformation', {
+        vhLogger.warn('Video exceeds CDN-CGI size limit', {
           sizeMB: sizeInMB,
           limitMB: limitInMB,
           sourceUrl: sourceResolution.sourceUrl,
@@ -500,10 +507,10 @@ async function handleOriginsPath(
           requestId: context.requestId,
         });
 
-        addBreadcrumb(context, 'SizeCheck', 'Bypassing transformation - video too large', {
+        addBreadcrumb(context, 'SizeCheck', 'Video exceeds cdn-cgi limit', {
           sizeMB: sizeInMB,
           limitMB: limitInMB,
-          reason: 'Exceeds 256 MiB transformation limit',
+          reason: `Exceeds ${limitInMB} MB transformation limit`,
         });
       }
     } else {
@@ -518,11 +525,135 @@ async function handleOriginsPath(
     }
   }
 
-  // ── If size check indicates bypass, stream directly from source ───
+  // ── If size check indicates bypass, try container then direct stream ──
   if (shouldBypassTransformation) {
+    // --- Attempt 1: Container FFmpeg fallback ---
+    const containerBinding = (env as any)?.FFMPEG_CONTAINER as ContainerNamespace | undefined;
+    const containerEnabled = videoConfig.isContainerEnabled() && !!containerBinding;
+
+    if (containerEnabled) {
+      vhLogger.debug('Routing oversized video to container FFmpeg fallback', {
+        sourceUrl: sourceResolution.sourceUrl,
+        sizeMB: videoSizeInBytes ? Math.round(videoSizeInBytes / 1024 / 1024) : 'unknown',
+        origin: originMatch.origin.name,
+      });
+
+      addBreadcrumb(context, 'Container', 'Routing to FFmpeg container', {
+        sourceUrl: sourceResolution.sourceUrl,
+        inputSizeMB: videoSizeInBytes ? Math.round(videoSizeInBytes / 1024 / 1024) : 'unknown',
+      });
+
+      startTimedOperation(context, 'container-ffmpeg-transform', 'Container');
+
+      const instanceKey = buildContainerInstanceKey(
+        originMatch.origin.name,
+        sourceResolution.resolvedPath
+      );
+
+      const containerResult = await transformViaContainer({
+        request,
+        sourceUrl: sourceResolution.sourceUrl,
+        videoOptions,
+        containerBinding: containerBinding!,
+        instanceKey,
+        inputSizeBytes: videoSizeInBytes,
+      });
+
+      endTimedOperation(context, 'container-ffmpeg-transform');
+
+      if (containerResult.success && containerResult.response) {
+        vhLogger.debug('Container transform succeeded', {
+          durationMs: containerResult.durationMs,
+          shouldCacheInKV: containerResult.shouldCacheInKV,
+          instanceKey,
+        });
+
+        addBreadcrumb(context, 'Container', 'Container transform complete', {
+          durationMs: containerResult.durationMs,
+          cached: containerResult.shouldCacheInKV,
+        });
+
+        // Tee the stream: one leg for the client, one for KV storage
+        const containerResponse = containerResult.response;
+        const headers = new Headers(containerResponse.headers);
+        headers.set('X-Transform-Source', 'container-ffmpeg');
+        headers.set('X-Container-Instance', instanceKey);
+        headers.set('X-Handler', 'Origins');
+        headers.set('X-Origin', originMatch.origin.name);
+        if (containerResult.durationMs) {
+          headers.set('X-Container-Duration-Ms', String(containerResult.durationMs));
+        }
+        if (videoSizeInBytes !== null) {
+          headers.set('X-Original-Content-Length', videoSizeInBytes.toString());
+        }
+
+        let clientBody: ReadableStream | null = containerResponse.body;
+
+        // Store in KV asynchronously via streaming if enabled and within limits
+        if (containerResult.shouldCacheInKV && containerResponse.body && env) {
+          const kvNamespace = getCacheKV(env);
+          if (kvNamespace) {
+            const [clientStream, cacheStream] = containerResponse.body.tee();
+            clientBody = clientStream;
+
+            const cacheResponse = new Response(cacheStream, {
+              headers: containerResponse.headers,
+            });
+
+            const envWithCtx = env as any;
+            const execCtx = envWithCtx?.executionCtx;
+            const storePromise = storeTransformedVideoWithStreaming(
+              kvNamespace,
+              url.pathname,
+              cacheResponse,
+              {
+                ...videoOptions,
+                env,
+                version: videoOptions.version || 1,
+              }
+            ).catch((err: unknown) => {
+              vhLogger.error('Failed to store container output in KV', {
+                error: err instanceof Error ? err.message : String(err),
+                instanceKey,
+              });
+            });
+
+            if (execCtx && typeof execCtx.waitUntil === 'function') {
+              execCtx.waitUntil(storePromise);
+            }
+          }
+        }
+
+        const clientResponse = new Response(clientBody, {
+          status: 200,
+          headers,
+        });
+
+        context.diagnostics.processingTimeMs = Math.round(
+          performance.now() - (context.startTime ?? 0)
+        );
+
+        const responseBuilder = new ResponseBuilder(clientResponse, context);
+        return await responseBuilder.withDebugInfo().build();
+      }
+
+      // Container failed — log and fall through to direct stream
+      vhLogger.warn('Container transform failed, falling back to direct stream', {
+        error: containerResult.error,
+        durationMs: containerResult.durationMs,
+        instanceKey,
+      });
+
+      addBreadcrumb(context, 'Container', 'Container failed — falling back to direct stream', {
+        error: containerResult.error,
+      });
+    }
+
+    // --- Attempt 2: Direct stream (untransformed) fallback ---
     vhLogger.debug('Streaming directly from source without transformation', {
       sourceUrl: sourceResolution.sourceUrl,
       sizeMB: videoSizeInBytes ? Math.round(videoSizeInBytes / 1024 / 1024) : 'unknown',
+      containerAttempted: containerEnabled,
     });
 
     addBreadcrumb(context, 'DirectStream', 'Fetching directly from origin', {
@@ -553,7 +684,7 @@ async function handleOriginsPath(
       } else {
         const headers = new Headers(directResponse.headers);
         headers.set('X-Video-Size-Bypass', 'true');
-        headers.set('X-Video-Exceeds-256MiB', 'true');
+        headers.set('X-Video-Exceeds-Limit', 'true');
         headers.set('X-Direct-Stream', 'true');
         headers.set('X-Bypass-Cache-API', 'true');
         headers.set('X-Handler', 'Origins');

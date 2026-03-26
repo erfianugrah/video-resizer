@@ -22,6 +22,23 @@ import { initializeLegacyLogger, createCategoryLogger } from './utils/logger';
 import { LoggingConfigurationManager } from './config/LoggingConfigurationManager';
 import { getKVNamespace } from './utils/flexibleBindings';
 import * as Sentry from '@sentry/cloudflare';
+import { Container } from '@cloudflare/containers';
+
+/**
+ * FFmpeg Container class for transforming oversized videos.
+ *
+ * Exported at the module level so Wrangler can wire it up as a
+ * Durable Object / Container binding. The container image runs
+ * an HTTP server with ffmpeg that accepts transform requests.
+ *
+ * Configuration (wrangler.jsonc):
+ *   containers[].class_name = "FFmpegContainer"
+ *   durable_objects.bindings[].class_name = "FFmpegContainer"
+ */
+export class FFmpegContainer extends Container {
+  defaultPort = 8080;
+  sleepAfter = '5m';
+}
 
 // Create a category-specific logger for Worker
 const workerLogger = createCategoryLogger('Worker');

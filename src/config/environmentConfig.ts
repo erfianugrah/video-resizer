@@ -184,6 +184,9 @@ export interface EnvVariables {
   PRESIGNED_KV_NAME?: string;
   VIDEO_BUCKET_NAME?: string;
 
+  // Container FFmpeg fallback binding (Durable Object namespace)
+  FFMPEG_CONTAINER?: any; // DurableObjectNamespace — typed loosely here, refined in cloudflare.ts
+
   // Allow dynamic binding access
   [key: string]: any;
 

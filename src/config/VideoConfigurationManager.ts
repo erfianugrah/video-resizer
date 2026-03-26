@@ -31,11 +31,19 @@ import { Origin } from '../services/videoStorage/interfaces';
 import {
   PathPatternSchema,
   VideoConfigSchema,
+  ContainerConfigSchema,
   type VideoConfiguration,
+  type ContainerConfiguration,
 } from './videoConfigSchemas';
 
 // Re-export schemas so existing consumers keep working
-export { PathPatternSchema, VideoConfigSchema, type VideoConfiguration };
+export {
+  PathPatternSchema,
+  VideoConfigSchema,
+  ContainerConfigSchema,
+  type VideoConfiguration,
+  type ContainerConfiguration,
+};
 
 // Extracted helpers
 import {
@@ -290,6 +298,39 @@ export class VideoConfigurationManager {
    */
   public getCdnCgiConfig() {
     return this.config.cdnCgi;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Container FFmpeg fallback
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get container configuration for FFmpeg fallback transformation
+   */
+  public getContainerConfig() {
+    return (
+      this.config.container || {
+        enabled: false,
+        maxInputSize: 6 * 1024 * 1024 * 1024,
+        maxOutputForKV: 2 * 1024 * 1024 * 1024,
+        timeoutMs: 600000,
+        quality: {
+          low: { crf: 28, preset: 'fast' as const },
+          medium: { crf: 23, preset: 'medium' as const },
+          high: { crf: 18, preset: 'medium' as const },
+        },
+        sleepAfter: '5m',
+        maxInstances: 5,
+        fallbackToDirectStream: true,
+      }
+    );
+  }
+
+  /**
+   * Check if container-based FFmpeg fallback is enabled
+   */
+  public isContainerEnabled(): boolean {
+    return this.config.container?.enabled === true;
   }
 
   // ---------------------------------------------------------------------------

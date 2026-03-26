@@ -5,7 +5,7 @@
 
 /**
  * Parse the Range header and return start/end positions
- * 
+ *
  * @param rangeHeader The Range header value (e.g., "bytes=0-1023")
  * @param totalSize The total size of the resource
  * @returns Object with start and end positions, or null if invalid
@@ -62,7 +62,7 @@ export function parseRangeHeader(
 
 /**
  * Get content type from response headers with fallback
- * 
+ *
  * @param headers Response headers
  * @param fallback Fallback content type
  * @returns Content type string
@@ -73,7 +73,7 @@ export function getContentType(headers: Headers, fallback = 'application/octet-s
 
 /**
  * Check if a response should be cached based on status and headers
- * 
+ *
  * @param response The response to check
  * @returns True if the response should be cached
  */
@@ -82,21 +82,21 @@ export function isCacheable(response: Response): boolean {
   if (response.status >= 200 && response.status < 300) {
     return true;
   }
-  
+
   // Don't cache client errors, server errors, or other status codes
   return false;
 }
 
 /**
  * Create a 416 Range Not Satisfiable response
- * 
+ *
  * @param totalSize The total size of the resource
  * @returns A 416 response with appropriate headers
  */
 export function createUnsatisfiableRangeResponse(totalSize: number): Response {
   const headers = new Headers({
     'Content-Range': `bytes */${totalSize}`,
-    'Accept-Ranges': 'bytes'
+    'Accept-Ranges': 'bytes',
   });
   return new Response('Range Not Satisfiable', { status: 416, headers });
 }
@@ -120,10 +120,12 @@ export async function handleRangeRequestForInitialAccess(
 }
 
 /**
- * CDN-CGI transformation size limit (256 MiB)
- * Videos larger than this should bypass transformation
+ * CDN-CGI transformation size limit (100 MB)
+ * Cloudflare Media Transformations input file size limit as of June 2025.
+ * Videos larger than this should bypass cdn-cgi/media and use the
+ * container-based ffmpeg fallback (if enabled) or direct streaming.
  */
-export const CDN_CGI_SIZE_LIMIT = 268435456; // 256 MiB in bytes
+export const CDN_CGI_SIZE_LIMIT = 104857600; // 100 MB in bytes
 
 /**
  * Get the Content-Length of a resource without downloading the full body
@@ -144,7 +146,7 @@ export async function getContentLength(
     // Create a HEAD request to get Content-Length without downloading body
     const headRequest = new Request(url, {
       method: 'HEAD',
-      headers: options?.headers
+      headers: options?.headers,
     });
 
     // Perform the HEAD request with optional timeout
@@ -154,7 +156,7 @@ export async function getContentLength(
       : null;
 
     const response = await fetch(headRequest, {
-      signal: controller.signal
+      signal: controller.signal,
     });
 
     if (timeoutId) {
@@ -174,7 +176,10 @@ export async function getContentLength(
     console.error({
       context: 'HttpUtils',
       operation: 'getContentLengthViaHead',
-      error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+      error:
+        error instanceof Error
+          ? { name: error.name, message: error.message, stack: error.stack }
+          : String(error),
     });
     return null;
   }
@@ -184,7 +189,7 @@ export async function getContentLength(
  * Check if a video size exceeds the CDN-CGI transformation limit
  *
  * @param contentLength The Content-Length in bytes
- * @returns True if the video exceeds the 256 MiB limit
+ * @returns True if the video exceeds the 100 MB limit
  */
 export function exceedsTransformationLimit(contentLength: number | null): boolean {
   if (contentLength === null) {

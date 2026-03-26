@@ -1,151 +1,174 @@
 {
-	"$schema": "https://json.schemastore.org/wrangler.json",
-	"name": "video-resizer",
-	"main": "src/index.ts",
-	"compatibility_date": "2025-03-10",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	"account_id": "25f21f141824546aa72c74451a11b419",
-	"logpush": true,
-	"observability": {
-		"enabled": true,
-		"logs": {
-			"invocation_logs": true
-		}
-	},
-	"build": {
-		"command": "npm run build"
-	},
-	// To set up authentication secrets for each environment, run the following commands:
-	// Development: wrangler secret put CONFIG_API_TOKEN --env development
-	// Staging:     wrangler secret put CONFIG_API_TOKEN --env staging
-	// Production:  wrangler secret put CONFIG_API_TOKEN --env production
-	// Generate a secure token with: openssl rand -hex 32
-	"env": {
-		"development": {
-			"workers_dev": true,
-			"assets": {
-				"directory": "./debug-ui/dist",
-				"binding": "ASSETS"
-			},
-			"kv_namespaces": [
-				{
-					"binding": "VIDEO_CONFIGURATION_STORE",
-					"id": "ddaf6d5142af4f79b39defe745dac556",
-				},
-				{
-					"binding": "VIDEO_CACHE_KEY_VERSIONS",
-					"id": "949610c936b8480bad5b61f3aa934de1"
-				},
-				{
-					"binding": "PRESIGNED_URLS",
-					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "VIDEOS_BUCKET",
-					"bucket_name": "videos",
-				}
-			],
-			"vars": {
-				"ENVIRONMENT": "development",
-				// Flexible binding mappings (optional - will use defaults if not specified)
-				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
-				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
-				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
-			}
-		},
-		"staging": {
-			"workers_dev": false,
-			"assets": {
-				"directory": "./debug-ui/dist",
-				"binding": "ASSETS"
-			},
-			"kv_namespaces": [
-				{
-					"binding": "VIDEO_CONFIGURATION_STORE",
-					"id": "ddaf6d5142af4f79b39defe745dac556"
-				},
-				{
-					"binding": "VIDEO_TRANSFORMATIONS_CACHE",
-					"id": "8e790768576242cc98fa3e4aa327f815"
-				},
-				{
-					"binding": "VIDEO_CACHE_KEY_VERSIONS",
-					"id": "949610c936b8480bad5b61f3aa934de1"
-				},
-				{
-					"binding": "PRESIGNED_URLS",
-					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "VIDEOS_BUCKET",
-					"bucket_name": "videos"
-				}
-			],
-			"vars": {
-				"ENVIRONMENT": "staging",
-				// Flexible binding mappings (optional - will use defaults if not specified)
-				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
-				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
-				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
-				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
-			},
-			"routes": [
-				{
-					"pattern": "staging.cdn.erfi.dev/*",
-					"zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
-				}
-			]
-		},
-		"production": {
-			"workers_dev": false,
-			"assets": {
-				"directory": "./debug-ui/dist",
-				"binding": "ASSETS"
-			},
-			"kv_namespaces": [
-				{
-					"binding": "VIDEO_CONFIGURATION_STORE",
-					"id": "ddaf6d5142af4f79b39defe745dac556"
-				},
-				{
-					"binding": "VIDEO_TRANSFORMATIONS_CACHE",
-					"id": "8e790768576242cc98fa3e4aa327f815"
-				},
-				{
-					"binding": "VIDEO_CACHE_KEY_VERSIONS",
-					"id": "949610c936b8480bad5b61f3aa934de1"
-				},
-				{
-					"binding": "PRESIGNED_URLS",
-					"id": "502fa1f64a6e4e48bb7e0bcd32472ba8"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "VIDEOS_BUCKET",
-					"bucket_name": "videos"
-				}
-			],
-			"vars": {
-				"ENVIRONMENT": "production",
-				// Flexible binding mappings (optional - will use defaults if not specified)
-				"CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
-				"CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
-				"VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
-				"PRESIGNED_KV_NAME": "PRESIGNED_URLS"
-			},
-			"routes": [
-				{
-					"pattern": "cdn.erfi.dev/*",
-					"zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e"
-				}
-			]
-		}
-	}
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "video-resizer",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "25f21f141824546aa72c74451a11b419",
+  "logpush": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": true,
+    },
+  },
+  "build": {
+    "command": "npm run build",
+  },
+  // Container FFmpeg fallback for oversized videos (> 100 MB)
+  // The container runs an HTTP server with ffmpeg for video transcoding.
+  // Enabled per-environment via the video configuration's container.enabled flag.
+  "containers": [
+    {
+      "class_name": "FFmpegContainer",
+      "image": "./container/Dockerfile",
+      "max_instances": 5,
+      "instance_type": "standard-4",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "FFmpegContainer",
+        "name": "FFMPEG_CONTAINER",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "new_sqlite_classes": ["FFmpegContainer"],
+      "tag": "v1",
+    },
+  ],
+  // To set up authentication secrets for each environment, run the following commands:
+  // Development: wrangler secret put CONFIG_API_TOKEN --env development
+  // Staging:     wrangler secret put CONFIG_API_TOKEN --env staging
+  // Production:  wrangler secret put CONFIG_API_TOKEN --env production
+  // Generate a secure token with: openssl rand -hex 32
+  "env": {
+    "development": {
+      "workers_dev": true,
+      "assets": {
+        "directory": "./debug-ui/dist",
+        "binding": "ASSETS",
+      },
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_CONFIGURATION_STORE",
+          "id": "ddaf6d5142af4f79b39defe745dac556",
+        },
+        {
+          "binding": "VIDEO_CACHE_KEY_VERSIONS",
+          "id": "949610c936b8480bad5b61f3aa934de1",
+        },
+        {
+          "binding": "PRESIGNED_URLS",
+          "id": "502fa1f64a6e4e48bb7e0bcd32472ba8",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "VIDEOS_BUCKET",
+          "bucket_name": "videos",
+        },
+      ],
+      "vars": {
+        "ENVIRONMENT": "development",
+        // Flexible binding mappings (optional - will use defaults if not specified)
+        "CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+        "VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+        "PRESIGNED_KV_NAME": "PRESIGNED_URLS",
+      },
+    },
+    "staging": {
+      "workers_dev": false,
+      "assets": {
+        "directory": "./debug-ui/dist",
+        "binding": "ASSETS",
+      },
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_CONFIGURATION_STORE",
+          "id": "ddaf6d5142af4f79b39defe745dac556",
+        },
+        {
+          "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+          "id": "8e790768576242cc98fa3e4aa327f815",
+        },
+        {
+          "binding": "VIDEO_CACHE_KEY_VERSIONS",
+          "id": "949610c936b8480bad5b61f3aa934de1",
+        },
+        {
+          "binding": "PRESIGNED_URLS",
+          "id": "502fa1f64a6e4e48bb7e0bcd32472ba8",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "VIDEOS_BUCKET",
+          "bucket_name": "videos",
+        },
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        // Flexible binding mappings (optional - will use defaults if not specified)
+        "CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+        "CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
+        "VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+        "PRESIGNED_KV_NAME": "PRESIGNED_URLS",
+      },
+      "routes": [
+        {
+          "pattern": "staging.cdn.erfi.dev/*",
+          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e",
+        },
+      ],
+    },
+    "production": {
+      "workers_dev": false,
+      "assets": {
+        "directory": "./debug-ui/dist",
+        "binding": "ASSETS",
+      },
+      "kv_namespaces": [
+        {
+          "binding": "VIDEO_CONFIGURATION_STORE",
+          "id": "ddaf6d5142af4f79b39defe745dac556",
+        },
+        {
+          "binding": "VIDEO_TRANSFORMATIONS_CACHE",
+          "id": "8e790768576242cc98fa3e4aa327f815",
+        },
+        {
+          "binding": "VIDEO_CACHE_KEY_VERSIONS",
+          "id": "949610c936b8480bad5b61f3aa934de1",
+        },
+        {
+          "binding": "PRESIGNED_URLS",
+          "id": "502fa1f64a6e4e48bb7e0bcd32472ba8",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "VIDEOS_BUCKET",
+          "bucket_name": "videos",
+        },
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        // Flexible binding mappings (optional - will use defaults if not specified)
+        "CONFIG_KV_NAME": "VIDEO_CONFIGURATION_STORE",
+        "CACHE_KV_NAME": "VIDEO_TRANSFORMATIONS_CACHE",
+        "VERSION_KV_NAME": "VIDEO_CACHE_KEY_VERSIONS",
+        "PRESIGNED_KV_NAME": "PRESIGNED_URLS",
+      },
+      "routes": [
+        {
+          "pattern": "cdn.erfi.dev/*",
+          "zone_id": "d6260a9cd0c27db1e9c0a453b2e4761e",
+        },
+      ],
+    },
+  },
 }
