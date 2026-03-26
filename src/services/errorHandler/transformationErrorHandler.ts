@@ -23,6 +23,10 @@ import { getCacheKV } from '../../utils/flexibleBindings';
 import { streamFallbackToKV } from '../../services/videoStorage/fallbackStorage';
 import { fetchVideoWithOrigins } from '../videoStorage/fetchVideoWithOrigins';
 import { setBypassHeaders } from '../../utils/bypassHeadersUtils';
+import { VideoConfigurationManager } from '../../config';
+import { transformViaContainer, buildContainerInstanceKey } from '../containerTransformService';
+import type { ContainerNamespace } from '../../types/cloudflare';
+import { storeTransformedVideoWithStreaming } from '../kvStorage/streamStorage';
 
 /**
  * Helper function to initiate background caching of fallback responses
@@ -364,12 +368,140 @@ export async function handleTransformationError({
   // Second priority: Basic direct fetch from fallbackOriginUrl or source
   const sourceUrlForDirectFetch = fallbackOriginUrl || source; // Prefer pattern-based fallback URL
 
-  // Check if this is specifically a "video too large" error
+  // Check if this is specifically a "video too large" error.
+  // CF error 9402 = "Origin Too Large / No Response" — the input exceeds the
+  // cdn-cgi/media size limit. The error text may contain "256MiB", "268435456",
+  // or "Input media must be less than" depending on the error format.
+  const isOriginTooLargeError = cfErrorCode === 9402;
   const is256MiBSizeError =
-    isFileSizeError &&
-    (errorText.includes('256MiB') ||
-      errorText.includes('256 MiB') ||
-      parsedError?.specificError?.includes('256MiB'));
+    isOriginTooLargeError ||
+    (isFileSizeError &&
+      (errorText.includes('256MiB') ||
+        errorText.includes('256 MiB') ||
+        errorText.includes('268435456') ||
+        errorText.includes('Input media must be less than') ||
+        parsedError?.specificError?.includes('256MiB')));
+
+  // ── Container FFmpeg fallback for oversized videos ──────────────────
+  // This runs BEFORE the direct-fetch check because:
+  // 1. For R2 sources, there's no valid HTTP URL to direct-fetch from
+  // 2. The container can construct its own R2 URL via __r2src
+  // 3. The container produces a *transformed* output, not just the raw source
+  if (!fallbackResponse && is256MiBSizeError) {
+    const videoConfigManager = VideoConfigurationManager.getInstance();
+    const containerBinding = (context.env as any)?.FFMPEG_CONTAINER as
+      | ContainerNamespace
+      | undefined;
+    const containerEnabled = videoConfigManager.isContainerEnabled() && !!containerBinding;
+
+    if (containerEnabled) {
+      // Build a source URL the container can fetch from
+      let containerSourceUrl: string | null = null;
+
+      // For R2 sources, construct the __r2src self-referencing URL
+      if (
+        context.sourceResolution?.originType === 'r2' &&
+        context.sourceResolution?.source?.bucketBinding &&
+        context.sourceResolution?.resolvedPath
+      ) {
+        const requestOrigin = new URL(originalRequest.url).origin;
+        containerSourceUrl = `${requestOrigin}/${context.sourceResolution.resolvedPath}?__r2src=${context.sourceResolution.source.bucketBinding}`;
+      } else if (
+        sourceUrlForDirectFetch &&
+        (sourceUrlForDirectFetch.startsWith('http://') ||
+          sourceUrlForDirectFetch.startsWith('https://'))
+      ) {
+        containerSourceUrl = sourceUrlForDirectFetch;
+      }
+
+      if (containerSourceUrl) {
+        logger.debug('Routing oversized video to container FFmpeg fallback', {
+          sourceUrl: containerSourceUrl,
+          originType: context.sourceResolution?.originType,
+          cfErrorCode,
+        });
+        addBreadcrumb(requestContext, 'Container', 'Routing to FFmpeg container', {
+          sourceUrl: containerSourceUrl,
+          originType: context.sourceResolution?.originType,
+        });
+
+        const instanceKey = buildContainerInstanceKey(
+          context.origin?.name || 'error-handler',
+          path
+        );
+
+        const containerResult = await transformViaContainer({
+          request: originalRequest,
+          sourceUrl: containerSourceUrl,
+          videoOptions: context.options || {},
+          containerBinding: containerBinding!,
+          instanceKey,
+        });
+
+        if (containerResult.success && containerResult.response) {
+          logger.debug('Container transform succeeded for oversized video', {
+            durationMs: containerResult.durationMs,
+            shouldCacheInKV: containerResult.shouldCacheInKV,
+          });
+          addBreadcrumb(requestContext, 'Container', 'Container transform complete', {
+            durationMs: containerResult.durationMs,
+            cached: containerResult.shouldCacheInKV,
+          });
+
+          // Tee the stream for KV caching
+          const containerResponse = containerResult.response;
+          let clientBody: ReadableStream | null = containerResponse.body;
+
+          if (containerResult.shouldCacheInKV && containerResponse.body && context.env) {
+            const cacheKV = getCacheKV(context.env);
+            if (cacheKV) {
+              const [clientStream, cacheStream] = containerResponse.body.tee();
+              clientBody = clientStream;
+
+              const cacheResp = new Response(cacheStream, {
+                headers: containerResponse.headers,
+              });
+
+              const execCtx = (context.env as any)?.executionCtx;
+              const storePromise = storeTransformedVideoWithStreaming(cacheKV, path, cacheResp, {
+                ...context.options,
+                env: context.env as any,
+                version: context.options?.version || 1,
+              }).catch((err: unknown) => {
+                logger.error('Failed to store container output in KV', {
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
+
+              if (execCtx && typeof execCtx.waitUntil === 'function') {
+                execCtx.waitUntil(storePromise);
+              }
+            }
+          }
+
+          const containerHeaders = new Headers(containerResponse.headers);
+          containerHeaders.set('X-Transform-Source', 'container-ffmpeg');
+          containerHeaders.set('X-Container-Instance', instanceKey);
+          if (containerResult.durationMs) {
+            containerHeaders.set('X-Container-Duration-Ms', String(containerResult.durationMs));
+          }
+
+          fallbackResponse = new Response(clientBody, {
+            status: 200,
+            headers: containerHeaders,
+          });
+        } else {
+          logger.warn('Container transform failed, falling back to direct stream', {
+            error: containerResult.error,
+            durationMs: containerResult.durationMs,
+          });
+          addBreadcrumb(requestContext, 'Container', 'Container failed — direct stream fallback', {
+            error: containerResult.error,
+          });
+        }
+      }
+    }
+  }
 
   // Check if we have a valid URL to fetch from (not just an origin type like "r2" or "remote")
   const hasValidDirectFetchUrl =
@@ -388,14 +520,11 @@ export async function handleTransformationError({
   ) {
     // If it's specifically a 256MiB size error, log it differently
     if (is256MiBSizeError) {
-      logger.debug(
-        'Video exceeds 256MiB limit, attempting direct source fetch with range support',
-        {
-          sourceUrl: sourceUrlForDirectFetch,
-        }
-      );
+      logger.debug('Video exceeds size limit, attempting direct source fetch as final fallback', {
+        sourceUrl: sourceUrlForDirectFetch,
+      });
       addBreadcrumb(requestContext, 'Fallback', 'Attempting direct fetch for large video', {
-        reason: 'Video exceeds 256MiB size limit',
+        reason: 'Video exceeds size limit — container unavailable or failed',
       });
     } else {
       const reason =
@@ -423,40 +552,35 @@ export async function handleTransformationError({
         redirect: 'follow', // Important for potential redirects at origin
       });
 
-      // For large videos that exceed 256MiB, handle differently to avoid cache API
+      // For large videos (container attempt already happened above),
+      // try direct stream as the final fallback
       if (is256MiBSizeError) {
-        // Fetch but don't use cache API for these large files
-        fallbackResponse = await fetch(directRequest);
+        if (!fallbackResponse) {
+          fallbackResponse = await fetch(directRequest);
 
-        if (!fallbackResponse.ok) {
-          logger.debug('Direct source fetch failed for large video', {
-            status: fallbackResponse.status,
-          });
-          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed for large video', {
-            status: fallbackResponse.status,
-          });
-          fallbackResponse = undefined; // Reset to trigger storage service fallback
-        } else {
-          // Check if origin supports range requests
-          const hasRangeSupport = fallbackResponse.headers.get('Accept-Ranges') === 'bytes';
+          if (!fallbackResponse.ok) {
+            logger.debug('Direct source fetch failed for large video', {
+              status: fallbackResponse.status,
+            });
+            addBreadcrumb(requestContext, 'Fallback', 'Direct fetch failed for large video', {
+              status: fallbackResponse.status,
+            });
+            fallbackResponse = undefined;
+          } else {
+            const hasRangeSupport = fallbackResponse.headers.get('Accept-Ranges') === 'bytes';
 
-          logger.debug('Direct source fetch successful for large video', {
-            status: fallbackResponse.status,
-            contentLength: fallbackResponse.headers.get('Content-Length'),
-            hasRangeSupport: hasRangeSupport,
-          });
+            logger.debug('Direct source fetch successful for large video', {
+              status: fallbackResponse.status,
+              contentLength: fallbackResponse.headers.get('Content-Length'),
+              hasRangeSupport,
+            });
 
-          // If origin doesn't support range requests, we could implement streaming
-          // using utilities similar to those in kvStorage/streamingHelpers.ts
-
-          addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful for large video', {
-            status: fallbackResponse.status,
-            streamedDirectly: true,
-            hasRangeSupport: hasRangeSupport,
-          });
-
-          // NOTE: We don't cache large videos that exceed the 256MiB limit
-          // They are served directly without KV storage
+            addBreadcrumb(requestContext, 'Fallback', 'Direct fetch successful for large video', {
+              status: fallbackResponse.status,
+              streamedDirectly: true,
+              hasRangeSupport,
+            });
+          }
         }
       } else {
         // Normal fetch for other cases

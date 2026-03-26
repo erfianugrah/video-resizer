@@ -78,6 +78,8 @@ vi.mock('../../../src/config', () => {
             },
           },
         }),
+        isContainerEnabled: vi.fn().mockReturnValue(false),
+        getContainerConfig: vi.fn().mockReturnValue({ enabled: false }),
       }),
     },
   };

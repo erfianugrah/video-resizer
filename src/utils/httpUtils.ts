@@ -120,12 +120,13 @@ export async function handleRangeRequestForInitialAccess(
 }
 
 /**
- * CDN-CGI transformation size limit (100 MB)
- * Cloudflare Media Transformations input file size limit as of June 2025.
+ * CDN-CGI transformation size limit (256 MiB)
+ * This account has a custom 256 MiB limit on Cloudflare Media Transformations.
+ * (Default accounts have a 100 MB limit as of June 2025.)
  * Videos larger than this should bypass cdn-cgi/media and use the
  * container-based ffmpeg fallback (if enabled) or direct streaming.
  */
-export const CDN_CGI_SIZE_LIMIT = 104857600; // 100 MB in bytes
+export const CDN_CGI_SIZE_LIMIT = 268435456; // 256 MiB in bytes
 
 /**
  * Get the Content-Length of a resource without downloading the full body
@@ -189,7 +190,7 @@ export async function getContentLength(
  * Check if a video size exceeds the CDN-CGI transformation limit
  *
  * @param contentLength The Content-Length in bytes
- * @returns True if the video exceeds the 100 MB limit
+ * @returns True if the video exceeds the 256 MiB limit
  */
 export function exceedsTransformationLimit(contentLength: number | null): boolean {
   if (contentLength === null) {
