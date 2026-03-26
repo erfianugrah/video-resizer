@@ -211,10 +211,15 @@ async function handleTransform(req, res) {
     // Audio codec
     if (mode === 'audio') {
       ffmpegArgs.push('-vn'); // No video
-      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k');
-    } else {
-      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k');
     }
+    ffmpegArgs.push(
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-ac',
+      '2' // Downmix to stereo for web playback
+    );
 
     // MP4 faststart for web playback
     ffmpegArgs.push('-movflags', '+faststart');
