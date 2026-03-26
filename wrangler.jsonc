@@ -15,31 +15,6 @@
   "build": {
     "command": "npm run build",
   },
-  // Container FFmpeg fallback for oversized videos (> 100 MB)
-  // The container runs an HTTP server with ffmpeg for video transcoding.
-  // Enabled per-environment via the video configuration's container.enabled flag.
-  "containers": [
-    {
-      "class_name": "FFmpegContainer",
-      "image": "./container/Dockerfile",
-      "max_instances": 5,
-      "instance_type": "standard-4",
-    },
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "class_name": "FFmpegContainer",
-        "name": "FFMPEG_CONTAINER",
-      },
-    ],
-  },
-  "migrations": [
-    {
-      "new_sqlite_classes": ["FFmpegContainer"],
-      "tag": "v1",
-    },
-  ],
   // To set up authentication secrets for each environment, run the following commands:
   // Development: wrangler secret put CONFIG_API_TOKEN --env development
   // Staging:     wrangler secret put CONFIG_API_TOKEN --env staging
@@ -52,6 +27,30 @@
         "directory": "./debug-ui/dist",
         "binding": "ASSETS",
       },
+      // Container FFmpeg fallback for oversized videos (> 100 MB)
+      "containers": [
+        {
+          "name": "video-resizer-ffmpeg-dev",
+          "class_name": "FFmpegContainer",
+          "image": "./container/Dockerfile",
+          "max_instances": 5,
+          "instance_type": "standard-4",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "class_name": "FFmpegContainer",
+            "name": "FFMPEG_CONTAINER",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "new_sqlite_classes": ["FFmpegContainer"],
+          "tag": "v1",
+        },
+      ],
       "kv_namespaces": [
         {
           "binding": "VIDEO_CONFIGURATION_STORE",
@@ -86,6 +85,30 @@
         "directory": "./debug-ui/dist",
         "binding": "ASSETS",
       },
+      // Container FFmpeg fallback for oversized videos (> 100 MB)
+      "containers": [
+        {
+          "name": "video-resizer-ffmpeg-staging",
+          "class_name": "FFmpegContainer",
+          "image": "./container/Dockerfile",
+          "max_instances": 5,
+          "instance_type": "standard-4",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "class_name": "FFmpegContainer",
+            "name": "FFMPEG_CONTAINER",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "new_sqlite_classes": ["FFmpegContainer"],
+          "tag": "v1",
+        },
+      ],
       "kv_namespaces": [
         {
           "binding": "VIDEO_CONFIGURATION_STORE",
@@ -131,6 +154,30 @@
         "directory": "./debug-ui/dist",
         "binding": "ASSETS",
       },
+      // Container FFmpeg fallback for oversized videos (> 100 MB)
+      "containers": [
+        {
+          "name": "video-resizer-ffmpeg-prod",
+          "class_name": "FFmpegContainer",
+          "image": "./container/Dockerfile",
+          "max_instances": 5,
+          "instance_type": "standard-4",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "class_name": "FFmpegContainer",
+            "name": "FFMPEG_CONTAINER",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "new_sqlite_classes": ["FFmpegContainer"],
+          "tag": "v1",
+        },
+      ],
       "kv_namespaces": [
         {
           "binding": "VIDEO_CONFIGURATION_STORE",
