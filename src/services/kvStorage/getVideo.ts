@@ -353,7 +353,12 @@ async function getTransformedVideoImpl(
       }
     }
 
-    // Full content response for chunked video
+    // Full content response for chunked video.
+    // Use a ReadableStream that pulls chunks from KV on-demand (not via
+    // waitUntil background task). This keeps the stream alive for the
+    // entire duration of the response — the previous TransformStream +
+    // waitUntil approach caused the connection to drop after a few chunks
+    // because the Worker "completed" and the background task got killed.
     responseHeaders.set('Content-Length', manifest.totalSize.toString());
 
     logDebug('[GET_VIDEO] Processing full content request for chunked video', {
@@ -362,55 +367,45 @@ async function getTransformedVideoImpl(
       chunkCount: manifest.chunkCount,
     });
 
-    // Create streaming response with transform stream
-    const { readable, writable } = new TransformStream();
-
-    // Process all chunks
-    const streamChunksPromise = streamFullChunkedResponse(
-      namespace,
-      key,
-      manifest,
-      writable.getWriter(),
-      kvReadOptions
-    );
-
-    // Process in background
-    const context = getCurrentContext();
-    if (context?.executionContext?.waitUntil) {
-      // Create an AbortController to be able to cancel the chunk streaming if needed
-      const abortController = new AbortController();
-      const abortSignal = abortController.signal;
-
-      // Store the AbortController in the request context for potential cancellation
-      if (!context.activeStreams) {
-        context.activeStreams = new Map();
-      }
-      context.activeStreams.set(key, abortController);
-
-      // Add cleanup function to remove from activeStreams when done
-      const cleanup = () => {
-        if (context.activeStreams?.has(key)) {
-          context.activeStreams.delete(key);
-          logDebug('[GET_VIDEO] Removed full content stream from active streams map', { key });
+    let chunkIndex = 0;
+    const readableStream = new ReadableStream({
+      async pull(controller) {
+        if (chunkIndex >= manifest.chunkCount) {
+          controller.close();
+          return;
         }
-      };
 
-      // Pass the signal to the streaming operation
-      context.executionContext.waitUntil(
-        streamChunksPromise.then(cleanup).catch((err) => {
-          cleanup();
+        const chunkKey = `${key}_chunk_${chunkIndex}`;
+        try {
+          const chunkData = await namespace.get(chunkKey, {
+            type: 'arrayBuffer',
+            ...kvReadOptions,
+          });
+
+          if (!chunkData) {
+            logErrorWithContext(
+              '[GET_VIDEO] Missing chunk during full content streaming',
+              new Error('Chunk not found'),
+              { chunkKey, chunkIndex },
+              'KVStorageService.get'
+            );
+            controller.error(new Error(`Missing chunk: ${chunkKey}`));
+            return;
+          }
+
+          controller.enqueue(new Uint8Array(chunkData));
+          chunkIndex++;
+        } catch (err) {
           logErrorWithContext(
-            '[GET_VIDEO] Error in background full content chunk processing',
+            '[GET_VIDEO] Error fetching chunk during full content streaming',
             err,
-            {
-              key,
-              wasAborted: abortSignal.aborted,
-            },
+            { chunkKey, chunkIndex },
             'KVStorageService.get'
           );
-        })
-      );
-    }
+          controller.error(err);
+        }
+      },
+    });
 
     // Refresh TTL on cache hit
     refreshCacheTtl(namespace, key, baseMetadata, options.env);
@@ -418,7 +413,7 @@ async function getTransformedVideoImpl(
     logDebug('[GET_VIDEO] Returning 200 OK for full chunked video', { key });
 
     return {
-      response: new Response(readable, {
+      response: new Response(readableStream, {
         status: 200,
         headers: responseHeaders,
       }),
