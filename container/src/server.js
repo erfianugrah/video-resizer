@@ -25,6 +25,31 @@ import { execSync } from 'node:child_process';
 
 const PORT = 8080;
 const TRANSCODE_DIR = '/tmp/transcode';
+const MAX_CONCURRENT_JOBS = 2; // Limit concurrent ffmpeg jobs to avoid disk/CPU exhaustion
+
+// Simple concurrency limiter
+let activeJobs = 0;
+const jobQueue = [];
+
+function acquireJob() {
+  return new Promise((resolve) => {
+    if (activeJobs < MAX_CONCURRENT_JOBS) {
+      activeJobs++;
+      resolve();
+    } else {
+      jobQueue.push(resolve);
+    }
+  });
+}
+
+function releaseJob() {
+  activeJobs--;
+  if (jobQueue.length > 0) {
+    activeJobs++;
+    const next = jobQueue.shift();
+    next();
+  }
+}
 
 // Ensure base transcode directory exists
 if (!existsSync(TRANSCODE_DIR)) {
@@ -143,6 +168,20 @@ function cleanupJob(jobDir) {
  * Handle a transform request
  */
 async function handleTransform(req, res) {
+  // Concurrency control — queue excess requests instead of rejecting
+  console.log(`[queue] Waiting for slot (active=${activeJobs}, queued=${jobQueue.length})`);
+  await acquireJob();
+  console.log(`[queue] Acquired slot (active=${activeJobs})`);
+
+  try {
+    await handleTransformInner(req, res);
+  } finally {
+    releaseJob();
+    console.log(`[queue] Released slot (active=${activeJobs}, queued=${jobQueue.length})`);
+  }
+}
+
+async function handleTransformInner(req, res) {
   // Parse body
   let body = '';
   for await (const chunk of req) {
