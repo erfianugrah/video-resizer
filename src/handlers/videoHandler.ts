@@ -221,22 +221,43 @@ export const handleVideoRequest = withErrorHandling<
       );
 
       // Check if KV storage was already handled (e.g., container path tee'd
-      // the stream and stored via waitUntil). If so, skip clone and KV store
-      // to avoid "ReadableStream is currently locked to a reader" errors.
+      // the stream and stored via waitUntil).
       const kvAlreadyHandled = response.headers.get('X-KV-Store-Handled') === 'true';
 
-      // Clone for KV caching BEFORE any range handling — but only if the
-      // stream hasn't already been tee'd by the container path.
-      const responseForCache = kvAlreadyHandled ? null : response.clone();
+      // Tee the response body: one leg for the client, one for KV storage.
+      // Unlike response.clone() which buffers the entire body in memory,
+      // tee() streams incrementally — only one chunk in flight per leg.
+      let finalResponse: Response;
+      let responseForCache: Response | null = null;
 
-      // Set up final response
-      let finalResponse = response;
+      const shouldCache =
+        !kvAlreadyHandled &&
+        env &&
+        videoOptions &&
+        !skipCache &&
+        response.headers.get('Cache-Control')?.includes('max-age=');
+
+      if (shouldCache && response.body) {
+        const [clientStream, cacheStream] = response.body.tee();
+        finalResponse = new Response(clientStream, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+        responseForCache = new Response(cacheStream, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      } else {
+        finalResponse = response;
+      }
 
       // Handle range requests
       finalResponse = await handleRangeRequests(
         request,
         finalResponse,
-        response,
+        finalResponse, // was: response — now use the same ref since we don't clone
         context,
         shouldUseOrigins ? 'VideoHandlerWithOrigins' : 'VideoHandler'
       );
@@ -245,14 +266,7 @@ export const handleVideoRequest = withErrorHandling<
       estimateVideoInfo(context, videoOptions);
 
       // Store in KV cache (non-blocking)
-      if (
-        !kvAlreadyHandled &&
-        responseForCache &&
-        env &&
-        videoOptions &&
-        !skipCache &&
-        responseForCache.headers.get('Cache-Control')?.includes('max-age=')
-      ) {
+      if (shouldCache && responseForCache) {
         addBreadcrumb(context, 'Cache', 'Preparing to store in KV cache', {
           status: responseForCache.status,
           cacheControl: responseForCache.headers.get('Cache-Control'),

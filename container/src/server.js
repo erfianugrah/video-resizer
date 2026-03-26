@@ -25,7 +25,9 @@ import { execSync } from 'node:child_process';
 
 const PORT = 8080;
 const TRANSCODE_DIR = '/tmp/transcode';
-const MAX_CONCURRENT_JOBS = 2; // Limit concurrent ffmpeg jobs to avoid disk/CPU exhaustion
+const SOURCE_CACHE_DIR = '/tmp/source-cache';
+const MAX_CONCURRENT_JOBS = 4; // standard-4 has 4 vCPUs — one ffmpeg per core
+const MAX_SOURCE_CACHE_BYTES = 10 * 1024 * 1024 * 1024; // 10 GB max source cache
 
 // Simple concurrency limiter
 let activeJobs = 0;
@@ -51,9 +53,55 @@ function releaseJob() {
   }
 }
 
-// Ensure base transcode directory exists
-if (!existsSync(TRANSCODE_DIR)) {
-  mkdirSync(TRANSCODE_DIR, { recursive: true });
+// Ensure directories exist
+if (!existsSync(TRANSCODE_DIR)) mkdirSync(TRANSCODE_DIR, { recursive: true });
+if (!existsSync(SOURCE_CACHE_DIR)) mkdirSync(SOURCE_CACHE_DIR, { recursive: true });
+
+/**
+ * Source file cache — avoids re-downloading the same 691 MB source
+ * for every resize variant. Keyed by URL hash.
+ */
+import { createHash } from 'node:crypto';
+
+// Track in-flight downloads so concurrent requests for the same source wait
+const sourceDownloads = new Map(); // hash -> Promise<string>
+
+async function getOrDownloadSource(sourceUrl) {
+  const hash = createHash('sha256').update(sourceUrl).digest('hex').substring(0, 16);
+  const cachedPath = `${SOURCE_CACHE_DIR}/${hash}.bin`;
+
+  // Already on disk?
+  if (existsSync(cachedPath)) {
+    try {
+      const stat = statSync(cachedPath);
+      if (stat.size > 0) {
+        console.log(`[source-cache] HIT ${hash} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
+        return cachedPath;
+      }
+    } catch {}
+  }
+
+  // In-flight download by another job?
+  if (sourceDownloads.has(hash)) {
+    console.log(`[source-cache] WAITING for in-flight download ${hash}`);
+    return sourceDownloads.get(hash);
+  }
+
+  // Download
+  console.log(`[source-cache] MISS ${hash}, downloading...`);
+  const downloadPromise = (async () => {
+    const dlStart = Date.now();
+    await downloadFile(sourceUrl, cachedPath);
+    const stat = statSync(cachedPath);
+    console.log(
+      `[source-cache] Downloaded ${hash} (${(stat.size / 1024 / 1024).toFixed(1)} MB) in ${Date.now() - dlStart}ms`
+    );
+    sourceDownloads.delete(hash);
+    return cachedPath;
+  })();
+
+  sourceDownloads.set(hash, downloadPromise);
+  return downloadPromise;
 }
 
 /**
@@ -209,23 +257,18 @@ async function handleTransformInner(req, res) {
   const jobDir = `${TRANSCODE_DIR}/${jobId}`;
   mkdirSync(jobDir, { recursive: true });
 
-  const inputPath = `${jobDir}/input.mp4`;
   const outputPath = `${jobDir}/output.mp4`;
 
   try {
-    // 1. Download the source video
-    console.log(`[${jobId}] Downloading source from ${sourceUrl.substring(0, 100)}...`);
-    const dlStart = Date.now();
-    await downloadFile(sourceUrl, inputPath);
-    const dlDuration = Date.now() - dlStart;
-
+    // 1. Get source video (cached on disk or download)
+    const inputPath = await getOrDownloadSource(sourceUrl);
     const inputStat = statSync(inputPath);
-    console.log(
-      `[${jobId}] Downloaded ${(inputStat.size / 1024 / 1024).toFixed(1)} MB in ${dlDuration}ms`
-    );
+    console.log(`[${jobId}] Source ready: ${(inputStat.size / 1024 / 1024).toFixed(1)} MB`);
 
     // 2. Build ffmpeg arguments
-    const ffmpegArgs = ['-y', '-i', inputPath];
+    // Divide CPUs across active jobs — fewer concurrent jobs = more threads each
+    const threadsPerJob = Math.max(1, Math.floor(4 / Math.max(1, activeJobs)));
+    const ffmpegArgs = ['-y', '-threads', String(threadsPerJob), '-i', inputPath];
 
     // Time offset (seek)
     if (time) {
@@ -244,8 +287,10 @@ async function handleTransformInner(req, res) {
     }
 
     // Video codec settings
+    // Use 'fast' preset for better throughput on first request — CRF
+    // controls quality independently of preset (preset only affects speed/size tradeoff)
     const crf = QUALITY_CRF[quality] || QUALITY_CRF.medium;
-    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf));
+    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf));
 
     // Audio codec
     if (mode === 'audio') {
