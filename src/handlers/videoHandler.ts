@@ -220,8 +220,14 @@ export const handleVideoRequest = withErrorHandling<
         performance.now() - (context.startTime ?? 0)
       );
 
-      // Clone for KV caching BEFORE any range handling
-      const responseForCache = response.clone();
+      // Check if KV storage was already handled (e.g., container path tee'd
+      // the stream and stored via waitUntil). If so, skip clone and KV store
+      // to avoid "ReadableStream is currently locked to a reader" errors.
+      const kvAlreadyHandled = response.headers.get('X-KV-Store-Handled') === 'true';
+
+      // Clone for KV caching BEFORE any range handling — but only if the
+      // stream hasn't already been tee'd by the container path.
+      const responseForCache = kvAlreadyHandled ? null : response.clone();
 
       // Set up final response
       let finalResponse = response;
@@ -240,6 +246,8 @@ export const handleVideoRequest = withErrorHandling<
 
       // Store in KV cache (non-blocking)
       if (
+        !kvAlreadyHandled &&
+        responseForCache &&
         env &&
         videoOptions &&
         !skipCache &&
