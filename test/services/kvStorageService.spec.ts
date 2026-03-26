@@ -270,9 +270,11 @@ describe('KV Storage Service', () => {
       expect(key).toBe('video:videos/test.mp4');
     });
 
-    it('should generate a key with derivative parameter', () => {
+    it('should generate a key with derivative parameter (resolved to dimensions)', () => {
       const key = generateKVKey('/videos/test.mp4', { derivative: 'mobile' });
-      expect(key).toBe('video:videos/test.mp4:derivative=mobile');
+      // Derivatives are resolved to their configured dimensions for cache key
+      // consistency: ?imwidth=854 and ?width=854&height=640 share the same key
+      expect(key).toBe('video:videos/test.mp4:w=854:h=640');
     });
 
     it('should generate a key with multiple transformation parameters', () => {
@@ -287,7 +289,7 @@ describe('KV Storage Service', () => {
 
     it('should normalize the source path by removing leading slashes', () => {
       const key = generateKVKey('///videos/test.mp4', { derivative: 'mobile' });
-      expect(key).toBe('video:videos/test.mp4:derivative=mobile');
+      expect(key).toBe('video:videos/test.mp4:w=854:h=640');
     });
 
     it('should handle null values in options', () => {
@@ -301,7 +303,7 @@ describe('KV Storage Service', () => {
 
     it('should replace invalid characters in the key', () => {
       const key = generateKVKey('/videos/test with spaces.mp4', { derivative: 'mobile' });
-      expect(key).toBe('video:videos/test-with-spaces.mp4:derivative=mobile');
+      expect(key).toBe('video:videos/test-with-spaces.mp4:w=854:h=640');
     });
   });
 
@@ -341,9 +343,9 @@ describe('KV Storage Service', () => {
       expect(result).toBe(true);
       expect(mockPut).toHaveBeenCalled();
 
-      // Verify the key follows the right pattern (we can't check the actual metadata since we mocked put)
+      // Verify the key: explicit width/height take precedence over derivative dimensions
       const key = generateKVKey('/videos/test.mp4', options);
-      expect(key).toBe('video:videos/test.mp4:derivative=mobile');
+      expect(key).toBe('video:videos/test.mp4:w=640:h=360:f=mp4:q=high');
     });
 
     it('should store a video with TTL', async () => {
@@ -584,9 +586,10 @@ describe('KV Storage Service', () => {
     it('should list all variants for a source path', async () => {
       // Store multiple variants
       const sourcePath = '/videos/test.mp4';
-      const options1 = { derivative: 'mobile' };
+      // Use explicit dimensions (not derivatives) to guarantee distinct keys
+      const options1 = { width: 854, height: 640 };
       const options2 = { width: 640, height: 360 };
-      const options3 = { derivative: 'high' };
+      const options3 = { width: 1920, height: 1080 };
 
       const key1 = generateKVKey(sourcePath, options1);
       const key2 = generateKVKey(sourcePath, options2);
@@ -595,16 +598,21 @@ describe('KV Storage Service', () => {
 
       // Store all variants
       await mockKV.put(key1, new Uint8Array([1]), {
-        metadata: { sourcePath, derivative: 'mobile', createdAt: Date.now() },
+        metadata: { sourcePath, width: 854, height: 640, createdAt: Date.now() },
       });
       await mockKV.put(key2, new Uint8Array([2]), {
         metadata: { sourcePath, width: 640, height: 360, createdAt: Date.now() },
       });
       await mockKV.put(key3, new Uint8Array([3]), {
-        metadata: { sourcePath, derivative: 'high', createdAt: Date.now() },
+        metadata: { sourcePath, width: 1920, height: 1080, createdAt: Date.now() },
       });
       await mockKV.put(key4, new Uint8Array([4]), {
-        metadata: { sourcePath: '/videos/other.mp4', derivative: 'mobile', createdAt: Date.now() },
+        metadata: {
+          sourcePath: '/videos/other.mp4',
+          width: 854,
+          height: 640,
+          createdAt: Date.now(),
+        },
       });
 
       // List variants for the test.mp4 video
