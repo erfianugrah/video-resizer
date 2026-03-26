@@ -236,12 +236,13 @@ async function getTransformedVideoImpl(
           );
         }
 
-        // Set range response headers
+        const rangeLength = clientRange.end - clientRange.start + 1;
+
+        // Set common 206 headers
         responseHeaders.set(
           'Content-Range',
           `bytes ${clientRange.start}-${clientRange.end}/${manifest.totalSize}`
         );
-        const rangeLength = clientRange.end - clientRange.start + 1;
         responseHeaders.set('Content-Length', rangeLength.toString());
 
         logDebug('[GET_VIDEO] Processing range request for chunked video', {
@@ -249,76 +250,75 @@ async function getTransformedVideoImpl(
           range: clientRange,
           totalSize: manifest.totalSize,
           rangeLength,
+          isFullRange: clientRange.start === 0 && clientRange.end >= manifest.totalSize - 1,
         });
 
-        // Direct buffer approach for range requests: fetch only the needed
-        // KV chunks, assemble the requested byte range in memory, and return
-        // a plain Response. This avoids TransformStream + waitUntil which
-        // causes seeking issues in browsers (stream gets cut off).
-        //
-        // Memory usage: at most rangeLength + one extra 5 MiB chunk for
-        // alignment. Browsers typically request a few MB at a time for
-        // seeking, so this is safe within Worker memory limits.
+        // Use a pull-based ReadableStream that fetches only the needed
+        // chunk data on-demand. Unlike the old TransformStream + waitUntil
+        // approach, this keeps the stream alive for the full duration.
+        // Unlike a full-buffer approach, it doesn't OOM for large ranges.
 
-        // Determine which chunks overlap with the requested range
-        let currentPos = 0;
-        const rangeBytes: Uint8Array[] = [];
-        let totalCollected = 0;
-
-        for (let i = 0; i < manifest.chunkCount && totalCollected < rangeLength; i++) {
+        // Pre-calculate which chunks overlap with the range
+        const chunksToFetch: Array<{
+          index: number;
+          sliceStart: number;
+          sliceEnd: number;
+        }> = [];
+        let scanPos = 0;
+        for (let i = 0; i < manifest.chunkCount; i++) {
           const chunkSize = manifest.actualChunkSizes[i];
-          const chunkStart = currentPos;
-          const chunkEnd = currentPos + chunkSize - 1;
+          const chunkStart = scanPos;
+          const chunkEnd = scanPos + chunkSize - 1;
+          scanPos += chunkSize;
 
-          // Skip chunks that don't overlap
-          if (clientRange.start > chunkEnd || clientRange.end < chunkStart) {
-            currentPos += chunkSize;
-            continue;
-          }
+          if (clientRange.start > chunkEnd || clientRange.end < chunkStart) continue;
 
-          // Fetch this chunk
-          const chunkKey = `${key}_chunk_${i}`;
-          const chunkData = await namespace.get(chunkKey, {
-            type: 'arrayBuffer',
-            ...kvReadOptions,
+          chunksToFetch.push({
+            index: i,
+            sliceStart: Math.max(0, clientRange.start - chunkStart),
+            sliceEnd: Math.min(chunkSize, clientRange.end - chunkStart + 1),
           });
-
-          if (!chunkData) {
-            logErrorWithContext(
-              '[GET_VIDEO] Missing chunk for range request',
-              new Error('Chunk not found'),
-              { chunkKey, chunkIndex: i },
-              'KVStorageService.get'
-            );
-            return null;
-          }
-
-          // Slice the portion of this chunk we need
-          const sliceStart = Math.max(0, clientRange.start - chunkStart);
-          const sliceEnd = Math.min(chunkData.byteLength, clientRange.end - chunkStart + 1);
-          const slice = new Uint8Array(chunkData).subarray(sliceStart, sliceEnd);
-
-          rangeBytes.push(slice);
-          totalCollected += slice.byteLength;
-          currentPos += chunkSize;
         }
 
-        // Assemble into a single buffer
-        const result = new Uint8Array(rangeLength);
-        let offset = 0;
-        for (const part of rangeBytes) {
-          result.set(part, offset);
-          offset += part.byteLength;
-        }
+        let fetchIdx = 0;
+        const rangeStream = new ReadableStream({
+          async pull(controller) {
+            if (fetchIdx >= chunksToFetch.length) {
+              controller.close();
+              return;
+            }
 
-        logDebug('[GET_VIDEO] Assembled range response from chunks', {
-          key,
-          rangeLength,
-          chunksRead: rangeBytes.length,
-          bytesAssembled: offset,
+            const info = chunksToFetch[fetchIdx];
+            const chunkKey = `${key}_chunk_${info.index}`;
+
+            try {
+              const chunkData = await namespace.get(chunkKey, {
+                type: 'arrayBuffer',
+                ...kvReadOptions,
+              });
+
+              if (!chunkData) {
+                controller.error(new Error(`Missing chunk: ${chunkKey}`));
+                return;
+              }
+
+              const slice = new Uint8Array(chunkData).subarray(info.sliceStart, info.sliceEnd);
+              controller.enqueue(slice);
+              fetchIdx++;
+            } catch (err) {
+              controller.error(err);
+            }
+          },
+          cancel() {
+            // Browser aborted the request (e.g., seeking) — clean exit
+            logDebug('[GET_VIDEO] Range stream cancelled by client', {
+              key,
+              fetchedChunks: fetchIdx,
+              totalChunks: chunksToFetch.length,
+            });
+          },
         });
 
-        // Add diagnostics
         addRangeDiagnostics(
           key,
           rangeValue,
@@ -329,11 +329,17 @@ async function getTransformedVideoImpl(
           clientRange.end
         );
 
-        // Refresh TTL on cache hit
         refreshCacheTtl(namespace, key, baseMetadata, options.env);
 
+        // Pipe through FixedLengthStream so Cloudflare preserves the
+        // Content-Length header. A plain ReadableStream causes Workers
+        // to use chunked transfer encoding and strip Content-Length,
+        // which breaks video seeking in browsers.
+        const fixedStream = new FixedLengthStream(rangeLength);
+        rangeStream.pipeTo(fixedStream.writable).catch(() => {});
+
         return {
-          response: new Response(result.buffer, {
+          response: new Response(fixedStream.readable, {
             status: 206,
             statusText: 'Partial Content',
             headers: responseHeaders,
@@ -412,8 +418,12 @@ async function getTransformedVideoImpl(
 
     logDebug('[GET_VIDEO] Returning 200 OK for full chunked video', { key });
 
+    // Pipe through FixedLengthStream so Cloudflare preserves Content-Length.
+    const fixedStream = new FixedLengthStream(manifest.totalSize);
+    readableStream.pipeTo(fixedStream.writable).catch(() => {});
+
     return {
-      response: new Response(readableStream, {
+      response: new Response(fixedStream.readable, {
         status: 200,
         headers: responseHeaders,
       }),
