@@ -33,17 +33,20 @@ export class StreamingChunkProcessor {
 
   createTransformStream(): TransformStream<Uint8Array, Uint8Array> {
     return new TransformStream<Uint8Array, Uint8Array>({
-      transform: async (chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) => {
+      transform: async (
+        chunk: Uint8Array,
+        controller: TransformStreamDefaultController<Uint8Array>
+      ) => {
         await this.processChunk(chunk, controller);
       },
       flush: async (controller: TransformStreamDefaultController<Uint8Array>) => {
         await this.flush(controller);
-      }
+      },
     });
   }
 
   async processChunk(
-    incoming: Uint8Array, 
+    incoming: Uint8Array,
     controller?: TransformStreamDefaultController<Uint8Array>
   ): Promise<void> {
     let incomingOffset = 0;
@@ -71,31 +74,30 @@ export class StreamingChunkProcessor {
     }
   }
 
-  private async emitCurrentBuffer(controller?: TransformStreamDefaultController<Uint8Array>): Promise<void> {
+  private async emitCurrentBuffer(
+    controller?: TransformStreamDefaultController<Uint8Array>
+  ): Promise<void> {
     if (this.bufferOffset === 0) return;
 
-    // Create a properly sized chunk (not the full buffer if partially filled)
-    const chunk = this.bufferOffset === this.targetChunkSize 
-      ? this.currentBuffer 
-      : this.currentBuffer.slice(0, this.bufferOffset);
+    // CRITICAL: Always .slice() to create an independent copy.
+    // The currentBuffer is reused across chunks. If we pass the reference
+    // directly, the async upload in the concurrency queue will read stale
+    // data because the buffer gets overwritten by the next chunk before
+    // the upload completes.
+    const chunk = this.currentBuffer.slice(0, this.bufferOffset);
 
     logDebug('[STREAM_CHUNK_PROCESSOR] Emitting chunk', {
       chunkIndex: this.chunkIndex,
       chunkSize: chunk.length,
-      totalProcessed: this.totalBytesProcessed
+      totalProcessed: this.totalBytesProcessed,
     });
 
     // Pass the chunk to the handler
     await this.onChunkReady(chunk, this.chunkIndex);
 
-    // Don't enqueue data to the controller - we handle chunks directly
-    // This saves memory by avoiding duplicate data in the stream
-
     // Reset for next chunk
     this.chunkIndex++;
     this.bufferOffset = 0;
-    
-    // Reuse the buffer - no need to create new ones
   }
 
   async flush(controller?: TransformStreamDefaultController<Uint8Array>): Promise<void> {
@@ -106,7 +108,7 @@ export class StreamingChunkProcessor {
 
     logDebug('[STREAM_CHUNK_PROCESSOR] Stream processing complete', {
       totalChunks: this.chunkIndex,
-      totalBytes: this.totalBytesProcessed
+      totalBytes: this.totalBytesProcessed,
     });
 
     // Call completion handler if provided
@@ -135,7 +137,7 @@ export function createStreamingChunkProcessor(
   const processor = new StreamingChunkProcessor({
     targetChunkSize,
     onChunkReady,
-    onComplete
+    onComplete,
   });
 
   return processor.createTransformStream();

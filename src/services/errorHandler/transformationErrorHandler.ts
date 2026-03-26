@@ -448,7 +448,7 @@ export async function handleTransformationError({
             cached: containerResult.shouldCacheInKV,
           });
 
-          // Tee the stream for KV caching
+          // Tee the stream: client gets one leg, KV store gets the other.
           const containerResponse = containerResult.response;
           let clientBody: ReadableStream | null = containerResponse.body;
 
