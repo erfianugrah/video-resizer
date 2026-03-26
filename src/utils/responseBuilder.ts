@@ -517,14 +517,15 @@ export class ResponseBuilder {
         contentType: this.headers.get('Content-Type'),
       });
 
-      // Create a response with the identical body, status, and carefully preserved headers
-      // Use our helper method to create a safe streamed response
-      return this.createSafeStreamResponse(
-        this.response.body,
-        206, // Force Partial Content status
-        this.response.statusText || 'Partial Content',
-        this.headers
-      );
+      // Return the 206 response directly — do NOT wrap through TransformStream
+      // (createSafeStreamResponse) because that converts an ArrayBuffer body
+      // into a ReadableStream, causing Cloudflare to strip Content-Length.
+      // Browsers need Content-Length on 206 responses for video seeking.
+      return new Response(this.response.body, {
+        status: 206,
+        statusText: this.response.statusText || 'Partial Content',
+        headers: this.headers,
+      });
     }
 
     // For range requests or video/audio content, handle specially

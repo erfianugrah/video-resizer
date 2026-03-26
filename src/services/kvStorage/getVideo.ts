@@ -241,61 +241,82 @@ async function getTransformedVideoImpl(
           'Content-Range',
           `bytes ${clientRange.start}-${clientRange.end}/${manifest.totalSize}`
         );
-        responseHeaders.set('Content-Length', (clientRange.end - clientRange.start + 1).toString());
+        const rangeLength = clientRange.end - clientRange.start + 1;
+        responseHeaders.set('Content-Length', rangeLength.toString());
 
         logDebug('[GET_VIDEO] Processing range request for chunked video', {
           key,
           range: clientRange,
           totalSize: manifest.totalSize,
+          rangeLength,
         });
 
-        // Create streaming response with transform stream
-        const { readable, writable } = new TransformStream();
+        // Direct buffer approach for range requests: fetch only the needed
+        // KV chunks, assemble the requested byte range in memory, and return
+        // a plain Response. This avoids TransformStream + waitUntil which
+        // causes seeking issues in browsers (stream gets cut off).
+        //
+        // Memory usage: at most rangeLength + one extra 5 MiB chunk for
+        // alignment. Browsers typically request a few MB at a time for
+        // seeking, so this is safe within Worker memory limits.
 
-        // Process the chunks for range request
-        const streamChunksPromise = streamChunkedRangeResponse(
-          namespace,
-          key,
-          manifest,
-          clientRange,
-          writable.getWriter(),
-          kvReadOptions
-        );
+        // Determine which chunks overlap with the requested range
+        let currentPos = 0;
+        const rangeBytes: Uint8Array[] = [];
+        let totalCollected = 0;
 
-        // Process in background
-        const context = getCurrentContext();
-        if (context?.executionContext?.waitUntil) {
-          // Create an AbortController to be able to cancel the chunk streaming if needed
-          const abortController = new AbortController();
-          const abortSignal = abortController.signal;
+        for (let i = 0; i < manifest.chunkCount && totalCollected < rangeLength; i++) {
+          const chunkSize = manifest.actualChunkSizes[i];
+          const chunkStart = currentPos;
+          const chunkEnd = currentPos + chunkSize - 1;
 
-          // Store the AbortController in the request context for potential cancellation
-          if (!context.activeStreams) {
-            context.activeStreams = new Map();
+          // Skip chunks that don't overlap
+          if (clientRange.start > chunkEnd || clientRange.end < chunkStart) {
+            currentPos += chunkSize;
+            continue;
           }
-          context.activeStreams.set(key, abortController);
 
-          // Add cleanup function to remove from activeStreams when done
-          const cleanup = () => {
-            if (context.activeStreams?.has(key)) {
-              context.activeStreams.delete(key);
-              logDebug('[GET_VIDEO] Removed stream from active streams map', { key });
-            }
-          };
+          // Fetch this chunk
+          const chunkKey = `${key}_chunk_${i}`;
+          const chunkData = await namespace.get(chunkKey, {
+            type: 'arrayBuffer',
+            ...kvReadOptions,
+          });
 
-          // Pass the signal to the streaming operation
-          context.executionContext.waitUntil(
-            streamChunksPromise.then(cleanup).catch((err) => {
-              cleanup();
-              logDebug('[GET_VIDEO] Error in background chunk processing', {
-                key,
-                error: err instanceof Error ? err.message : String(err),
-                range: rangeHeaderValue,
-                wasAborted: abortSignal.aborted,
-              });
-            })
-          );
+          if (!chunkData) {
+            logErrorWithContext(
+              '[GET_VIDEO] Missing chunk for range request',
+              new Error('Chunk not found'),
+              { chunkKey, chunkIndex: i },
+              'KVStorageService.get'
+            );
+            return null;
+          }
+
+          // Slice the portion of this chunk we need
+          const sliceStart = Math.max(0, clientRange.start - chunkStart);
+          const sliceEnd = Math.min(chunkData.byteLength, clientRange.end - chunkStart + 1);
+          const slice = new Uint8Array(chunkData).subarray(sliceStart, sliceEnd);
+
+          rangeBytes.push(slice);
+          totalCollected += slice.byteLength;
+          currentPos += chunkSize;
         }
+
+        // Assemble into a single buffer
+        const result = new Uint8Array(rangeLength);
+        let offset = 0;
+        for (const part of rangeBytes) {
+          result.set(part, offset);
+          offset += part.byteLength;
+        }
+
+        logDebug('[GET_VIDEO] Assembled range response from chunks', {
+          key,
+          rangeLength,
+          chunksRead: rangeBytes.length,
+          bytesAssembled: offset,
+        });
 
         // Add diagnostics
         addRangeDiagnostics(
@@ -308,14 +329,11 @@ async function getTransformedVideoImpl(
           clientRange.end
         );
 
-        // Return 206 Partial Content response
-        logDebug('[GET_VIDEO] Returning 206 Partial Content for chunked video', { key });
-
         // Refresh TTL on cache hit
         refreshCacheTtl(namespace, key, baseMetadata, options.env);
 
         return {
-          response: new Response(readable, {
+          response: new Response(result.buffer, {
             status: 206,
             statusText: 'Partial Content',
             headers: responseHeaders,
