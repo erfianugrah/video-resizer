@@ -51,7 +51,9 @@ export async function storeTransformedVideoWithStreaming(
     version?: number;
     env?: EnvVariables;
   },
-  ttl?: number
+  ttl?: number,
+  /** Optional pre-computed KV key. When provided, skips key generation. */
+  overrideKey?: string
 ): Promise<boolean> {
   // Clone the response to ensure we don't affect the consumer
   const responseClone = response.clone();
@@ -62,8 +64,8 @@ export async function storeTransformedVideoWithStreaming(
     return false;
   }
 
-  // Generate a key for this transformed variant
-  const key = generateKVKey(sourcePath, options);
+  // Generate a key for this transformed variant, or use pre-computed key
+  const key = overrideKey || generateKVKey(sourcePath, options);
   const contentType = responseClone.headers.get('Content-Type') || 'video/mp4';
 
   // Log key information for debugging

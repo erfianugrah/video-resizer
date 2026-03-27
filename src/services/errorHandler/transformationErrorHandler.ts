@@ -26,6 +26,7 @@ import { setBypassHeaders } from '../../utils/bypassHeadersUtils';
 import { VideoConfigurationManager } from '../../config';
 import { buildContainerInstanceKey } from '../containerTransformService';
 import type { ContainerNamespace } from '../../types/cloudflare';
+import { generateKVKey } from '../kvStorage/keyUtils';
 
 /**
  * Helper function to initiate background caching of fallback responses
@@ -420,16 +421,12 @@ export async function handleTransformationError({
         );
 
         const requestOrigin = new URL(originalRequest.url).origin;
+        const kvKey = generateKVKey(path, context.options || {});
         const cbParams = new URLSearchParams();
         cbParams.set('path', path);
+        cbParams.set('kvKey', kvKey);
         cbParams.set('version', String(context.options?.version || 1));
-        if (context.options?.derivative) cbParams.set('derivative', context.options.derivative);
-        if (context.options?.width) cbParams.set('width', String(context.options.width));
-        if (context.options?.height) cbParams.set('height', String(context.options.height));
-        if (context.options?.mode) cbParams.set('mode', context.options.mode);
-        if (context.options?.quality) cbParams.set('quality', context.options.quality);
         if (context.options?.compression) cbParams.set('compression', context.options.compression);
-        if (context.options?.format) cbParams.set('format', context.options.format);
         const callbackUrl = `${requestOrigin}/internal/container-result?${cbParams.toString()}`;
 
         logger.info('Firing background container job with callback (reactive path)', {

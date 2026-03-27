@@ -22,6 +22,7 @@ import { retryWithAlternativeOrigins } from '../../services/transformation/retry
 import { CDN_CGI_SIZE_LIMIT, getContentLength } from '../../utils/httpUtils';
 import { VideoConfigurationManager } from '../../config';
 import { buildContainerInstanceKey } from '../../services/containerTransformService';
+import { generateKVKey } from '../../services/kvStorage/keyUtils';
 import type { ContainerNamespace } from '../../types/cloudflare';
 
 const execLogger = createCategoryLogger('OriginsExecution');
@@ -325,22 +326,17 @@ function fireBackgroundContainerJob(
   // key generator (generateKVKey) expands derivatives to their configured
   // dimensions (e.g. tablet → 1280×720).  If we pass the raw imwidth
   // (e.g. 1080) instead, the stored key won't match the lookup key.
+  // Pre-compute the exact KV key that checkKVCache will use on the read
+  // path. This guarantees the container callback stores under the same
+  // key — no more mismatches from options flowing through different code
+  // paths with subtly different values.
+  const kvKey = generateKVKey(path, options);
+
   const callbackParams = new URLSearchParams();
   callbackParams.set('path', path);
+  callbackParams.set('kvKey', kvKey);
   callbackParams.set('version', String(options.version || 1));
-
-  // Always pass ALL key-generating fields so the container callback
-  // stores under the exact same KV key that checkKVCache generates.
-  // Pass both derivative AND width/height — the key generator uses
-  // effective dimensions (derivative expands to width/height, but
-  // explicit width/height take precedence).
-  if (options.derivative) callbackParams.set('derivative', options.derivative);
-  if (options.width) callbackParams.set('width', String(options.width));
-  if (options.height) callbackParams.set('height', String(options.height));
-  if (options.mode) callbackParams.set('mode', options.mode);
-  if (options.quality) callbackParams.set('quality', options.quality);
   if (options.compression) callbackParams.set('compression', options.compression);
-  if (options.format) callbackParams.set('format', options.format);
   const callbackUrl = `${requestOrigin}/internal/container-result?${callbackParams.toString()}`;
 
   const payload = {
