@@ -56,17 +56,20 @@ function generateKVKeyImpl(
   // Create a base key from the mode and path
   let key = `${mode}:${normalizedPath}`;
 
-  // Resolve effective dimensions: if a derivative is specified, expand it
-  // to its configured width/height so that ?imwidth=1280 (→ derivative
-  // "tablet" → 1280×720) and ?width=1280&height=720 share the same key.
+  // Resolve effective dimensions.
+  // When a derivative is specified, ALWAYS use the derivative's canonical
+  // dimensions so that every request mapping to the same derivative
+  // (e.g. ?imwidth=1080 → "tablet") shares a single cache entry regardless
+  // of the raw imwidth/imheight values the caller supplied.
+  // When no derivative is specified, fall back to the explicit dimensions.
   let effectiveWidth = options.width;
   let effectiveHeight = options.height;
 
   if (options.derivative) {
     const dims = getDerivativeDimensions(options.derivative);
     if (dims) {
-      effectiveWidth = effectiveWidth || dims.width;
-      effectiveHeight = effectiveHeight || dims.height;
+      effectiveWidth = dims.width;
+      effectiveHeight = dims.height;
     }
   }
 

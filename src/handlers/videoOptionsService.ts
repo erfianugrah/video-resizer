@@ -300,6 +300,14 @@ export function determineVideoOptions(
   let explicitHeight: number | null = null;
   let autoQuality = false;
 
+  // Track whether dimensions were already set by an IMQuery derivative match.
+  // When imwidth/imheight matched a derivative, the derivative's canonical
+  // dimensions are authoritative.  The params.forEach loop below must not
+  // overwrite them when it encounters the translated 'width'/'height' keys,
+  // because those raw IMQuery values (e.g. 1080) differ from the derivative
+  // dimensions (e.g. 1280×720 for "tablet").
+  const dimensionsFromDerivative = !!(options.derivative && usingIMQuery);
+
   // Extract parameters for translation
   const paramObject: Record<string, string | boolean | number> = {};
   params.forEach((value, key) => {
@@ -331,12 +339,19 @@ export function determineVideoOptions(
 
       case 'width':
         explicitWidth = parseIntOrNull(value);
-        options.width = explicitWidth;
+        // Skip overwriting derivative dimensions with raw IMQuery values.
+        // e.g. ?imwidth=1080 should not overwrite the tablet derivative's
+        // canonical width of 1280.
+        if (!dimensionsFromDerivative || !translatedKey) {
+          options.width = explicitWidth;
+        }
         break;
 
       case 'height':
         explicitHeight = parseIntOrNull(value);
-        options.height = explicitHeight;
+        if (!dimensionsFromDerivative || !translatedKey) {
+          options.height = explicitHeight;
+        }
         break;
 
       case 'fit':

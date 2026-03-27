@@ -393,7 +393,9 @@ async function buildCdnCgiUrlParams(options: VideoTransformOptions): Promise<{
 }> {
   const urlParams: string[] = [];
 
-  // Check for derivative dimensions first, overriding width/height if available
+  // When a derivative is specified, always use its canonical dimensions for the
+  // CDN-CGI transform URL.  This ensures the actual transformation matches what
+  // generateKVKey produces for the cache key.
   let width = options.width;
   let height = options.height;
 
@@ -401,8 +403,8 @@ async function buildCdnCgiUrlParams(options: VideoTransformOptions): Promise<{
     const derivativeDimensions = getDerivativeDimensions(options.derivative);
 
     if (derivativeDimensions) {
-      width = derivativeDimensions.width || width;
-      height = derivativeDimensions.height || height;
+      width = derivativeDimensions.width;
+      height = derivativeDimensions.height;
 
       const cdnLogger = createCategoryLogger('CDN-CGI');
       cdnLogger.info(`Using derivative dimensions for ${options.derivative}`, {

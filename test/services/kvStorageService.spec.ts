@@ -343,9 +343,11 @@ describe('KV Storage Service', () => {
       expect(result).toBe(true);
       expect(mockPut).toHaveBeenCalled();
 
-      // Verify the key: explicit width/height take precedence over derivative dimensions
+      // Verify the key: when a derivative is specified, its canonical dimensions
+      // are always used for the cache key (not the explicit width/height), ensuring
+      // all requests mapping to the same derivative share one cache entry.
       const key = generateKVKey('/videos/test.mp4', options);
-      expect(key).toBe('video:videos/test.mp4:w=640:h=360:f=mp4:q=high');
+      expect(key).toBe('video:videos/test.mp4:w=854:h=640:f=mp4:q=high');
     });
 
     it('should store a video with TTL', async () => {

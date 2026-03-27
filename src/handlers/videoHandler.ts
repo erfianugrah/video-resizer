@@ -438,25 +438,18 @@ async function handleOriginsPath(
     url: sourceResolution.sourceUrl,
   });
 
-  // Get video options from path and query parameters
-  const videoOptions = determineVideoOptions(request, url.searchParams, path);
-
-  // Add origin-specific options
-  if (originMatch.origin.quality && !videoOptions.quality) {
-    videoOptions.quality = originMatch.origin.quality;
-  }
-  if (originMatch.origin.videoCompression && !videoOptions.compression) {
-    videoOptions.compression = originMatch.origin.videoCompression;
-  }
-
-  // Use updated version from initialVideoOptions
-  videoOptions.version = initialVideoOptions.version || 1;
+  // Use the same options object that was used for the cache lookup.
+  // Previously, determineVideoOptions was called a second time here which
+  // could produce subtly different results (e.g. different height values)
+  // leading to KV cache key mismatches between the read and write paths.
+  const videoOptions = initialVideoOptions;
 
   vhLogger.debug('Using cache version for transformation', {
     version: videoOptions.version,
-    initialVersion: initialVideoOptions.version,
     path,
-    hadCacheMiss: true,
+    derivative: videoOptions.derivative,
+    width: videoOptions.width,
+    height: videoOptions.height,
   });
 
   const debugInfo = {

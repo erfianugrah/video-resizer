@@ -421,7 +421,16 @@ export async function handleTransformationError({
         );
 
         const requestOrigin = new URL(originalRequest.url).origin;
-        const kvKey = generateKVKey(path, context.options || {});
+        const containerOptions = context.options || {};
+        if (!context.options) {
+          logger.warn(
+            'Reactive container path: context.options is missing, KV key may be incorrect',
+            {
+              path,
+            }
+          );
+        }
+        const kvKey = generateKVKey(path, containerOptions);
         const cbParams = new URLSearchParams();
         cbParams.set('path', path);
         cbParams.set('kvKey', kvKey);
