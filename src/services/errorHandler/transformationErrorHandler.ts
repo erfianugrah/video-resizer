@@ -423,12 +423,9 @@ export async function handleTransformationError({
         const cbParams = new URLSearchParams();
         cbParams.set('path', path);
         cbParams.set('version', String(context.options?.version || 1));
-        if (context.options?.derivative) {
-          cbParams.set('derivative', context.options.derivative);
-        } else {
-          if (context.options?.width) cbParams.set('width', String(context.options.width));
-          if (context.options?.height) cbParams.set('height', String(context.options.height));
-        }
+        if (context.options?.derivative) cbParams.set('derivative', context.options.derivative);
+        if (context.options?.width) cbParams.set('width', String(context.options.width));
+        if (context.options?.height) cbParams.set('height', String(context.options.height));
         if (context.options?.mode) cbParams.set('mode', context.options.mode);
         if (context.options?.quality) cbParams.set('quality', context.options.quality);
         if (context.options?.compression) cbParams.set('compression', context.options.compression);

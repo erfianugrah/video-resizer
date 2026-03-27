@@ -646,6 +646,11 @@ export async function storeInKVCacheAsync(
       height: videoOptions.height,
       mode: videoOptions.mode,
       version: videoOptions.version,
+      // Include key-generating fields so the stored KV key matches
+      // what checkKVCache / generateKVKey produces on the read path.
+      quality: videoOptions.quality,
+      compression: videoOptions.compression,
+      format: videoOptions.format,
     };
 
     addBreadcrumb(context, 'Cache', 'Using optimized IMQuery cache key', {

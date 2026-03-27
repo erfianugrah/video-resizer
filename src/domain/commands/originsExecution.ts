@@ -328,14 +328,15 @@ function fireBackgroundContainerJob(
   const callbackParams = new URLSearchParams();
   callbackParams.set('path', path);
   callbackParams.set('version', String(options.version || 1));
-  if (options.derivative) {
-    // Let the KV key generator expand the derivative to its dimensions
-    callbackParams.set('derivative', options.derivative);
-  } else {
-    // No derivative — use raw dimensions
-    if (options.width) callbackParams.set('width', String(options.width));
-    if (options.height) callbackParams.set('height', String(options.height));
-  }
+
+  // Always pass ALL key-generating fields so the container callback
+  // stores under the exact same KV key that checkKVCache generates.
+  // Pass both derivative AND width/height — the key generator uses
+  // effective dimensions (derivative expands to width/height, but
+  // explicit width/height take precedence).
+  if (options.derivative) callbackParams.set('derivative', options.derivative);
+  if (options.width) callbackParams.set('width', String(options.width));
+  if (options.height) callbackParams.set('height', String(options.height));
   if (options.mode) callbackParams.set('mode', options.mode);
   if (options.quality) callbackParams.set('quality', options.quality);
   if (options.compression) callbackParams.set('compression', options.compression);
