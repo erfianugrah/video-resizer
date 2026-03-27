@@ -24,9 +24,8 @@ import { streamFallbackToKV } from '../../services/videoStorage/fallbackStorage'
 import { fetchVideoWithOrigins } from '../videoStorage/fetchVideoWithOrigins';
 import { setBypassHeaders } from '../../utils/bypassHeadersUtils';
 import { VideoConfigurationManager } from '../../config';
-import { transformViaContainer, buildContainerInstanceKey } from '../containerTransformService';
+import { buildContainerInstanceKey } from '../containerTransformService';
 import type { ContainerNamespace } from '../../types/cloudflare';
-import { storeTransformedVideoWithStreaming } from '../kvStorage/streamStorage';
 
 /**
  * Helper function to initiate background caching of fallback responses
@@ -382,12 +381,14 @@ export async function handleTransformationError({
         errorText.includes('Input media must be less than') ||
         parsedError?.specificError?.includes('256MiB')));
 
-  // ── Container FFmpeg fallback for oversized videos ──────────────────
-  // This runs BEFORE the direct-fetch check because:
-  // 1. For R2 sources, there's no valid HTTP URL to direct-fetch from
-  // 2. The container can construct its own R2 URL via __r2src
-  // 3. The container produces a *transformed* output, not just the raw source
-  if (!fallbackResponse && is256MiBSizeError) {
+  // ── Container FFmpeg background job for oversized videos ─────────────
+  // When the error is a 256 MiB size limit, fire a background container
+  // job with a callback URL.  The container will transcode and POST the
+  // result back to the worker's /internal/container-result endpoint,
+  // which stores it in KV.  We don't block or return early here — the
+  // existing direct-fetch/fallback logic below will serve the raw source
+  // to the client immediately.
+  if (is256MiBSizeError) {
     const videoConfigManager = VideoConfigurationManager.getInstance();
     const containerBinding = (context.env as any)?.FFMPEG_CONTAINER as
       | ContainerNamespace
@@ -395,10 +396,8 @@ export async function handleTransformationError({
     const containerEnabled = videoConfigManager.isContainerEnabled() && !!containerBinding;
 
     if (containerEnabled) {
-      // Build a source URL the container can fetch from
       let containerSourceUrl: string | null = null;
 
-      // For R2 sources, construct the __r2src self-referencing URL
       if (
         context.sourceResolution?.originType === 'r2' &&
         context.sourceResolution?.source?.bucketBinding &&
@@ -415,104 +414,71 @@ export async function handleTransformationError({
       }
 
       if (containerSourceUrl) {
-        logger.debug('Routing oversized video to container FFmpeg fallback', {
-          sourceUrl: containerSourceUrl,
-          originType: context.sourceResolution?.originType,
-          cfErrorCode,
-        });
-        addBreadcrumb(requestContext, 'Container', 'Routing to FFmpeg container', {
-          sourceUrl: containerSourceUrl,
-          originType: context.sourceResolution?.originType,
-        });
-
         const instanceKey = buildContainerInstanceKey(
           context.origin?.name || 'error-handler',
           path
         );
 
-        const containerResult = await transformViaContainer({
-          request: originalRequest,
-          sourceUrl: containerSourceUrl,
-          videoOptions: context.options || {},
-          containerBinding: containerBinding!,
+        const requestOrigin = new URL(originalRequest.url).origin;
+        const cbParams = new URLSearchParams();
+        cbParams.set('path', path);
+        cbParams.set('version', String(context.options?.version || 1));
+        if (context.options?.derivative) {
+          cbParams.set('derivative', context.options.derivative);
+        } else {
+          if (context.options?.width) cbParams.set('width', String(context.options.width));
+          if (context.options?.height) cbParams.set('height', String(context.options.height));
+        }
+        if (context.options?.mode) cbParams.set('mode', context.options.mode);
+        if (context.options?.quality) cbParams.set('quality', context.options.quality);
+        if (context.options?.compression) cbParams.set('compression', context.options.compression);
+        if (context.options?.format) cbParams.set('format', context.options.format);
+        const callbackUrl = `${requestOrigin}/internal/container-result?${cbParams.toString()}`;
+
+        logger.info('Firing background container job with callback (reactive path)', {
+          instanceKey,
+          callbackUrl,
+          cfErrorCode,
+        });
+        addBreadcrumb(requestContext, 'Container', 'Fired background FFmpeg job (reactive)', {
           instanceKey,
         });
 
-        if (containerResult.success && containerResult.response) {
-          logger.debug('Container transform succeeded for oversized video', {
-            durationMs: containerResult.durationMs,
-            shouldCacheInKV: containerResult.shouldCacheInKV,
+        try {
+          const containerInstance = containerBinding!.getByName(instanceKey);
+          const containerRequest = new Request('http://container/transform-and-callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sourceUrl: containerSourceUrl,
+              width: context.options?.width ?? undefined,
+              height: context.options?.height ?? undefined,
+              mode: context.options?.mode || 'video',
+              quality: context.options?.quality || 'medium',
+              fit: context.options?.fit || 'contain',
+              duration: context.options?.duration ?? undefined,
+              time: context.options?.time || '0s',
+              format: 'mp4',
+              callbackUrl,
+            }),
           });
-          addBreadcrumb(requestContext, 'Container', 'Container transform complete', {
-            durationMs: containerResult.durationMs,
-            cached: containerResult.shouldCacheInKV,
+
+          // Fire and forget — the DO runs independently
+          containerInstance.fetch(containerRequest).catch((err: unknown) => {
+            logger.debug('Reactive container fire-and-forget settled', {
+              instanceKey,
+              error: err instanceof Error ? err.message : String(err),
+            });
           });
-
-          // Tee the stream: client gets one leg, KV store gets the other.
-          const containerResponse = containerResult.response;
-          let clientBody: ReadableStream | null = containerResponse.body;
-
-          if (containerResult.shouldCacheInKV && containerResponse.body && context.env) {
-            const cacheKV = getCacheKV(context.env);
-            if (cacheKV) {
-              const [clientStream, cacheStream] = containerResponse.body.tee();
-              clientBody = clientStream;
-
-              const cacheResp = new Response(cacheStream, {
-                headers: containerResponse.headers,
-              });
-
-              const execCtx = (context.env as any)?.executionCtx;
-              const storePromise = storeTransformedVideoWithStreaming(cacheKV, path, cacheResp, {
-                ...context.options,
-                env: context.env as any,
-                version: context.options?.version || 1,
-              }).catch((err: unknown) => {
-                logger.error('Failed to store container output in KV', {
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              });
-
-              if (execCtx && typeof execCtx.waitUntil === 'function') {
-                execCtx.waitUntil(storePromise);
-              }
-            }
-          }
-
-          // Build clean response headers — this is a successful transformation,
-          // NOT a fallback/error, so we skip the error handler's finalization
-          // which would add Cache-Control: no-store and bypass headers.
-          const containerHeaders = new Headers(containerResponse.headers);
-          containerHeaders.set('X-Transform-Source', 'container-ffmpeg');
-          containerHeaders.set('X-Container-Instance', instanceKey);
-          containerHeaders.set('Accept-Ranges', 'bytes');
-          if (containerResult.durationMs) {
-            containerHeaders.set('X-Container-Duration-Ms', String(containerResult.durationMs));
-          }
-          // Signal to the main handler that KV storage was already handled
-          // by the tee above — prevents double-store via storeInKVCacheAsync.
-          containerHeaders.set('X-KV-Store-Handled', 'true');
-          // No cache-control max-age — prevents the main handler's KV store
-          // check at videoHandler.ts:246 from triggering a duplicate store.
-          // Subsequent requests hit KV cache with proper Cache-Control.
-
-          // Return directly — bypass the error handler's fallback finalization
-          // which would set no-store, X-Fallback-Applied, etc.
-          return new Response(clientBody, {
-            status: 200,
-            headers: containerHeaders,
-          });
-        } else {
-          logger.warn('Container transform failed, falling back to direct stream', {
-            error: containerResult.error,
-            durationMs: containerResult.durationMs,
-          });
-          addBreadcrumb(requestContext, 'Container', 'Container failed — direct stream fallback', {
-            error: containerResult.error,
+        } catch (err) {
+          logger.error('Failed to fire reactive container job', {
+            error: err instanceof Error ? err.message : String(err),
+            instanceKey,
           });
         }
       }
     }
+    // Fall through to direct-fetch / fallback logic below — serves raw source
   }
 
   // Check if we have a valid URL to fetch from (not just an origin type like "r2" or "remote")

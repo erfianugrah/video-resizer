@@ -398,6 +398,155 @@ function handleHealth(req, res) {
 }
 
 /**
+ * Handle transform-and-callback: transcode the video, then POST the
+ * result to the supplied callbackUrl instead of streaming it back to
+ * the caller.  This allows the container to run long transcodes
+ * independently of the worker's request lifecycle.
+ *
+ * The response to the caller is a simple JSON acknowledgement.
+ */
+async function handleTransformAndCallback(req, res) {
+  // Parse body
+  let body = '';
+  for await (const chunk of req) {
+    body += chunk;
+  }
+
+  let params;
+  try {
+    params = JSON.parse(body);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+    return;
+  }
+
+  const { sourceUrl, width, height, mode, quality, fit, duration, time, format, callbackUrl } =
+    params;
+
+  if (!sourceUrl || !callbackUrl) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'sourceUrl and callbackUrl are required' }));
+    return;
+  }
+
+  // NOTE: We do NOT respond immediately.  The HTTP connection stays open
+  // for the full duration of the ffmpeg transcode + callback POST.  This
+  // is intentional — the Durable Object runtime uses active HTTP
+  // connections to decide whether the container is idle.  If we sent a
+  // 202 right away, the DO would see zero active connections and could
+  // put the container to sleep (via sleepAfter) mid-transcode.
+
+  const jobId = randomUUID();
+  const jobDir = `${TRANSCODE_DIR}/${jobId}`;
+  mkdirSync(jobDir, { recursive: true });
+  const outputPath = `${jobDir}/output.mp4`;
+
+  // Acquire concurrency slot
+  console.log(
+    `[${jobId}] [callback] Waiting for slot (active=${activeJobs}, queued=${jobQueue.length})`
+  );
+  await acquireJob();
+  console.log(`[${jobId}] [callback] Acquired slot (active=${activeJobs})`);
+
+  try {
+    // 1. Get source video
+    const inputPath = await getOrDownloadSource(sourceUrl);
+    const inputStat = statSync(inputPath);
+    console.log(
+      `[${jobId}] [callback] Source ready: ${(inputStat.size / 1024 / 1024).toFixed(1)} MB`
+    );
+
+    // 2. Build ffmpeg arguments
+    const threadsPerJob = Math.max(1, Math.floor(4 / Math.max(1, activeJobs)));
+    const ffmpegArgs = ['-y', '-threads', String(threadsPerJob), '-i', inputPath];
+
+    if (time) ffmpegArgs.push('-ss', time);
+    if (duration) ffmpegArgs.push('-t', duration);
+
+    const scaleFilter = buildScaleFilter(width, height, fit || 'contain');
+    if (scaleFilter) ffmpegArgs.push('-vf', scaleFilter);
+
+    const crf = QUALITY_CRF[quality] || QUALITY_CRF.medium;
+    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf));
+
+    if (mode === 'audio') ffmpegArgs.push('-vn');
+    ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ac', '2');
+    ffmpegArgs.push('-movflags', '+faststart');
+    ffmpegArgs.push(outputPath);
+
+    console.log(
+      `[${jobId}] [callback] Running ffmpeg with CRF ${crf}, scale: ${scaleFilter || 'none'}`
+    );
+
+    // 3. Run ffmpeg
+    const ffStart = Date.now();
+    await runFFmpeg(ffmpegArgs);
+    const ffDuration = Date.now() - ffStart;
+
+    const outputStat = statSync(outputPath);
+    console.log(
+      `[${jobId}] [callback] FFmpeg complete: ${(outputStat.size / 1024 / 1024).toFixed(1)} MB output in ${ffDuration}ms ` +
+        `(ratio: ${((outputStat.size / inputStat.size) * 100).toFixed(1)}%)`
+    );
+
+    // 4. POST the output to the callback URL
+    console.log(`[${jobId}] [callback] Posting result to ${callbackUrl}`);
+
+    const fileStream = createReadStream(outputPath);
+    const contentType = mode === 'audio' ? 'audio/mp4' : 'video/mp4';
+
+    const callbackResponse = await fetch(callbackUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(outputStat.size),
+        'X-FFmpeg-Duration-Ms': String(ffDuration),
+        'X-FFmpeg-Input-Size': String(inputStat.size),
+        'X-FFmpeg-Output-Size': String(outputStat.size),
+        'X-FFmpeg-CRF': String(crf),
+        'X-Job-Id': jobId,
+      },
+      body: fileStream,
+      duplex: 'half',
+    });
+
+    if (callbackResponse.ok) {
+      console.log(`[${jobId}] [callback] Successfully delivered result to callback`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'complete', jobId, durationMs: ffDuration }));
+    } else {
+      const errText = await callbackResponse.text().catch(() => '');
+      console.error(
+        `[${jobId}] [callback] Callback returned ${callbackResponse.status}: ${errText.substring(0, 200)}`
+      );
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'callback-failed',
+            jobId,
+            callbackStatus: callbackResponse.status,
+          })
+        );
+      }
+    }
+  } catch (err) {
+    console.error(`[${jobId}] [callback] Transform error: ${err.message}`);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message, jobId }));
+    }
+  } finally {
+    releaseJob();
+    cleanupJob(jobDir);
+    console.log(
+      `[${jobId}] [callback] Job complete (active=${activeJobs}, queued=${jobQueue.length})`
+    );
+  }
+}
+
+/**
  * Main request router
  */
 const server = createServer(async (req, res) => {
@@ -406,6 +555,8 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && url.pathname === '/transform') {
       await handleTransform(req, res);
+    } else if (req.method === 'POST' && url.pathname === '/transform-and-callback') {
+      await handleTransformAndCallback(req, res);
     } else if (req.method === 'GET' && url.pathname === '/health') {
       handleHealth(req, res);
     } else {

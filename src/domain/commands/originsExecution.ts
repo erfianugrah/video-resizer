@@ -19,6 +19,10 @@ import { classifyAndHandleOriginError } from './originsErrorHandler';
 import { logErrorWithContext } from '../../utils/errorHandlingUtils';
 import { getDerivativeDimensions } from '../../utils/imqueryUtils';
 import { retryWithAlternativeOrigins } from '../../services/transformation/retryWithAlternativeOrigins';
+import { CDN_CGI_SIZE_LIMIT, getContentLength } from '../../utils/httpUtils';
+import { VideoConfigurationManager } from '../../config';
+import { buildContainerInstanceKey } from '../../services/containerTransformService';
+import type { ContainerNamespace } from '../../types/cloudflare';
 
 const execLogger = createCategoryLogger('OriginsExecution');
 
@@ -125,6 +129,259 @@ function handleSourceAuthentication(
         error: 'Token not found in environment variable',
       };
     }
+  }
+}
+
+// ── Proactive source-size detection ────────────────────────────────────────
+// The CDN-CGI transformation size limit is 256 MiB.  When the source is
+// known to exceed that *before* we call cdn-cgi/media, we can route directly
+// to the FFmpeg container — avoiding a wasted round-trip and double download.
+
+/** Timeout for the lightweight HEAD probe on remote/fallback sources (ms). */
+const HEAD_PROBE_TIMEOUT_MS = 2000;
+
+/**
+ * Attempt to determine the source size in bytes without downloading the body.
+ *
+ * - **R2 sources**: uses the local R2 binding `head()` call (fast, no subrequest).
+ * - **Remote/fallback sources**: issues a HEAD request with a short timeout.
+ *
+ * Returns `null` when the size cannot be determined (HEAD unsupported,
+ * timeout, missing Content-Length, etc.). The caller should fall through to
+ * the normal cdn-cgi path in that case.
+ */
+export async function getSourceSizeBytes(
+  sourceResolution: SourceResolutionResult,
+  env: WorkerEnvironment | undefined,
+  sourceUrl: string
+): Promise<number | null> {
+  try {
+    if (sourceResolution.originType === 'r2') {
+      const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
+      if (!env || !env[bucketBinding]) return null;
+      const r2Bucket = env[bucketBinding] as R2Bucket;
+      const headResult = await r2Bucket.head(sourceResolution.resolvedPath);
+      return headResult?.size ?? null;
+    }
+
+    // Remote / fallback — HEAD probe with a short timeout
+    if (sourceResolution.originType === 'remote' || sourceResolution.originType === 'fallback') {
+      if (!sourceUrl.startsWith('http://') && !sourceUrl.startsWith('https://')) return null;
+      return await getContentLength(sourceUrl, { timeout: HEAD_PROBE_TIMEOUT_MS });
+    }
+
+    return null;
+  } catch (err) {
+    execLogger.debug('Proactive size check failed — will fall through to cdn-cgi', {
+      error: err instanceof Error ? err.message : String(err),
+      originType: sourceResolution.originType,
+    });
+    return null;
+  }
+}
+
+/**
+ * Serve the raw (untransformed) source directly to the client when the
+ * source exceeds the cdn-cgi 256 MiB limit.
+ *
+ * This streams the original video immediately — no waiting for ffmpeg.
+ * The video plays right away (just at its original dimensions/encoding).
+ * This keeps the URL embeddable in `<video>` tags, social shares, etc.
+ *
+ * For R2 sources the object is fetched from the bucket binding directly.
+ * For remote/fallback sources a fetch to the source URL is made.
+ *
+ * Returns a `Response` on success, or `null` if the passthrough cannot
+ * be served (caller falls through to cdn-cgi which will fail with 9402).
+ */
+async function serveRawSourcePassthrough(
+  sourceResolution: SourceResolutionResult,
+  origin: Origin,
+  env: WorkerEnvironment | undefined,
+  requestContext: RequestContext,
+  diagnosticsInfo: DiagnosticsInfo,
+  sourceSizeBytes: number | null,
+  path: string,
+  sourceUrl: string
+): Promise<Response | null> {
+  execLogger.info('Source exceeds cdn-cgi limit — serving raw source passthrough', {
+    sourceSizeMB: sourceSizeBytes ? Math.round(sourceSizeBytes / 1024 / 1024) : 'unknown',
+    limitMB: Math.round(CDN_CGI_SIZE_LIMIT / 1024 / 1024),
+    originType: sourceResolution.originType,
+    origin: origin.name,
+  });
+
+  addBreadcrumb(requestContext, 'Passthrough', 'Serving raw source — exceeds cdn-cgi limit', {
+    sourceSizeMB: sourceSizeBytes ? Math.round(sourceSizeBytes / 1024 / 1024) : 'unknown',
+    originType: sourceResolution.originType,
+  });
+
+  diagnosticsInfo.containerRouting = {
+    reason: 'proactive-size-check-passthrough',
+    sourceSizeBytes,
+    limitBytes: CDN_CGI_SIZE_LIMIT,
+  };
+
+  try {
+    if (sourceResolution.originType === 'r2') {
+      // Fetch directly from R2 bucket binding
+      const bucketBinding = sourceResolution.source.bucketBinding || 'VIDEO_ASSETS';
+      if (!env || !env[bucketBinding]) return null;
+
+      const r2Bucket = env[bucketBinding] as R2Bucket;
+      const r2Object = await r2Bucket.get(sourceResolution.resolvedPath);
+      if (!r2Object) return null;
+
+      const headers = new Headers({
+        'Content-Type': r2Object.httpMetadata?.contentType || 'video/mp4',
+        'Content-Length': r2Object.size.toString(),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Source-Passthrough': 'true',
+        'X-Passthrough-Reason': 'exceeds-cdn-cgi-limit',
+        'X-Source-Size-MB': String(Math.round(r2Object.size / 1024 / 1024)),
+        'X-Origin': origin.name,
+        'X-KV-Store-Handled': 'true', // Don't attempt KV storage for raw passthrough
+      });
+
+      return new Response(r2Object.body, { status: 200, headers });
+    }
+
+    // Remote / fallback — fetch the source directly
+    if (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://')) {
+      const sourceResponse = await fetch(sourceUrl);
+      if (!sourceResponse.ok) return null;
+
+      const headers = new Headers(sourceResponse.headers);
+      headers.set('Accept-Ranges', 'bytes');
+      headers.set('Cache-Control', 'public, max-age=3600');
+      headers.set('X-Source-Passthrough', 'true');
+      headers.set('X-Passthrough-Reason', 'exceeds-cdn-cgi-limit');
+      headers.set('X-Origin', origin.name);
+      headers.set('X-KV-Store-Handled', 'true');
+      if (sourceSizeBytes) {
+        headers.set('X-Source-Size-MB', String(Math.round(sourceSizeBytes / 1024 / 1024)));
+      }
+
+      return new Response(sourceResponse.body, { status: 200, headers });
+    }
+
+    return null;
+  } catch (err) {
+    execLogger.error('Failed to serve raw source passthrough', {
+      error: err instanceof Error ? err.message : String(err),
+      originType: sourceResolution.originType,
+      path,
+    });
+    return null;
+  }
+}
+
+/**
+ * Fire a background container transform job.
+ *
+ * This sends a request to the container DO with a `callbackUrl` parameter.
+ * The container will transcode the video and POST the result to the callback
+ * URL (a worker endpoint that stores the output in KV).
+ *
+ * The container DO runs independently — we don't await the result and don't
+ * need `waitUntil`.  The `containerInstance.fetch()` call returns a promise
+ * but we intentionally don't await it.  The DO keeps running after we return.
+ */
+function fireBackgroundContainerJob(
+  sourceResolution: SourceResolutionResult,
+  origin: Origin,
+  options: VideoTransformOptions,
+  env: WorkerEnvironment | undefined,
+  path: string,
+  requestOrigin: string
+): void {
+  const videoConfigManager = VideoConfigurationManager.getInstance();
+  const containerBinding = (env as any)?.FFMPEG_CONTAINER as ContainerNamespace | undefined;
+
+  if (!containerBinding || !videoConfigManager.isContainerEnabled()) return;
+
+  // Build container source URL
+  let containerSourceUrl: string | null = null;
+  if (
+    sourceResolution.originType === 'r2' &&
+    sourceResolution.source.bucketBinding &&
+    sourceResolution.resolvedPath
+  ) {
+    containerSourceUrl = `${requestOrigin}/${sourceResolution.resolvedPath}?__r2src=${sourceResolution.source.bucketBinding}`;
+  } else if (sourceResolution.sourceUrl) {
+    containerSourceUrl = sourceResolution.sourceUrl;
+  }
+
+  if (!containerSourceUrl) return;
+
+  const instanceKey = buildContainerInstanceKey(origin.name, path);
+
+  // Build callback URL — the container will POST the transcoded output here.
+  // Include transformation options so the KV cache key matches what the
+  // video handler generates on the read path.
+  //
+  // IMPORTANT: pass the `derivative` rather than raw width/height.  The KV
+  // key generator (generateKVKey) expands derivatives to their configured
+  // dimensions (e.g. tablet → 1280×720).  If we pass the raw imwidth
+  // (e.g. 1080) instead, the stored key won't match the lookup key.
+  const callbackParams = new URLSearchParams();
+  callbackParams.set('path', path);
+  callbackParams.set('version', String(options.version || 1));
+  if (options.derivative) {
+    // Let the KV key generator expand the derivative to its dimensions
+    callbackParams.set('derivative', options.derivative);
+  } else {
+    // No derivative — use raw dimensions
+    if (options.width) callbackParams.set('width', String(options.width));
+    if (options.height) callbackParams.set('height', String(options.height));
+  }
+  if (options.mode) callbackParams.set('mode', options.mode);
+  if (options.quality) callbackParams.set('quality', options.quality);
+  if (options.compression) callbackParams.set('compression', options.compression);
+  if (options.format) callbackParams.set('format', options.format);
+  const callbackUrl = `${requestOrigin}/internal/container-result?${callbackParams.toString()}`;
+
+  const payload = {
+    sourceUrl: containerSourceUrl,
+    width: options.width ?? undefined,
+    height: options.height ?? undefined,
+    mode: options.mode || 'video',
+    quality: options.quality || 'medium',
+    fit: options.fit || 'contain',
+    duration: options.duration ?? undefined,
+    time: options.time || '0s',
+    format: 'mp4',
+    callbackUrl,
+  };
+
+  execLogger.info('Firing background container job with callback', {
+    instanceKey,
+    callbackUrl,
+    sourceSizeApprox: 'oversized',
+  });
+
+  try {
+    const containerInstance = containerBinding.getByName(instanceKey);
+    const containerRequest = new Request('http://container/transform-and-callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    // Fire and forget — the DO runs independently.
+    // We catch to prevent unhandled rejection logs.
+    containerInstance.fetch(containerRequest).catch((err: unknown) => {
+      execLogger.debug('Background container job fire-and-forget fetch settled', {
+        instanceKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  } catch (err) {
+    execLogger.error('Failed to fire background container job', {
+      error: err instanceof Error ? err.message : String(err),
+      instanceKey,
+    });
   }
 }
 
@@ -439,6 +696,51 @@ export async function executeWithOrigins(params: ExecuteWithOriginsParams): Prom
     // Add source information to diagnostics
     diagnosticsInfo.source = sourceResolution.originType;
     diagnosticsInfo.sourceUrl = sourceUrl;
+
+    // ── Proactive size check — bypass cdn-cgi for oversized sources ────
+    // For R2 sources this uses the local bucket binding head() (fast, no
+    // subrequest).  For remote/fallback sources a HEAD with a 2 s timeout
+    // is issued.  If the source is larger than the cdn-cgi 256 MiB limit
+    // and the FFmpeg container is enabled, we route directly to the
+    // container — avoiding the wasted cdn-cgi round-trip and double download.
+    // If the size is unknown or the container fails, we fall through to the
+    // normal cdn-cgi path.  The reactive error handler in
+    // transformationErrorHandler.ts remains as a safety net.
+    const sourceSizeBytes = await getSourceSizeBytes(sourceResolution, env, sourceUrl);
+    diagnosticsInfo.sourceSizeBytes = sourceSizeBytes;
+
+    if (sourceSizeBytes !== null && sourceSizeBytes > CDN_CGI_SIZE_LIMIT) {
+      addBreadcrumb(requestContext, 'SizeCheck', 'Source exceeds cdn-cgi limit', {
+        sizeMB: Math.round(sourceSizeBytes / 1024 / 1024),
+        limitMB: Math.round(CDN_CGI_SIZE_LIMIT / 1024 / 1024),
+      });
+
+      // Serve the raw source directly — the video plays immediately at
+      // its original dimensions.  A background container job (if enabled)
+      // will store a transformed version in KV for future requests.
+      const passthroughResponse = await serveRawSourcePassthrough(
+        sourceResolution,
+        origin,
+        env,
+        requestContext,
+        diagnosticsInfo,
+        sourceSizeBytes,
+        path,
+        sourceUrl
+      );
+
+      if (passthroughResponse) {
+        // Fire background container transform via the callback pattern.
+        // The container will POST the result back to the worker's internal
+        // endpoint which stores in KV.  This is entirely decoupled from
+        // the client response.
+        fireBackgroundContainerJob(sourceResolution, origin, options, env, path, requestOrigin);
+
+        return passthroughResponse;
+      }
+      // Passthrough failed — fall through to cdn-cgi
+      // (the reactive error handler will catch the 9402 if cdn-cgi also fails)
+    }
 
     // Get the CDN-CGI path from configuration
     const config = getEnvironmentConfig();

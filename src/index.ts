@@ -12,6 +12,8 @@ import { handleVideoRequest } from './handlers/videoHandler';
 import { handleConfigGet, handleConfigUpload } from './handlers/configHandler';
 import { EnvironmentConfig, EnvVariables, getEnvironmentConfig } from './config/environmentConfig';
 import { initializeConfiguration, updateAllConfigFromKV } from './config';
+import { getCacheKV } from './utils/flexibleBindings';
+import { storeTransformedVideoWithStreaming } from './services/kvStorage/streamStorage';
 import {
   addBreadcrumb,
   createRequestContext,
@@ -37,7 +39,11 @@ import { Container } from '@cloudflare/containers';
  */
 export class FFmpegContainer extends Container {
   defaultPort = 8080;
-  sleepAfter = '5m';
+  // 30 minutes — must be longer than the longest possible ffmpeg transcode.
+  // The /transform-and-callback endpoint responds with 202 immediately and
+  // runs ffmpeg in the background; the DO sees no active HTTP connections
+  // and would sleep after this interval.  5m was too short for large files.
+  sleepAfter = '30m';
 }
 
 // Create a category-specific logger for Worker
@@ -320,6 +326,96 @@ export default Sentry.withSentry<EnvVariables>(
             return handleConfigGet(request, env);
           } else {
             return new Response('Method not allowed', { status: 405 });
+          }
+        }
+
+        // Handle container callback — the FFmpeg container POSTs transcoded
+        // output here after a background transform-and-callback job completes.
+        // This stores the result in KV so future requests are served from cache.
+        if (requestUrl.pathname === '/internal/container-result' && request.method === 'POST') {
+          const kvPath = requestUrl.searchParams.get('path');
+          const version = parseInt(requestUrl.searchParams.get('version') || '1', 10);
+
+          // Extract transformation options from callback URL so the KV
+          // cache key matches what the video handler generates on read.
+          const width = requestUrl.searchParams.get('width');
+          const height = requestUrl.searchParams.get('height');
+          const mode = requestUrl.searchParams.get('mode');
+          const derivative = requestUrl.searchParams.get('derivative');
+          const quality = requestUrl.searchParams.get('quality');
+          const compression = requestUrl.searchParams.get('compression');
+          const format = requestUrl.searchParams.get('format');
+
+          if (!kvPath || !request.body) {
+            return new Response('Missing path or body', { status: 400 });
+          }
+
+          logInfo(context, 'Received container callback — storing in KV', {
+            kvPath,
+            version,
+            width,
+            height,
+            derivative,
+            compression,
+            contentLength: request.headers.get('Content-Length'),
+            jobId: request.headers.get('X-Job-Id'),
+          });
+
+          const cacheKV = getCacheKV(env);
+          if (!cacheKV) {
+            return new Response('KV namespace not available', { status: 503 });
+          }
+
+          try {
+            const storeResponse = new Response(request.body, {
+              headers: request.headers,
+            });
+
+            const kvOptions: Record<string, unknown> = {
+              version,
+              env: env as any,
+            };
+            if (width) kvOptions.width = parseInt(width, 10);
+            if (height) kvOptions.height = parseInt(height, 10);
+            if (mode) kvOptions.mode = mode;
+            if (derivative) kvOptions.derivative = derivative;
+            if (quality) kvOptions.quality = quality;
+            if (compression) kvOptions.compression = compression;
+            if (format) kvOptions.format = format;
+
+            const stored = await storeTransformedVideoWithStreaming(
+              cacheKV,
+              kvPath,
+              storeResponse,
+              kvOptions as any
+            );
+
+            if (stored) {
+              logInfo(context, 'Container output stored in KV via callback', {
+                kvPath,
+                version,
+              });
+              return new Response(JSON.stringify({ status: 'stored', path: kvPath }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            } else {
+              logInfo(context, 'Failed to store container output in KV', { kvPath });
+              return new Response(JSON.stringify({ status: 'error', message: 'KV store failed' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logInfo(context, 'Container callback storage error', {
+              kvPath,
+              error: errMsg,
+            });
+            return new Response(JSON.stringify({ status: 'error', message: errMsg }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            });
           }
         }
 

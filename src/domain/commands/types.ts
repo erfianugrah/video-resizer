@@ -52,9 +52,31 @@ export interface VideoTransformOptions {
  * Interface for R2 bucket operations
  */
 export interface R2Bucket {
+  head(key: string): Promise<R2ObjectMeta | null>;
   get(key: string): Promise<R2Object | null>;
   put(key: string, value: ReadableStream | ArrayBuffer | string): Promise<R2Object>;
   delete(key: string): Promise<void>;
+}
+
+/**
+ * Lightweight R2 object metadata returned by head() — no body stream.
+ */
+export interface R2ObjectMeta {
+  key: string;
+  version: string;
+  size: number;
+  etag: string;
+  httpEtag: string;
+  uploaded: Date;
+  httpMetadata?: {
+    contentType?: string;
+    contentEncoding?: string;
+    contentLanguage?: string;
+    contentDisposition?: string;
+    cacheControl?: string;
+    contentLength?: number;
+  };
+  customMetadata?: Record<string, string>;
 }
 
 /**

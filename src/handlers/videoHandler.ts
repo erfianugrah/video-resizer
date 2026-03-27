@@ -467,11 +467,14 @@ async function handleOriginsPath(
     debug: context.debugEnabled,
   };
 
-  // NOTE: The pre-transformation size check was removed in favour of the
-  // reactive approach. cdn-cgi/media is attempted first; if it rejects the
-  // input with error 9402 ("Origin Too Large"), the error handler in
-  // transformationErrorHandler.ts will route to the FFmpeg container
-  // fallback (if enabled) before falling back to a direct stream.
+  // NOTE: A proactive source-size check is now performed inside
+  // originsExecution.ts before the cdn-cgi/media fetch. For R2 sources it
+  // uses the fast R2 head() binding; for remote sources a HEAD with a 2 s
+  // timeout. When the source exceeds 256 MiB and the FFmpeg container is
+  // enabled, the request is routed directly to the container — avoiding the
+  // wasted cdn-cgi round-trip and double download.  The reactive error
+  // handler in transformationErrorHandler.ts remains as a safety net for
+  // cases where the proactive check cannot determine the size.
 
   // ── Request coalescing ────────────────────────────────────────────
   const transformKey = `${originMatch.origin.name}:${sourceResolution.resolvedPath}:${JSON.stringify(
